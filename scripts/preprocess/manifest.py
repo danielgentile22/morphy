@@ -216,3 +216,103 @@ def get_raw_local_version(source_id: str) -> str | None:
     if entry is None:
         return None
     return getattr(entry, "local_version", None)
+
+
+def rebuild_from_disk() -> PreprocessManifest:
+    """Rebuild the preprocess manifest from on-disk normalized + composite files.
+
+    Walks ``data/processed/normalized/<id>/`` and
+    ``data/processed/composite/<state_fips>/`` and rewrites the manifest
+    from what actually exists, discarding stale "failed" entries that
+    were resolved out-of-band (e.g., the openpyxl fix in this session).
+
+    Caller is responsible for `manifest.save()` after — this function
+    returns the manifest object so the caller can inspect counts first.
+    """
+    import json
+    from datetime import UTC, datetime
+
+    from . import COMPOSITE_ROOT, NORMALIZED_ROOT
+
+    m = PreprocessManifest()
+    now_iso = datetime.now(UTC).isoformat(timespec="seconds")
+
+    if NORMALIZED_ROOT.exists():
+        for src_dir in sorted(NORMALIZED_ROOT.iterdir()):
+            if not src_dir.is_dir():
+                continue
+            parquets = sorted(src_dir.glob("*.parquet"))
+            if not parquets:
+                continue
+            total_bytes = sum(p.stat().st_size for p in parquets)
+            canonical_types = [p.stem for p in parquets]
+            states_covered: list[str] = []
+            qreport = src_dir / "quality_report.json"
+            qreport_path: str | None = None
+            if qreport.exists():
+                qreport_path = str(qreport.relative_to(NORMALIZED_ROOT.parent.parent))
+                try:
+                    qdata = json.loads(qreport.read_text())
+                    if isinstance(qdata.get("states_covered"), list):
+                        states_covered = list(qdata["states_covered"])
+                except (json.JSONDecodeError, OSError):
+                    pass
+            mtimes = [p.stat().st_mtime for p in parquets]
+            ts = datetime.fromtimestamp(max(mtimes), tz=UTC).isoformat(timespec="seconds")
+            raw_lv = get_raw_local_version(src_dir.name)
+            m.normalized[src_dir.name] = {
+                "raw_local_version": raw_lv,
+                "preprocessed_at": ts,
+                "raw_rows": None,
+                "canonical_rows": None,
+                "bytes": total_bytes,
+                "canonical_types": canonical_types,
+                "states_covered": states_covered,
+                "quality_report_path": qreport_path,
+                "status": "ok",
+                "error": None,
+                "history": [],
+                "rebuilt_from_disk_at": now_iso,
+            }
+
+    if COMPOSITE_ROOT.exists():
+        for state_dir in sorted(COMPOSITE_ROOT.iterdir()):
+            if not state_dir.is_dir():
+                continue
+            catalog_path = state_dir / "catalog.json"
+            if not catalog_path.exists():
+                continue
+            try:
+                catalog = json.loads(catalog_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            # catalog.json shape: {layers: {canonical_type: {rows: int, ...}},
+            #                      views: {view_name: {...}}, ...}
+            counts: dict[str, int] = {}
+            layers_obj = catalog.get("layers") or {}
+            if isinstance(layers_obj, dict):
+                for ctype, lentry in layers_obj.items():
+                    rows = lentry.get("rows") if isinstance(lentry, dict) else None
+                    if isinstance(rows, int):
+                        counts[ctype] = rows
+            views_obj = catalog.get("views") or {}
+            views_built = (
+                list(views_obj.keys())
+                if isinstance(views_obj, dict)
+                else list(catalog.get("views_built") or [])
+            )
+            ts = datetime.fromtimestamp(catalog_path.stat().st_mtime, tz=UTC).isoformat(
+                timespec="seconds"
+            )
+            m.composed[state_dir.name] = {
+                "preprocessed_at": ts,
+                "sources_used": list(catalog.get("sources_used") or []),
+                "joins_applied": list(catalog.get("joins_applied") or []),
+                "views_built": views_built,
+                "counts": counts,
+                "status": "ok",
+                "error": None,
+                "rebuilt_from_disk_at": now_iso,
+            }
+
+    return m

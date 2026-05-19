@@ -347,3 +347,36 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
   `.github/workflows/test.yml` (pytest) on every push.
 - **Consequences:** All pushes must pass lint + tests once Section 6
   lands. Branch protection follows.
+
+### ADR-045 — Registry split: `_ACTIVE` + `_DEFERRED` blocks
+
+- **Date:** 2026-05-19
+- **Context:** Section 4.3 reduced the v1 surface to ~14 sources but
+  the original `scripts/fetch/registry.py` had no way to track
+  "imported but not in v1 scope" classes. Deleting them would erase
+  the schema work; comment-blocks rot.
+- **Decision:** Registry exposes two lists — `_ACTIVE` (shown to the
+  puller and preprocess) and `_DEFERRED` (imported but invisible
+  upstream). `all_sources()` returns only active; `deferred_sources()`
+  exists for tooling. `get_source()` resolves across both so a
+  reactivated source keeps working with the same ID.
+- **Consequences:** Reactivating any deferred source = one-line move
+  between the lists. Puller's `_prune_orphan_manifest_entries` cleans
+  the manifest automatically when something moves from active to
+  deferred.
+
+### ADR-046 — FL parcel data: replace FGDL DSL with FDOR NAL
+
+- **Date:** 2026-05-19
+- **Context:** The previously-active `fl_fgdl_parcels` source pulls
+  FGDL DSL (state-domain land — state-owned parcels) which has no
+  private-landowner data. Composing FL with that produced empty
+  `owner_name` columns and was useless for our pitch.
+- **Decision:** New source `fdor_nal` (Florida Department of Revenue
+  Name-Address-Legal tax roll, per-county). MANUAL_ONLY with a
+  per-county walkthrough; v1 ships 10 representative counties
+  (~60% of FL population): Miami-Dade, Hillsborough, Orange, Duval,
+  Pinellas, Lee, Polk, Brevard, Volusia, Marion.
+- **Consequences:** FL composite gains owner data. FGDL DSL moved to
+  deferred. Per-county scaling to all 67 counties is post-pitch work.
+  Each user-pulled county adds ~30–100 MB of CSV.

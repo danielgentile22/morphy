@@ -1,7 +1,22 @@
 """Source registry — single point of import for every DataSource.
 
-Adding a new source = add a line below. The UI and the puller both call
-``all_sources()`` and never touch the source modules directly.
+The puller and preprocess pipeline both call ``all_sources()`` and never
+touch source modules directly.
+
+Sources are split into two blocks:
+
+* **Active** — `_ACTIVE`. These appear in the puller UI, are checked
+  on "Check for updates", and feed the v1-pitch preprocess pipeline.
+
+* **Deferred** — `_DEFERRED`. Imported (so the classes still exist and
+  manual reactivation is a one-line move) but NOT shown in the puller
+  or normalized. Deferred sources are documented in
+  [docs/DECISIONS.md](../../docs/DECISIONS.md) and
+  [docs/DATA_SOURCES.md](../../docs/DATA_SOURCES.md). To reactivate
+  one, move it from `_DEFERRED` into `_ACTIVE`.
+
+Adding a new source = add a line to `_ACTIVE` (or `_DEFERRED` if it's
+not in v1 scope).
 """
 
 from __future__ import annotations
@@ -14,65 +29,103 @@ from .sources.eia_860 import SOURCE as EIA_860
 from .sources.eia_860m import SOURCE as EIA_860M
 from .sources.faa_oeaaa import SOURCE as FAA_OEAAA
 
-# Towers
+# Towers (active)
 from .sources.fcc_asr import SOURCE as FCC_ASR
+
+# Towers (deferred — large + complex schema; normalize post-pitch)
 from .sources.fcc_uls import SOURCES as FCC_ULS_BANDS
 from .sources.fcc_uls_meta import SOURCES as FCC_ULS_META
 
-# Billboards
+# FL parcels — `fl_fgdl_parcels` is deferred (wrong dataset for landowner work);
+# replaced by `fdor_nal`.
+from .sources.fdor_nal import SOURCE as FDOR_NAL
+
+# Billboards (all deferred for v1 — not core to cell-tower thesis)
 from .sources.fdot_billboards import SOURCE as FDOT_BILLBOARDS
-from .sources.fl_fgdl_parcels import SOURCE as FL_PARCELS
+from .sources.fl_fgdl_parcels import SOURCE as FL_FGDL_PARCELS
+
+# Towers (retired — DHS removed the public layer in 2024, see source notes)
 from .sources.hifld_towers import SOURCE as HIFLD_TOWERS
 
-# Distress
+# Distress overlays (active)
 from .sources.hud_oz import SOURCE as HUD_OZ
 from .sources.hud_qct import SOURCE as HUD_QCT
 from .sources.lbnl_tts import SOURCE as LBNL_TTS
 
-# Parcels
+# Parcels (active)
 from .sources.nc_onemap_parcels import SOURCE as NC_PARCELS
 from .sources.ncdot_billboards import SOURCE as NCDOT_BILLBOARDS
 from .sources.regrid_parcels import SOURCE as REGRID
-from .sources.state_parcels import SOURCES as STATE_PARCELS_MANUAL
+from .sources.state_parcels import (
+    DEFERRED_SOURCES as STATE_PARCELS_DEFERRED,
+)
+from .sources.state_parcels import (
+    SOURCES as STATE_PARCELS_ACTIVE,
+)
 from .sources.txdot_billboards import SOURCE as TXDOT_BILLBOARDS
 from .sources.usda_persistent_poverty import SOURCE as USDA_PP
 from .sources.uspvdb import SOURCE as USPVDB
 
-_ALL: list[DataSource] = [
+# ── active sources (v1 pitch scope) ──────────────────────────────────────
+_ACTIVE: list[DataSource] = [
+    # Towers
     FCC_ASR,
-    *FCC_ULS_BANDS,
-    *FCC_ULS_META,
     FAA_OEAAA,
-    HIFLD_TOWERS,
+    # Solar
     EIA_860,
     EIA_860M,
     USPVDB,
-    LBNL_TTS,
-    FDOT_BILLBOARDS,
-    NCDOT_BILLBOARDS,
-    TXDOT_BILLBOARDS,
+    # Parcels — anchor states
     NC_PARCELS,
-    FL_PARCELS,
-    *STATE_PARCELS_MANUAL,
-    REGRID,
+    FDOR_NAL,
+    *STATE_PARCELS_ACTIVE,  # MT + AR + UT
+    # Distress overlays
     HUD_OZ,
     HUD_QCT,
     ARC,
     USDA_PP,
 ]
 
-# Sanity: no duplicate IDs
+# ── deferred sources (out of v1 pitch scope) ─────────────────────────────
+# These are imported above so classes stay accessible, but are NOT exposed
+# to the puller or preprocess pipeline. See docs/DECISIONS.md for the
+# rationale behind each deferral. To reactivate, move into _ACTIVE.
+_DEFERRED: list[DataSource] = [
+    # Retired — DHS removed the public HIFLD Cellular Towers layer in 2024.
+    HIFLD_TOWERS,
+    # FCC ULS — ~5 GB raw across 6 bands + a metadata sidecar. Adds
+    # carrier/leasing context but not core to the landowner-side pitch.
+    *FCC_ULS_BANDS,
+    *FCC_ULS_META,
+    # LBNL Tracking the Sun — superseded by USPVDB + EIA 860 for our purposes.
+    LBNL_TTS,
+    # State billboard datasets — not core to the cell-tower thesis.
+    FDOT_BILLBOARDS,
+    NCDOT_BILLBOARDS,
+    TXDOT_BILLBOARDS,
+    # FL FGDL DSL — state-land parcels (wrong dataset for landowner work).
+    # Replaced in active block by fdor_nal.
+    FL_FGDL_PARCELS,
+    # MN + IN parcels — MN license ambiguous; IN public parcels have no
+    # owner_name column.
+    *STATE_PARCELS_DEFERRED,
+    # Regrid — paid; free-only budget for v1.
+    REGRID,
+]
+
+# Sanity: no duplicate IDs across active OR deferred (since the user can
+# move sources between blocks; never let two define the same id).
 _seen: set[str] = set()
-for s in _ALL:
+for s in (*_ACTIVE, *_DEFERRED):
     if s.id in _seen:
         raise RuntimeError(f"duplicate source id in registry: {s.id}")
     _seen.add(s.id)
 
 
 def all_sources() -> list[DataSource]:
-    """Return every registered DataSource, ordered by category then name."""
+    """Return every active DataSource, ordered by category then name."""
     by_cat = {cat: [] for cat in CATEGORY_ORDER}
-    for s in _ALL:
+    for s in _ACTIVE:
         by_cat.setdefault(s.category, []).append(s)
     ordered: list[DataSource] = []
     for cat in CATEGORY_ORDER:
@@ -84,15 +137,29 @@ def all_sources() -> list[DataSource]:
     return ordered
 
 
+def deferred_sources() -> list[DataSource]:
+    """Return every deferred source — for documentation / tooling only.
+
+    Not surfaced in the puller UI. Reactivate by moving from `_DEFERRED`
+    to `_ACTIVE`.
+    """
+    return list(_DEFERRED)
+
+
 def get_source(source_id: str) -> DataSource:
-    for s in _ALL:
+    """Look up by ID across both active AND deferred blocks.
+
+    Deferred sources are still resolvable so tooling (verify, normalize,
+    diagnose) keeps working if the user reactivates one mid-session.
+    """
+    for s in (*_ACTIVE, *_DEFERRED):
         if s.id == source_id:
             return s
     raise KeyError(f"no such source: {source_id}")
 
 
 def grouped() -> dict[str, list[DataSource]]:
-    """Return {category: [sources]} in display order."""
+    """Return {category: [sources]} in display order, active sources only."""
     out: dict[str, list[DataSource]] = {cat: [] for cat in CATEGORY_ORDER}
     for s in all_sources():
         out.setdefault(s.category, []).append(s)

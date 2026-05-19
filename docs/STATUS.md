@@ -17,17 +17,17 @@ working plan lives in `/.claude/plans/cached-wobbling-token.md`.
 | State | Raw data | Normalized | Composed | Views | Notes |
 |---|---|---|---|---|---|
 | **AR** (05) | ✅ on disk | ✅ 2,116,976 parcels, owners populated | ✅ 9/9 joins, 0 warnings | **8** | Working end-to-end |
-| **NC** (37) | ❌ stale (2025-07-15, 11 months old); endpoint currently 500 | — | — | — | Fix endpoint or switch to MANUAL_ONLY walkthrough in Section 4.1 |
+| **NC** (37) | ⚠ stale (2025-07-15, 11 months old); endpoint now responding again | — | — | — | User pulls fresh via puller in Section 4.4 |
 | **MT** (30) | ❌ not yet pulled | — | — | — | MANUAL_ONLY; user pulls via puller walkthrough in Section 4.4 |
 | **UT** (49) | ❌ not yet pulled | — | — | — | MANUAL_ONLY; user pulls in Section 4.4 |
-| **FL** (12) | ⚠ wrong dataset (FGDL DSL state-land, not FDOR NAL tax roll) | composed but ~0 owner names | composed but views skip | 1 | Drop current FGDL; add `fdor_nal` source if pursuing FL |
+| **FL** (12) | ❌ FGDL DSL deferred; FDOR NAL source added but no counties downloaded yet | — | — | — | User pulls 10 v1 counties via `fdor_nal` walkthrough in Section 4.4 |
 
 States that are **dropped from this cut** but still have data on disk:
 
 | State | Status | Reason |
 |---|---|---|
-| IN (18) | Composed; 3.7M parcels with no `owner_name` column | Indiana publishes no owner data. Mothball until paid source. |
-| MN (27) | Not pulled | License "No License Provided" despite Open branding; defer pending MnGeo confirmation |
+| IN (18) | Composed; 3.7M parcels with no `owner_name` column | Indiana publishes no owner data. Deferred until paid source. |
+| MN (27) | Not pulled | License "No License Provided" despite Open branding; deferred pending MnGeo confirmation |
 
 ---
 
@@ -46,34 +46,35 @@ States that are **dropped from this cut** but still have data on disk:
 | `ar_parcels` | manual (current) | Annual | ✅ |
 | `regrid_parcels` | — | — | Stub only (paid; out of scope) |
 
-### Broken endpoints (Section 4.1 fixes these)
+### Previously-broken endpoints (Section 4.1 — RESOLVED)
 
-| Source | Failure | Resolution path |
+The 2025-cycle source-code fixes already landed in `scripts/fetch/sources/`
+(URL updates baked in). As of 2026-05-19 all four endpoints respond on
+`remote_version()`:
+
+| Source | Last probe | Status |
 |---|---|---|
-| `hud_oz` | HTTP 400 (ArcGIS service) | Switch to HUD static OZ shapefile download (MANUAL_ONLY walkthrough) |
-| `hud_qct` | HTTP 400 (ArcGIS service) | Same |
-| `usda_persistent_poverty` | HTTP 404 (URL migrated) | Investigate new URL on USDA ERS; MANUAL_ONLY fallback |
-| `nc_onemap_parcels` | HTTP 500 | Retry first; if persistent, MANUAL_ONLY walkthrough |
-| `hifld_towers` | HTTP 400 | **Retired** by DHS in 2024; mark RETIRED in registry |
+| `hud_oz` | 2026-05-19 | ✅ returns 2026-02-24 |
+| `hud_qct` | 2026-05-19 | ✅ returns 2025-09-22 |
+| `usda_persistent_poverty` | 2026-05-19 | ✅ returns content-length fallback |
+| `nc_onemap_parcels` | 2026-05-19 | ✅ returns layer-name fallback |
+| `hifld_towers` | n/a | ⊘ RETIRED — moved to `_DEFERRED` (DHS removed layer in 2024) |
 
-### Active in registry but deferred this cut
+### Deferred sources (ADR-045)
 
-`fcc_uls_cellular`, `fcc_uls_market`, `fcc_uls_micro`, `fcc_uls_ownership`,
-`fcc_uls_transfers`, `fcc_uls_leasing`, `fcc_uls_meta` — raw data on disk
-(~5 GB total); no normalizers built. Defer to post-pitch.
+Moved to `_DEFERRED` in `scripts/fetch/registry.py` — imported, but
+hidden from the puller and preprocess. Reactivate by moving one line:
 
-`fdot_billboards`, `ncdot_billboards`, `txdot_billboards` — not core to
-cell-tower thesis; defer.
+`hifld_towers`, `fcc_uls_*` (6 bands), `fcc_uls_meta`, `lbnl_tts`,
+`fdot_billboards`, `ncdot_billboards`, `txdot_billboards`,
+`fl_fgdl_parcels`, `in_parcels`, `mn_parcels`, `regrid_parcels`
+(15 total).
 
-`lbnl_tts` — superseded by USPVDB + EIA 860 for our purposes; drop from
-active registry.
+### New for v1: `fdor_nal` (ADR-046)
 
-`fl_fgdl_parcels` — wrong dataset; drop in favor of new `fdor_nal` source
-if pursuing FL.
-
-`in_parcels` — no owner column; mothball.
-
-`mn_parcels` — license ambiguity; defer.
+Florida Department of Revenue per-county tax roll, MANUAL_ONLY with a
+walkthrough listing 10 representative counties. Replaces the deferred
+`fl_fgdl_parcels` (state-domain land, no owner data).
 
 ---
 

@@ -44,36 +44,37 @@ per-source table below):
 
 ## Index
 
-| # | Source | Category | Coverage | Automation | Commercial use |
-|---|---|---|---|---|---|
-| 1 | FCC ASR | Towers | National | ✅ | ✅ Yes (public domain) |
-| 2 | FCC ULS — Cellular (Part 22) | Towers | National | ✅ | ✅ Yes (public domain) |
-| 3 | FCC ULS — PCS | Towers | National | ✅ | ✅ Yes (public domain) |
-| 4 | FCC ULS — AWS | Towers | National | ✅ | ✅ Yes (public domain) |
-| 5 | FCC ULS — 700 MHz | Towers | National | ✅ | ✅ Yes (public domain) |
-| 6 | FCC ULS — WCS | Towers | National | ✅ | ✅ Yes (public domain) |
-| 7 | FCC ULS — Microwave (Part 101) | Towers | National | ✅ | ✅ Yes (public domain) |
-| 8 | FAA Digital Obstacle File (DOF) | Towers | National | ✅ | ✅ Yes (public domain) |
-| 9 | HIFLD Cellular Towers | Towers | National | ✅ | ✅ Yes (open data) |
-| 10 | EIA Form 860 (annual) | Solar | National | ✅ | ✅ Yes (public domain) |
-| 11 | EIA Form 860M (monthly) | Solar | National | ✅ | ✅ Yes (public domain) |
-| 12 | USGS USPVDB | Solar | National | ✅ | ✅ Yes (public domain) |
-| 13 | LBNL Tracking the Sun | Solar | National | 🟡 | ✅ Yes, with attribution |
-| 14 | FDOT Outdoor Advertising permits | Billboards | Florida | ✅ | ✅ Yes (public records) |
-| 15 | NCDOT Outdoor Advertising permits | Billboards | North Carolina | 🚫 | ✅ Yes (public records) |
-| 16 | TxDOT Outdoor Advertising permits | Billboards | Texas | 🚫 | ✅ Yes (public records) |
-| 17 | NC OneMap statewide parcels | Parcels | NC (100 counties) | ✅ | ✅ Yes, with attribution |
-| 18 | FL FGDL / FDOR NAL parcels | Parcels | Florida | 🚫 | ✅ Yes, with attribution |
-| 19 | Montana Cadastral parcels | Parcels | Montana | 🚫 | ✅ Yes, with attribution |
-| 20 | Minnesota statewide parcels (MnGeo) | Parcels | Minnesota | 🚫 | ✅ Yes, with attribution |
-| 21 | Indiana statewide parcels (IGIO) | Parcels | Indiana | 🚫 | ✅ Yes, with attribution |
-| 22 | Arkansas statewide parcels | Parcels | Arkansas | 🚫 | ✅ Yes, with attribution |
-| 23 | Utah AGRC LIR parcels | Parcels | Utah | 🚫 | ✅ Yes, with attribution |
-| 24 | Regrid (Landgrid) nationwide parcels | Parcels | All 50 states (configurable) | 🔒 | ✅ Yes, per license |
-| 25 | HUD Opportunity Zones | Distress | National | ✅ | ✅ Yes (public domain) |
-| 26 | HUD Qualified Census Tracts | Distress | National | ✅ | ✅ Yes (public domain) |
-| 27 | ARC County Economic Status | Distress | Appalachia (13 states) | ✅ | ✅ Yes (public domain) |
-| 28 | USDA ERS Persistent Poverty Counties | Distress | National | 🟡 | ✅ Yes (public domain) |
+| # | Source | Category | Coverage | Automation | v1 status | Commercial use |
+|---|---|---|---|---|---|---|
+| 1 | FCC ASR | Towers | National | ✅ | ✓ active | ✅ Yes (public domain) |
+| 2 | FCC ULS — Cellular (Part 22) | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
+| 3 | FCC ULS — PCS | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
+| 4 | FCC ULS — AWS | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
+| 5 | FCC ULS — 700 MHz | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
+| 6 | FCC ULS — WCS | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
+| 7 | FCC ULS — Microwave (Part 101) | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
+| 8 | FAA Digital Obstacle File (DOF) | Towers | National | ✅ | ✓ active | ✅ Yes (public domain) |
+| 9 | HIFLD Cellular Towers | Towers | National | 🚫 | ⊘ retired (2024) | ✅ Yes (open data) |
+| 10 | EIA Form 860 (annual) | Solar | National | ✅ | ✓ active | ✅ Yes (public domain) |
+| 11 | EIA Form 860M (monthly) | Solar | National | ✅ | ✓ active | ✅ Yes (public domain) |
+| 12 | USGS USPVDB | Solar | National | ✅ | ✓ active | ✅ Yes (public domain) |
+| 13 | LBNL Tracking the Sun | Solar | National | 🟡 | ⊘ deferred | ✅ Yes, with attribution |
+| 14 | FDOT Outdoor Advertising permits | Billboards | Florida | ✅ | ⊘ deferred | ✅ Yes (public records) |
+| 15 | NCDOT Outdoor Advertising permits | Billboards | North Carolina | 🚫 | ⊘ deferred | ✅ Yes (public records) |
+| 16 | TxDOT Outdoor Advertising permits | Billboards | Texas | 🚫 | ⊘ deferred | ✅ Yes (public records) |
+| 17 | NC OneMap statewide parcels | Parcels | NC (100 counties) | ✅ | ✓ active | ✅ Yes, with attribution |
+| 18 | FL FGDL DSL parcels | Parcels | Florida | 🚫 | ⊘ deferred (wrong dataset; replaced by #29) | ✅ Yes, with attribution |
+| 19 | Montana Cadastral parcels | Parcels | Montana | 🚫 | ✓ active | ✅ Yes, with attribution |
+| 20 | Minnesota statewide parcels (MnGeo) | Parcels | Minnesota | 🚫 | ⊘ deferred (license ambiguity) | ✅ Yes, with attribution |
+| 21 | Indiana statewide parcels (IGIO) | Parcels | Indiana | 🚫 | ⊘ deferred (no owner data) | ✅ Yes, with attribution |
+| 22 | Arkansas statewide parcels | Parcels | Arkansas | 🚫 | ✓ active | ✅ Yes, with attribution |
+| 23 | Utah AGRC LIR parcels | Parcels | Utah | 🚫 | ✓ active | ✅ Yes, with attribution |
+| 24 | Regrid (Landgrid) nationwide parcels | Parcels | All 50 states (configurable) | 🔒 | ⊘ deferred (paid; free-only budget) | ✅ Yes, per license |
+| 25 | HUD Opportunity Zones | Distress | National | ✅ | ✓ active | ✅ Yes (public domain) |
+| 26 | HUD Qualified Census Tracts | Distress | National | ✅ | ✓ active | ✅ Yes (public domain) |
+| 27 | ARC County Economic Status | Distress | Appalachia (13 states) | ✅ | ✓ active | ✅ Yes (public domain) |
+| 28 | USDA ERS Persistent Poverty Counties | Distress | National | 🟡 | ✓ active | ✅ Yes (public domain) |
+| 29 | **FL FDOR NAL** (per-county tax roll) — NEW | Parcels | FL (10 v1 counties) | 🚫 | ✓ active | ✅ Yes, with attribution |
 
 ---
 
@@ -575,6 +576,52 @@ rural, farming-dependent, mining-dependent, etc.).
 
 ### Joins
 County FIPS.
+
+---
+
+## 29. FL FDOR — Name/Address/Legal (NAL) per-county tax roll
+
+- **ID:** `fdor_nal` · **Cadence:** Annual (mid-year release) · **Size:** ~500 MB (10 counties)
+- **Source page:** <https://floridarevenue.com/property/Pages/DataPortal_RequestAssessmentRollGISData.aspx>
+- **License:** Florida public records (Ch. 119, F.S.) — commercial reuse with attribution
+- **Automation:** 🚫 Manual only — per-county selection + redistribution-terms click-through.
+- **Commercial:** ✅ With attribution.
+
+### Why this and not FGDL DSL (source #18)
+FGDL DSL covers state-owned land, not private parcels — wrong dataset
+for landowner outreach. FDOR NAL is the canonical Florida private-
+parcel landowner data (every county's tax roll). v1 ships 10
+representative counties; expand to all 67 post-pitch.
+
+### v1 county set
+Miami-Dade, Hillsborough, Orange, Duval, Pinellas, Lee, Polk, Brevard,
+Volusia, Marion (~60% of FL population; representative geographic and
+market mix).
+
+### Workflow
+The puller's **Walk me through** button surfaces step-by-step
+instructions: accept the portal terms once, select **NAL** file type,
+pick the assessment year, download each county's ZIP, drop them all
+into `data/raw/fdor_nal/current/`.
+
+### Structure
+Per-county fixed-width or CSV file. Key columns:
+
+- `OWN_NAME`, `OWN_ADDR1`, `OWN_CITY`, `OWN_STATE`, `OWN_ZIPCD` — owner block
+- `PARCEL_ID` — county-namespaced parcel ID
+- `JV` — just value (FL's term for assessed value)
+- `AV_SD` — school district assessed value
+- `LND_VAL`, `IMP_VAL` — land + improvement value split
+- `DOR_UC` — use code (FDOR-standard taxonomy)
+- `ACT_YR_BLT` — actual year built
+- `TOT_LVG_AR` — total living area (sq ft)
+
+Schema reference:
+<https://floridarevenue.com/property/Documents/DataPortal_NAL_Layout.pdf>
+
+### Joins
+County FIPS (derived from filename) + parcel_id → joins to FCC ASR /
+FAA / HUD overlays via point-in-polygon spatial join.
 
 ---
 

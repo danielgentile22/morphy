@@ -398,10 +398,19 @@ class UtParcelsManual(_ManualParcels):
         )
 
 
+# ── active anchor states (AR + MT + UT) ──────────────────────────────────
+# NC has its own auto-fetch source (nc_onemap_parcels). FL has its own
+# manual source (fdor_nal). MN and IN are deferred — MN's license is
+# ambiguous (see [[mn-parcels-license-commercial-blocker]]) and IN's
+# parcels have no public owner_name column. Deferred classes stay imported
+# so they can be re-promoted by editing the active block alone.
 SOURCES = [
     MtCadastralParcels(),
-    MnParcelsManual(),
-    InParcelsManual(),
     ArParcelsManual(),
     UtParcelsManual(),
+]
+
+DEFERRED_SOURCES = [
+    MnParcelsManual(),
+    InParcelsManual(),
 ]

@@ -6,6 +6,7 @@ Usage:
   python scripts/preprocess.py --normalize-only      # normalize, no compose
   python scripts/preprocess.py --compose-only --state 12   # compose FL (must already be normalized)
   python scripts/preprocess.py --force-rebuild       # ignore manifest, re-normalize everything
+  python scripts/preprocess.py --rebuild-manifest    # rewrite preprocess_manifest.json from on-disk files
   python scripts/preprocess.py --list-views          # show registered Views
   python scripts/preprocess.py --list-joins          # show registered Joins
   python scripts/preprocess.py --list-states         # show states with normalized parcel data
@@ -27,7 +28,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 from preprocess import registry  # noqa: F401, E402
 from preprocess.base import all_joins, all_views  # noqa: E402
 from preprocess.geographies import get_state  # noqa: E402
-from preprocess.manifest import PreprocessManifest  # noqa: E402
+from preprocess.manifest import PreprocessManifest, rebuild_from_disk  # noqa: E402
 from preprocess.runner import (  # noqa: E402
     run_all,
     run_compose_all,
@@ -106,6 +107,14 @@ def main() -> int:
     parser.add_argument(
         "--force-rebuild", action="store_true", help="Re-normalize every source even if unchanged"
     )
+    parser.add_argument(
+        "--rebuild-manifest",
+        action="store_true",
+        help=(
+            "Rewrite data/processed/preprocess_manifest.json from on-disk "
+            "files. Use after out-of-band fixes to clear stale 'failed' entries."
+        ),
+    )
     parser.add_argument("--list-views", action="store_true", help="List registered Views and exit")
     parser.add_argument("--list-joins", action="store_true", help="List registered Joins and exit")
     parser.add_argument(
@@ -138,6 +147,15 @@ def main() -> int:
                 states.setdefault(f, []).append(sid)
         for fips in sorted(states):
             print(f"  {fips}  ({', '.join(states[fips])})")
+        return 0
+
+    if args.rebuild_manifest:
+        m = rebuild_from_disk()
+        m.save()
+        print(
+            f"Rebuilt preprocess_manifest.json: "
+            f"{len(m.normalized)} normalized, {len(m.composed)} composed."
+        )
         return 0
 
     manifest = PreprocessManifest.load()
