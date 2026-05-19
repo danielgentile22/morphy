@@ -31,6 +31,7 @@ class FlFgdlParcels(DataSource):
     coverage = "State: Florida"
     cadence = "Annual (filename embeds month/year, e.g. oct25)"
     estimated_size_mb = 173.0
+    update_cadence_days = None
     description = (
         "Florida statewide parcel composite published by the UF GeoPlan "
         "Center FGDL. Polygons with owner name, mailing address, value, "

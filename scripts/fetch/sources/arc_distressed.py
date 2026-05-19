@@ -45,6 +45,7 @@ class ArcDistressed(DataSource):
     coverage = "Appalachian region (13 states, 423 counties)"
     cadence = "Annual (fiscal year, June)"
     estimated_size_mb = 0.3
+    update_cadence_days = 365
     description = (
         "ARC's annual classification of each Appalachian county into one "
         "of five economic-status tiers, based on a composite of three-"

@@ -60,6 +60,7 @@ class Eia860(DataSource):
     coverage = "National (all US utility-scale generators ≥1 MW)"
     cadence = "Annual (released ~September)"
     estimated_size_mb = 25.0
+    update_cadence_days = 365
     description = (
         "Generator-level detail for all US power plants ≥1 MW (solar, "
         "wind, gas, coal, nuclear, etc). The Solar tab gives plant code, "

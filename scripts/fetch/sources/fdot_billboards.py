@@ -36,6 +36,7 @@ class FdotBillboards(DataSource):
     coverage = "State: Florida"
     cadence = "On request (bulk extract retired)"
     estimated_size_mb = 8.0
+    update_cadence_days = None
     description = (
         "Florida DOT outdoor-advertising permit records. Each permit has "
         "owner (sign company), county, route, mile-marker, status, dates, "

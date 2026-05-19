@@ -77,6 +77,7 @@ class LbnlTts(DataSource):
     coverage = "National (best coverage in CA/NJ/MA/NY/AZ/CT/MD/MN/OR/WA + others)"
     cadence = "Annual"
     estimated_size_mb = 218.0
+    update_cadence_days = None
     description = (
         "Per-system rooftop / distributed PV + storage dataset. ~4.5 M "
         "installations through 2024. Includes the third-party-ownership "

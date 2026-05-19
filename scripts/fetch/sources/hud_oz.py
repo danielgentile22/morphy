@@ -36,6 +36,7 @@ class HudOz(DataSource):
     coverage = "National"
     cadence = "Static (2018 designation); OZ 2.0 redesignations 2026-28"
     estimated_size_mb = 30.0
+    update_cadence_days = None
     description = (
         "Polygons of every census tract designated a Qualified "
         "Opportunity Zone under the 2017 TCJA. Primary distress proxy "

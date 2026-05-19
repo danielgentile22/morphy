@@ -37,6 +37,7 @@ class HudQct(DataSource):
     coverage = "National"
     cadence = "Annual"
     estimated_size_mb = 50.0
+    update_cadence_days = 365
     description = (
         "Census tracts designated by HUD as Qualified Census Tracts "
         "(LIHTC-eligible). Either ≥50% of households are below 60% of "

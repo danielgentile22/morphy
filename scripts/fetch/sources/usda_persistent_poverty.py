@@ -38,6 +38,7 @@ class UsdaPersistentPoverty(DataSource):
     coverage = "National (county-level)"
     cadence = "Per decennial census + ACS refresh (~5 years)"
     estimated_size_mb = 1.0
+    update_cadence_days = None
     description = (
         "USDA ERS County Typology Codes file. Contains a persistent-"
         "poverty flag (county poverty ≥20% in every census 1980→present). "

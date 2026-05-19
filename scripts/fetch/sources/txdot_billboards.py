@@ -26,6 +26,7 @@ class TxdotBillboards(DataSource):
     coverage = "State: Texas"
     cadence = "On request (no stable bulk URL)"
     estimated_size_mb = 20.0
+    update_cadence_days = None
     description = (
         "Texas DOT outdoor-advertising permit records. TxDOT licenses "
         "sign companies and registers each permitted billboard, but does "

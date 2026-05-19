@@ -92,6 +92,7 @@ class Eia860M(DataSource):
     coverage = "National"
     cadence = "Monthly (~2 months publication lag)"
     estimated_size_mb = 14.0
+    update_cadence_days = 30
     description = (
         "Monthly snapshot of operating, planned and retired generators, "
         "covering the lag between annual EIA-860 releases. Same generator-"

@@ -34,6 +34,7 @@ class FccAsr(DataSource):
     coverage = "National (US + territories)"
     cadence = "Weekly (Sundays)"
     estimated_size_mb = 90.0
+    update_cadence_days = 7
     description = (
         "Federal registry of antenna structures over ~60 m (200 ft) above "
         "ground, or any height near an airport. Includes registration "

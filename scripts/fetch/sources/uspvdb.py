@@ -57,6 +57,7 @@ class Uspvdb(DataSource):
     coverage = "National"
     cadence = "~Annual updates"
     estimated_size_mb = 7.0
+    update_cadence_days = 90
     description = (
         "USGS-curated database of every >=1 MW US solar PV facility, "
         "with polygon footprints (not just centroid points), capacity, "

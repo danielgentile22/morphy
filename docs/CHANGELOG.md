@@ -15,7 +15,29 @@ Changes are grouped under section headers (`Added` / `Changed` /
 
 Active work plan in `/.claude/plans/cached-wobbling-token.md`.
 
-### Documented (Section 1 — in progress 2026-05-19)
+### Added (Section 2 — 2026-05-19)
+
+- `.gitignore` + `.gitattributes` (data/ excluded; PII-safe by default).
+- `pyproject.toml` — ruff + pytest + coverage config.
+- `requirements-dev.txt` — ruff, pytest, pytest-cov, jsonschema.
+- `.github/workflows/lint.yml` — ruff check + format check on every push.
+- `.github/workflows/test.yml` — placeholder; activates when `tests/` exists.
+- `.github/PULL_REQUEST_TEMPLATE.md` referencing TESTING + CHANGELOG rules.
+- `CODEOWNERS`.
+- Initial commit + GitHub repo at
+  `https://github.com/danielgentile22/infra-lease-analytics` (private).
+- CI: both `lint` and `test` jobs green on first push.
+
+### Changed (Section 2 — 2026-05-19)
+
+- Ruff baseline applied across the codebase: 62 files reformatted,
+  281 lint auto-fixes (modern typing syntax, unused-import cleanup,
+  import ordering).
+- 4 small dead-code removals surfaced by `F841` (unused local
+  variables in `main_window.py`, `preprocess_dialog.py`, `runner.py`,
+  `verify_raw.py`).
+
+### Documented (Section 1 — 2026-05-19)
 
 - Created `docs/` directory + `docs/archive/` + `docs/pitch-assets/`.
 - New docs: `SCOPE.md`, `GOALS.md`, `STATUS.md`, `ROADMAP.md`,

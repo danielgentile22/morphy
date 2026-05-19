@@ -47,6 +47,7 @@ class RegridParcels(DataSource):
     coverage = "Configurable: single state, regional bundle, or all 50 states"
     cadence = "Quarterly (or monthly at premium tier)"
     estimated_size_mb = 60000.0
+    update_cadence_days = None
     description = (
         "Nationwide normalised parcel dataset (~159M parcels). One schema "
         "across all counties — owner, mailing address, land use, value, "

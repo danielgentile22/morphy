@@ -22,6 +22,7 @@ from ..base import (
     ProgressCallback,
 )
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
+from ..walkthroughs import ManualStep, ManualWalkthrough
 
 
 def _make_legal(publisher: str, manual_url: str, attribution: str, notes: str) -> LegalInfo:
@@ -55,6 +56,7 @@ class MtCadastralParcels(_ManualParcels):
     coverage = "State: Montana"
     cadence = "Quarterly"
     estimated_size_mb = 600.0
+    update_cadence_days = 90
     description = (
         "Montana statewide cadastral framework, hosted by MT State "
         "Library. Standardised owner, address, value, acreage. Portal "
@@ -65,17 +67,72 @@ class MtCadastralParcels(_ManualParcels):
         "https://geoinfo.msl.mt.gov/",
         "Source: Montana Cadastral Framework, MT State Library.",
         notes=(
-            "1. Open the Montana State Library Geographic Information "
-            "portal. Search 'Cadastral' or follow the 'Cadastral / "
-            "Framework' link.\n"
-            "2. Choose the statewide download (~600 MB shapefile, refreshed "
-            "quarterly). The portal walks you through agreeing to use terms.\n"
-            "3. Unzip into data/raw/mt_cadastral_parcels/current/.\n"
-            "\n"
-            "The cadastral file has normalised owner name, mailing address, "
+            "Walkthrough: see manual_walkthrough() on this source — the "
+            "puller's 'Walk me through' button surfaces the steps. The "
+            "cadastral file has normalised owner name, mailing address, "
             "value, acreage, and parcel ID."
         ),
     )
+
+    def manual_walkthrough(self) -> ManualWalkthrough:
+        return ManualWalkthrough(
+            landing_page_url="https://geoinfo.msl.mt.gov/",
+            steps=[
+                ManualStep(
+                    title="Open the Montana State Library GIS portal",
+                    body=(
+                        "Click the deep link below to open the MT State Library's "
+                        "Geographic Information portal in your browser. The landing "
+                        "page lists their data products."
+                    ),
+                    deep_link="https://geoinfo.msl.mt.gov/",
+                ),
+                ManualStep(
+                    title="Find the Cadastral Framework download",
+                    body=(
+                        "Use the portal search for **Cadastral** or follow the "
+                        "**Cadastral / Framework** link from the data-products "
+                        "list. The statewide layer is ~600 MB and refreshed "
+                        "quarterly."
+                    ),
+                    deep_link="https://geoinfo.msl.mt.gov/data/montana_cadastral_framework",
+                ),
+                ManualStep(
+                    title="Download the statewide shapefile",
+                    body=(
+                        "Choose the statewide download (not per-county). The portal "
+                        "will ask you to agree to terms of use; this is fine for "
+                        "internal evaluation but read [docs/LIMITATIONS.md] before "
+                        "any commercial use."
+                    ),
+                ),
+                ManualStep(
+                    title="Unzip into data/raw/mt_cadastral_parcels/current/",
+                    body=(
+                        "Move the unzipped shapefile set (`*.shp`, `*.shx`, `*.dbf`, "
+                        "`*.prj`, optional `.cpg`) into\n"
+                        "```\n"
+                        "data/raw/mt_cadastral_parcels/current/\n"
+                        "```\n"
+                        "Keep all shapefile parts together — they're a single dataset."
+                    ),
+                ),
+                ManualStep(
+                    title="Click 'Rescan disk' in the puller",
+                    body=(
+                        "Back in the puller, click **Rescan disk** so the manifest "
+                        "picks up the new files. Then click **Verify contents** to "
+                        "confirm the layer has the expected shape."
+                    ),
+                ),
+            ],
+            expected_files=["*.shp", "*.dbf", "*.shx", "*.prj"],
+            notes_on_failure=(
+                "If the portal URL has rotted, search "
+                "https://geoinfo.msl.mt.gov/ for 'cadastral framework' — MT "
+                "occasionally restructures the data products tree."
+            ),
+        )
 
 
 # ── Minnesota MetroGIS / MnGeo parcels ────────────────────────────────────
@@ -86,6 +143,7 @@ class MnParcelsManual(_ManualParcels):
     coverage = "State: Minnesota"
     cadence = "Annual aggregate; per-county varies"
     estimated_size_mb = 800.0
+    update_cadence_days = None
     description = (
         "MnGeo publishes a statewide aggregate of all 87 MN counties' "
         "parcels, with normalised owner, value, address. Download is via "
@@ -138,6 +196,7 @@ class InParcelsManual(_ManualParcels):
     coverage = "State: Indiana"
     cadence = "Annual"
     estimated_size_mb = 1500.0
+    update_cadence_days = None
     description = (
         "Indiana Geographic Information Office publishes a statewide "
         "parcel layer compiled from county sources. Owner, mailing, "
@@ -184,6 +243,7 @@ class ArParcelsManual(_ManualParcels):
     coverage = "State: Arkansas"
     cadence = "Annual"
     estimated_size_mb = 1200.0
+    update_cadence_days = 365
     description = (
         "Arkansas GIS Office statewide parcel polygons + Assessment "
         "Coordination Division attributes (owner, value, use)."
@@ -193,16 +253,70 @@ class ArParcelsManual(_ManualParcels):
         "https://gis.arkansas.gov/",
         "Source: Arkansas GIS Office.",
         notes=(
-            "1. On the Arkansas GIS Office portal, navigate to Products → "
-            "Cadastral / Parcels.\n"
-            "2. Download the statewide parcel layer (~1.2 GB). The portal "
-            "may ask you to register an email before download.\n"
-            "3. Unzip into data/raw/ar_parcels/current/.\n"
-            "\n"
+            "Walkthrough: see manual_walkthrough() on this source. "
             "Includes Assessment Coordination Division attributes (owner, "
             "value, use code)."
         ),
     )
+
+    def manual_walkthrough(self) -> ManualWalkthrough:
+        return ManualWalkthrough(
+            landing_page_url="https://gis.arkansas.gov/",
+            steps=[
+                ManualStep(
+                    title="Open the Arkansas GIS Office portal",
+                    body=(
+                        "Click the deep link to open the AR GIS Office portal in "
+                        "your browser. The landing page has a 'Products' menu in "
+                        "the top nav."
+                    ),
+                    deep_link="https://gis.arkansas.gov/",
+                ),
+                ManualStep(
+                    title="Navigate to Products → Cadastral / Parcels",
+                    body=(
+                        "From the Products menu, choose **Cadastral** or directly "
+                        "**Parcels**. The statewide layer is the top item on that "
+                        "page (~1.2 GB)."
+                    ),
+                    deep_link="https://gis.arkansas.gov/product-category/cadastral/",
+                ),
+                ManualStep(
+                    title="Download the statewide parcel layer",
+                    body=(
+                        "Click the statewide-parcels download. The portal may "
+                        "ask you to register an email address before the download "
+                        "begins — that's expected."
+                    ),
+                ),
+                ManualStep(
+                    title="Unzip into data/raw/ar_parcels/current/",
+                    body=(
+                        "Move the unzipped contents (shapefile parts or .gdb "
+                        "folder) into\n"
+                        "```\n"
+                        "data/raw/ar_parcels/current/\n"
+                        "```\n"
+                        "Keep file groupings intact — shapefile parts together, "
+                        "or the entire .gdb folder if you got a geodatabase."
+                    ),
+                ),
+                ManualStep(
+                    title="Click 'Rescan disk' in the puller",
+                    body=(
+                        "Back in the puller, click **Rescan disk** to register the "
+                        "new files, then **Verify contents** for sanity-check."
+                    ),
+                ),
+            ],
+            expected_files=["*.shp", "*.dbf", "*.shx", "*.prj"],
+            notes_on_failure=(
+                "If the portal looks empty for cadastral, AR sometimes routes "
+                "downloads through a separate ACD (Assessment Coordination "
+                "Division) data request form — search 'ACD parcels' or contact "
+                "the GIS Office support line listed on their homepage."
+            ),
+        )
 
 
 # ── Utah AGRC statewide parcels ───────────────────────────────────────────
@@ -213,6 +327,7 @@ class UtParcelsManual(_ManualParcels):
     coverage = "State: Utah"
     cadence = "Quarterly"
     estimated_size_mb = 900.0
+    update_cadence_days = 365
     description = (
         "Utah AGRC's Land Information Records (LIR) statewide parcel "
         "layer with normalised owner + value attributes."
@@ -222,14 +337,65 @@ class UtParcelsManual(_ManualParcels):
         "https://gis.utah.gov/products/sgid/cadastre/parcels/",
         "Source: Utah AGRC, Land Information Records.",
         notes=(
-            "On the SGID Cadastre / Parcels page, click the 'Land "
-            "Information Records (LIR)' download. ~900 MB statewide "
-            "shapefile or .gdb, refreshed quarterly.\n"
-            "\n"
-            "Unzip into data/raw/ut_parcels/current/. Has normalised "
-            "owner + value attributes."
+            "Walkthrough: see manual_walkthrough() on this source. Has "
+            "normalised owner + value attributes."
         ),
     )
+
+    def manual_walkthrough(self) -> ManualWalkthrough:
+        return ManualWalkthrough(
+            landing_page_url="https://gis.utah.gov/products/sgid/cadastre/parcels/",
+            steps=[
+                ManualStep(
+                    title="Open the Utah AGRC SGID Parcels page",
+                    body=(
+                        "Click the deep link to open the AGRC Cadastre / Parcels "
+                        "page. This is the official entry point for the statewide "
+                        "Land Information Records (LIR) layer."
+                    ),
+                    deep_link="https://gis.utah.gov/products/sgid/cadastre/parcels/",
+                ),
+                ManualStep(
+                    title="Find the Land Information Records (LIR) download",
+                    body=(
+                        "On the page, look for the **Land Information Records "
+                        "(LIR)** section. There are two variants — pick the "
+                        "**statewide** download, not per-county. ~900 MB."
+                    ),
+                ),
+                ManualStep(
+                    title="Choose Shapefile or File Geodatabase",
+                    body=(
+                        "Either format works. Shapefile is most portable; "
+                        "File Geodatabase preserves nicer field names. The "
+                        "preprocessor reads either."
+                    ),
+                ),
+                ManualStep(
+                    title="Unzip into data/raw/ut_parcels/current/",
+                    body=(
+                        "Move the unzipped contents into\n"
+                        "```\n"
+                        "data/raw/ut_parcels/current/\n"
+                        "```\n"
+                        "Keep shapefile parts together, or the entire .gdb folder."
+                    ),
+                ),
+                ManualStep(
+                    title="Click 'Rescan disk' in the puller",
+                    body=(
+                        "Back in the puller, click **Rescan disk**, then "
+                        "**Verify contents** to confirm the layer."
+                    ),
+                ),
+            ],
+            expected_files=["*.shp", "*.dbf", "*.shx", "*.prj"],
+            notes_on_failure=(
+                "If the AGRC SGID portal restructured, the parcels item still "
+                "lives under SGID Cadastre — search "
+                "https://gis.utah.gov/sgid for 'parcels' or 'LIR'."
+            ),
+        )
 
 
 SOURCES = [

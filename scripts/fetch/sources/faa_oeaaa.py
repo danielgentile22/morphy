@@ -37,6 +37,7 @@ class FaaOeaaa(DataSource):
     coverage = "National + outlying territories"
     cadence = "Daily"
     estimated_size_mb = 12.0
+    update_cadence_days = 1
     description = (
         "FAA's daily file of every catalogued obstacle: towers, tall "
         "buildings, smokestacks, etc. Each record has lat/lon (DMS), AGL "

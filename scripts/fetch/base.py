@@ -4,12 +4,15 @@ Every data feed (FCC ASR, EIA 860, NC OneMap parcels, etc.) subclasses
 ``DataSource`` and implements the small protocol below. The UI and the
 manifest treat all sources uniformly through this interface.
 
-A source is responsible for three things only:
+A source is responsible for four things:
   1. Declaring metadata (id, name, category, coverage, legal info,
-     manual-download URL, estimated size, update cadence).
+     manual-download URL, estimated size, update cadence, refresh
+     cadence in days).
   2. Reporting the *remote* version string — whatever changes when the
      publisher uploads a new file (a date, an ETag, a hash of a listing).
   3. Performing the actual fetch into ``RAW_ROOT / <id> / current``.
+  4. For MANUAL_ONLY sources: providing a ``manual_walkthrough()`` that
+     the puller can render as a step-by-step download guide.
 
 Sources should never write outside their own directory and should never
 mutate the manifest themselves — the puller owns both of those.
@@ -23,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .legal import LegalInfo
+from .walkthroughs import ManualWalkthrough
 
 # Categories shown as collapsible groups in the UI
 CATEGORY_TOWERS = "Towers"
@@ -67,6 +71,13 @@ class DataSource(abc.ABC):
     legal: LegalInfo = field(init=False)
     estimated_size_mb: float = field(init=False)  # rough; informational only
 
+    # ── freshness ───────────────────────────────────────────────────────
+    # Days between expected publisher updates. ``None`` for one-shot
+    # reference data (boundary files, frozen historical designations).
+    # Drives the puller's freshness badges + "What needs my attention".
+    # See docs/DATA_FRESHNESS.md for the per-source rationale.
+    update_cadence_days: int | None = field(init=False, default=None)
+
     # ── behaviour ───────────────────────────────────────────────────────
 
     @abc.abstractmethod
@@ -98,6 +109,17 @@ class DataSource(abc.ABC):
                 raise ValueError(f"expected file missing: {f}")
             if f.stat().st_size == 0:
                 raise ValueError(f"file is empty: {f}")
+
+    # ── manual-download walkthrough ─────────────────────────────────────
+
+    def manual_walkthrough(self) -> ManualWalkthrough | None:
+        """Step-by-step download instructions for MANUAL_ONLY sources.
+
+        Override on every MANUAL_ONLY source. Default returns ``None`` for
+        ALLOWED / TOLERATED sources (the puller auto-fetches them) and for
+        CREDENTIALED sources (which prompt for credentials instead).
+        """
+        return None
 
     # ── helpers (do not override) ───────────────────────────────────────
 

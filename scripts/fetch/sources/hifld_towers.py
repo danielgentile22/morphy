@@ -39,6 +39,7 @@ class HifldTowers(DataSource):
     coverage = "National (CONUS + AK/HI + territories)"
     cadence = "Irregular (DHS-curated; typically monthly)"
     estimated_size_mb = 35.0
+    update_cadence_days = None
     description = (
         "DHS/CISA-curated point dataset of cellular towers, drawn from "
         "FCC and commercial sources. Use as a sanity check against FCC "

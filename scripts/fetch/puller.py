@@ -71,6 +71,10 @@ def check_one(source: DataSource, manifest: Manifest) -> CheckOutcome:
         return CheckOutcome(source.id, ok=False, error=msg)
 
     manifest.mark_check(source.id, rv)
+    # Keep the manifest's declared cadence in sync with the source even
+    # when no fetch happens — lets the freshness UI work as soon as a
+    # source's cadence is added or changed.
+    manifest.update_cadence(source.id, source.update_cadence_days)
     log_event("check_ok", source=source.id, remote_version=rv)
     return CheckOutcome(source.id, ok=True, remote_version=rv)
 
@@ -127,7 +131,13 @@ def fetch_one(
                 moved_files.append(f)
         total_bytes = directory_bytes(cur) or result.total_bytes
 
-        manifest.mark_fetch_ok(sid, result.remote_version, moved_files, total_bytes)
+        manifest.mark_fetch_ok(
+            sid,
+            result.remote_version,
+            moved_files,
+            total_bytes,
+            update_cadence_days=source.update_cadence_days,
+        )
         log_event(
             "fetch_ok",
             source=sid,

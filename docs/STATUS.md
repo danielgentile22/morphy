@@ -109,13 +109,11 @@ if pursuing FL.
 
 | Surface | State |
 |---|---|
-| Unit tests | **None** |
-| Integration tests | **None** |
-| E2E tests | **None** |
-| CI | **None** (no `.github/workflows/`, no pre-commit) |
-| Schema validation | Not enforced |
-
-Section 6 of the work plan adds all of the above.
+| Unit tests | **None** (Section 6) |
+| Integration tests | **None** (Section 6) |
+| E2E tests | **None** (Section 6) |
+| CI | ✅ `lint.yml` (ruff) live on every push; `test.yml` is a placeholder until Section 6 |
+| Schema validation | Not enforced yet (Section 6) |
 
 ---
 
@@ -123,13 +121,12 @@ Section 6 of the work plan adds all of the above.
 
 | Surface | State |
 |---|---|
-| `git init` | **Not done** — repo is not yet under version control |
-| GitHub repo | **Not created** |
-| `.gitignore` | **Missing** |
-| `.gitattributes` | **Missing** |
-| Branch protection | n/a (no repo yet) |
-
-Section 2 of the work plan sets all of this up.
+| `git init` | ✅ Done 2026-05-19 |
+| GitHub repo | ✅ `danielgentile22/infra-lease-analytics` (private) |
+| `.gitignore` + `.gitattributes` | ✅ In place |
+| CI workflows | ✅ `lint.yml` (ruff) + `test.yml` (placeholder until Section 6) |
+| PR template + CODEOWNERS | ✅ In place |
+| Branch protection | Deferred — adds full enforcement once tests land in Section 6 |
 
 ---
 
@@ -156,5 +153,8 @@ Section 2 of the work plan sets all of this up.
 
 ## 8. Most recent change
 
-**2026-05-19** — Created `docs/` directory; wrote SCOPE.md and GOALS.md
-as part of Section 1 of the production-readiness plan.
+**2026-05-19** — Section 2 complete. GitHub repo
+`danielgentile22/infra-lease-analytics` is live (private). CI
+workflows green on first push. Ruff baseline applied across the
+codebase (62 files reformatted, 281 lint auto-fixes). Now starting
+Section 3 (data puller overhaul).

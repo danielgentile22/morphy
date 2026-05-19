@@ -27,6 +27,7 @@ class NcdotBillboards(DataSource):
     coverage = "State: North Carolina"
     cadence = "On request (no stable bulk URL)"
     estimated_size_mb = 5.0
+    update_cadence_days = None
     description = (
         "NC DOT outdoor-advertising permit records. NC publishes a "
         "permit search UI but not a stable bulk-download endpoint, so "

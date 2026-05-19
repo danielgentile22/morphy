@@ -49,6 +49,7 @@ class NcOnemapParcels(DataSource):
     coverage = "State: North Carolina (100 counties)"
     cadence = "Monthly (per-county refresh schedule)"
     estimated_size_mb = 2200.0
+    update_cadence_days = 90
     description = (
         "NC OneMap publishes a statewide normalised parcel layer "
         "aggregating all 100 NC counties. Standard schema: owner name(s), "
