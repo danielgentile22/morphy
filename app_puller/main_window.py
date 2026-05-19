@@ -269,6 +269,24 @@ class MainWindow(QMainWindow):
 
                     entry.fetched_at = datetime.now(UTC).isoformat(timespec="seconds")
                 n_detected += 1
+            elif (
+                has_files
+                and entry.local_version == "manual"
+                and entry.status in ("fetch_failed", "check_failed")
+            ):
+                # Stale failure stamp: files were re-installed manually
+                # after a prior auto-fetch failed. Clear the failure so the
+                # UI matches disk reality. Refresh the file inventory too.
+                files = [
+                    str(p.relative_to(RAW_ROOT))
+                    for p in cur.rglob("*")
+                    if p.is_file() and not p.is_symlink()
+                ]
+                entry.status = "ok"
+                entry.error = None
+                entry.bytes = directory_bytes(cur)
+                entry.files = files
+                n_detected += 1
             elif not has_files and entry.local_version and entry.status == "ok":
                 # User deleted the data manually — reflect that
                 entry.local_version = None
