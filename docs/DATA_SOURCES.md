@@ -579,36 +579,50 @@ County FIPS.
 
 ---
 
-## 29. FL FDOR — Name/Address/Legal (NAL) per-county tax roll
+## 29. FL FDOR — per-county PAR parcel shapefiles (PIN + NAL joined)
 
-- **ID:** `fdor_nal` · **Cadence:** Annual (mid-year release) · **Size:** ~500 MB (10 counties)
+- **ID:** `fdor_nal` · **Cadence:** Annual (Map Data refresh each August) · **Size:** ~500 MB (10 counties)
 - **Source page:** <https://floridarevenue.com/property/Pages/DataPortal_RequestAssessmentRollGISData.aspx>
+- **Map Data directory:** linked from the FDOR page (where the PAR shapefiles live)
 - **License:** Florida public records (Ch. 119, F.S.) — commercial reuse with attribution
 - **Automation:** 🚫 Manual only — per-county selection + redistribution-terms click-through.
 - **Commercial:** ✅ With attribution.
 
 ### Why this and not FGDL DSL (source #18)
 FGDL DSL covers state-owned land, not private parcels — wrong dataset
-for landowner outreach. FDOR NAL is the canonical Florida private-
-parcel landowner data (every county's tax roll). v1 ships 10
-representative counties; expand to all 67 post-pitch.
+for landowner outreach. FDOR's per-county PAR shapefiles are the
+canonical Florida private-parcel landowner data (every county's
+parcel polygons joined with the current-year NAL tax-roll). v1 ships
+10 representative counties; expand to all 67 post-pitch.
+
+### PIN vs PAR (per FDOR's Parcel Shapefiles Readme)
+- **PIN** = parcel geometry only (FID + Shape + PARCELNO). **Skip.**
+- **PAR** = PIN joined with current-year NAL attributes. **Use this.**
+
+The standalone NAL/SDF text files in FDOR's Tax Roll Data File
+directory are the same attributes minus geometry — not needed because
+PAR has them merged.
 
 ### v1 county set
 Miami-Dade, Hillsborough, Orange, Duval, Pinellas, Lee, Polk, Brevard,
 Volusia, Marion (~60% of FL population; representative geographic and
-market mix).
+market mix). **Miami-Dade and St. Johns** ship separate condominium
+property records — grab those extras alongside the main PAR (only
+Miami-Dade matters for v1).
 
 ### Workflow
 The puller's **Walk me through** button surfaces step-by-step
-instructions: accept the portal terms once, select **NAL** file type,
-pick the assessment year, download each county's ZIP, drop them all
-into `data/raw/fdor_nal/current/`.
+instructions: skim the Parcel Shapefiles Readme, open the Map Data
+directory, pick the latest year, download the PAR shapefile for each
+v1 county, upload them via the puller's Upload button (auto-extract
+into per-county subfolders).
 
 ### Structure
-Per-county fixed-width or CSV file. Key columns:
+Per-county shapefile with NAL columns joined on PARCELNO. Key columns
+(NAL standard):
 
+- `PARCELNO` — county-namespaced parcel ID (join key)
 - `OWN_NAME`, `OWN_ADDR1`, `OWN_CITY`, `OWN_STATE`, `OWN_ZIPCD` — owner block
-- `PARCEL_ID` — county-namespaced parcel ID
 - `JV` — just value (FL's term for assessed value)
 - `AV_SD` — school district assessed value
 - `LND_VAL`, `IMP_VAL` — land + improvement value split
@@ -616,11 +630,19 @@ Per-county fixed-width or CSV file. Key columns:
 - `ACT_YR_BLT` — actual year built
 - `TOT_LVG_AR` — total living area (sq ft)
 
-Schema reference:
-<https://floridarevenue.com/property/Documents/DataPortal_NAL_Layout.pdf>
+Note: shapefile column names are capped at 10 chars, so some NAL
+fields may be truncated in the .dbf. The normalizer (Section 5)
+handles the field-name mapping.
+
+### Caveats
+Per the FDOR readme, shapefile polygon counts won't exactly match NAL
+record counts — Ch. 119 redactions, rights-of-way polygons,
+unmapped condo units, and ownership-unknown parcels can land on one
+side but not the other. The normalizer keeps unmatched polygons with
+null owner columns rather than dropping them.
 
 ### Joins
-County FIPS (derived from filename) + parcel_id → joins to FCC ASR /
+County FIPS (derived from filename) + PARCELNO → joins to FCC ASR /
 FAA / HUD overlays via point-in-polygon spatial join.
 
 ---

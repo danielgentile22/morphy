@@ -1,9 +1,21 @@
-"""Florida Department of Revenue — Name, Address, Legal (NAL) tax roll.
+"""Florida Department of Revenue — per-county PAR parcel shapefiles.
 
-FDOR publishes per-county annual NAL files containing parcel-level
-owner name, mailing address, just/assessed value, use code, land /
-improvement value, year built. This is the canonical FL landowner-data
-source — it replaces the FL FGDL DSL state-land parcel layer that was
+FDOR's Map Data directory ships two flavors of per-county parcel files:
+
+* **PIN** shapefiles — geometry only (FID + Shape + PARCELNO), no
+  attribution. Not useful for us.
+* **PAR** shapefiles — PIN joined with current-year NAL (Name,
+  Address, Legal) tax-roll attributes. One file per county per year;
+  contains parcel polygons + owner name + mailing address +
+  just/assessed value + use code + land / improvement values. **This
+  is the canonical FL landowner-data source we use.**
+
+Join key inside the PAR shapefile is PARCELNO (= PARCEL_ID in NAL).
+The standalone NAL/SDF text files in FDOR's Tax Roll Data File
+directory are the same attributes minus geometry — we don't need them
+since the join is already done in PAR.
+
+This source replaces the FL FGDL DSL state-land parcel layer that was
 previously in the registry (DSL covers state-owned land, not the
 private parcels we care about).
 
@@ -15,6 +27,10 @@ V1 county coverage (locked in :: docs/SCOPE.md):
   Miami-Dade, Hillsborough, Orange, Duval, Pinellas, Lee, Polk,
   Brevard, Volusia, Marion — 10 counties covering ~60% of FL
   population and a representative geographic / market mix.
+
+Miami-Dade and St. Johns maintain condo records in separate files
+(per the FDOR shapefile readme). Miami-Dade is in v1, so the
+walkthrough flags grabbing those extras too.
 """
 
 from __future__ import annotations
@@ -49,6 +65,12 @@ V1_COUNTIES: list[tuple[str, str]] = [
 LANDING_PAGE = (
     "https://floridarevenue.com/property/Pages/DataPortal_RequestAssessmentRollGISData.aspx"
 )
+# Direct deep link to the Map Data directory where the PAR shapefiles live.
+# Confirmed against FDOR's Parcel Shapefiles Readme (2026-05-19).
+MAP_DATA_README = (
+    "https://floridarevenue.com/property/dataportal/Documents/"
+    "PTO%20Data%20Portal/Map%20Data/Parcel%20Shapefiles%20Readme.pdf"
+)
 
 
 class FdorNal(DataSource):
@@ -60,13 +82,13 @@ class FdorNal(DataSource):
     estimated_size_mb = 500.0  # ~10 counties × ~40-100 MB CSV each
     update_cadence_days = 365
     description = (
-        "Florida Department of Revenue's NAL (Name, Address, Legal) "
-        "tax-roll dataset — per-county annual files containing every "
-        "parcel's owner name, mailing address, just/assessed value, "
-        "use code, year built, and land/improvement values. The "
-        "canonical landowner-data source for FL; replaces the FGDL "
-        "DSL state-land layer previously tracked. V1 ships 10 "
-        "representative counties (~60% of FL population)."
+        "Florida Department of Revenue per-county PAR parcel shapefiles — "
+        "parcel polygons joined with NAL (Name-Address-Legal) tax-roll "
+        "attributes. Per-county annual files with owner name, mailing "
+        "address, just/assessed value, use code, and land/improvement "
+        "values, all carrying geometry. Replaces the FGDL DSL state-land "
+        "layer previously tracked. V1 ships 10 representative counties "
+        "(~60% of FL population)."
     )
     legal = LegalInfo(
         publisher="Florida Department of Revenue (FDOR)",
@@ -77,19 +99,21 @@ class FdorNal(DataSource):
         manual_url=LANDING_PAGE,
         attribution=(
             "Source: Florida Department of Revenue, Property Tax Oversight, "
-            "Name-Address-Legal (NAL) file."
+            "per-county PAR shapefile (PIN + NAL joined)."
         ),
         notes=(
-            "Portal requires per-county selection + click-through accepting "
-            "FDOR's redistribution terms. Per-county files come as ZIPs "
-            "containing one fixed-width or CSV file per county. Drop every "
-            "county's ZIP (or extracted file) into "
-            "data/raw/fdor_nal/current/ before clicking 'I'm done' in the "
-            "walkthrough; the normalizer will read whichever counties are "
-            "present.\n"
+            "Two shapefile flavors are published: PIN (geometry only) and "
+            "PAR (PIN joined with current-year NAL). We use PAR. Join key "
+            "inside the file is PARCELNO. Some polygons won't have NAL "
+            "matches (Ch. 119 redactions, rights-of-way, condos w/o "
+            "individually mapped units, ownership-unknown parcels) — the "
+            "normalizer will keep them with null owner columns.\n"
             "\n"
-            "Schema reference: https://floridarevenue.com/property/Documents/"
-            "DataPortal_NAL_Layout.pdf (field map for NAL CSV columns)."
+            "Miami-Dade and St. Johns ship separate condo property files "
+            "alongside the main PAR — grab those too (Miami-Dade is in v1).\n"
+            "\n"
+            "Schema reference: see Parcel Shapefiles Readme + the FDOR "
+            "User's Guide for Department Property Tax Data Files."
         ),
     )
 
@@ -109,73 +133,82 @@ class FdorNal(DataSource):
                 ManualStep(
                     title="Open the FDOR Assessment Roll / GIS Data portal",
                     body=(
-                        "Click the deep link below. The page lists FDOR's "
-                        "per-county tax-roll downloads. You'll need to accept "
-                        "the redistribution terms once at the top of the page."
+                        "Click the deep link below. Expand **Download "
+                        "Current Assessment Roll and GIS Data** on the page; "
+                        "you'll see links to the Tax Roll Data File "
+                        "directory, the Map Data directory, the Parcel "
+                        "Shapefiles Readme, and the FGIO Open Data Portal."
                     ),
                     deep_link=LANDING_PAGE,
                 ),
                 ManualStep(
-                    title="Select 'NAL — Name, Address, Legal' as the file type",
+                    title="(Optional) Skim the Parcel Shapefiles Readme",
                     body=(
-                        "On the portal, choose **NAL — Name, Address, Legal** "
-                        "from the file-type dropdown (not GIS shapefile, not "
-                        "SDF). NAL is the file that contains owner name + "
-                        "mailing address — the columns we care about for "
-                        "landowner outreach."
+                        "Confirms two key facts: (1) you want the **PAR** "
+                        "shapefiles (PIN + NAL already joined), not PIN; "
+                        "(2) Miami-Dade and St. Johns ship separate "
+                        "condominium files."
+                    ),
+                    deep_link=MAP_DATA_README,
+                ),
+                ManualStep(
+                    title="Open the Map Data directory",
+                    body=(
+                        "Click **Map Data directory** from the expanded "
+                        "section. You'll see one folder per Florida "
+                        "county (67 total) plus a year selector. Pick the "
+                        "latest available year — typically the previous tax "
+                        "year, refreshed each August."
                     ),
                 ),
                 ManualStep(
-                    title="Select the current assessment year",
+                    title="Download the PAR shapefile for each v1 county",
                     body=(
-                        "Pick the latest year FDOR exposes (typically the "
-                        "previous tax year, released mid-current-year). The "
-                        "puller will tag whatever year you select as the "
-                        "snapshot's local_version."
-                    ),
-                ),
-                ManualStep(
-                    title="Download the v1 representative counties",
-                    body=(
-                        "Download the NAL file for each of these 10 counties "
-                        "(in any order):\n"
+                        "For each county below, download the **PAR** zip "
+                        "(not PIN — PIN has no owner data). The 10 v1 "
+                        "counties:\n"
                         f"\n{county_list}\n"
-                        "\nEach file is ~30–100 MB. The portal queues "
-                        "downloads — give it a few minutes. If a county fails, "
-                        "retry it individually from the portal."
+                        "\nFor **Miami-Dade**, also grab any condo-related "
+                        "files in that county's folder (separate from the "
+                        "main PAR zip). Each PAR zip is ~30–150 MB. The "
+                        "portal serves them directly — no queueing."
                     ),
                 ),
                 ManualStep(
-                    title="Drop every county file into data/raw/fdor_nal/current/",
+                    title="Upload via the puller (or drop into current/ by hand)",
                     body=(
-                        "Move every downloaded ZIP (or extracted CSV) into\n"
-                        "```\n"
-                        "data/raw/fdor_nal/current/\n"
-                        "```\n"
-                        "Naming convention: keep FDOR's filenames "
-                        "(`NAL11F202xxxxxxxxx.zip` etc.) — the normalizer "
-                        "parses the embedded county code. Mixing CSVs and "
-                        "ZIPs is OK; the normalizer reads both."
+                        "Easiest: click **⤴ Upload file(s)…** in the puller "
+                        "and select all downloaded ZIPs at once — the puller "
+                        "auto-extracts each into "
+                        "`data/raw/fdor_nal/current/<county>/`. The "
+                        "normalizer uses rglob, so per-county subfolders "
+                        "are fine.\n"
+                        "\n"
+                        "Manual alternative: extract each ZIP and drop the "
+                        "shapefile parts into `data/raw/fdor_nal/current/` "
+                        "directly. Keep file sets (`.shp`, `.shx`, `.dbf`, "
+                        "`.prj`) together."
                     ),
                 ),
                 ManualStep(
                     title="Click 'I'm done' to verify + record",
                     body=(
-                        "The puller will check that the directory is non-"
-                        "empty and run validate(). Once recorded, the "
-                        "preprocess step (Section 5) will normalize each "
-                        "county into the canonical `parcel` schema and "
-                        "concatenate them into the FL state composite."
+                        "The puller will confirm the directory is non-empty "
+                        "and run `validate()`. Once recorded, the preprocess "
+                        "step (Section 5) will normalize each county into "
+                        "the canonical `parcel` schema and concatenate them "
+                        "into the FL state composite."
                     ),
                 ),
             ],
-            expected_files=["*.zip", "*.csv", "*.txt"],
+            expected_files=["*.shp", "*.dbf", "*.shx", "*.prj"],
             notes_on_failure=(
-                "If the FDOR portal blocks download (rare, but happens during "
-                "their mid-year tax-roll roll-out), retry the next day — they "
-                "stage county-by-county and the portal sometimes serves a "
-                "stub file. Look for 'NAL' in the filename; ignore SDF "
-                "(state-domain) files."
+                "If FDOR's Map Data directory listing looks broken for a "
+                "given county, the same PAR data is mirrored on the FGIO "
+                "Open Data Portal (linked from the main page). Avoid the "
+                "Tax Roll Data File directory — those are the standalone "
+                "NAL CSVs without geometry; PAR shapefiles already have "
+                "those attributes joined."
             ),
         )
 
