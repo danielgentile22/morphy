@@ -34,26 +34,37 @@ from diagnose import DiagnoseUnavailable, diagnose
 from fetch import RAW_ROOT
 from fetch.base import DataSource
 from fetch.legal import AutomationPolicy, CommercialUse
-from fetch.manifest import Manifest, SourceEntry
+from fetch.manifest import (
+    FRESHNESS_DUE_SOON,
+    FRESHNESS_FRESH,
+    FRESHNESS_STALE,
+    FRESHNESS_UNKNOWN,
+    Manifest,
+    SourceEntry,
+)
 from fetch.registry import all_sources, get_source, grouped
 from fetch.storage import current_dir, directory_bytes, human_bytes
 from PySide6.QtCore import Qt, QThread, QTimer
 from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QTextBrowser,
     QTextEdit,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -61,7 +72,9 @@ from PySide6.QtWidgets import (
 )
 from verify_raw import verify_all, verify_one
 
+from . import state as ui_state
 from .preprocess_dialog import PreprocessDialog
+from .walkthrough_dialog import WalkthroughDialog
 from .workers import CheckWorker, FetchWorker
 
 # ── status presentation ──────────────────────────────────────────────────────
@@ -76,6 +89,65 @@ STATUS_LABELS = {
     "manual_only": ("⤓ Manual download required", QColor("#5e35b1")),
     "needs_credentials": ("🔒 Credentials required", QColor("#5e35b1")),
 }
+
+
+# Colors for the freshness-aware status column. Matches docs/PULLER_UX.md §2.2.
+FRESHNESS_COLORS = {
+    FRESHNESS_FRESH: QColor("#2e7d32"),  # green
+    FRESHNESS_DUE_SOON: QColor("#ef6c00"),  # orange
+    FRESHNESS_STALE: QColor("#c62828"),  # red
+    FRESHNESS_UNKNOWN: QColor("#9e9e9e"),  # gray
+}
+
+
+def freshness_label_for(source: DataSource, entry: SourceEntry) -> tuple[str, QColor]:
+    """Display label + color combining install state + cadence freshness.
+
+    The status column shows whichever is more actionable: install /
+    policy state (missing, manual-only, needs-creds, endpoint failing,
+    new version available), or freshness (fresh/due-soon/stale based on
+    cadence).
+    """
+    # Policy / install state first — these always override freshness.
+    if source.legal.automation == AutomationPolicy.MANUAL_ONLY and not entry.is_installed():
+        return STATUS_LABELS["manual_only"]
+    if (
+        source.legal.automation == AutomationPolicy.CREDENTIALED
+        and not source.credentials_available()
+        and not entry.is_installed()
+    ):
+        return STATUS_LABELS["needs_credentials"]
+    if entry.status == "check_failed":
+        return ("⚠ Endpoint failing", QColor("#c62828"))
+    if entry.status == "fetch_failed":
+        return STATUS_LABELS["fetch_failed"]
+    if not entry.is_installed():
+        return STATUS_LABELS["missing"]
+    if entry.is_stale():
+        return STATUS_LABELS["stale"]
+
+    # Installed + remote-version matches → fall back to cadence freshness.
+    freshness = entry.freshness()
+    days = entry.days_since_fetch()
+    cadence = source.update_cadence_days
+
+    if freshness == FRESHNESS_FRESH:
+        label = f"✓ Fresh ({days}d)" if days is not None else "✓ Fresh"
+        return (label, FRESHNESS_COLORS[FRESHNESS_FRESH])
+    if freshness == FRESHNESS_DUE_SOON:
+        label = (
+            f"⏳ Due soon ({days}d / {cadence}d)" if days is not None and cadence else "⏳ Due soon"
+        )
+        return (label, FRESHNESS_COLORS[FRESHNESS_DUE_SOON])
+    if freshness == FRESHNESS_STALE:
+        label = (
+            f"↻ Stale ({days}d / {cadence}d)"
+            if days is not None and cadence
+            else "↻ Stale (past cadence)"
+        )
+        return (label, FRESHNESS_COLORS[FRESHNESS_STALE])
+    # FRESHNESS_UNKNOWN — installed but no cadence (one-shot reference data)
+    return STATUS_LABELS["ok"]
 
 
 def status_for(source: DataSource, entry: SourceEntry) -> str:
@@ -129,6 +201,7 @@ class MainWindow(QMainWindow):
 
         self._prune_orphan_manifest_entries()
         self._detect_manual_installs()
+        self._sync_cadence_from_sources()
 
         # threads / workers held to keep alive
         self._check_thread: QThread | None = None
@@ -140,9 +213,14 @@ class MainWindow(QMainWindow):
         self._dl_start_ts: float | None = None
         self._dl_start_bytes: int = 0
 
+        # Queue of manual sources to walk through after a bulk auto-fetch.
+        self._pending_manual_queue: list[DataSource] = []
+
         self._build_ui()
         self._populate_tree()
         self._refresh_header()
+        self._refresh_attention_panel()
+        self._restore_ui_state()
 
         # Recompute size figures periodically so the user sees totals
         # update even when nothing is downloading.
@@ -200,6 +278,22 @@ class MainWindow(QMainWindow):
             self._manifest.save()
         return n_detected
 
+    def _sync_cadence_from_sources(self) -> None:
+        """Reflect each source's declared cadence into the manifest.
+
+        Lets the freshness column show real values immediately, before
+        the user runs 'Check for updates' for the first time after the
+        v1 → v2 schema migration.
+        """
+        changed = False
+        for s in self._sources:
+            e = self._manifest.entry(s.id)
+            if e.update_cadence_days != s.update_cadence_days:
+                self._manifest.update_cadence(s.id, s.update_cadence_days)
+                changed = True
+        if changed:
+            self._manifest.save()
+
     def _is_dark(self) -> bool:
         bg = self.palette().color(QPalette.Window)
         return bg.lightness() < 128
@@ -221,6 +315,12 @@ class MainWindow(QMainWindow):
 
         # Action bar
         outer.addWidget(self._build_action_bar())
+
+        # "What needs my attention" panel (hidden when empty)
+        outer.addWidget(self._build_attention_panel())
+
+        # Search/filter row
+        outer.addWidget(self._build_search_row())
 
         # Splitter: tree on the left, details on the right
         splitter = QSplitter(Qt.Horizontal)
@@ -282,6 +382,13 @@ class MainWindow(QMainWindow):
         self.btn_pull_missing = QPushButton("Pull all missing")
         self.btn_pull_missing.clicked.connect(self._pull_missing)  # type: ignore
 
+        self.btn_refresh_assisted = QPushButton("Refresh all stale (with prompts)")
+        self.btn_refresh_assisted.setToolTip(
+            "Pull every stale auto source, then walk through every stale "
+            "manual source one at a time with the guided walkthrough modal."
+        )
+        self.btn_refresh_assisted.clicked.connect(self._refresh_all_stale_assisted)  # type: ignore
+
         self.btn_rescan = QPushButton("Rescan disk")
         self.btn_rescan.setToolTip(
             "Detect files dropped manually into data/raw/<source_id>/current/"
@@ -310,6 +417,7 @@ class MainWindow(QMainWindow):
             self.btn_check,
             self.btn_pull_stale,
             self.btn_pull_missing,
+            self.btn_refresh_assisted,
             self.btn_rescan,
             self.btn_verify,
             self.btn_preprocess,
@@ -320,11 +428,72 @@ class MainWindow(QMainWindow):
         h.addWidget(self.btn_check)
         h.addWidget(self.btn_pull_stale)
         h.addWidget(self.btn_pull_missing)
+        h.addWidget(self.btn_refresh_assisted)
         h.addWidget(self.btn_rescan)
         h.addWidget(self.btn_verify)
         h.addWidget(self.btn_preprocess)
         h.addStretch(1)
         h.addWidget(self.btn_cancel)
+        return bar
+
+    def _build_attention_panel(self) -> QWidget:
+        """Top-of-window aggregator: every source that needs human action.
+
+        Hidden when empty. Each row has a one-click action button:
+          - Manual source / missing manual → "Walk me through"
+          - Auto source past cadence       → "Refresh"
+          - Endpoint failing               → "Diagnose" + "Open URL"
+        """
+        wrap = QFrame()
+        wrap.setObjectName("attentionPanel")
+        wrap.setFrameShape(QFrame.StyledPanel)
+        v = QVBoxLayout(wrap)
+        v.setContentsMargins(12, 8, 12, 8)
+        v.setSpacing(6)
+
+        title_row = QHBoxLayout()
+        self.lbl_attention_title = QLabel("⚠ What needs my attention")
+        f = QFont()
+        f.setBold(True)
+        self.lbl_attention_title.setFont(f)
+        title_row.addWidget(self.lbl_attention_title)
+        title_row.addStretch(1)
+        v.addLayout(title_row)
+
+        self.attention_scroll = QScrollArea()
+        self.attention_scroll.setWidgetResizable(True)
+        self.attention_scroll.setFrameShape(QFrame.NoFrame)
+        self.attention_scroll.setMaximumHeight(140)
+        self.attention_container = QWidget()
+        self.attention_layout = QVBoxLayout(self.attention_container)
+        self.attention_layout.setContentsMargins(0, 0, 0, 0)
+        self.attention_layout.setSpacing(4)
+        self.attention_layout.addStretch(1)
+        self.attention_scroll.setWidget(self.attention_container)
+        v.addWidget(self.attention_scroll)
+
+        self.attention_panel = wrap
+        return wrap
+
+    def _build_search_row(self) -> QWidget:
+        bar = QWidget()
+        h = QHBoxLayout(bar)
+        h.setContentsMargins(0, 0, 0, 0)
+
+        lbl = QLabel("Search:")
+        lbl.setStyleSheet(f"color: {self._muted_hex()};")
+        h.addWidget(lbl)
+
+        self.search_box = QLineEdit()
+        self.search_box.setPlaceholderText("Filter sources by name or ID…")
+        self.search_box.textChanged.connect(self._on_search_changed)  # type: ignore
+        self.search_box.setClearButtonEnabled(True)
+        h.addWidget(self.search_box, stretch=1)
+
+        self.lbl_match_count = QLabel("")
+        self.lbl_match_count.setStyleSheet(f"color: {self._muted_hex()}; font-size: 11px;")
+        h.addWidget(self.lbl_match_count)
+
         return bar
 
     def _build_tree(self) -> QWidget:
@@ -420,16 +589,37 @@ class MainWindow(QMainWindow):
         v = QVBoxLayout(wrap)
         v.setContentsMargins(12, 8, 12, 8)
 
+        title_row = QHBoxLayout()
         title = QLabel("Activity")
         f = QFont()
         f.setBold(True)
         title.setFont(f)
-        v.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+
+        title_row.addWidget(QLabel("Filter:"))
+        self.log_filter = QComboBox()
+        self.log_filter.addItem("All", "all")
+        self.log_filter.addItem("Errors only", "errors")
+        self.log_filter.currentIndexChanged.connect(self._on_log_filter_changed)  # type: ignore
+        title_row.addWidget(self.log_filter)
+
+        self.btn_copy_log = QToolButton()
+        self.btn_copy_log.setText("Copy")
+        self.btn_copy_log.setToolTip("Copy visible activity log to clipboard")
+        self.btn_copy_log.clicked.connect(self._copy_log_to_clipboard)  # type: ignore
+        title_row.addWidget(self.btn_copy_log)
+
+        v.addLayout(title_row)
 
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.setFixedHeight(140)
         v.addWidget(self.log)
+
+        # In-memory log buffer for filter-aware re-render.
+        # Each entry: (timestamp_str, msg, is_error)
+        self._log_entries: list[tuple[str, str, bool]] = []
         return wrap
 
     # ── tree population ─────────────────────────────────────────────────
@@ -459,8 +649,7 @@ class MainWindow(QMainWindow):
         entry = self._manifest.entry(source.id)
         item = self._items[source.id]
 
-        status = status_for(source, entry)
-        label, color = STATUS_LABELS[status]
+        label, color = freshness_label_for(source, entry)
         item.setText(COL_STATUS, label)
         item.setForeground(COL_STATUS, color)
 
@@ -470,9 +659,12 @@ class MainWindow(QMainWindow):
         item.setText(COL_LOCAL, entry.local_version or "—")
         item.setText(COL_REMOTE, entry.remote_version or "—")
 
-        # Action label per state
+        # Action label per state — manual sources with walkthroughs get a
+        # distinct call-to-action; others fall back to install/pull verbs.
+        status = status_for(source, entry)
+        has_walkthrough = source.manual_walkthrough() is not None
         if status == "manual_only":
-            item.setText(COL_ACTION, "Open manual URL")
+            item.setText(COL_ACTION, "Walk me through" if has_walkthrough else "Open manual URL")
         elif status == "needs_credentials":
             item.setText(COL_ACTION, "Configure creds")
         elif status == "ok" and not entry.is_stale():
@@ -486,6 +678,7 @@ class MainWindow(QMainWindow):
         for s in self._sources:
             self._refresh_row(s)
         self._refresh_header()
+        self._refresh_attention_panel()
 
     def _refresh_header(self) -> None:
         total = directory_bytes(RAW_ROOT)
@@ -612,8 +805,12 @@ class MainWindow(QMainWindow):
 
         # Buttons
         if s.legal.automation == AutomationPolicy.MANUAL_ONLY:
-            self.btn_action.setEnabled(False)
-            self.btn_action.setText("Manual download required")
+            if s.manual_walkthrough() is not None:
+                self.btn_action.setEnabled(self._fetch_thread is None)
+                self.btn_action.setText("▶ Walk me through")
+            else:
+                self.btn_action.setEnabled(False)
+                self.btn_action.setText("Manual download required")
         elif s.legal.automation == AutomationPolicy.CREDENTIALED and not s.credentials_available():
             self.btn_action.setEnabled(False)
             self.btn_action.setText("Credentials required (see notes)")
@@ -643,7 +840,32 @@ class MainWindow(QMainWindow):
         if not sid:
             return
         s = get_source(sid)
+        # MANUAL_ONLY sources with a walkthrough open the guided modal
+        # instead of trying to auto-fetch.
+        if (
+            s.legal.automation == AutomationPolicy.MANUAL_ONLY
+            and s.manual_walkthrough() is not None
+        ):
+            self._open_walkthrough_for(s)
+            return
         self._start_fetch([s])
+
+    def _open_walkthrough_for(self, source: DataSource) -> None:
+        """Open the guided walkthrough modal; refresh row on success."""
+        try:
+            dlg = WalkthroughDialog(source, self._manifest, self, dark_mode=self._is_dark())
+        except ValueError as e:
+            self._append_log(f"Cannot open walkthrough for {source.name}: {e}", error=True)
+            return
+        self._append_log(f"Walkthrough opened for {source.name}.")
+        dlg.exec()
+        if dlg.completed:
+            self._append_log(f"✓ Manual install completed for {source.name}.")
+            self._refresh_all_rows()
+            if getattr(self, "_current_source_id", None) == source.id:
+                self._show_source(source)
+        else:
+            self._append_log(f"Walkthrough closed without completion: {source.name}.")
 
     def _pull_stale(self) -> None:
         targets = []
@@ -929,6 +1151,7 @@ class MainWindow(QMainWindow):
         self._set_buttons_busy(False)
         self.pb_label.setText("Idle. No pull in progress.")
         self._refresh_header()
+        self._refresh_attention_panel()
         self._teardown_thread("check")
         self._append_log("Check complete.")
 
@@ -982,8 +1205,13 @@ class MainWindow(QMainWindow):
         self.pb_label.setText("Idle. No pull in progress.")
         self.pb_substatus.setText("")
         self._refresh_header()
+        self._refresh_attention_panel()
         self._teardown_thread("fetch")
         self._append_log("All pulls complete.")
+
+        # If an assisted bulk refresh queued manual walkthroughs, process them.
+        if self._pending_manual_queue:
+            QTimer.singleShot(0, self._process_pending_manuals)
 
     def _teardown_thread(self, kind: str) -> None:
         if kind == "check" and self._check_thread:
@@ -1009,19 +1237,333 @@ class MainWindow(QMainWindow):
         return f"{human_bytes(int(rate))}/s"
 
     def _set_buttons_busy(self, busy: bool) -> None:
-        for b in (self.btn_check, self.btn_pull_stale, self.btn_pull_missing):
+        for b in (
+            self.btn_check,
+            self.btn_pull_stale,
+            self.btn_pull_missing,
+            self.btn_refresh_assisted,
+        ):
             b.setEnabled(not busy)
         if hasattr(self, "btn_action"):
             self.btn_action.setEnabled(not busy and bool(getattr(self, "_current_source_id", None)))
 
+    # ── attention panel ─────────────────────────────────────────────────
+
+    def _attention_items(self) -> list[tuple[DataSource, str, str]]:
+        """Return list of (source, reason, action_kind) needing attention.
+
+        action_kind ∈ {"walkthrough", "refresh", "open_manual"}.
+        """
+        items: list[tuple[DataSource, str, str]] = []
+        for s in self._sources:
+            e = self._manifest.entry(s.id)
+            has_walkthrough = s.manual_walkthrough() is not None
+            # Endpoint failing (auto sources we tried to check)
+            if e.status == "check_failed":
+                if s.legal.automation == AutomationPolicy.MANUAL_ONLY and has_walkthrough:
+                    items.append((s, "Endpoint failing — walkthrough available", "walkthrough"))
+                else:
+                    items.append((s, f"Endpoint failing: {e.error or '—'}", "open_manual"))
+                continue
+            if e.status == "fetch_failed":
+                items.append((s, f"Last fetch failed: {e.error or '—'}", "refresh"))
+                continue
+            # Manual sources that haven't been installed yet
+            if s.legal.automation == AutomationPolicy.MANUAL_ONLY and not e.is_installed():
+                reason = "Manual download required" + (
+                    " — walkthrough available" if has_walkthrough else ""
+                )
+                items.append(
+                    (
+                        s,
+                        reason,
+                        "walkthrough" if has_walkthrough else "open_manual",
+                    )
+                )
+                continue
+            # Auto sources that aren't installed (and aren't credentialed-no-creds)
+            if not e.is_installed():
+                if (
+                    s.legal.automation == AutomationPolicy.CREDENTIALED
+                    and not s.credentials_available()
+                ):
+                    # surfaced separately as informational; not actionable here
+                    continue
+                items.append((s, "Not installed", "refresh"))
+                continue
+            # Stale (remote version differs)
+            if e.is_stale():
+                items.append((s, "New version available", "refresh"))
+                continue
+            # Past cadence
+            freshness = e.freshness()
+            if freshness == FRESHNESS_STALE:
+                days = e.days_since_fetch()
+                cad = s.update_cadence_days
+                reason = (
+                    f"Past cadence ({days}d / {cad}d) — re-check publisher"
+                    if days is not None and cad
+                    else "Past recommended refresh date"
+                )
+                if s.legal.automation == AutomationPolicy.MANUAL_ONLY and has_walkthrough:
+                    items.append((s, reason, "walkthrough"))
+                else:
+                    items.append((s, reason, "refresh"))
+        return items
+
+    def _refresh_attention_panel(self) -> None:
+        # Clear existing rows (keep the trailing stretch).
+        while self.attention_layout.count() > 1:
+            child = self.attention_layout.takeAt(0)
+            w = child.widget() if child else None
+            if w is not None:
+                w.deleteLater()
+
+        items = self._attention_items()
+        if not items:
+            self.lbl_attention_title.setText("✓ All sources current")
+            self.attention_panel.hide()
+            return
+
+        self.lbl_attention_title.setText(
+            f"⚠ What needs my attention ({len(items)} source{'s' if len(items) != 1 else ''})"
+        )
+        muted = self._muted_hex()
+        for source, reason, action_kind in items:
+            row = QWidget()
+            h = QHBoxLayout(row)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(8)
+            lbl = QLabel(f"<b>{source.id}</b> &nbsp; <span style='color:{muted}'>{reason}</span>")
+            lbl.setTextFormat(Qt.RichText)
+            lbl.setWordWrap(True)
+            h.addWidget(lbl, stretch=1)
+
+            if action_kind == "walkthrough":
+                btn = QPushButton("▶ Walk me through")
+                btn.clicked.connect(  # type: ignore
+                    lambda _checked=False, s=source: self._open_walkthrough_for(s)
+                )
+            elif action_kind == "refresh":
+                btn = QPushButton("↻ Refresh")
+                btn.clicked.connect(  # type: ignore
+                    lambda _checked=False, s=source: self._start_fetch([s])
+                )
+            else:  # open_manual
+                btn = QPushButton("Open URL")
+                btn.clicked.connect(  # type: ignore
+                    lambda _checked=False, s=source: webbrowser.open(s.legal.manual_url)
+                )
+            btn.setMinimumHeight(26)
+            h.addWidget(btn)
+
+            self.attention_layout.insertWidget(self.attention_layout.count() - 1, row)
+        self.attention_panel.show()
+
+    # ── search/filter ───────────────────────────────────────────────────
+
+    def _on_search_changed(self, text: str) -> None:
+        needle = text.strip().lower()
+        total_visible = 0
+        for i in range(self.tree.topLevelItemCount()):
+            cat_item = self.tree.topLevelItem(i)
+            any_visible = False
+            for j in range(cat_item.childCount()):
+                child = cat_item.child(j)
+                sid = child.data(COL_NAME, Qt.UserRole) or ""
+                name = child.text(COL_NAME).lower()
+                if not needle or needle in name or needle in sid.lower():
+                    child.setHidden(False)
+                    any_visible = True
+                    total_visible += 1
+                else:
+                    child.setHidden(True)
+            cat_item.setHidden(not any_visible)
+
+        if needle:
+            self.lbl_match_count.setText(f"{total_visible} match(es)")
+        else:
+            self.lbl_match_count.setText("")
+
+    # ── assisted bulk refresh ───────────────────────────────────────────
+
+    def _refresh_all_stale_assisted(self) -> None:
+        """Pull every stale auto source, then walk through every stale manual.
+
+        Anything past `next_recommended_check_at` OR with remote_version
+        diverging from local OR `status="missing"` is treated as stale.
+        Manual sources without a walkthrough are skipped with a notice.
+        """
+        if self._fetch_thread is not None or self._pending_manual_queue:
+            QMessageBox.warning(
+                self, "Already running", "An assisted refresh is already in progress."
+            )
+            return
+
+        auto_targets: list[DataSource] = []
+        manual_targets: list[DataSource] = []
+        skipped_no_walkthrough: list[DataSource] = []
+
+        for s in self._sources:
+            e = self._manifest.entry(s.id)
+            needs = (
+                not e.is_installed()
+                or e.is_stale()
+                or e.freshness() == FRESHNESS_STALE
+                or e.status in ("check_failed", "fetch_failed")
+            )
+            if not needs:
+                continue
+            if s.legal.automation == AutomationPolicy.MANUAL_ONLY:
+                if s.manual_walkthrough() is not None:
+                    manual_targets.append(s)
+                else:
+                    skipped_no_walkthrough.append(s)
+            elif (
+                s.legal.automation == AutomationPolicy.CREDENTIALED
+                and not s.credentials_available()
+            ):
+                # Credentialed-no-creds — surface but don't enqueue
+                skipped_no_walkthrough.append(s)
+            else:
+                auto_targets.append(s)
+
+        if not auto_targets and not manual_targets:
+            QMessageBox.information(
+                self,
+                "Nothing to refresh",
+                "All sources are current. Run 'Check for updates' first if you "
+                "suspect this is wrong.",
+            )
+            return
+
+        summary = (
+            f"Assisted refresh will run for {len(auto_targets) + len(manual_targets)} "
+            f"source(s):\n\n"
+            f"  • {len(auto_targets)} auto source(s) pulled in background\n"
+            f"  • {len(manual_targets)} manual source(s) — one walkthrough at a time\n"
+        )
+        if skipped_no_walkthrough:
+            names = ", ".join(s.id for s in skipped_no_walkthrough)
+            summary += (
+                f"\nSkipping ({len(skipped_no_walkthrough)} without walkthrough "
+                f"or credentials): {names}\n"
+            )
+        summary += "\nProceed?"
+        ok = QMessageBox.question(
+            self,
+            "Refresh all stale",
+            summary,
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if ok != QMessageBox.Yes:
+            return
+
+        self._pending_manual_queue = list(manual_targets)
+        self._append_log(
+            f"Assisted refresh: {len(auto_targets)} auto, {len(manual_targets)} manual queued."
+        )
+        if auto_targets:
+            self._start_fetch(auto_targets)
+        else:
+            self._process_pending_manuals()
+
+    def _process_pending_manuals(self) -> None:
+        """Pop and walk through queued manual sources sequentially."""
+        if not self._pending_manual_queue:
+            self._append_log("Assisted refresh complete.")
+            self._refresh_attention_panel()
+            return
+        s = self._pending_manual_queue.pop(0)
+        self._open_walkthrough_for(s)
+        # Use a 0-delay singleshot so the modal fully closes before the next
+        # opens — avoids nested-modal weirdness on macOS.
+        QTimer.singleShot(0, self._process_pending_manuals)
+
     def _append_log(self, msg: str, error: bool = False) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
+        self._log_entries.append((ts, msg, error))
+        if self._log_filter_allows(error):
+            self.log.append(self._render_log_line(ts, msg, error))
+
+    def _render_log_line(self, ts: str, msg: str, error: bool) -> str:
         muted = self._muted_hex()
         prefix = f"<span style='color:{muted}'>[{ts}]</span> "
-        color = (
-            "#e57373" if error and self._is_dark() else ("#c62828" if error else self._text_hex())
-        )
-        self.log.append(f"{prefix}<span style='color:{color}'>{msg}</span>")
+        if error:
+            color = "#e57373" if self._is_dark() else "#c62828"
+        else:
+            color = self._text_hex()
+        return f"{prefix}<span style='color:{color}'>{msg}</span>"
+
+    def _log_filter_allows(self, error: bool) -> bool:
+        mode = self.log_filter.currentData() if hasattr(self, "log_filter") else "all"
+        if mode == "errors":
+            return error
+        return True
+
+    def _on_log_filter_changed(self, _idx: int) -> None:
+        self.log.clear()
+        for ts, msg, error in self._log_entries:
+            if self._log_filter_allows(error):
+                self.log.append(self._render_log_line(ts, msg, error))
+
+    def _copy_log_to_clipboard(self) -> None:
+        text = self.log.toPlainText()
+        QApplication.clipboard().setText(text)
+        self._append_log(f"Copied {len(text)} chars of activity log to clipboard.")
+
+    # ── persisted state ─────────────────────────────────────────────────
+
+    def _restore_ui_state(self) -> None:
+        s = ui_state.load()
+        geom = s.get("window")
+        if isinstance(geom, dict):
+            try:
+                x = int(geom.get("x", 0))
+                y = int(geom.get("y", 0))
+                w = int(geom.get("w", self.width()))
+                h = int(geom.get("h", self.height()))
+                if w >= 800 and h >= 600:
+                    self.move(x, y)
+                    self.resize(w, h)
+            except (TypeError, ValueError):
+                pass
+
+        log_mode = s.get("log_filter")
+        if log_mode in ("all", "errors"):
+            idx = self.log_filter.findData(log_mode)
+            if idx >= 0:
+                self.log_filter.setCurrentIndex(idx)
+
+        last_sid = s.get("last_source_id")
+        if isinstance(last_sid, str) and last_sid in self._items:
+            self.tree.setCurrentItem(self._items[last_sid])
+
+        collapsed = s.get("collapsed_categories") or []
+        if isinstance(collapsed, list):
+            for i in range(self.tree.topLevelItemCount()):
+                cat = self.tree.topLevelItem(i)
+                if cat.text(COL_NAME) in collapsed:
+                    cat.setExpanded(False)
+
+    def _save_ui_state(self) -> None:
+        collapsed: list[str] = []
+        for i in range(self.tree.topLevelItemCount()):
+            cat = self.tree.topLevelItem(i)
+            if not cat.isExpanded():
+                collapsed.append(cat.text(COL_NAME))
+        state: dict = {
+            "window": {
+                "x": self.x(),
+                "y": self.y(),
+                "w": self.width(),
+                "h": self.height(),
+            },
+            "log_filter": self.log_filter.currentData() if hasattr(self, "log_filter") else "all",
+            "last_source_id": getattr(self, "_current_source_id", None),
+            "collapsed_categories": collapsed,
+        }
+        ui_state.save(state)
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         # If a download is running, ask before quitting
@@ -1045,6 +1587,10 @@ class MainWindow(QMainWindow):
                 self._check_thread.wait(2000)
         try:
             self._manifest.save()
+        except Exception:
+            pass
+        try:
+            self._save_ui_state()
         except Exception:
             pass
         event.accept()
