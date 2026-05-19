@@ -1,0 +1,861 @@
+"""
+Preprocess raw cell-tower, parcel, and Opportunity Zone data for Graham County, NC.
+
+Reads:
+  data/raw/NC/FCC/r_tower/{RA,CO,EN}.dat
+  data/raw/NC/parcels/graham-parcels-07-15-2025/nc_graham_parcels_poly.shp
+  data/raw/NC/opportunity-zones/Opportunity_Zones_*.geojson
+
+Writes (EPSG:4326):
+  data/processed/towers.geojson
+  data/processed/parcels.geojson
+  data/processed/opportunity_zones.geojson
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import sys
+from pathlib import Path
+
+import geopandas as gpd
+import pandas as pd
+from shapely.geometry import Point
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-7s  %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger("preprocess")
+
+ROOT = Path(__file__).resolve().parents[1]
+RAW = ROOT / "data" / "raw" / "NC"
+OUT = ROOT / "data" / "processed"
+
+ASR_DIR = RAW / "FCC" / "r_tower"
+ULS_CELL_DIR = RAW / "FCC" / "uls_cell"
+HIFLD_DIR = RAW / "HIFLD"
+PARCEL_SHP = (
+    RAW / "parcels" / "graham-parcels-07-15-2025" / "nc_graham_parcels_poly.shp"
+)
+OZ_DIR = RAW / "opportunity-zones"
+
+GRAHAM_BBOX = (-83.98, 35.10, -83.55, 35.51)  # W, S, E, N
+GRAHAM_STATE_FIPS = "37"
+GRAHAM_COUNTY_FIPS = "075"
+
+# Field layouts from asr_sql_table_definitions_3.txt
+RA_COLS = [
+    "record_type", "content_indicator", "file_number", "registration_number",
+    "unique_system_identifier", "application_purpose", "previous_purpose",
+    "input_source_code", "status_code", "date_entered", "date_received",
+    "date_issued", "date_constructed", "date_dismantled", "date_action",
+    "archive_flag_code", "version", "signature_first_name",
+    "signature_middle_initial", "signature_last_name", "signature_suffix",
+    "signature_title", "invalid_signature", "structure_street_address",
+    "structure_city", "structure_state_code", "county_code", "zip_code",
+    "height_of_structure", "ground_elevation", "overall_height_above_ground",
+    "overall_height_amsl", "structure_type", "date_faa_determination_issued",
+    "faa_study_number", "faa_circular_number", "specification_option",
+    "painting_and_lighting", "mark_light_code", "mark_light_other",
+    "faa_emi_flag", "nepa_flag", "date_signed", "signature_last_or",
+    "signature_first_or", "signature_mi_or", "signature_suffix_or",
+    "title_signed_or", "date_signed_or",
+]
+CO_COLS = [
+    "record_type", "content_indicator", "file_number", "registration_number",
+    "unique_system_identifier", "coordinate_type",
+    "latitude_degrees", "latitude_minutes", "latitude_seconds",
+    "latitude_direction", "latitude_total_seconds",
+    "longitude_degrees", "longitude_minutes", "longitude_seconds",
+    "longitude_direction", "longitude_total_seconds",
+    "array_tower_position", "array_total_tower",
+]
+EN_COLS = [
+    "record_type", "content_indicator", "file_number", "registration_number",
+    "unique_system_identifier", "entity_type", "entity_type_code",
+    "entity_type_other", "licensee_id", "entity_name", "first_name", "mi",
+    "last_name", "suffix", "phone", "fax", "internet_address",
+    "street_address", "street_address2", "po_box", "city", "state",
+    "zip_code", "attention", "frn",
+]
+
+# ── ULS schemas (relevant subsets) ───────────────────────────────────────────
+# ULS .dat files have many trailing fields we don't need; we read by position
+# and only assign names to columns we care about.
+ULS_LO_FIELDS = {  # column index → friendly name
+    1: "usi",
+    4: "call_sign",
+    7: "location_class_code",
+    8: "location_number",
+    9: "site_status",
+    11: "location_address",
+    12: "location_city",
+    13: "location_county",
+    14: "location_state",
+    18: "ground_elevation",
+    19: "lat_degrees", 20: "lat_minutes", 21: "lat_seconds", 22: "lat_direction",
+    23: "long_degrees", 24: "long_minutes", 25: "long_seconds", 26: "long_direction",
+    36: "tower_registration_number",
+    37: "height_of_support_structure",
+    38: "overall_height_of_structure",
+    39: "structure_type",
+    41: "location_name",
+}
+ULS_HD_FIELDS = {
+    1: "usi", 4: "call_sign", 5: "license_status", 6: "radio_service_code",
+    7: "grant_date", 8: "expired_date", 9: "cancellation_date",
+}
+ULS_EN_FIELDS = {
+    1: "usi", 4: "call_sign", 5: "entity_type", 7: "entity_name",
+    15: "street_address", 16: "city", 17: "state", 18: "zip_code", 12: "phone",
+}
+
+# ULS license_status codes — keep only Active ('A')
+ULS_STATUS = {
+    "A": "Active", "C": "Cancelled", "E": "Expired", "L": "Pending Legal",
+    "T": "Terminated", "X": "Term Pending",
+}
+
+STRUCTURE_TYPE_DESCRIPTIONS = {
+    "B":     "Building",
+    "BANT":  "Building with Antenna",
+    "BMAST": "Building with Mast",
+    "BPIPE": "Building with Pipe",
+    "BPOLE": "Building with Pole",
+    "BRIDG": "Bridge",
+    "BTWR":  "Building with Tower",
+    "GTOWER":"Guyed Tower",
+    "LTOWER":"Lattice Tower",
+    "MAST":  "Mast",
+    "MTOWER":"Monopole Tower",
+    "NNGTANN":"Guyed Tower (Non-Lighted)",
+    "PIPE":  "Pipe",
+    "POLE":  "Pole",
+    "RIG":   "Drilling Rig",
+    "SIGN":  "Sign",
+    "SILO":  "Silo",
+    "STACK": "Stack/Chimney",
+    "TANK":  "Tank",
+    "TOWER": "Tower",
+    "UPOLE": "Utility Pole",
+    "WTWR":  "Water Tower",
+}
+
+
+def require(path: Path, what: str) -> None:
+    if not path.exists():
+        log.error("missing %s at %s", what, path)
+        sys.exit(2)
+
+
+def read_pipe(path: Path, columns: list[str], record_type: str) -> pd.DataFrame:
+    """Read a pipe-delimited ASR table. Rows whose first field != record_type are dropped
+    (defensive guard against stray header/footer rows)."""
+    require(path, f"ASR {record_type}.dat")
+    log.info("reading %s (%d cols)", path.name, len(columns))
+    import csv
+    df = pd.read_csv(
+        path,
+        sep="|",
+        header=None,
+        names=columns,
+        dtype=str,
+        keep_default_na=False,
+        na_values=[""],
+        engine="python",
+        on_bad_lines="warn",
+        encoding="latin-1",
+        quoting=csv.QUOTE_NONE,  # ASR data isn't CSV-quoted; treat " as literal
+    )
+    before = len(df)
+    df = df[df["record_type"] == record_type].copy()
+    if len(df) != before:
+        log.warning("dropped %d non-%s rows from %s", before - len(df), record_type, path.name)
+    return df
+
+
+def dms_to_decimal(deg, minutes, seconds, direction) -> float | None:
+    try:
+        d = float(deg) if deg not in (None, "", "nan") else None
+        m = float(minutes) if minutes not in (None, "", "nan") else 0.0
+        s = float(seconds) if seconds not in (None, "", "nan") else 0.0
+    except (TypeError, ValueError):
+        return None
+    if d is None:
+        return None
+    val = abs(d) + m / 60.0 + s / 3600.0
+    if direction in ("S", "W"):
+        val = -val
+    return val
+
+
+def parse_towers() -> gpd.GeoDataFrame:
+    log.info("--- step 1: ASR towers ---")
+    ra = read_pipe(ASR_DIR / "RA.dat", RA_COLS, "RA")
+    log.info("RA rows: %d", len(ra))
+
+    constructed = ra[ra["status_code"] == "C"].copy()
+    log.info("RA constructed (status=C): %d", len(constructed))
+
+    nc = constructed[constructed["structure_state_code"] == "NC"].copy()
+    log.info("RA constructed in NC: %d", len(nc))
+
+    co = read_pipe(ASR_DIR / "CO.dat", CO_COLS, "CO")
+    log.info("CO rows: %d", len(co))
+
+    # Prefer tower-coordinate rows; fall back to array rows when no tower row exists.
+    co_t = co[co["coordinate_type"] == "T"].copy()
+    co_a = co[co["coordinate_type"] == "A"].copy()
+    have_t = set(co_t["registration_number"])
+    co_fallback = co_a[~co_a["registration_number"].isin(have_t)]
+    co_use = pd.concat([co_t, co_fallback], ignore_index=True)
+    co_use = co_use.drop_duplicates(subset="registration_number", keep="first")
+    log.info("CO unique registrations: %d", len(co_use))
+
+    co_use["lat"] = co_use.apply(
+        lambda r: dms_to_decimal(
+            r["latitude_degrees"], r["latitude_minutes"],
+            r["latitude_seconds"], r["latitude_direction"],
+        ),
+        axis=1,
+    )
+    co_use["lon"] = co_use.apply(
+        lambda r: dms_to_decimal(
+            r["longitude_degrees"], r["longitude_minutes"],
+            r["longitude_seconds"], r["longitude_direction"],
+        ),
+        axis=1,
+    )
+
+    merged = nc.merge(
+        co_use[["registration_number", "lat", "lon", "coordinate_type"]],
+        on="registration_number",
+        how="inner",
+    )
+    log.info("RA+CO merged: %d", len(merged))
+
+    w, s, e, n = GRAHAM_BBOX
+    in_bbox = (
+        merged["lat"].between(s, n) & merged["lon"].between(w, e)
+        & merged["lat"].notna() & merged["lon"].notna()
+    )
+    graham = merged[in_bbox].copy()
+    log.info("towers in Graham bbox: %d", len(graham))
+
+    if graham.empty:
+        log.warning("no towers found inside Graham bbox; check coordinate parsing")
+
+    # Owner from EN (entity_type='O' = Owner)
+    en = read_pipe(ASR_DIR / "EN.dat", EN_COLS, "EN")
+    log.info("EN rows: %d", len(en))
+    owners = en[en["entity_type"] == "O"].copy()
+    owners = owners.drop_duplicates(subset="registration_number", keep="first")
+    log.info("EN owner rows: %d", len(owners))
+
+    owner_cols = [
+        "registration_number", "entity_name", "street_address", "po_box",
+        "city", "state", "zip_code", "phone",
+    ]
+    graham = graham.merge(
+        owners[owner_cols], on="registration_number", how="left",
+        suffixes=("", "_owner"),
+    )
+
+    def _float(x):
+        try:
+            return float(x) if x not in (None, "", "nan") else None
+        except (TypeError, ValueError):
+            return None
+
+    feats = []
+    for _, r in graham.iterrows():
+        height_overall = _float(r.get("overall_height_above_ground"))
+        height_struct = _float(r.get("height_of_structure"))
+        st_raw = r.get("structure_type")
+        st = "" if pd.isna(st_raw) else str(st_raw).strip()
+        feats.append({
+            "registration_number": r["registration_number"],
+            "file_number": r.get("file_number"),
+            "status_code": r.get("status_code"),
+            "status_desc": "Constructed",
+            "date_constructed": r.get("date_constructed"),
+            "date_issued": r.get("date_issued"),
+            "structure_type": st,
+            "structure_type_desc": STRUCTURE_TYPE_DESCRIPTIONS.get(st, st),
+            "height_overall_m": height_overall,
+            "height_structure_m": height_struct,
+            "structure_street_address": r.get("structure_street_address"),
+            "structure_city": r.get("structure_city"),
+            "structure_state_code": r.get("structure_state_code"),
+            "county_code": r.get("county_code"),
+            "zip_code": r.get("zip_code"),
+            "owner_name": r.get("entity_name"),
+            "owner_street": r.get("street_address"),
+            "owner_po_box": r.get("po_box"),
+            "owner_city": r.get("city"),
+            "owner_state": r.get("state"),
+            "owner_zip": r.get("zip_code_owner"),
+            "owner_phone": r.get("phone"),
+            "latitude": r["lat"],
+            "longitude": r["lon"],
+            "coordinate_type": r.get("coordinate_type"),
+        })
+
+    gdf = gpd.GeoDataFrame(
+        feats,
+        geometry=[Point(f["longitude"], f["latitude"]) for f in feats],
+        crs="EPSG:4326",
+    )
+    return gdf
+
+
+def read_uls_table(path: Path, record_type: str, fields: dict[int, str]) -> pd.DataFrame:
+    """Read one ULS pipe-delimited table, keeping only the selected columns by index."""
+    require(path, f"ULS {record_type}.dat")
+    log.info("reading ULS %s", path.name)
+    import csv
+    # Read just the columns we want by integer index; pandas assigns them
+    # integer column labels which we rename afterward.
+    df = pd.read_csv(
+        path,
+        sep="|",
+        header=None,
+        dtype=str,
+        keep_default_na=False,
+        na_values=[""],
+        engine="python",
+        on_bad_lines="warn",
+        encoding="latin-1",
+        quoting=csv.QUOTE_NONE,
+        usecols=list(fields.keys()),
+    )
+    df = df.rename(columns=fields)
+    if "_c0" in df.columns:
+        df = df[df["_c0"] == record_type].drop(columns=["_c0"])
+    return df
+
+
+def parse_uls() -> gpd.GeoDataFrame:
+    """Parse ULS cellular service and return active sites in the Graham bbox."""
+    log.info("--- step 1b: ULS cellular sites ---")
+    if not ULS_CELL_DIR.exists():
+        log.warning("ULS cell directory missing (%s) — skipping ULS layer", ULS_CELL_DIR)
+        return gpd.GeoDataFrame(
+            columns=["usi", "call_sign", "geometry"], geometry="geometry", crs="EPSG:4326",
+        )
+
+    # We need to include the record-type column (index 0) so we can filter rows.
+    lo_fields = {0: "_c0", **ULS_LO_FIELDS}
+    hd_fields = {0: "_c0", **ULS_HD_FIELDS}
+    en_fields = {0: "_c0", **ULS_EN_FIELDS}
+
+    lo = read_uls_table(ULS_CELL_DIR / "LO.dat", "LO", lo_fields)
+    log.info("ULS LO rows: %d", len(lo))
+    hd = read_uls_table(ULS_CELL_DIR / "HD.dat", "HD", hd_fields)
+    log.info("ULS HD rows: %d", len(hd))
+    en = read_uls_table(ULS_CELL_DIR / "EN.dat", "EN", en_fields)
+    log.info("ULS EN rows: %d", len(en))
+
+    # Filter: NC, fixed-station (location_class_code 'F' = fixed; or T = transmitter)
+    lo_nc = lo[lo["location_state"] == "NC"].copy()
+    log.info("ULS LO in NC: %d", len(lo_nc))
+
+    lo_nc["lat"] = lo_nc.apply(
+        lambda r: dms_to_decimal(
+            r["lat_degrees"], r["lat_minutes"], r["lat_seconds"], r["lat_direction"]
+        ),
+        axis=1,
+    )
+    lo_nc["lon"] = lo_nc.apply(
+        lambda r: dms_to_decimal(
+            r["long_degrees"], r["long_minutes"], r["long_seconds"], r["long_direction"]
+        ),
+        axis=1,
+    )
+
+    w, s, e, n = GRAHAM_BBOX
+    in_bbox = (
+        lo_nc["lat"].between(s, n) & lo_nc["lon"].between(w, e)
+        & lo_nc["lat"].notna() & lo_nc["lon"].notna()
+    )
+    sites = lo_nc[in_bbox].copy()
+    log.info("ULS sites in Graham bbox: %d", len(sites))
+
+    # Join license header for status
+    sites = sites.merge(
+        hd[["usi", "license_status", "radio_service_code",
+            "grant_date", "expired_date", "cancellation_date"]],
+        on="usi", how="left",
+    )
+
+    # Keep Active licenses only
+    n_before = len(sites)
+    sites = sites[sites["license_status"] == "A"].copy()
+    log.info("ULS sites with Active license: %d (dropped %d non-active)",
+             len(sites), n_before - len(sites))
+
+    # Attach licensee from EN (entity_type 'L' = Licensee)
+    licensees = en[en["entity_type"] == "L"].copy()
+    licensees = licensees.drop_duplicates(subset="usi", keep="first")
+    sites = sites.merge(
+        licensees[["usi", "entity_name", "street_address", "city", "state",
+                   "zip_code", "phone"]].rename(columns={
+            "entity_name": "licensee_name",
+            "street_address": "licensee_street",
+            "city": "licensee_city",
+            "state": "licensee_state",
+            "zip_code": "licensee_zip",
+            "phone": "licensee_phone",
+        }),
+        on="usi", how="left",
+    )
+
+    def _float(x):
+        try:
+            return float(x) if x not in (None, "", "nan") else None
+        except (TypeError, ValueError):
+            return None
+
+    feats = []
+    for _, r in sites.iterrows():
+        st_raw = r.get("structure_type")
+        st = "" if pd.isna(st_raw) else str(st_raw).strip()
+        feats.append({
+            "usi": r["usi"],
+            "call_sign": r.get("call_sign"),
+            "location_number": r.get("location_number"),
+            "license_status": r.get("license_status"),
+            "license_status_desc": ULS_STATUS.get(r.get("license_status"), r.get("license_status")),
+            "radio_service_code": r.get("radio_service_code"),
+            "service_desc": "Cellular Radiotelephone",
+            "grant_date": r.get("grant_date"),
+            "expired_date": r.get("expired_date"),
+            "structure_type": st,
+            "structure_type_desc": STRUCTURE_TYPE_DESCRIPTIONS.get(st, st) if st else None,
+            "height_overall_m": _float(r.get("overall_height_of_structure")),
+            "height_support_m": _float(r.get("height_of_support_structure")),
+            "tower_registration_number": r.get("tower_registration_number"),
+            "location_address": r.get("location_address"),
+            "location_city": r.get("location_city"),
+            "location_county": r.get("location_county"),
+            "location_state": r.get("location_state"),
+            "location_name": r.get("location_name"),
+            "licensee_name": r.get("licensee_name"),
+            "licensee_street": r.get("licensee_street"),
+            "licensee_city": r.get("licensee_city"),
+            "licensee_state": r.get("licensee_state"),
+            "licensee_zip": r.get("licensee_zip"),
+            "licensee_phone": r.get("licensee_phone"),
+            "latitude": r["lat"],
+            "longitude": r["lon"],
+        })
+
+    gdf = gpd.GeoDataFrame(
+        feats,
+        geometry=[Point(f["longitude"], f["latitude"]) for f in feats],
+        crs="EPSG:4326",
+    )
+    return gdf
+
+
+def parse_hifld() -> gpd.GeoDataFrame:
+    """Load the HIFLD Cellular Towers GeoJSON (DHS-curated FCC snapshot) for
+    the Graham bbox. Falls back to empty if the file isn't present."""
+    log.info("--- step 1c: HIFLD Cellular Towers ---")
+    if not HIFLD_DIR.exists():
+        log.warning("HIFLD directory missing (%s) — skipping HIFLD layer", HIFLD_DIR)
+        return gpd.GeoDataFrame(columns=["geometry"], geometry="geometry", crs="EPSG:4326")
+
+    files = sorted(HIFLD_DIR.glob("*.geojson")) + sorted(HIFLD_DIR.glob("*.json"))
+    if not files:
+        log.warning("no HIFLD GeoJSON found in %s — skipping", HIFLD_DIR)
+        return gpd.GeoDataFrame(columns=["geometry"], geometry="geometry", crs="EPSG:4326")
+
+    g = gpd.read_file(files[0])
+    log.info("HIFLD read: %d (CRS=%s) from %s", len(g),
+             g.crs.to_epsg() if g.crs else None, files[0].name)
+    if g.crs is None or g.crs.to_epsg() != 4326:
+        g = g.to_crs("EPSG:4326")
+
+    w, s, e, n = GRAHAM_BBOX
+    g = g.cx[w:e, s:n].copy()
+    log.info("HIFLD in Graham bbox: %d", len(g))
+    if g.empty:
+        return g
+
+    # Rename to consistent fields and prune the corrupted QZone column.
+    rename = {
+        "Licensee": "licensee_name", "Callsign": "call_sign", "LocNum": "location_number",
+        "LocAdd": "location_address", "LocCity": "location_city",
+        "LocCounty": "location_county", "LocState": "location_state",
+        "TowReg": "tower_registration_number",
+        "SupStruc": "height_support_m", "AllStruc": "height_overall_m",
+        "StrucType": "structure_type", "LicStatus": "license_status",
+        "latdec": "latitude", "londec": "longitude", "url": "fcc_url",
+    }
+    g = g.rename(columns={k: v for k, v in rename.items() if k in g.columns})
+
+    keep = [c for c in rename.values() if c in g.columns] + ["geometry"]
+    g = g[keep].copy()
+
+    def _tower_reg(x):
+        try:
+            n = int(float(x))
+            return str(n) if n > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    if "tower_registration_number" in g.columns:
+        g["tower_registration_number"] = g["tower_registration_number"].map(_tower_reg)
+
+    g["license_status_desc"] = g["license_status"].map(ULS_STATUS).fillna(g["license_status"])
+    g["structure_type_desc"] = g["structure_type"].map(STRUCTURE_TYPE_DESCRIPTIONS).fillna(g["structure_type"])
+
+    log.info("HIFLD distinct licensees: %d", g["licensee_name"].nunique())
+    return g
+
+
+def load_parcels() -> gpd.GeoDataFrame:
+    log.info("--- step 2: parcels ---")
+    require(PARCEL_SHP, "parcel shapefile")
+    parcels = gpd.read_file(PARCEL_SHP)
+    log.info("parcels read: %d (CRS=%s)", len(parcels), parcels.crs.to_epsg() if parcels.crs else None)
+
+    if (parcels["STCNTYFIPS"].astype(str).str.strip()
+            == f"{GRAHAM_STATE_FIPS}{GRAHAM_COUNTY_FIPS}").any():
+        parcels = parcels[
+            parcels["STCNTYFIPS"].astype(str).str.strip()
+            == f"{GRAHAM_STATE_FIPS}{GRAHAM_COUNTY_FIPS}"
+        ].copy()
+        log.info("parcels filtered to Graham FIPS: %d", len(parcels))
+
+    # Drop county "background" / non-parcel features. The NC OneMap dump for
+    # Graham contains at least one MultiPolygon with ~120 disjoint pieces that
+    # represents all the right-of-way / water / unmapped land, marked with a
+    # nonsense acreage (0.08) and null owner. We measure the actual geometry
+    # area and drop rows where the GIS area exceeds the stated acreage by an
+    # impossible factor — that test also catches the "_" PARNO filler row.
+    parcels_m = parcels.to_crs("EPSG:5070")  # Albers Equal Area for area calc
+    parcels["_geom_acres"] = parcels_m.geometry.area / 4046.8564224
+    parcels["_parts"] = parcels.geometry.apply(
+        lambda g: len(g.geoms) if g.geom_type == "MultiPolygon" else 1
+    )
+    stated = pd.to_numeric(parcels["GISACRES"], errors="coerce").fillna(0)
+    suspicious = (
+        parcels["PARNO"].isna()
+        | (parcels["PARNO"].astype(str).str.strip() == "")
+        | ((parcels["_parts"] > 5) & (parcels["_geom_acres"] > stated * 10 + 50))
+    )
+    n_drop = int(suspicious.sum())
+    if n_drop:
+        log.warning(
+            "dropping %d non-parcel rows (null PARNO or aggregate 'background' polys)",
+            n_drop,
+        )
+        for _, r in parcels[suspicious].iterrows():
+            log.warning(
+                "  apn=%r owner=%r parts=%d stated_acres=%s real_acres=%.1f",
+                r.get("PARNO"), r.get("OWNNAME"), r["_parts"],
+                r.get("GISACRES"), r["_geom_acres"],
+            )
+    parcels = parcels[~suspicious].drop(columns=["_geom_acres", "_parts"]).copy()
+    log.info("parcels after cleanup: %d", len(parcels))
+
+    if parcels.crs is None or parcels.crs.to_epsg() != 4326:
+        parcels = parcels.to_crs("EPSG:4326")
+        log.info("parcels reprojected to EPSG:4326")
+
+    return parcels
+
+
+def find_oz_file() -> Path:
+    require(OZ_DIR, "OZ directory")
+    candidates = sorted(OZ_DIR.glob("*.geojson")) + sorted(OZ_DIR.glob("*.json"))
+    if not candidates:
+        log.error("no OZ GeoJSON found in %s", OZ_DIR)
+        sys.exit(2)
+    return candidates[0]
+
+
+def load_oz() -> gpd.GeoDataFrame:
+    log.info("--- step 3: opportunity zones ---")
+    path = find_oz_file()
+    oz = gpd.read_file(path)
+    log.info("OZ read: %d (CRS=%s)", len(oz), oz.crs)
+
+    if oz.crs is None or oz.crs.to_epsg() != 4326:
+        oz = oz.to_crs("EPSG:4326")
+
+    if "STATE" in oz.columns and "COUNTY" in oz.columns:
+        nearby = oz[
+            (oz["STATE"].astype(str) == GRAHAM_STATE_FIPS)
+            & (oz["COUNTY"].astype(str) == GRAHAM_COUNTY_FIPS)
+        ].copy()
+        log.info("OZ filtered to Graham (STATE=37, COUNTY=075): %d", len(nearby))
+        if len(nearby) > 0:
+            return nearby
+
+    w, s, e, n = GRAHAM_BBOX
+    bbox = oz.cx[w:e, s:n].copy()
+    log.info("OZ filtered to Graham bbox: %d", len(bbox))
+    return bbox
+
+
+def attach_carriers(
+    towers: gpd.GeoDataFrame,
+    *carrier_sources: gpd.GeoDataFrame,
+    threshold_m: float = 200.0,
+) -> gpd.GeoDataFrame:
+    """For each ASR tower, attach the list of unique licensees within
+    `threshold_m` metres, drawn from any number of source GeoDataFrames that
+    each have a `licensee_name` column. Stored as a semicolon-delimited string
+    so it survives GeoJSON serialization cleanly."""
+    log.info("--- attaching carriers (within %.0f m) ---", threshold_m)
+    towers = towers.copy()
+    if towers.empty:
+        towers["carriers"] = ""
+        towers["carrier_count"] = 0
+        return towers
+
+    # Combine all non-empty carrier sources into one metric GeoDataFrame.
+    parts = []
+    for src in carrier_sources:
+        if src is not None and not src.empty and "licensee_name" in src.columns:
+            parts.append(src[["geometry", "licensee_name"]])
+    if not parts:
+        towers["carriers"] = ""
+        towers["carrier_count"] = 0
+        return towers
+    sources = gpd.GeoDataFrame(
+        pd.concat(parts, ignore_index=True), geometry="geometry", crs="EPSG:4326"
+    )
+    src_m = sources.to_crs("EPSG:5070")
+    towers_m = towers.to_crs("EPSG:5070")
+
+    carriers_list, counts = [], []
+    for _, t in towers_m.iterrows():
+        if t.geometry is None or t.geometry.is_empty:
+            carriers_list.append("")
+            counts.append(0)
+            continue
+        ring = t.geometry.buffer(threshold_m)
+        near = src_m[src_m.geometry.within(ring)]
+        names = sorted(set(n for n in near["licensee_name"].dropna() if str(n).strip()))
+        carriers_list.append("; ".join(names))
+        counts.append(len(names))
+    towers["carriers"] = carriers_list
+    towers["carrier_count"] = counts
+    n_with = sum(1 for c in counts if c > 0)
+    log.info("ASR towers with ≥1 nearby carrier: %d / %d", n_with, len(towers))
+    return towers
+
+
+def join_towers_to_parcels(
+    towers: gpd.GeoDataFrame, parcels: gpd.GeoDataFrame
+) -> gpd.GeoDataFrame:
+    log.info("--- step 4: spatial join towers -> parcels ---")
+    if towers.empty:
+        for col in ("parcel_id", "parcel_owner", "parcel_mailing_address",
+                    "parcel_acreage", "parcel_assessed_value", "parcel_use"):
+            towers[col] = None
+        return towers
+
+    parcel_idx = parcels[
+        ["geometry", "PARNO", "NPARNO", "OWNNAME", "MAILADD", "GISACRES",
+         "PARVAL", "PARUSEDESC"]
+    ].rename(columns={
+        "PARNO": "parcel_id",
+        "NPARNO": "parcel_id_full",
+        "OWNNAME": "parcel_owner",
+        "MAILADD": "parcel_mailing_address",
+        "GISACRES": "parcel_acreage",
+        "PARVAL": "parcel_assessed_value",
+        "PARUSEDESC": "parcel_use",
+    })
+
+    joined = gpd.sjoin(towers, parcel_idx, how="left", predicate="within")
+    # Drop the sjoin index column
+    joined = joined.drop(columns=[c for c in joined.columns if c.startswith("index_right")])
+    # Tower may sit on a boundary or just outside; if no within match, leave nulls.
+    log.info("towers matched to parcels: %d / %d",
+             joined["parcel_id"].notna().sum(), len(joined))
+    return joined
+
+
+def flag_oz(
+    towers: gpd.GeoDataFrame, oz: gpd.GeoDataFrame
+) -> gpd.GeoDataFrame:
+    if towers.empty or oz.empty:
+        towers["in_oz"] = False
+        towers["oz_geoid"] = None
+        return towers
+    oz_idx = oz[["geometry", "GEOID10"]].rename(columns={"GEOID10": "oz_geoid"})
+    joined = gpd.sjoin(towers, oz_idx, how="left", predicate="within")
+    joined = joined.drop(columns=[c for c in joined.columns if c.startswith("index_right")])
+    joined["in_oz"] = joined["oz_geoid"].notna()
+    log.info("towers in OZ: %d", joined["in_oz"].sum())
+    return joined
+
+
+def flag_parcels(
+    parcels: gpd.GeoDataFrame, towers: gpd.GeoDataFrame, oz: gpd.GeoDataFrame
+) -> gpd.GeoDataFrame:
+    log.info("--- step 5: flag parcels (has_tower, in_oz) ---")
+    parcels = parcels.copy()
+
+    # has_tower: any tower geometry within this parcel
+    if not towers.empty:
+        host = gpd.sjoin(
+            parcels[["geometry"]].reset_index().rename(columns={"index": "_pidx"}),
+            towers[["geometry"]],
+            how="inner",
+            predicate="contains",
+        )
+        host_ids = set(host["_pidx"].unique())
+    else:
+        host_ids = set()
+    parcels["has_tower"] = parcels.index.isin(host_ids)
+    parcels["tower_count"] = 0
+    if host_ids:
+        counts = gpd.sjoin(
+            parcels[["geometry"]].reset_index().rename(columns={"index": "_pidx"}),
+            towers[["geometry"]],
+            how="inner",
+            predicate="contains",
+        ).groupby("_pidx").size()
+        parcels.loc[counts.index, "tower_count"] = counts.values
+
+    # in_oz: parcel intersects any OZ polygon
+    if not oz.empty:
+        in_oz = gpd.sjoin(
+            parcels[["geometry"]].reset_index().rename(columns={"index": "_pidx"}),
+            oz[["geometry"]],
+            how="inner",
+            predicate="intersects",
+        )
+        oz_ids = set(in_oz["_pidx"].unique())
+    else:
+        oz_ids = set()
+    parcels["in_oz"] = parcels.index.isin(oz_ids)
+
+    log.info("parcels hosting >=1 tower: %d", parcels["has_tower"].sum())
+    log.info("parcels intersecting an OZ: %d", parcels["in_oz"].sum())
+    log.info(
+        "parcels hosting tower AND in OZ: %d",
+        (parcels["has_tower"] & parcels["in_oz"]).sum(),
+    )
+    return parcels
+
+
+def trim_parcels(parcels: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Keep a useful subset of columns and tidy types for the GeoJSON output."""
+    keep = [
+        "PARNO", "NPARNO", "OWNNAME", "OWNNAME2", "MAILADD",
+        "MCITY", "MSTATE", "MZIP",
+        "SITEADD", "SCITY",
+        "GISACRES", "RECAREANO", "LANDVAL", "IMPROVVAL", "PARVAL",
+        "PARVALTYPE", "PARUSECODE", "PARUSEDESC", "STRUCT", "STRUCTYEAR",
+        "STCNTYFIPS", "has_tower", "tower_count", "in_oz", "geometry",
+    ]
+    keep = [c for c in keep if c in parcels.columns]
+    out = parcels[keep].copy()
+    rename = {
+        "PARNO": "apn",
+        "NPARNO": "apn_full",
+        "OWNNAME": "owner_name",
+        "OWNNAME2": "owner_name_2",
+        "MAILADD": "owner_mailing_address",
+        "MCITY": "owner_city",
+        "MSTATE": "owner_state",
+        "MZIP": "owner_zip",
+        "SITEADD": "situs_address",
+        "SCITY": "situs_city",
+        "GISACRES": "acreage_gis",
+        "RECAREANO": "acreage_recorded",
+        "LANDVAL": "land_value",
+        "IMPROVVAL": "improvement_value",
+        "PARVAL": "assessed_value",
+        "PARVALTYPE": "value_type",
+        "PARUSECODE": "land_use_code",
+        "PARUSEDESC": "land_use_desc",
+        "STRUCT": "has_structure",
+        "STRUCTYEAR": "structure_year",
+        "STCNTYFIPS": "state_county_fips",
+    }
+    out = out.rename(columns=rename)
+    return out
+
+
+def trim_oz(oz: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    keep = [c for c in (
+        "GEOID10", "STATE", "COUNTY", "TRACT", "STUSAB", "STATE_NAME", "Rural",
+        "geometry",
+    ) if c in oz.columns]
+    out = oz[keep].copy().rename(columns={
+        "GEOID10": "geoid10",
+        "STATE": "state_fips",
+        "COUNTY": "county_fips",
+        "TRACT": "tract",
+        "STUSAB": "state_abbr",
+        "STATE_NAME": "state_name",
+        "Rural": "rural",
+    })
+    return out
+
+
+def write_geojson(gdf: gpd.GeoDataFrame, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Coerce datetimes to ISO strings for clean JSON
+    for col in gdf.columns:
+        if col == "geometry":
+            continue
+        if pd.api.types.is_datetime64_any_dtype(gdf[col]):
+            gdf[col] = gdf[col].astype("string")
+    if path.exists():
+        path.unlink()
+    gdf.to_file(path, driver="GeoJSON")
+    log.info("wrote %s (%d features, %.1f KB)",
+             path.relative_to(ROOT), len(gdf), path.stat().st_size / 1024)
+
+
+def main() -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
+
+    towers = parse_towers()
+    uls = parse_uls()
+    hifld = parse_hifld()
+    parcels = load_parcels()
+    oz = load_oz()
+
+    towers = join_towers_to_parcels(towers, parcels)
+    towers = flag_oz(towers, oz)
+    towers = attach_carriers(towers, uls, hifld)
+    parcels_out = flag_parcels(parcels, towers, oz)
+
+    parcels_out = trim_parcels(parcels_out)
+    oz_out = trim_oz(oz)
+
+    write_geojson(towers, OUT / "towers.geojson")
+    if not uls.empty:
+        write_geojson(uls, OUT / "uls_cellular.geojson")
+    if not hifld.empty:
+        write_geojson(hifld, OUT / "hifld_towers.geojson")
+    write_geojson(parcels_out, OUT / "parcels.geojson")
+    write_geojson(oz_out, OUT / "opportunity_zones.geojson")
+
+    log.info("=== summary ===")
+    log.info("ASR towers in Graham bbox (constructed): %d", len(towers))
+    log.info("ULS cellular sites in Graham bbox (active): %d", len(uls))
+    log.info("HIFLD cellular towers in Graham bbox: %d", len(hifld))
+    log.info("parcels in Graham County: %d", len(parcels_out))
+    log.info("parcels hosting a tower: %d", int(parcels_out["has_tower"].sum()))
+    log.info("parcels hosting a tower in an OZ: %d",
+             int((parcels_out["has_tower"] & parcels_out["in_oz"]).sum()))
+    log.info("opportunity zones intersecting Graham: %d", len(oz_out))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,26 @@
+# ── Preprocess / GIS (existing) ────────────────────────────────────────────
+geopandas>=0.14
+shapely>=2.0
+pandas>=2.0
+pyproj>=3.6
+# pyarrow powers GeoParquet — required by the v3 preprocess plan's dual-write
+# strategy (Parquet for analytics, GeoJSON for the map app).
+pyarrow>=15
+# openpyxl powers pandas.read_excel — needed by ARC distressed, EIA 860,
+# EIA 860M, and FDOT billboards normalizers.
+openpyxl>=3.1
+
+# ── Pilot Data Puller (standalone desktop app) ─────────────────────────────
+# PySide6 6.7.x is the long-term-support branch and works reliably with
+# macOS arm64; 6.11.x had a cocoa-plugin load issue on this machine.
+PySide6==6.7.3
+
+# Optional: only needed when the paid Regrid parcels source is licensed
+# and credentials are configured. Comment out to keep the venv smaller.
+boto3>=1.34
+
+# Optional: powers the "Diagnose this failure" button in the verify dialog.
+# Only consulted when the hardcoded verify check flags a FAIL row and the
+# user clicks Diagnose — costs a few cents per call. Requires
+# ANTHROPIC_API_KEY in the environment.
+anthropic>=0.40

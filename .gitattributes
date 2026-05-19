@@ -1,0 +1,37 @@
+# Normalize line endings on commit (avoids cross-platform diff churn).
+* text=auto eol=lf
+
+# Force binary handling for spatial / archive formats — Git's text
+# heuristics misclassify these and produce broken diffs.
+*.parquet binary
+*.geojson binary
+*.gpkg binary
+*.gdb binary
+*.shp binary
+*.shx binary
+*.dbf binary
+*.prj binary
+*.cpg binary
+*.zip binary
+*.tar.gz binary
+*.tgz binary
+*.png binary
+*.gif binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.pdf binary
+*.xlsx binary
+*.xls binary
+*.pmtiles binary
+*.mbtiles binary
+
+# Markdown + Python + JS — text, but tell GitHub the language for diff stats
+*.md  linguist-detectable=true
+*.py  linguist-detectable=true
+*.js  linguist-detectable=true
+*.ts  linguist-detectable=true
+*.svelte linguist-detectable=true
+
+# Test fixtures committed as parquet are tiny synthetic data — bin diff is fine
+tests/fixtures/**/*.parquet binary

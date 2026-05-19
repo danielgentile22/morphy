@@ -1,0 +1,65 @@
+# ─── Data (PII; never commit) ────────────────────────────────────────
+# All raw + processed data is git-ignored. data/ may contain parcel-owner
+# names + mailing addresses (PII when combined). See docs/SECURITY.md.
+data/
+!data/.gitkeep
+
+# Local environment overrides
+.env
+.env.local
+*.env
+
+# ─── Python ──────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+build/
+dist/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.python-version
+
+# ─── Node (for future map app v2) ────────────────────────────────────
+node_modules/
+.npm/
+.vite/
+.svelte-kit/
+
+# ─── OS / editor cruft ───────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+.Rhistory
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ─── Local Claude Code state ─────────────────────────────────────────
+.claude/projects/
+.claude/cache/
+# NOTE: .claude/plans/ may contain working plan docs — uncomment to ignore.
+
+# ─── Backups + temp ──────────────────────────────────────────────────
+*.bak
+*.tmp
+*.log
+!data/fetch.log         # actually we *do* ignore the whole data/ above; the
+                        # negation is intentional for clarity only
+backups/
+
+# ─── User-config persisted by puller ─────────────────────────────────
+# (Section 3 adds ~/.config/pilot/puller_state.json — outside repo, ignored
+# anyway, but documented here)
