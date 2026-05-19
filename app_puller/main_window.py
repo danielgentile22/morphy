@@ -74,6 +74,7 @@ from verify_raw import verify_all, verify_one
 
 from . import state as ui_state
 from .preprocess_dialog import PreprocessDialog
+from .upload import pick_and_upload
 from .walkthrough_dialog import WalkthroughDialog
 from .workers import CheckWorker, FetchWorker
 
@@ -549,12 +550,23 @@ class MainWindow(QMainWindow):
         self.btn_action.clicked.connect(self._pull_current)  # type: ignore
         self.btn_action.setMinimumHeight(32)
 
+        self.btn_upload = QPushButton("⤴ Upload file(s)…")
+        self.btn_upload.setEnabled(False)
+        self.btn_upload.setToolTip(
+            "Pick file(s) from anywhere on disk (e.g. your Desktop) and "
+            "copy them straight into data/raw/<source>/current/. ZIPs can "
+            "be auto-extracted."
+        )
+        self.btn_upload.clicked.connect(self._upload_for_current)  # type: ignore
+        self.btn_upload.setMinimumHeight(32)
+
         self.btn_manual = QPushButton("Open manual download URL")
         self.btn_manual.setEnabled(False)
         self.btn_manual.clicked.connect(self._open_manual)  # type: ignore
         self.btn_manual.setMinimumHeight(32)
 
         h.addWidget(self.btn_action)
+        h.addWidget(self.btn_upload)
         h.addWidget(self.btn_manual)
         v.addLayout(h)
 
@@ -716,6 +728,7 @@ class MainWindow(QMainWindow):
         self.det_subtitle.setText("")
         self.det_body.setHtml("")
         self.btn_action.setEnabled(False)
+        self.btn_upload.setEnabled(False)
         self.btn_manual.setEnabled(False)
         self._current_source_id: str | None = None
 
@@ -823,11 +836,42 @@ class MainWindow(QMainWindow):
             else:
                 self.btn_action.setText("Pull")
         self.btn_manual.setEnabled(bool(s.legal.manual_url))
+        # Upload is available for any source — useful even for auto sources
+        # when the auto-fetch is failing and the user grabbed it by hand.
+        self.btn_upload.setEnabled(self._fetch_thread is None)
 
     # ── actions ─────────────────────────────────────────────────────────
 
     def _on_anchor_clicked(self, url) -> None:
         webbrowser.open(url.toString())
+
+    def _upload_for_current(self) -> None:
+        sid = getattr(self, "_current_source_id", None)
+        if not sid:
+            return
+        s = get_source(sid)
+        result = pick_and_upload(s, self)
+        if result is None:
+            self._append_log(f"Upload cancelled for {s.name}.")
+            return
+        copied, extracted, errors = result
+        if copied == 0 and extracted == 0 and not errors:
+            self._append_log(f"Upload for {s.name}: nothing copied (overwrite declined).")
+            return
+        parts = []
+        if copied:
+            parts.append(f"copied {copied} file(s)")
+        if extracted:
+            parts.append(f"extracted {extracted} from ZIP(s)")
+        msg = f"Upload for {s.name}: {', '.join(parts)} → data/raw/{s.id}/current/."
+        self._append_log(msg)
+        for err in errors:
+            self._append_log(f"  ✗ {err}", error=True)
+        # Pick up the new files in the manifest as a manual install.
+        self._detect_manual_installs()
+        self._refresh_all_rows()
+        if getattr(self, "_current_source_id", None) == sid:
+            self._show_source(s)
 
     def _open_manual(self) -> None:
         if not getattr(self, "_current_source_id", None):
@@ -1244,8 +1288,11 @@ class MainWindow(QMainWindow):
             self.btn_refresh_assisted,
         ):
             b.setEnabled(not busy)
+        has_selection = bool(getattr(self, "_current_source_id", None))
         if hasattr(self, "btn_action"):
-            self.btn_action.setEnabled(not busy and bool(getattr(self, "_current_source_id", None)))
+            self.btn_action.setEnabled(not busy and has_selection)
+        if hasattr(self, "btn_upload"):
+            self.btn_upload.setEnabled(not busy and has_selection)
 
     # ── attention panel ─────────────────────────────────────────────────
 

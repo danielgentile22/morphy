@@ -131,6 +131,16 @@ class WalkthroughDialog(QDialog):
         self.btn_deep_link.clicked.connect(self._open_current_deep_link)  # type: ignore
         v.addWidget(self.btn_deep_link)
 
+        self.btn_upload = QPushButton("⤴ Upload downloaded file(s)…")
+        self.btn_upload.setMinimumHeight(30)
+        self.btn_upload.setToolTip(
+            "Pick the file(s) you just downloaded (e.g. from your Desktop) "
+            "and copy them into data/raw/<source>/current/. ZIPs can be "
+            "auto-extracted."
+        )
+        self.btn_upload.clicked.connect(self._upload_files)  # type: ignore
+        v.addWidget(self.btn_upload)
+
         self.lbl_error = QLabel("")
         self.lbl_error.setStyleSheet(f"color: {self._err()};")
         self.lbl_error.setWordWrap(True)
@@ -213,6 +223,33 @@ class WalkthroughDialog(QDialog):
         if step.deep_link:
             self._open_url(step.deep_link)
 
+    def _upload_files(self) -> None:
+        from .upload import pick_and_upload
+
+        result = pick_and_upload(self._source, self)
+        if result is None:
+            return
+        copied, extracted, errors = result
+        if errors:
+            self._show_error(
+                "Upload finished with errors:<br>" + "<br>".join(f"• {e}" for e in errors)
+            )
+            return
+        parts = []
+        if copied:
+            parts.append(f"copied {copied}")
+        if extracted:
+            parts.append(f"extracted {extracted}")
+        if parts:
+            # Inline confirmation — non-blocking; user can keep walking
+            # through or click "I'm done" to finalize.
+            self.lbl_error.setStyleSheet("color: #81c784;" if self._dark else "color: #2e7d32;")
+            self.lbl_error.setText(
+                f"✓ Upload complete: {', '.join(parts)} → "
+                f"<code>data/raw/{self._source.id}/current/</code>"
+            )
+            self.lbl_error.show()
+
     @staticmethod
     def _open_url(url: str) -> None:
         webbrowser.open(url)
@@ -275,5 +312,8 @@ class WalkthroughDialog(QDialog):
         self.accept()
 
     def _show_error(self, msg_html: str) -> None:
+        # lbl_error is overloaded for upload-success too — always re-set
+        # the color here so prior success-green doesn't leak into errors.
+        self.lbl_error.setStyleSheet(f"color: {self._err()};")
         self.lbl_error.setText(msg_html)
         self.lbl_error.show()

@@ -175,6 +175,40 @@ Each `ManualStep`:
 
 ---
 
+## 4.5 Upload file(s) button
+
+Manual downloads land on the user's Desktop by default. To avoid the
+"navigate to `~/Projects/pilot/data/raw/<id>/current/` in Finder, drag
+files in" friction, the puller exposes an **Upload file(s)** button in
+two places:
+
+1. **Details pane** — bottom-right action bar of the source detail
+   panel, between Pull and Open URL. Works for every source (auto or
+   manual), useful when an auto-fetch is failing and the user grabbed
+   the file by hand.
+2. **Walkthrough modal** — between the per-step deep-link button and
+   the navigation row. Lets the user upload mid-walkthrough without
+   having to leave the modal.
+
+Both call the same helper in `app_puller/upload.py`:
+
+- File picker opens at `~/Desktop`.
+- Multiple files selectable in one go (the typical shapefile set is
+  `.shp` + `.shx` + `.dbf` + `.prj`).
+- ZIPs get an opt-in **Auto-extract** prompt (uses the same
+  `safe_extract_zip` helper as the fetch pipeline).
+- Overwrites of existing files are confirmed once at the top of the
+  flow.
+- Files are **copied** (not moved) — the original on Desktop is
+  preserved so the user can clean up at their leisure.
+
+After upload from the details pane, the main window's
+`_detect_manual_installs()` reruns to update the manifest. From the
+walkthrough modal, the existing "I'm done" finalize step picks up
+whatever was uploaded.
+
+---
+
 ## 5. Bulk refresh
 
 Two top-bar buttons handle the routine workflow:
