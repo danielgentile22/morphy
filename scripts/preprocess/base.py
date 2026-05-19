@@ -21,9 +21,9 @@ import sys
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 # Make the sibling 'fetch' package importable when running as a script.
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
@@ -61,9 +61,10 @@ CURRENT_SCHEMA_VERSIONS: dict[str, int] = {
 @dataclass
 class NormalizeResult:
     """Returned by Normalizer.normalize()."""
+
     raw_rows: int
-    canonical_rows: int        # may differ from raw if filtering (rare)
-    bytes: int                  # total bytes written
+    canonical_rows: int  # may differ from raw if filtering (rare)
+    bytes: int  # total bytes written
     output_files: list[Path]
     canonical_types_written: list[str]
     quality_report: dict
@@ -88,7 +89,7 @@ class Normalizer(ABC):
     """
 
     source_id: str = ""
-    canonical_types: list[str] = []   # one or more of CURRENT_SCHEMA_VERSIONS keys
+    canonical_types: list[str] = []  # one or more of CURRENT_SCHEMA_VERSIONS keys
 
     @abstractmethod
     def normalize(self, raw_dir: Path, out_dir: Path) -> NormalizeResult:
@@ -101,7 +102,7 @@ class Normalizer(ABC):
         return any(p.is_file() for p in raw_dir.rglob("*"))
 
 
-_NORMALIZER_REGISTRY: "OrderedDict[str, Normalizer]" = OrderedDict()
+_NORMALIZER_REGISTRY: OrderedDict[str, Normalizer] = OrderedDict()
 
 
 def register_normalizer(cls: type[Normalizer]) -> type[Normalizer]:
@@ -114,8 +115,7 @@ def register_normalizer(cls: type[Normalizer]) -> type[Normalizer]:
     for ct in inst.canonical_types:
         if ct not in CURRENT_SCHEMA_VERSIONS:
             raise ValueError(
-                f"{cls.__name__}: unknown canonical_type {ct!r} — "
-                f"add it to CURRENT_SCHEMA_VERSIONS"
+                f"{cls.__name__}: unknown canonical_type {ct!r} — add it to CURRENT_SCHEMA_VERSIONS"
             )
     if inst.source_id in _NORMALIZER_REGISTRY:
         raise ValueError(f"duplicate normalizer for source_id {inst.source_id!r}")
@@ -144,6 +144,7 @@ class ComposeContext:
     Tables are keyed by canonical_type. Each entry is a GeoDataFrame (for
     spatial types) or a DataFrame (for tabular types like county_score).
     """
+
     state_fips: str
     state_name: str
     state_abbr: str
@@ -179,11 +180,11 @@ class Join(ABC):
     add — used for dependency ordering and for catalog generation.
     """
 
-    name: str = ""               # human-friendly name (also used for log)
-    inputs: list[str] = []       # canonical types this join reads
-    annotates: str = ""          # canonical type this join enriches (or "*")
+    name: str = ""  # human-friendly name (also used for log)
+    inputs: list[str] = []  # canonical types this join reads
+    annotates: str = ""  # canonical type this join enriches (or "*")
     columns_added: list[str] = []
-    depends_on: list[str] = []   # other Join names that must run first
+    depends_on: list[str] = []  # other Join names that must run first
 
     @abstractmethod
     def apply(self, ctx: ComposeContext) -> None: ...
@@ -227,9 +228,7 @@ def ordered_joins() -> list[Join]:
         visiting.add(j.name)
         for dep_name in j.depends_on:
             if dep_name not in by_name:
-                raise ValueError(
-                    f"join {j.name} depends on unknown join {dep_name}"
-                )
+                raise ValueError(f"join {j.name} depends on unknown join {dep_name}")
             visit(by_name[dep_name])
         visiting.remove(j.name)
         visited.add(j.name)
@@ -249,7 +248,7 @@ class View(ABC):
     name: str = ""
     inputs: list[str] = []
     description: str = ""
-    write_geojson: bool = False   # map-app-facing views set this True
+    write_geojson: bool = False  # map-app-facing views set this True
 
     @abstractmethod
     def build(self, ctx: ComposeContext):
@@ -259,7 +258,7 @@ class View(ABC):
         return all(ctx.has(t) for t in self.inputs)
 
 
-_VIEW_REGISTRY: "OrderedDict[str, View]" = OrderedDict()
+_VIEW_REGISTRY: OrderedDict[str, View] = OrderedDict()
 
 
 def register_view(cls: type[View]) -> type[View]:
@@ -288,11 +287,11 @@ def get_view(name: str) -> View:
 
 
 def utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def utcnow_date() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(UTC).date().isoformat()
 
 
 def add_system_columns(
@@ -301,7 +300,7 @@ def add_system_columns(
     canonical_type: str,
     *,
     tenant_id: str = "pilot",
-    valid_from: Optional[str] = None,
+    valid_from: str | None = None,
 ):
     """Stamp the four system columns + the three time-series ones on every row.
 
@@ -332,7 +331,7 @@ def quality_report(
     source_id: str,
     tables: dict[str, Any],
     *,
-    warnings: Optional[list[str]] = None,
+    warnings: list[str] | None = None,
 ) -> dict:
     """Build a quality report from a dict of {table_name: dataframe}."""
     report: dict[str, Any] = {
@@ -367,9 +366,7 @@ def quality_report(
         geom_pct = None
         if hasattr(df, "geometry"):
             try:
-                geom_pct = round(
-                    float(df.geometry.is_valid.mean()) * 100, 2
-                ) if rows else None
+                geom_pct = round(float(df.geometry.is_valid.mean()) * 100, 2) if rows else None
             except Exception:
                 geom_pct = None
 

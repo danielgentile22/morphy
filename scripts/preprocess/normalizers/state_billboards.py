@@ -10,15 +10,14 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 
 from ..base import (
-    NormalizeResult,
     Normalizer,
+    NormalizeResult,
     add_system_columns,
     quality_report,
     register_normalizer,
@@ -33,8 +32,7 @@ log = logging.getLogger("preprocess.billboards")
 
 def _read_any_table(raw_dir: Path) -> tuple[pd.DataFrame, Path]:
     cand = (
-        list(raw_dir.rglob("*.xlsx")) + list(raw_dir.rglob("*.xls")) +
-        list(raw_dir.rglob("*.csv"))
+        list(raw_dir.rglob("*.xlsx")) + list(raw_dir.rglob("*.xls")) + list(raw_dir.rglob("*.csv"))
     )
     if not cand:
         raise FileNotFoundError(f"no .xlsx / .xls / .csv under {raw_dir}")
@@ -46,7 +44,7 @@ def _read_any_table(raw_dir: Path) -> tuple[pd.DataFrame, Path]:
     return df, path
 
 
-def _find_col(df: pd.DataFrame, names: list[str]) -> Optional[str]:
+def _find_col(df: pd.DataFrame, names: list[str]) -> str | None:
     lower = {str(c).strip().lower(): c for c in df.columns}
     for n in names:
         if n.lower() in lower:
@@ -84,28 +82,29 @@ def _normalize_billboards(
         lat = to_float(r.get(lat_col)) if lat_col else None
         lon = to_float(r.get(lon_col)) if lon_col else None
         geom = None
-        if (lat is not None and lon is not None
-                and -90 <= lat <= 90 and -180 <= lon <= 180):
+        if lat is not None and lon is not None and -90 <= lat <= 90 and -180 <= lon <= 180:
             geom = Point(lon, lat)
         county_fips = canon_county_fips(
             r.get(county_col) if county_col else None,
             state_fips=state_fips,
         )
-        rows.append({
-            "permit_no": safe_str(r.get(permit_col)) if permit_col else "",
-            "owner": safe_str(r.get(owner_col)) if owner_col else "",
-            "status": safe_str(r.get(status_col)) if status_col else "",
-            "state_fips": state_fips,
-            "county_fips": county_fips,
-            "route": safe_str(r.get(route_col)) if route_col else "",
-            "mile_marker": to_float(r.get(mm_col)) if mm_col else None,
-            "issue_date": safe_str(r.get(date_col)) if date_col else "",
-            "lat": lat,
-            "lon": lon,
-            "extras": {},
-            "_source_row_id": safe_str(r.get(permit_col)) if permit_col else "",
-            "geometry": geom,
-        })
+        rows.append(
+            {
+                "permit_no": safe_str(r.get(permit_col)) if permit_col else "",
+                "owner": safe_str(r.get(owner_col)) if owner_col else "",
+                "status": safe_str(r.get(status_col)) if status_col else "",
+                "state_fips": state_fips,
+                "county_fips": county_fips,
+                "route": safe_str(r.get(route_col)) if route_col else "",
+                "mile_marker": to_float(r.get(mm_col)) if mm_col else None,
+                "issue_date": safe_str(r.get(date_col)) if date_col else "",
+                "lat": lat,
+                "lon": lon,
+                "extras": {},
+                "_source_row_id": safe_str(r.get(permit_col)) if permit_col else "",
+                "geometry": geom,
+            }
+        )
     out = gpd.GeoDataFrame(rows, geometry="geometry", crs="EPSG:4326")
     out = add_point_derivatives(out)
     out = add_system_columns(out, source_id, "billboard")

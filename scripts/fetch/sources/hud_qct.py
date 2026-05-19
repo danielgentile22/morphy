@@ -7,6 +7,7 @@ pattern as the OZ layer.
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from pathlib import Path
 
 from ..base import (
@@ -15,10 +16,9 @@ from ..base import (
     FetchResult,
     ProgressCallback,
 )
-from ..http import HttpError, download, fetch_text
+from ..http import HttpError, fetch_text
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ._helpers import arcgis_query_all
-
 
 # HUD renamed the QCT service from Qualified_Census_Tracts_2024 to
 # QUALIFIED_CENSUS_TRACTS (uppercase). Layer 0 holds the 2025 tracts;
@@ -80,10 +80,11 @@ class HudQct(DataSource):
             raise HttpError(f"HUD QCT metadata not JSON: {e}")
         edit_ms = (meta.get("editingInfo") or {}).get("lastEditDate")
         if isinstance(edit_ms, (int, float)):
-            from datetime import datetime, timezone
-            dt = datetime.fromtimestamp(edit_ms / 1000, tz=timezone.utc)
+            from datetime import datetime
+
+            dt = datetime.fromtimestamp(edit_ms / 1000, tz=UTC)
             return dt.date().isoformat()
-        return f"n-{meta.get('name','?')}"
+        return f"n-{meta.get('name', '?')}"
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
         out = dest_dir / "qct.geojson"

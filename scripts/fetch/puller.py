@@ -9,9 +9,9 @@ is staged + promoted atomically, errors are logged, and legal policy
 from __future__ import annotations
 
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
 
 from .base import DataSource, ProgressCallback
 from .http import HttpError
@@ -30,19 +30,19 @@ from .storage import (
 class CheckOutcome:
     source_id: str
     ok: bool
-    remote_version: Optional[str] = None
-    error: Optional[str] = None
+    remote_version: str | None = None
+    error: str | None = None
 
 
 @dataclass
 class FetchOutcome:
     source_id: str
     ok: bool
-    skipped: bool = False           # True for MANUAL_ONLY / missing creds
-    skip_reason: Optional[str] = None
+    skipped: bool = False  # True for MANUAL_ONLY / missing creds
+    skip_reason: str | None = None
     bytes: int = 0
-    remote_version: Optional[str] = None
-    error: Optional[str] = None
+    remote_version: str | None = None
+    error: str | None = None
 
 
 def check_one(source: DataSource, manifest: Manifest) -> CheckOutcome:
@@ -79,7 +79,7 @@ def fetch_one(
     source: DataSource,
     manifest: Manifest,
     progress: ProgressCallback,
-    cancel_check: Optional[Callable[[], bool]] = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> FetchOutcome:
     """Download the source into its current/ directory and update manifest.
 
@@ -93,7 +93,9 @@ def fetch_one(
     if source.legal.automation == AutomationPolicy.MANUAL_ONLY:
         log_event("fetch_skipped", source=sid, reason="manual_only")
         return FetchOutcome(
-            sid, ok=True, skipped=True,
+            sid,
+            ok=True,
+            skipped=True,
             skip_reason="Manual download required (publisher does not permit automation).",
         )
 
@@ -101,7 +103,9 @@ def fetch_one(
         if not source.credentials_available():
             log_event("fetch_skipped", source=sid, reason="no_credentials")
             return FetchOutcome(
-                sid, ok=True, skipped=True,
+                sid,
+                ok=True,
+                skipped=True,
                 skip_reason="Credentials not configured (paid source).",
             )
 
@@ -131,9 +135,7 @@ def fetch_one(
             bytes=total_bytes,
             n_files=len(moved_files),
         )
-        return FetchOutcome(
-            sid, ok=True, bytes=total_bytes, remote_version=result.remote_version
-        )
+        return FetchOutcome(sid, ok=True, bytes=total_bytes, remote_version=result.remote_version)
 
     except Exception as e:  # broad: never let one source kill the whole UI
         tb = traceback.format_exc(limit=2)

@@ -42,19 +42,19 @@ class AutomationPolicy(str, Enum):
 
 
 class CommercialUse(str, Enum):
-    ALLOWED = "allowed"           # Public domain or explicitly permits commercial use
+    ALLOWED = "allowed"  # Public domain or explicitly permits commercial use
     ALLOWED_WITH_ATTRIBUTION = "allowed_with_attribution"
-    RESTRICTED = "restricted"     # Non-commercial only or licence ambiguous
-    UNKNOWN = "unknown"           # Not yet researched; treat with caution
+    RESTRICTED = "restricted"  # Non-commercial only or licence ambiguous
+    UNKNOWN = "unknown"  # Not yet researched; treat with caution
 
 
 @dataclass(frozen=True)
 class LegalInfo:
     publisher: str
-    license: str                  # short name, e.g. "Public Domain (US federal work)"
-    license_url: str | None       # link to the actual terms
+    license: str  # short name, e.g. "Public Domain (US federal work)"
+    license_url: str | None  # link to the actual terms
     automation: AutomationPolicy
     commercial_use: CommercialUse
-    manual_url: str               # human-facing landing page for manual download
+    manual_url: str  # human-facing landing page for manual download
     attribution: str | None = None
-    notes: str | None = None      # caveats, ToS quirks, citation requirements
+    notes: str | None = None  # caveats, ToS quirks, citation requirements

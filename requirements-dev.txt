@@ -1,0 +1,12 @@
+# Development-only dependencies — not needed at runtime.
+# Install with: pip install -r requirements-dev.txt
+
+# Lint + format (single tool; same one CI runs)
+ruff>=0.6
+
+# Test framework
+pytest>=8.0
+pytest-cov>=5.0
+
+# JSON Schema validation (used by tests/test_schemas.py and the composer)
+jsonschema>=4.21

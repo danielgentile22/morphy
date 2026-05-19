@@ -11,16 +11,16 @@ when a normalized record is missing state_fips (rare — fallback).
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator
 
 
 @dataclass(frozen=True)
 class StateGeography:
-    fips: str       # '37'
-    abbr: str       # 'NC'
-    name: str       # 'North Carolina'
-    bbox: tuple[float, float, float, float]   # (minx, miny, maxx, maxy) in EPSG:4326
+    fips: str  # '37'
+    abbr: str  # 'NC'
+    name: str  # 'North Carolina'
+    bbox: tuple[float, float, float, float]  # (minx, miny, maxx, maxy) in EPSG:4326
 
 
 # Bboxes from Census TIGER state polygons, rounded outward slightly.

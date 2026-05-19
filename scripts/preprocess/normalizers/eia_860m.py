@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 
 from ..base import (
-    NormalizeResult,
     Normalizer,
+    NormalizeResult,
     add_system_columns,
     quality_report,
     register_normalizer,
@@ -57,27 +56,28 @@ class Eia860MNormalizer(Normalizer):
             lat = to_float(r.get("Latitude"))
             lon = to_float(r.get("Longitude"))
             geom = None
-            if (lat is not None and lon is not None
-                    and -90 <= lat <= 90 and -180 <= lon <= 180):
+            if lat is not None and lon is not None and -90 <= lat <= 90 and -180 <= lon <= 180:
                 geom = Point(lon, lat)
             state_fips = canon_state_fips(r.get("State"))
             county_fips = canon_county_fips(r.get("County"), state_fips=state_fips)
-            rows.append({
-                "facility_id": safe_str(r.get("Plant ID") or r.get("Plant Code")),
-                "name": safe_str(r.get("Plant Name")),
-                "operator": safe_str(r.get("Utility Name") or r.get("Operator")),
-                "capacity_mw": to_float(r.get("Nameplate Capacity (MW)")),
-                "online_date": safe_str(r.get("Operating Year")),
-                "retired_date": None,
-                "is_operational": True,
-                "technology": safe_str(r.get("Technology")),
-                "tracking_type": None,
-                "county_fips": county_fips,
-                "state_fips": state_fips,
-                "geometry": geom,
-                "extras": {},
-                "_source_row_id": safe_str(r.get("Plant ID") or r.get("Plant Code")),
-            })
+            rows.append(
+                {
+                    "facility_id": safe_str(r.get("Plant ID") or r.get("Plant Code")),
+                    "name": safe_str(r.get("Plant Name")),
+                    "operator": safe_str(r.get("Utility Name") or r.get("Operator")),
+                    "capacity_mw": to_float(r.get("Nameplate Capacity (MW)")),
+                    "online_date": safe_str(r.get("Operating Year")),
+                    "retired_date": None,
+                    "is_operational": True,
+                    "technology": safe_str(r.get("Technology")),
+                    "tracking_type": None,
+                    "county_fips": county_fips,
+                    "state_fips": state_fips,
+                    "geometry": geom,
+                    "extras": {},
+                    "_source_row_id": safe_str(r.get("Plant ID") or r.get("Plant Code")),
+                }
+            )
         gdf = gpd.GeoDataFrame(rows, geometry="geometry", crs="EPSG:4326")
         gdf = add_point_derivatives(gdf)
         gdf = add_system_columns(gdf, self.source_id, "solar_facility")
@@ -96,7 +96,7 @@ class Eia860MNormalizer(Normalizer):
         )
 
     @staticmethod
-    def _find_xlsx(raw_dir: Path) -> Optional[Path]:
+    def _find_xlsx(raw_dir: Path) -> Path | None:
         if not raw_dir.exists():
             return None
         cand = sorted(raw_dir.rglob("*.xlsx"))

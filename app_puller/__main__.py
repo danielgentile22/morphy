@@ -13,6 +13,5 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 from app_puller.main_window import run  # noqa: E402
 
-
 if __name__ == "__main__":
     raise SystemExit(run())

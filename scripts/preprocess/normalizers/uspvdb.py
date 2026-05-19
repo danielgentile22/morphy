@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import geopandas as gpd
 
 from ..base import (
-    NormalizeResult,
     Normalizer,
+    NormalizeResult,
     add_system_columns,
     quality_report,
     register_normalizer,
@@ -42,30 +41,34 @@ class UspvdbNormalizer(Normalizer):
         for _, r in gdf.iterrows():
             state_fips = canon_state_fips(r.get("p_state"))
             county_fips = canon_county_fips(r.get("p_county"), state_fips=state_fips)
-            rows.append({
-                "facility_id": safe_str(r.get("p_id") or r.get("case_id")),
-                "name": safe_str(r.get("p_name") or r.get("plant_name")),
-                "operator": safe_str(r.get("p_owner") or r.get("p_oper")),
-                "capacity_mw": to_float(r.get("p_cap_ac") or r.get("p_cap_dc")),
-                "online_date": safe_str(r.get("p_year")),
-                "retired_date": None,
-                "is_operational": True,
-                "technology": safe_str(r.get("p_tech_sec") or r.get("technology")),
-                "tracking_type": safe_str(r.get("p_axis")),
-                "county_fips": county_fips,
-                "state_fips": state_fips,
-                "extras": {
-                    "p_eia_id": r.get("p_eia_id"),
-                    "p_lulc_pre": r.get("p_lulc_pre"),
-                    "p_area": r.get("p_area"),
-                },
-                "_source_row_id": safe_str(r.get("p_id") or r.get("case_id")),
-                "geometry": r.geometry,
-            })
+            rows.append(
+                {
+                    "facility_id": safe_str(r.get("p_id") or r.get("case_id")),
+                    "name": safe_str(r.get("p_name") or r.get("plant_name")),
+                    "operator": safe_str(r.get("p_owner") or r.get("p_oper")),
+                    "capacity_mw": to_float(r.get("p_cap_ac") or r.get("p_cap_dc")),
+                    "online_date": safe_str(r.get("p_year")),
+                    "retired_date": None,
+                    "is_operational": True,
+                    "technology": safe_str(r.get("p_tech_sec") or r.get("technology")),
+                    "tracking_type": safe_str(r.get("p_axis")),
+                    "county_fips": county_fips,
+                    "state_fips": state_fips,
+                    "extras": {
+                        "p_eia_id": r.get("p_eia_id"),
+                        "p_lulc_pre": r.get("p_lulc_pre"),
+                        "p_area": r.get("p_area"),
+                    },
+                    "_source_row_id": safe_str(r.get("p_id") or r.get("case_id")),
+                    "geometry": r.geometry,
+                }
+            )
         out = gpd.GeoDataFrame(rows, geometry="geometry", crs="EPSG:4326")
         out = add_polygon_derivatives(out)
         out = add_system_columns(out, self.source_id, "solar_facility")
-        files, written = dual_write_spatial(out, out_dir, "solar_facilities", write_simplified_geojson=True)
+        files, written = dual_write_spatial(
+            out, out_dir, "solar_facilities", write_simplified_geojson=True
+        )
         total = raw_bytes + written
         qr = quality_report(self.source_id, {"raw": gdf, "solar_facilities": out})
         qr_path = write_quality_report(out_dir, qr)
@@ -79,7 +82,7 @@ class UspvdbNormalizer(Normalizer):
         )
 
     @staticmethod
-    def _find_first(raw_dir: Path, pattern: str) -> Optional[Path]:
+    def _find_first(raw_dir: Path, pattern: str) -> Path | None:
         if not raw_dir.exists():
             return None
         cand = sorted(raw_dir.rglob(pattern))

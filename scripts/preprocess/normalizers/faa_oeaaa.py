@@ -7,15 +7,14 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 
 from ..base import (
-    NormalizeResult,
     Normalizer,
+    NormalizeResult,
     add_system_columns,
     quality_report,
     register_normalizer,
@@ -45,7 +44,7 @@ _FW_FIELDS = [
 ]
 
 
-def _dms_to_decimal_packed(s: str) -> Optional[float]:
+def _dms_to_decimal_packed(s: str) -> float | None:
     """Parse FAA DOF 'DD-MM-SS.SSH' or 'DDD-MM-SS.SSH' → decimal degrees."""
     if not s:
         return None
@@ -88,42 +87,49 @@ class FaaDofNormalizer(Normalizer):
             lat = _dms_to_decimal_packed(r.get("lat_dms"))
             lon = _dms_to_decimal_packed(r.get("lon_dms"))
             geom = None
-            if (lat is None or lon is None or
-                    not (-90 <= lat <= 90) or not (-180 <= lon <= 180)):
+            if lat is None or lon is None or not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
                 coord_errors += 1
             else:
                 geom = Point(lon, lat)
             state_fips = canon_state_fips(r.get("state"))
-            canonical_rows.append({
-                "asr_number": r.get("obstacle_number"),  # FAA's own ID, not FCC ASR
-                "owner_name": "",
-                "height_m": (to_float(r.get("agl_ft")) or 0) * 0.3048 or None,
-                "structure_type": safe_str(r.get("obstacle_type")),
-                "structure_type_desc": safe_str(r.get("obstacle_type")),
-                "status": safe_str(r.get("verification_status")),
-                "status_desc": "Verified" if safe_str(r.get("verification_status")) == "V" else "Other",
-                "is_active": True,
-                "date_built": None,
-                "date_dismantled": None,
-                "street": None,
-                "city": safe_str(r.get("city")),
-                "state": safe_str(r.get("state")),
-                "zip": None,
-                "county_fips": None,
-                "state_fips": state_fips,
-                "lat": lat,
-                "lon": lon,
-                "owner_street": None,
-                "owner_city": None,
-                "owner_state": None,
-                "owner_zip": None,
-                "owner_phone": None,
-                "coordinate_type": None,
-                "extras": {"oas_code": r.get("oas_code"), "amsl_ft": r.get("amsl_ft"),
-                           "quantity": r.get("quantity"), "country": r.get("country")},
-                "_source_row_id": safe_str(r.get("obstacle_number")),
-                "geometry": geom,
-            })
+            canonical_rows.append(
+                {
+                    "asr_number": r.get("obstacle_number"),  # FAA's own ID, not FCC ASR
+                    "owner_name": "",
+                    "height_m": (to_float(r.get("agl_ft")) or 0) * 0.3048 or None,
+                    "structure_type": safe_str(r.get("obstacle_type")),
+                    "structure_type_desc": safe_str(r.get("obstacle_type")),
+                    "status": safe_str(r.get("verification_status")),
+                    "status_desc": "Verified"
+                    if safe_str(r.get("verification_status")) == "V"
+                    else "Other",
+                    "is_active": True,
+                    "date_built": None,
+                    "date_dismantled": None,
+                    "street": None,
+                    "city": safe_str(r.get("city")),
+                    "state": safe_str(r.get("state")),
+                    "zip": None,
+                    "county_fips": None,
+                    "state_fips": state_fips,
+                    "lat": lat,
+                    "lon": lon,
+                    "owner_street": None,
+                    "owner_city": None,
+                    "owner_state": None,
+                    "owner_zip": None,
+                    "owner_phone": None,
+                    "coordinate_type": None,
+                    "extras": {
+                        "oas_code": r.get("oas_code"),
+                        "amsl_ft": r.get("amsl_ft"),
+                        "quantity": r.get("quantity"),
+                        "country": r.get("country"),
+                    },
+                    "_source_row_id": safe_str(r.get("obstacle_number")),
+                    "geometry": geom,
+                }
+            )
 
         gdf = gpd.GeoDataFrame(canonical_rows, geometry="geometry", crs="EPSG:4326")
         gdf = add_point_derivatives(gdf)
@@ -146,7 +152,7 @@ class FaaDofNormalizer(Normalizer):
         )
 
     @staticmethod
-    def _find_dat(raw_dir: Path) -> Optional[Path]:
+    def _find_dat(raw_dir: Path) -> Path | None:
         if not raw_dir.exists():
             return None
         cand = list(raw_dir.rglob("DOF.DAT")) + list(raw_dir.rglob("DOF.dat"))
@@ -156,7 +162,7 @@ class FaaDofNormalizer(Normalizer):
     def _parse_fixed_width(path: Path) -> list[dict]:
         out: list[dict] = []
         # Skip the header lines until we hit a data row (state field is alpha).
-        with open(path, "r", encoding="latin-1") as f:
+        with open(path, encoding="latin-1") as f:
             for line in f:
                 if len(line) < 100:
                     continue

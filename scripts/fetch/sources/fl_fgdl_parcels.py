@@ -46,10 +46,7 @@ class FlFgdlParcels(DataSource):
         # filename embeds the release month/year (oct25), so we'll need
         # to bump this when FGDL publishes a new version. The directory
         # listing is browsable for the latest filename.
-        manual_url=(
-            "https://fgdl.org/zips/geospatial_data/current/"
-            "dsl_parcel_composite_oct25.zip"
-        ),
+        manual_url=("https://fgdl.org/zips/geospatial_data/current/dsl_parcel_composite_oct25.zip"),
         attribution="Source: FGDL, University of Florida GeoPlan Center.",
         notes=(
             "Direct download: dsl_parcel_composite_oct25.zip (~173 MB). "
@@ -74,9 +71,7 @@ class FlFgdlParcels(DataSource):
         return "manual"
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        raise RuntimeError(
-            "fl_fgdl_parcels is MANUAL_ONLY — accept terms on FGDL site."
-        )
+        raise RuntimeError("fl_fgdl_parcels is MANUAL_ONLY — accept terms on FGDL site.")
 
 
 SOURCE = FlFgdlParcels()

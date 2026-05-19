@@ -28,30 +28,28 @@ import json
 import os
 import tempfile
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 from . import MANIFEST_PATH
-
 
 SCHEMA_VERSION = 1
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 @dataclass
 class SourceEntry:
-    remote_version: Optional[str] = None
-    local_version: Optional[str] = None
-    fetched_at: Optional[str] = None
-    checked_at: Optional[str] = None
+    remote_version: str | None = None
+    local_version: str | None = None
+    fetched_at: str | None = None
+    checked_at: str | None = None
     bytes: int = 0
     files: list[str] = field(default_factory=list)
     status: str = "missing"
-    error: Optional[str] = None
+    error: str | None = None
 
     def is_installed(self) -> bool:
         return self.local_version is not None and self.status in {"ok", "stale"}
@@ -67,13 +65,13 @@ class SourceEntry:
 @dataclass
 class Manifest:
     schema_version: int = SCHEMA_VERSION
-    last_full_check: Optional[str] = None
+    last_full_check: str | None = None
     sources: dict[str, SourceEntry] = field(default_factory=dict)
 
     # ── disk i/o ────────────────────────────────────────────────────────
 
     @classmethod
-    def load(cls) -> "Manifest":
+    def load(cls) -> Manifest:
         if not MANIFEST_PATH.exists():
             return cls()
         try:
@@ -82,9 +80,7 @@ class Manifest:
         except (json.JSONDecodeError, OSError):
             # Corrupt manifest — start fresh rather than crash the UI.
             return cls()
-        sources = {
-            sid: SourceEntry(**entry) for sid, entry in raw.get("sources", {}).items()
-        }
+        sources = {sid: SourceEntry(**entry) for sid, entry in raw.get("sources", {}).items()}
         return cls(
             schema_version=raw.get("schema_version", SCHEMA_VERSION),
             last_full_check=raw.get("last_full_check"),
@@ -145,6 +141,7 @@ class Manifest:
         total_bytes: int,
     ) -> None:
         from . import RAW_ROOT
+
         rels = []
         for f in files:
             try:

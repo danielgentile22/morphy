@@ -18,12 +18,11 @@ mutate the manifest themselves — the puller owns both of those.
 from __future__ import annotations
 
 import abc
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
 
 from .legal import LegalInfo
-
 
 # Categories shown as collapsible groups in the UI
 CATEGORY_TOWERS = "Towers"
@@ -42,12 +41,13 @@ CATEGORY_ORDER = [
 
 
 # Progress callback signature: (bytes_done, bytes_total_or_None, current_file_name)
-ProgressCallback = Callable[[int, Optional[int], str], None]
+ProgressCallback = Callable[[int, int | None, str], None]
 
 
 @dataclass(frozen=True)
 class FetchResult:
     """What ``DataSource.fetch`` returns to the puller."""
+
     files: list[Path]
     remote_version: str
     total_bytes: int
@@ -58,14 +58,14 @@ class DataSource(abc.ABC):
     """Subclass and override the four ``@abstractmethod`` hooks."""
 
     # ── identity ────────────────────────────────────────────────────────
-    id: str = field(init=False)              # stable slug, e.g. "fcc_asr"
-    name: str = field(init=False)            # human label
-    category: str = field(init=False)        # one of CATEGORY_*
-    coverage: str = field(init=False)        # "National", "State: NC", etc.
-    cadence: str = field(init=False)         # "Weekly", "Monthly", "Quarterly", "Annual", "Irregular"
-    description: str = field(init=False)     # one-paragraph summary
+    id: str = field(init=False)  # stable slug, e.g. "fcc_asr"
+    name: str = field(init=False)  # human label
+    category: str = field(init=False)  # one of CATEGORY_*
+    coverage: str = field(init=False)  # "National", "State: NC", etc.
+    cadence: str = field(init=False)  # "Weekly", "Monthly", "Quarterly", "Annual", "Irregular"
+    description: str = field(init=False)  # one-paragraph summary
     legal: LegalInfo = field(init=False)
-    estimated_size_mb: float = field(init=False)   # rough; informational only
+    estimated_size_mb: float = field(init=False)  # rough; informational only
 
     # ── behaviour ───────────────────────────────────────────────────────
 
@@ -104,11 +104,13 @@ class DataSource(abc.ABC):
     @property
     def is_manual_only(self) -> bool:
         from .legal import AutomationPolicy
+
         return self.legal.automation == AutomationPolicy.MANUAL_ONLY
 
     @property
     def needs_credentials(self) -> bool:
         from .legal import AutomationPolicy
+
         return self.legal.automation == AutomationPolicy.CREDENTIALED
 
     def credentials_available(self) -> bool:

@@ -9,7 +9,6 @@ from __future__ import annotations
 import csv
 import logging
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
@@ -19,7 +18,7 @@ log = logging.getLogger("preprocess.normalizers")
 # ── DMS → decimal degrees ─────────────────────────────────────────────────────
 
 
-def dms_to_decimal(deg, minutes, seconds, direction) -> Optional[float]:
+def dms_to_decimal(deg, minutes, seconds, direction) -> float | None:
     """Convert separate degrees/minutes/seconds/direction fields → decimal."""
     try:
         d = float(deg) if deg not in (None, "", "nan") else None
@@ -38,7 +37,7 @@ def dms_to_decimal(deg, minutes, seconds, direction) -> Optional[float]:
 # ── FIPS canonicalisation ─────────────────────────────────────────────────────
 
 
-def canon_state_fips(value) -> Optional[str]:
+def canon_state_fips(value) -> str | None:
     """Normalize a state FIPS / abbreviation to a 2-digit string."""
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
@@ -53,13 +52,14 @@ def canon_state_fips(value) -> Optional[str]:
         pass
     # Abbreviation lookup
     from ..geographies import STATES
+
     for st in STATES.values():
         if st.abbr == s:
             return st.fips
     return None
 
 
-def canon_county_fips(value, *, state_fips: Optional[str] = None) -> Optional[str]:
+def canon_county_fips(value, *, state_fips: str | None = None) -> str | None:
     """Normalize a county FIPS to a 5-digit string (state + county).
 
     Accepts:
@@ -89,7 +89,7 @@ def canon_county_fips(value, *, state_fips: Optional[str] = None) -> Optional[st
     return None
 
 
-def state_fips_from_county_fips(county_fips: Optional[str]) -> Optional[str]:
+def state_fips_from_county_fips(county_fips: str | None) -> str | None:
     if not county_fips:
         return None
     s = str(county_fips).strip()
@@ -104,7 +104,7 @@ def state_fips_from_county_fips(county_fips: Optional[str]) -> Optional[str]:
 def read_pipe_dat(
     path: Path,
     columns: list[str],
-    record_type: Optional[str] = None,
+    record_type: str | None = None,
     *,
     encoding: str = "latin-1",
 ) -> pd.DataFrame:
@@ -134,16 +134,14 @@ def read_pipe_dat(
         before = len(df)
         df = df[df["record_type"] == record_type].copy()
         if len(df) != before:
-            log.warning(
-                "dropped %d non-%s rows from %s", before - len(df), record_type, path.name
-            )
+            log.warning("dropped %d non-%s rows from %s", before - len(df), record_type, path.name)
     return df
 
 
 def read_pipe_dat_indexed(
     path: Path,
     fields: dict[int, str],
-    record_type: Optional[str] = None,
+    record_type: str | None = None,
     *,
     encoding: str = "latin-1",
 ) -> pd.DataFrame:
@@ -173,9 +171,7 @@ def read_pipe_dat_indexed(
         before = len(df)
         df = df[df["_record_type"] == record_type].drop(columns=["_record_type"])
         if len(df) != before:
-            log.warning(
-                "dropped %d non-%s rows from %s", before - len(df), record_type, path.name
-            )
+            log.warning("dropped %d non-%s rows from %s", before - len(df), record_type, path.name)
     return df
 
 
@@ -196,7 +192,7 @@ def combine_address(*parts) -> str:
     return ", ".join(bits)
 
 
-def to_float(x) -> Optional[float]:
+def to_float(x) -> float | None:
     """Best-effort float conversion. Returns None for nulls / unparseable."""
     if x is None:
         return None
@@ -211,7 +207,7 @@ def to_float(x) -> Optional[float]:
         return None
 
 
-def to_int(x) -> Optional[int]:
+def to_int(x) -> int | None:
     f = to_float(x)
     if f is None:
         return None

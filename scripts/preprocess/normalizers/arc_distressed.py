@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
 from ..base import (
-    NormalizeResult,
     Normalizer,
+    NormalizeResult,
     add_system_columns,
     quality_report,
     register_normalizer,
@@ -48,10 +47,7 @@ class ArcDistressedNormalizer(Normalizer):
 
         # Pick the sheet that looks like the master table.
         master = self._pick_master_sheet(all_sheets)
-        log.info(
-            "arc_distressed: master sheet = %s (%d rows)",
-            master["_name"], len(master["df"])
-        )
+        log.info("arc_distressed: master sheet = %s (%d rows)", master["_name"], len(master["df"]))
         df = master["df"]
 
         raw_bytes = write_raw_parquet(df, out_dir, name="raw.parquet")
@@ -75,15 +71,17 @@ class ArcDistressedNormalizer(Normalizer):
             tier = _TIER_ALIASES.get(tier_raw, "")
             if not fips:
                 continue
-            rows.append({
-                "county_fips": fips,
-                "tier": tier,
-                "score": None,  # ARC publishes underlying score components separately
-                "persistent_poverty": None,  # comes from USDA, not ARC
-                "arc_distressed": tier == "distressed",
-                "arc_at_risk": tier == "at-risk",
-                "sources": ["arc"],
-            })
+            rows.append(
+                {
+                    "county_fips": fips,
+                    "tier": tier,
+                    "score": None,  # ARC publishes underlying score components separately
+                    "persistent_poverty": None,  # comes from USDA, not ARC
+                    "arc_distressed": tier == "distressed",
+                    "arc_at_risk": tier == "at-risk",
+                    "sources": ["arc"],
+                }
+            )
         scores = pd.DataFrame(rows)
         scores = add_system_columns(scores, self.source_id, "county_score")
 
@@ -104,7 +102,7 @@ class ArcDistressedNormalizer(Normalizer):
         )
 
     @staticmethod
-    def _find_xlsx(raw_dir: Path) -> Optional[Path]:
+    def _find_xlsx(raw_dir: Path) -> Path | None:
         if not raw_dir.exists():
             return None
         cand = sorted(raw_dir.rglob("*.xlsx"))
@@ -121,14 +119,14 @@ class ArcDistressedNormalizer(Normalizer):
                 score += 10
             if any("status" in c or "tier" in c for c in lower_cols):
                 score += 5
-            score += min(len(df), 500) / 100   # prefer big sheets
+            score += min(len(df), 500) / 100  # prefer big sheets
             ranked.append((score, name, df))
         ranked.sort(reverse=True)
         top = ranked[0]
         return {"_name": top[1], "df": top[2]}
 
     @staticmethod
-    def _find_col(df: pd.DataFrame, candidates: list[str]) -> Optional[str]:
+    def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
         lower = {str(c).strip().lower(): c for c in df.columns}
         for cand in candidates:
             key = cand.lower()

@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
 from ..base import (
-    NormalizeResult,
     Normalizer,
+    NormalizeResult,
     add_system_columns,
     quality_report,
     register_normalizer,
@@ -56,13 +55,14 @@ class UsdaPersistentPovertyNormalizer(Normalizer):
         )
         if not fips_col or not attr_col or not value_col:
             raise RuntimeError(
-                f"usda_pp: expected FIPStxt + Attribute + Value columns; "
-                f"got {list(df.columns)}"
+                f"usda_pp: expected FIPStxt + Attribute + Value columns; got {list(df.columns)}"
             )
 
         # Filter to persistent-poverty rows (latest year wins).
-        mask = df[attr_col].astype(str).str.contains(
-            "persistent.poverty", case=False, regex=True, na=False
+        mask = (
+            df[attr_col]
+            .astype(str)
+            .str.contains("persistent.poverty", case=False, regex=True, na=False)
         )
         pp = df[mask].copy()
         log.info("usda_pp: %d persistent-poverty rows", len(pp))
@@ -78,15 +78,17 @@ class UsdaPersistentPovertyNormalizer(Normalizer):
 
         rows = []
         for _, r in grouped.iterrows():
-            rows.append({
-                "county_fips": r["fips_canon"],
-                "tier": "",
-                "score": None,
-                "persistent_poverty": bool(r["val_bool"]),
-                "arc_distressed": None,
-                "arc_at_risk": None,
-                "sources": ["usda_persistent_poverty"],
-            })
+            rows.append(
+                {
+                    "county_fips": r["fips_canon"],
+                    "tier": "",
+                    "score": None,
+                    "persistent_poverty": bool(r["val_bool"]),
+                    "arc_distressed": None,
+                    "arc_at_risk": None,
+                    "sources": ["usda_persistent_poverty"],
+                }
+            )
         scores = pd.DataFrame(rows)
         scores = add_system_columns(scores, self.source_id, "county_score")
 
@@ -107,7 +109,7 @@ class UsdaPersistentPovertyNormalizer(Normalizer):
         )
 
     @staticmethod
-    def _find_csv(raw_dir: Path) -> Optional[Path]:
+    def _find_csv(raw_dir: Path) -> Path | None:
         if not raw_dir.exists():
             return None
         cand = sorted(raw_dir.rglob("*.csv"))

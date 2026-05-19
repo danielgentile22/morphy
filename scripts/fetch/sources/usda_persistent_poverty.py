@@ -25,14 +25,10 @@ from ..http import download, head
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ._helpers import parse_http_date
 
-
 # County Typology Codes 2025 — persistent-poverty flag included.
 # ERS migrated from Laserfiche /sites/default/files paths to /media/<id>/
 # in early 2026; the new URL is stable on the post-migration site.
-DOWNLOAD_URL = (
-    "https://www.ers.usda.gov/media/6174/"
-    "ers-county-typology-codes-2025-edition.csv"
-)
+DOWNLOAD_URL = "https://www.ers.usda.gov/media/6174/ers-county-typology-codes-2025-edition.csv"
 
 
 class UsdaPersistentPoverty(DataSource):
@@ -55,8 +51,7 @@ class UsdaPersistentPoverty(DataSource):
         commercial_use=CommercialUse.ALLOWED,
         # Direct CSV download — clicking grabs the file (~6 MB).
         manual_url=(
-            "https://www.ers.usda.gov/media/6174/"
-            "ers-county-typology-codes-2025-edition.csv"
+            "https://www.ers.usda.gov/media/6174/ers-county-typology-codes-2025-edition.csv"
         ),
         attribution="Source: USDA ERS County Typology Codes.",
         notes=(

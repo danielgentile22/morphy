@@ -7,17 +7,15 @@ sources (one per source_id), so two classes share one read function.
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 import geopandas as gpd
 import pandas as pd
 
 from ..base import (
-    NormalizeResult,
     Normalizer,
+    NormalizeResult,
     add_system_columns,
     quality_report,
     register_normalizer,
@@ -30,7 +28,7 @@ from ._helpers import canon_county_fips, canon_state_fips, safe_str
 log = logging.getLogger("preprocess.hud_overlays")
 
 
-def _find_geojson(raw_dir: Path) -> Optional[Path]:
+def _find_geojson(raw_dir: Path) -> Path | None:
     if not raw_dir.exists():
         return None
     candidates = list(raw_dir.rglob("*.geojson")) + list(raw_dir.rglob("*.json"))
@@ -61,33 +59,39 @@ def _normalize_overlay(
     for _, r in gdf.iterrows():
         # GEOID
         geoid = (
-            r.get("GEOID10") or r.get("GEOID") or r.get("GEOID2024") or
-            r.get("GEOID20") or r.get("geoid") or ""
+            r.get("GEOID10")
+            or r.get("GEOID")
+            or r.get("GEOID2024")
+            or r.get("GEOID20")
+            or r.get("geoid")
+            or ""
         )
         state_fips = canon_state_fips(
-            r.get("STATE") or r.get("STATEFP") or r.get("state_fips") or
-            r.get("STATE_FIPS")
+            r.get("STATE") or r.get("STATEFP") or r.get("state_fips") or r.get("STATE_FIPS")
         )
-        county_fips_raw = (
-            r.get("COUNTY") or r.get("COUNTYFP") or r.get("county_fips")
-        )
+        county_fips_raw = r.get("COUNTY") or r.get("COUNTYFP") or r.get("county_fips")
         county_fips = canon_county_fips(county_fips_raw, state_fips=state_fips)
         tract = safe_str(r.get("TRACT") or r.get("tract") or r.get("TRACTCE"))
         rural = r.get("Rural") or r.get("rural") or r.get("RURAL")
         rural_flag = None
         if rural is not None and not (isinstance(rural, float) and pd.isna(rural)):
             rural_flag = safe_str(rural).upper() in ("Y", "YES", "TRUE", "1")
-        rows.append({
-            "overlay_type": overlay_type,
-            "geoid": safe_str(geoid),
-            "state_fips": state_fips,
-            "county_fips": county_fips,
-            "tract": tract,
-            "rural_flag": rural_flag,
-            "attributes": {k: (None if (isinstance(v, float) and pd.isna(v)) else v)
-                           for k, v in r.items() if k != "geometry"},
-            "geometry": r.geometry,
-        })
+        rows.append(
+            {
+                "overlay_type": overlay_type,
+                "geoid": safe_str(geoid),
+                "state_fips": state_fips,
+                "county_fips": county_fips,
+                "tract": tract,
+                "rural_flag": rural_flag,
+                "attributes": {
+                    k: (None if (isinstance(v, float) and pd.isna(v)) else v)
+                    for k, v in r.items()
+                    if k != "geometry"
+                },
+                "geometry": r.geometry,
+            }
+        )
 
     out = gpd.GeoDataFrame(rows, geometry="geometry", crs="EPSG:4326")
     out = add_polygon_derivatives(out)
@@ -116,7 +120,11 @@ class HudOzNormalizer(Normalizer):
 
     def normalize(self, raw_dir: Path, out_dir: Path) -> NormalizeResult:
         return _normalize_overlay(
-            raw_dir, out_dir, self.source_id, "opportunity_zone", "opportunity_zones",
+            raw_dir,
+            out_dir,
+            self.source_id,
+            "opportunity_zone",
+            "opportunity_zones",
         )
 
 
@@ -127,5 +135,9 @@ class HudQctNormalizer(Normalizer):
 
     def normalize(self, raw_dir: Path, out_dir: Path) -> NormalizeResult:
         return _normalize_overlay(
-            raw_dir, out_dir, self.source_id, "qct", "qualified_census_tracts",
+            raw_dir,
+            out_dir,
+            self.source_id,
+            "qct",
+            "qualified_census_tracts",
         )

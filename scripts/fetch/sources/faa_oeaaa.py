@@ -27,7 +27,6 @@ from ..http import download, head
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ._helpers import parse_http_date, safe_extract_zip
 
-
 DOF_URL = "https://aeronav.faa.gov/Obst_Data/DAILY_DOF_DAT.ZIP"
 
 

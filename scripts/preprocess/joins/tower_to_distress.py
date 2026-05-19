@@ -26,7 +26,8 @@ class TowerToDistressJoin(Join):
                 hit = gpd.sjoin(
                     towers[["geometry"]].reset_index(),
                     subset[["geometry"]],
-                    how="inner", predicate="within",
+                    how="inner",
+                    predicate="within",
                 )
             except Exception:
                 continue

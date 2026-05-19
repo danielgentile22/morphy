@@ -24,8 +24,7 @@ from ..base import (
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 
 
-def _make_legal(publisher: str, manual_url: str, attribution: str,
-                 notes: str) -> LegalInfo:
+def _make_legal(publisher: str, manual_url: str, attribution: str, notes: str) -> LegalInfo:
     return LegalInfo(
         publisher=publisher,
         license="State public-records / open data (varies by state)",

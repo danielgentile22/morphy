@@ -15,6 +15,7 @@ zip URL is stable across releases (the contents change in place).
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from pathlib import Path
 
 from ..base import (
@@ -27,13 +28,9 @@ from ..http import HttpError, download, fetch_text
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ._helpers import safe_extract_zip
 
-
 # Metadata endpoint for the polygon feature layer (gives lastEditDate).
 # NC OneMap is a MapServer (not FeatureServer); the polygon layer is /1.
-META_URL = (
-    "https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/"
-    "MapServer/1?f=pjson"
-)
+META_URL = "https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/MapServer/1?f=pjson"
 
 # Bulk download via the NC OneMap Hub API (zipped shapefile of polygons).
 # The old services.nconemap.gov/data/parcels/NCParcels.gdb.zip path was
@@ -69,10 +66,7 @@ class NcOnemapParcels(DataSource):
         # Landing page on NC OneMap — has the Download button. The direct
         # Hub API URL is async (kicks off a build job) and unreliable in
         # a browser; the page route is what works for humans.
-        manual_url=(
-            "https://www.nconemap.gov/datasets/nconemap::"
-            "north-carolina-parcels-polygons"
-        ),
+        manual_url=("https://www.nconemap.gov/datasets/nconemap::north-carolina-parcels-polygons"),
         attribution="Source: NC OneMap / NC GICC Integrated Cadastral Data Exchange.",
         notes=(
             "On the page, click the 'Download' tab (top right) and choose "
@@ -102,10 +96,11 @@ class NcOnemapParcels(DataSource):
             raise HttpError(f"NC OneMap metadata error: {e}")
         edit_ms = (meta.get("editingInfo") or {}).get("lastEditDate")
         if isinstance(edit_ms, (int, float)):
-            from datetime import datetime, timezone
-            dt = datetime.fromtimestamp(edit_ms / 1000, tz=timezone.utc)
+            from datetime import datetime
+
+            dt = datetime.fromtimestamp(edit_ms / 1000, tz=UTC)
             return dt.date().isoformat()
-        return f"n-{meta.get('name','?')}"
+        return f"n-{meta.get('name', '?')}"
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
         zip_path = dest_dir / "NCParcels_shapefile.zip"

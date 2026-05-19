@@ -63,9 +63,7 @@ class TxdotBillboards(DataSource):
         return "manual"
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        raise RuntimeError(
-            "txdot_billboards is MANUAL_ONLY — use the manual download URL."
-        )
+        raise RuntimeError("txdot_billboards is MANUAL_ONLY — use the manual download URL.")
 
 
 SOURCE = TxdotBillboards()

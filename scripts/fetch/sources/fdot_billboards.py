@@ -19,7 +19,6 @@ from ..base import (
 )
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 
-
 # FDOT moved Outdoor Advertising from Maintenance into Right of Way and
 # retired the public bulk-extract xlsx in the process. The data is now
 # only available via:
@@ -27,9 +26,7 @@ from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 #   • GIS Enterprise View https://gis.fdot.gov/webappbuilder/apps/6/  (no API)
 #   • Records request to the OA office: (850) 414-4601
 # So this source is now MANUAL_ONLY.
-NEW_OA_PAGE = (
-    "https://www.fdot.gov/rightofway/OutdoorAdvertising.shtm/new-outdoor-advertising-site"
-)
+NEW_OA_PAGE = "https://www.fdot.gov/rightofway/OutdoorAdvertising.shtm/new-outdoor-advertising-site"
 
 
 class FdotBillboards(DataSource):

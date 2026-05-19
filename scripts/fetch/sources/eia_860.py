@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Optional
 
 from ..base import (
     CATEGORY_SOLAR,
@@ -23,7 +22,6 @@ from ..base import (
 from ..http import HttpError, download, head
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ._helpers import safe_extract_zip
-
 
 # EIA hosts past years at /xls/eia860{year}.zip (the /archive/xls/ path
 # became a stub returning a tiny placeholder in 2025). The current-year
@@ -124,7 +122,9 @@ class Eia860(DataSource):
         extracted = safe_extract_zip(zip_path, dest_dir / "eia860")
         zip_path.unlink()
         return FetchResult(
-            files=extracted, remote_version=version, total_bytes=n,
+            files=extracted,
+            remote_version=version,
+            total_bytes=n,
         )
 
 

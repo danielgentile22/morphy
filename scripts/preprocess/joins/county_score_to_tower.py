@@ -19,16 +19,25 @@ class CountyScoreToTowerJoin(Join):
         scores = ctx.get("county_score")
         if towers is None or scores is None or len(scores) == 0:
             return
-        agg = scores.groupby("county_fips").agg({
-            "tier": lambda x: next((v for v in x if v), ""),
-            "persistent_poverty": "any",
-        }).reset_index()
+        agg = (
+            scores.groupby("county_fips")
+            .agg(
+                {
+                    "tier": lambda x: next((v for v in x if v), ""),
+                    "persistent_poverty": "any",
+                }
+            )
+            .reset_index()
+        )
         # Drop placeholders if a tower source ever populates them (defensive,
         # parallels CountyScoreToParcelJoin which hit a real KeyError here).
-        towers = towers.drop(columns=[c for c in ("distress_tier", "persistent_poverty") if c in towers.columns])
+        towers = towers.drop(
+            columns=[c for c in ("distress_tier", "persistent_poverty") if c in towers.columns]
+        )
         merged = towers.merge(
             agg.rename(columns={"tier": "distress_tier"}),
-            on="county_fips", how="left",
+            on="county_fips",
+            how="left",
         )
         if "geometry" in merged.columns:
             merged = gpd.GeoDataFrame(merged, geometry="geometry", crs=towers.crs)

@@ -20,9 +20,8 @@ from ..base import (
     FetchResult,
     ProgressCallback,
 )
-from ..http import HttpError, download, fetch_text, head
+from ..http import HttpError, download, fetch_text
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
-
 
 # ARC renamed the xlsx files repeatedly (FY2026 release used
 # "CountyEconomicStatusandDistressAreasFY2026DataTables.xlsx" with no
@@ -35,8 +34,7 @@ FY_PAGE_PATTERN = (
 )
 # Older years are at the no-prefix slug.
 LEGACY_PAGE_PATTERN = (
-    "https://www.arc.gov/"
-    "county-economic-status-and-distressed-areas-by-state-fy-{fy}/"
+    "https://www.arc.gov/county-economic-status-and-distressed-areas-by-state-fy-{fy}/"
 )
 
 

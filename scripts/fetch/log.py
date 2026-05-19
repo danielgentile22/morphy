@@ -7,8 +7,7 @@ mirrors a friendlier version to its activity panel.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 from typing import Any
 
 from . import LOG_PATH
@@ -17,7 +16,7 @@ from . import LOG_PATH
 def log_event(event: str, **fields: Any) -> None:
     """Append a single JSON object to fetch.log."""
     payload: dict[str, Any] = {
-        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "ts": datetime.now(UTC).isoformat(timespec="seconds"),
         "event": event,
     }
     payload.update(fields)

@@ -41,7 +41,6 @@ import json
 import os
 import tempfile
 from dataclasses import dataclass, field
-from typing import Any, Optional
 
 from . import PREPROCESS_MANIFEST_PATH
 
@@ -58,7 +57,7 @@ class PreprocessManifest:
     # ── load / save ─────────────────────────────────────────────────────
 
     @classmethod
-    def load(cls) -> "PreprocessManifest":
+    def load(cls) -> PreprocessManifest:
         if not PREPROCESS_MANIFEST_PATH.exists():
             return cls()
         try:
@@ -102,28 +101,31 @@ class PreprocessManifest:
         self,
         source_id: str,
         *,
-        raw_local_version: Optional[str],
+        raw_local_version: str | None,
         raw_rows: int,
         canonical_rows: int,
         bytes_written: int,
         canonical_types: list[str],
-        states_covered: Optional[list[str]] = None,
-        quality_report_path: Optional[str] = None,
+        states_covered: list[str] | None = None,
+        quality_report_path: str | None = None,
         status: str = "ok",
-        error: Optional[str] = None,
-        preprocessed_at: Optional[str] = None,
+        error: str | None = None,
+        preprocessed_at: str | None = None,
     ) -> None:
         from .base import utcnow_iso
+
         ts = preprocessed_at or utcnow_iso()
         prior = self.normalized.get(source_id, {})
         history = list(prior.get("history") or [])
         # Append a tiny history entry; cap to HISTORY_LIMIT.
-        history.append({
-            "preprocessed_at": prior.get("preprocessed_at"),
-            "raw_rows": prior.get("raw_rows"),
-            "canonical_rows": prior.get("canonical_rows"),
-            "status": prior.get("status"),
-        })
+        history.append(
+            {
+                "preprocessed_at": prior.get("preprocessed_at"),
+                "raw_rows": prior.get("raw_rows"),
+                "canonical_rows": prior.get("canonical_rows"),
+                "status": prior.get("status"),
+            }
+        )
         history = [h for h in history if h.get("preprocessed_at")]
         history = history[-HISTORY_LIMIT:]
         self.normalized[source_id] = {
@@ -150,7 +152,7 @@ class PreprocessManifest:
         self,
         source_id: str,
         *,
-        raw_local_version: Optional[str],
+        raw_local_version: str | None,
         out_dir,
     ) -> bool:
         """True if the last successful normalize was against the current
@@ -164,6 +166,7 @@ class PreprocessManifest:
         # Spot check: at least one output file still exists.
         try:
             from pathlib import Path
+
             p = Path(out_dir)
             if not p.exists():
                 return False
@@ -184,10 +187,11 @@ class PreprocessManifest:
         views_built: list[str],
         counts: dict[str, int],
         status: str = "ok",
-        error: Optional[str] = None,
-        preprocessed_at: Optional[str] = None,
+        error: str | None = None,
+        preprocessed_at: str | None = None,
     ) -> None:
         from .base import utcnow_iso
+
         ts = preprocessed_at or utcnow_iso()
         self.composed[state_fips] = {
             "preprocessed_at": ts,
@@ -200,7 +204,7 @@ class PreprocessManifest:
         }
 
 
-def get_raw_local_version(source_id: str) -> Optional[str]:
+def get_raw_local_version(source_id: str) -> str | None:
     """Look up local_version for a source in the puller's manifest.json."""
     try:
         # Importing here keeps fetch package optional for preprocess unit tests.

@@ -25,7 +25,6 @@ from ..http import download, head
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ._helpers import parse_http_date, safe_extract_zip
 
-
 BASE_URL = "https://data.fcc.gov/download/pub/uls/complete"
 
 # FCC bundles all auction-allocated, geographic-area licenses (PCS, AWS,
@@ -71,7 +70,7 @@ class _UlsBand:
     summary: str
 
 
-def _make_legal(band: "_UlsBand") -> LegalInfo:
+def _make_legal(band: _UlsBand) -> LegalInfo:
     folder = band.zip_name.replace(".zip", "")
     return LegalInfo(
         publisher="Federal Communications Commission (FCC)",
@@ -103,6 +102,7 @@ def _make_legal(band: "_UlsBand") -> LegalInfo:
 
 class FccUlsBand(DataSource):
     """One radio-service slice of ULS. Subclasses set the band metadata."""
+
     band: _UlsBand
 
     def __init__(self, band: _UlsBand) -> None:

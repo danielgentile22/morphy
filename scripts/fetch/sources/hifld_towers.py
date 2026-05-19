@@ -12,6 +12,7 @@ ArcGIS REST patterns used:
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from pathlib import Path
 
 from ..base import (
@@ -23,15 +24,12 @@ from ..base import (
 from ..http import HttpError, download, fetch_text
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 
-
 LAYER_URL = (
     "https://services1.arcgis.com/Hp6G80Pky0om7QvQ/arcgis/rest/services/"
     "Cellular_Towers/FeatureServer/0"
 )
 METADATA_URL = f"{LAYER_URL}?f=pjson"
-GEOJSON_URL = (
-    f"{LAYER_URL}/query?where=1%3D1&outFields=*&f=geojson&returnGeometry=true"
-)
+GEOJSON_URL = f"{LAYER_URL}/query?where=1%3D1&outFields=*&f=geojson&returnGeometry=true"
 
 
 class HifldTowers(DataSource):
@@ -87,11 +85,12 @@ class HifldTowers(DataSource):
             raise HttpError(f"HIFLD metadata not JSON: {e}")
         edit_ms = (meta.get("editingInfo") or {}).get("lastEditDate")
         if isinstance(edit_ms, (int, float)):
-            from datetime import datetime, timezone
-            dt = datetime.fromtimestamp(edit_ms / 1000, tz=timezone.utc)
+            from datetime import datetime
+
+            dt = datetime.fromtimestamp(edit_ms / 1000, tz=UTC)
             return dt.date().isoformat()
         # Fallback: layer name + record count (changes when data changes)
-        return f"name-{meta.get('name','?')}"
+        return f"name-{meta.get('name', '?')}"
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
         out = dest_dir / "cellular_towers.geojson"

@@ -9,8 +9,8 @@ from __future__ import annotations
 import json
 import re
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from ..http import HttpError, fetch_text
 
@@ -41,7 +41,7 @@ def safe_extract_zip(zip_path: Path, dest: Path) -> list[Path]:
     return extracted
 
 
-def parse_http_date(value: Optional[str]) -> Optional[str]:
+def parse_http_date(value: str | None) -> str | None:
     """Normalise an HTTP Last-Modified value to ISO date.
 
     Returns the original string if parsing fails — version comparisons
@@ -52,6 +52,7 @@ def parse_http_date(value: Optional[str]) -> Optional[str]:
         return None
     try:
         from email.utils import parsedate_to_datetime
+
         dt = parsedate_to_datetime(value)
         return dt.date().isoformat()
     except Exception:
@@ -83,7 +84,7 @@ def find_years(text: str, low: int = 2010, high: int = 2030) -> list[int]:
 def arcgis_query_all(
     layer_url: str,
     dest: Path,
-    on_progress: Optional[Callable[[int, Optional[int]], None]] = None,
+    on_progress: Callable[[int, int | None], None] | None = None,
     page_size: int = 2000,
 ) -> int:
     """Download every feature from an ArcGIS FeatureServer layer as one GeoJSON.
@@ -102,10 +103,7 @@ def arcgis_query_all(
     all_features: list = []
     offset = 0
     while True:
-        url = (
-            f"{base}?{common}"
-            f"&resultOffset={offset}&resultRecordCount={page_size}"
-        )
+        url = f"{base}?{common}&resultOffset={offset}&resultRecordCount={page_size}"
         text = fetch_text(url, max_bytes=200 * 1024 * 1024)
         try:
             page = json.loads(text)
@@ -119,8 +117,9 @@ def arcgis_query_all(
         all_features.extend(feats)
         if on_progress is not None:
             on_progress(len(all_features), None)
-        exceeded = page.get("properties", {}).get("exceededTransferLimit") \
-            or page.get("exceededTransferLimit")
+        exceeded = page.get("properties", {}).get("exceededTransferLimit") or page.get(
+            "exceededTransferLimit"
+        )
         if not exceeded:
             break
         offset += len(feats)

@@ -22,8 +22,6 @@ class BillboardToParcelJoin(Join):
         keep = [c for c in ("parcel_id_full", "owner_name", "geometry") if c in parcels.columns]
         right = parcels[keep].rename(columns={"owner_name": "parcel_owner"})
         joined = gpd.sjoin(bb, right, how="left", predicate="within")
-        joined = joined.drop(
-            columns=[c for c in joined.columns if c.startswith("index_right")]
-        )
+        joined = joined.drop(columns=[c for c in joined.columns if c.startswith("index_right")])
         ctx.set("billboard", joined)
         ctx.join_log.append(self.name)

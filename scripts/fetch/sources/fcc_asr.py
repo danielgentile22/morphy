@@ -23,7 +23,6 @@ from ..http import download, head
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ._helpers import parse_http_date, safe_extract_zip
 
-
 R_TOWER_URL = "https://data.fcc.gov/download/pub/uls/complete/r_tower.zip"
 D_TOWER_URL = "https://data.fcc.gov/download/pub/uls/complete/d_tower.zip"
 

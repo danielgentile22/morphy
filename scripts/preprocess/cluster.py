@@ -56,10 +56,18 @@ def normalize_address(addr) -> str:
     s = _MULTI_WS.sub(" ", s).strip()
     # Common street-suffix collapses
     for full, short in (
-        ("STREET", "ST"), ("ROAD", "RD"), ("AVENUE", "AVE"), ("DRIVE", "DR"),
-        ("LANE", "LN"), ("BOULEVARD", "BLVD"), ("HIGHWAY", "HWY"),
-        ("COURT", "CT"), ("PARKWAY", "PKWY"), ("CIRCLE", "CIR"),
-        ("PLACE", "PL"), ("TERRACE", "TER"),
+        ("STREET", "ST"),
+        ("ROAD", "RD"),
+        ("AVENUE", "AVE"),
+        ("DRIVE", "DR"),
+        ("LANE", "LN"),
+        ("BOULEVARD", "BLVD"),
+        ("HIGHWAY", "HWY"),
+        ("COURT", "CT"),
+        ("PARKWAY", "PKWY"),
+        ("CIRCLE", "CIR"),
+        ("PLACE", "PL"),
+        ("TERRACE", "TER"),
     ):
         s = re.sub(rf"\b{full}\b", short, s)
     return s
@@ -79,14 +87,20 @@ def cluster_id(owner_norm: str, addr_norm: str) -> str:
 _OWNER_KIND_PATTERNS = [
     ("llc", re.compile(r"\bLLC\b|\bL\.?L\.?C\.?\b", re.IGNORECASE)),
     ("trust", re.compile(r"\bTRUST\b|\bTRUSTEES?\b", re.IGNORECASE)),
-    ("corporation", re.compile(r"\bCORP\b|\bINC\b|\bCORPORATION\b|\bINCORPORATED\b", re.IGNORECASE)),
+    (
+        "corporation",
+        re.compile(r"\bCORP\b|\bINC\b|\bCORPORATION\b|\bINCORPORATED\b", re.IGNORECASE),
+    ),
     ("partnership", re.compile(r"\bLP\b|\bLLP\b|\bPARTNERSHIP\b|\bL\.?P\.?\b", re.IGNORECASE)),
-    ("gov", re.compile(
-        r"\bUNITED STATES\b|\bUSA\b|\bSTATE OF\b|\bCITY OF\b|\bCOUNTY OF\b|"
-        r"\bMUNICIPAL\b|\bTOWNSHIP\b|\bVILLAGE OF\b|\bGOVERNMENT\b|"
-        r"\bUS FOREST SERVICE\b|\bBIA\b|\bBLM\b|\bDEPT\b OF",
-        re.IGNORECASE,
-    )),
+    (
+        "gov",
+        re.compile(
+            r"\bUNITED STATES\b|\bUSA\b|\bSTATE OF\b|\bCITY OF\b|\bCOUNTY OF\b|"
+            r"\bMUNICIPAL\b|\bTOWNSHIP\b|\bVILLAGE OF\b|\bGOVERNMENT\b|"
+            r"\bUS FOREST SERVICE\b|\bBIA\b|\bBLM\b|\bDEPT\b OF",
+            re.IGNORECASE,
+        ),
+    ),
     ("church", re.compile(r"\bCHURCH\b|\bMINISTRIES\b|\bPARISH\b", re.IGNORECASE)),
     ("school", re.compile(r"\bSCHOOL\b|\bUNIVERSITY\b|\bCOLLEGE\b|\bACADEMY\b", re.IGNORECASE)),
 ]

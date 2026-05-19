@@ -24,8 +24,6 @@ class SolarToParcelJoin(Join):
         # For polygon-geometry solar facilities, use intersects; for points, use within.
         # geopandas.sjoin works for both with intersects.
         joined = gpd.sjoin(solar, right, how="left", predicate="intersects")
-        joined = joined.drop(
-            columns=[c for c in joined.columns if c.startswith("index_right")]
-        )
+        joined = joined.drop(columns=[c for c in joined.columns if c.startswith("index_right")])
         ctx.set("solar_facility", joined)
         ctx.join_log.append(self.name)

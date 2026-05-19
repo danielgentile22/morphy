@@ -46,7 +46,7 @@ def _setup_logging(level: str = "INFO") -> None:
 
 def _print_summary(outcome) -> None:
     print()
-    print(f"=== preprocess summary ===")
+    print("=== preprocess summary ===")
     print(f"  duration: {outcome.duration_seconds:.1f}s")
     print(f"  normalized OK:          {len(outcome.normalized_ok)}")
     print(f"  normalized skipped:     {len(outcome.normalized_skipped)}")
@@ -55,7 +55,9 @@ def _print_summary(outcome) -> None:
     if outcome.normalized_failed:
         for s in outcome.normalized_failed:
             print(f"    ✗ {s}")
-    print(f"  composed OK:            {len(outcome.composed_ok)}  ({', '.join(outcome.composed_ok)})")
+    print(
+        f"  composed OK:            {len(outcome.composed_ok)}  ({', '.join(outcome.composed_ok)})"
+    )
     if outcome.composed_failed:
         print(f"  composed FAILED:        {len(outcome.composed_failed)}")
         for f in outcome.composed_failed:
@@ -66,8 +68,9 @@ def _stream_progress(phase: str, key: str, info: dict) -> None:
     if phase == "normalize_start":
         print(f"  → normalize {key} …", flush=True)
     elif phase == "normalize_ok":
-        print(f"    ✓ {key}: {info.get('rows', 0):,} rows, "
-              f"{info.get('bytes', 0)/1_000_000:.1f} MB")
+        print(
+            f"    ✓ {key}: {info.get('rows', 0):,} rows, {info.get('bytes', 0) / 1_000_000:.1f} MB"
+        )
     elif phase == "normalize_fail":
         print(f"    ✗ {key}: {info.get('error', '')}")
     elif phase == "normalize_skip":
@@ -78,9 +81,11 @@ def _stream_progress(phase: str, key: str, info: dict) -> None:
         print(f"\n  → compose state {key} ({info.get('name', '')}) …", flush=True)
     elif phase == "compose_ok":
         counts = info.get("counts", {})
-        print(f"    ✓ state {key}: sources={info['sources']} "
-              f"joins={info['joins']} views={info['views']} "
-              f"counts={counts}")
+        print(
+            f"    ✓ state {key}: sources={info['sources']} "
+            f"joins={info['joins']} views={info['views']} "
+            f"counts={counts}"
+        )
     elif phase == "compose_fail":
         print(f"    ✗ state {key}: {info.get('error', '')}")
 
@@ -90,20 +95,27 @@ def main() -> int:
         description="Preprocess raw data into canonical + composite outputs.",
     )
     parser.add_argument("--state", help="State FIPS to compose (default: all with parcel data)")
-    parser.add_argument("--normalize-only", action="store_true",
-                        help="Run normalize but skip compose")
-    parser.add_argument("--compose-only", action="store_true",
-                        help="Skip normalize; compose what's already normalized")
-    parser.add_argument("--force-rebuild", action="store_true",
-                        help="Re-normalize every source even if unchanged")
-    parser.add_argument("--list-views", action="store_true",
-                        help="List registered Views and exit")
-    parser.add_argument("--list-joins", action="store_true",
-                        help="List registered Joins and exit")
-    parser.add_argument("--list-states", action="store_true",
-                        help="List states with normalized parcel data and exit")
-    parser.add_argument("--log-level", default="INFO",
-                        choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    parser.add_argument(
+        "--normalize-only", action="store_true", help="Run normalize but skip compose"
+    )
+    parser.add_argument(
+        "--compose-only",
+        action="store_true",
+        help="Skip normalize; compose what's already normalized",
+    )
+    parser.add_argument(
+        "--force-rebuild", action="store_true", help="Re-normalize every source even if unchanged"
+    )
+    parser.add_argument("--list-views", action="store_true", help="List registered Views and exit")
+    parser.add_argument("--list-joins", action="store_true", help="List registered Joins and exit")
+    parser.add_argument(
+        "--list-states",
+        action="store_true",
+        help="List states with normalized parcel data and exit",
+    )
+    parser.add_argument(
+        "--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"]
+    )
     args = parser.parse_args()
 
     _setup_logging(args.log_level)
@@ -133,14 +145,16 @@ def main() -> int:
     if args.compose_only:
         if args.state:
             res = run_compose_one(
-                get_state(args.state), manifest,
+                get_state(args.state),
+                manifest,
                 force_rebuild=args.force_rebuild,
                 progress_callback=_stream_progress,
             )
             return 0 if res else 1
         else:
             results = run_compose_all(
-                manifest, force_rebuild=args.force_rebuild,
+                manifest,
+                force_rebuild=args.force_rebuild,
                 progress_callback=_stream_progress,
             )
             manifest.save()
@@ -148,7 +162,8 @@ def main() -> int:
 
     if args.normalize_only:
         statuses = run_normalize_all(
-            manifest, force_rebuild=args.force_rebuild,
+            manifest,
+            force_rebuild=args.force_rebuild,
             progress_callback=_stream_progress,
         )
         n_failed = sum(1 for s in statuses.values() if s == "failed")

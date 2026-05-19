@@ -13,9 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 import geopandas as gpd
 import pandas as pd
@@ -24,7 +22,6 @@ from . import COMPOSITE_ROOT, NORMALIZED_ROOT
 from .base import (
     ComposeContext,
     ComposeResult,
-    all_joins,
     all_normalizers,
     all_views,
     ordered_joins,
@@ -33,8 +30,6 @@ from .base import (
 from .geographies import StateGeography, get_state
 from .io import (
     dual_write_spatial,
-    read_geoparquet,
-    read_parquet,
     write_geojson,
     write_geoparquet,
     write_json,
@@ -54,11 +49,23 @@ class ComposeConfig:
 
 # Spatial vs tabular canonical types
 SPATIAL_TYPES = {
-    "tower", "parcel", "distress_overlay", "solar_facility", "billboard", "address_point",
+    "tower",
+    "parcel",
+    "distress_overlay",
+    "solar_facility",
+    "billboard",
+    "address_point",
 }
 TABULAR_TYPES = {
-    "county_score", "license", "location", "entity", "transfer", "lease",
-    "distributed_pv", "aggregation", "model_prediction",
+    "county_score",
+    "license",
+    "location",
+    "entity",
+    "transfer",
+    "lease",
+    "distributed_pv",
+    "aggregation",
+    "model_prediction",
 }
 
 # Output basename per canonical type (singular file per state)
@@ -85,7 +92,9 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
     sources_used = _load_state_data(ctx)
     log.info(
         "compose %s: loaded %d canonical types from %d sources",
-        state.fips, len(ctx.tables), len(sources_used),
+        state.fips,
+        len(ctx.tables),
+        len(sources_used),
     )
 
     # ── Run joins in dependency order ──────────────────────────────────
@@ -120,7 +129,10 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
         if ct in SPATIAL_TYPES:
             write_simp = ct in {"parcel"}  # parcels are big enough to need simplified
             files, _ = dual_write_spatial(
-                table, out_dir, basename, write_simplified_geojson=write_simp,
+                table,
+                out_dir,
+                basename,
+                write_simplified_geojson=write_simp,
             )
             output_files.extend(files)
         else:
@@ -164,8 +176,9 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
                 view_meta[v.name]["geojson_path"] = f"views/{v.name}.geojson"
         else:
             # Tabular view
-            write_parquet(result if isinstance(result, pd.DataFrame) else pd.DataFrame(result),
-                          p_parquet)
+            write_parquet(
+                result if isinstance(result, pd.DataFrame) else pd.DataFrame(result), p_parquet
+            )
             output_files.append(p_parquet)
             view_meta[v.name] = {
                 "rows": len(result),
@@ -200,7 +213,10 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
 
     log.info(
         "compose %s complete: %d sources, %d joins, %d views",
-        state.fips, len(sources_used), len(joins_applied), len(views_built),
+        state.fips,
+        len(sources_used),
+        len(joins_applied),
+        len(views_built),
     )
 
     return ComposeResult(
@@ -284,7 +300,9 @@ def _load_state_data(ctx: ComposeContext) -> list[str]:
             combined = pd.concat(frames, ignore_index=True)
         ctx.set(ct, combined)
         log.info(
-            "  %s: %d rows (%d sources)", ct, len(combined),
+            "  %s: %d rows (%d sources)",
+            ct,
+            len(combined),
             len(items),
         )
     return sources_used

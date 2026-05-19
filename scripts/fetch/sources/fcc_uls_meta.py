@@ -28,7 +28,6 @@ from ..http import download, head
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ._helpers import parse_http_date, safe_extract_zip
 
-
 BASE_URL = "https://data.fcc.gov/download/pub/uls/complete"
 
 
@@ -79,7 +78,7 @@ SECTION_NAMES = {
 }
 
 
-def _make_legal(meta: "_UlsMeta") -> LegalInfo:
+def _make_legal(meta: _UlsMeta) -> LegalInfo:
     folder = meta.zip_name.replace(".zip", "")
     section = SECTION_NAMES.get(meta.suffix, meta.label)
     return LegalInfo(
@@ -108,6 +107,7 @@ def _make_legal(meta: "_UlsMeta") -> LegalInfo:
 
 class FccUlsMeta(DataSource):
     """One cross-service ULS bulk file."""
+
     meta: _UlsMeta
 
     def __init__(self, meta: _UlsMeta) -> None:

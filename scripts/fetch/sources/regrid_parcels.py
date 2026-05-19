@@ -32,7 +32,6 @@ from ..base import (
 )
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 
-
 REQUIRED_ENV = (
     "REGRID_S3_BUCKET",
     "REGRID_S3_PREFIX",
@@ -125,7 +124,7 @@ class RegridParcels(DataSource):
 
         downloaded = 0
         for key, size in sizes:
-            rel = key[len(prefix):].lstrip("/")
+            rel = key[len(prefix) :].lstrip("/")
             target = dest_dir / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             label = rel or key
@@ -149,8 +148,7 @@ class RegridParcels(DataSource):
             import boto3
         except ImportError as e:
             raise RuntimeError(
-                "boto3 is required for Regrid downloads. "
-                "Install with: pip install boto3"
+                "boto3 is required for Regrid downloads. Install with: pip install boto3"
             ) from e
         return boto3.client(
             "s3",

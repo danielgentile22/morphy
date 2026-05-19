@@ -75,9 +75,7 @@ class NcdotBillboards(DataSource):
         return "manual"
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        raise RuntimeError(
-            "ncdot_billboards is MANUAL_ONLY — use the manual download URL."
-        )
+        raise RuntimeError("ncdot_billboards is MANUAL_ONLY — use the manual download URL.")
 
 
 SOURCE = NcdotBillboards()

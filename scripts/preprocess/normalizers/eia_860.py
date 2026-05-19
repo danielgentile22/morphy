@@ -10,15 +10,14 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 
 from ..base import (
-    NormalizeResult,
     Normalizer,
+    NormalizeResult,
     add_system_columns,
     quality_report,
     register_normalizer,
@@ -53,11 +52,20 @@ class Eia860Normalizer(Normalizer):
         merged = plant.copy()
         if solar is not None and "Plant Code" in plant.columns and "Plant Code" in solar.columns:
             merged = plant.merge(
-                solar[["Plant Code", "Technology", "Single-Axis Tracking?",
-                       "Dual-Axis Tracking?", "Fixed Tilt?", "Tilt Angle",
-                       "Nameplate Capacity (MW)"]]
-                .drop_duplicates(subset="Plant Code"),
-                on="Plant Code", how="left", suffixes=("", "_solar"),
+                solar[
+                    [
+                        "Plant Code",
+                        "Technology",
+                        "Single-Axis Tracking?",
+                        "Dual-Axis Tracking?",
+                        "Fixed Tilt?",
+                        "Tilt Angle",
+                        "Nameplate Capacity (MW)",
+                    ]
+                ].drop_duplicates(subset="Plant Code"),
+                on="Plant Code",
+                how="left",
+                suffixes=("", "_solar"),
             )
 
         raw_bytes = write_raw_parquet(merged, out_dir, name="raw.parquet")
@@ -67,8 +75,7 @@ class Eia860Normalizer(Normalizer):
             lat = to_float(r.get("Latitude"))
             lon = to_float(r.get("Longitude"))
             geom = None
-            if (lat is not None and lon is not None
-                    and -90 <= lat <= 90 and -180 <= lon <= 180):
+            if lat is not None and lon is not None and -90 <= lat <= 90 and -180 <= lon <= 180:
                 geom = Point(lon, lat)
             state_fips = canon_state_fips(r.get("State"))
             county_fips = canon_county_fips(r.get("County"), state_fips=state_fips)
@@ -78,22 +85,24 @@ class Eia860Normalizer(Normalizer):
                 tracking = "1-axis"
             elif safe_str(r.get("Dual-Axis Tracking?")).upper() == "Y":
                 tracking = "2-axis"
-            rows.append({
-                "facility_id": safe_str(r.get("Plant Code")),
-                "name": safe_str(r.get("Plant Name")),
-                "operator": safe_str(r.get("Utility Name") or r.get("Operator")),
-                "capacity_mw": to_float(r.get("Nameplate Capacity (MW)")),
-                "online_date": None,
-                "retired_date": None,
-                "is_operational": True,
-                "technology": tech,
-                "tracking_type": tracking,
-                "county_fips": county_fips,
-                "state_fips": state_fips,
-                "geometry": geom,
-                "extras": {"utility_id": r.get("Utility ID"), "sector": r.get("Sector Name")},
-                "_source_row_id": safe_str(r.get("Plant Code")),
-            })
+            rows.append(
+                {
+                    "facility_id": safe_str(r.get("Plant Code")),
+                    "name": safe_str(r.get("Plant Name")),
+                    "operator": safe_str(r.get("Utility Name") or r.get("Operator")),
+                    "capacity_mw": to_float(r.get("Nameplate Capacity (MW)")),
+                    "online_date": None,
+                    "retired_date": None,
+                    "is_operational": True,
+                    "technology": tech,
+                    "tracking_type": tracking,
+                    "county_fips": county_fips,
+                    "state_fips": state_fips,
+                    "geometry": geom,
+                    "extras": {"utility_id": r.get("Utility ID"), "sector": r.get("Sector Name")},
+                    "_source_row_id": safe_str(r.get("Plant Code")),
+                }
+            )
         gdf = gpd.GeoDataFrame(rows, geometry="geometry", crs="EPSG:4326")
         gdf = add_point_derivatives(gdf)
         gdf = add_system_columns(gdf, self.source_id, "solar_facility")
@@ -112,7 +121,7 @@ class Eia860Normalizer(Normalizer):
         )
 
     @staticmethod
-    def _find_first(raw_dir: Path, pattern: str) -> Optional[Path]:
+    def _find_first(raw_dir: Path, pattern: str) -> Path | None:
         if not raw_dir.exists():
             return None
         cand = sorted(raw_dir.rglob(pattern))

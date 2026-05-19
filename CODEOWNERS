@@ -1,0 +1,14 @@
+# Code owners
+# Every PR is automatically reviewed by listed owners.
+# Single-dev today; expand when the team grows.
+
+# Default owner for everything
+*       @danielgentile22
+
+# Critical surfaces (kept explicit so they always require review)
+/scripts/fetch/                    @danielgentile22
+/scripts/preprocess/               @danielgentile22
+/app_puller/                       @danielgentile22
+/docs/SECURITY.md                  @danielgentile22
+/docs/DECISIONS.md                 @danielgentile22
+/.github/                          @danielgentile22

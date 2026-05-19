@@ -19,15 +19,24 @@ class CountyScoreToSolarJoin(Join):
         scores = ctx.get("county_score")
         if solar is None or scores is None or len(scores) == 0:
             return
-        agg = scores.groupby("county_fips").agg({
-            "tier": lambda x: next((v for v in x if v), ""),
-            "persistent_poverty": "any",
-        }).reset_index()
+        agg = (
+            scores.groupby("county_fips")
+            .agg(
+                {
+                    "tier": lambda x: next((v for v in x if v), ""),
+                    "persistent_poverty": "any",
+                }
+            )
+            .reset_index()
+        )
         # Defensive drop, parallels CountyScoreToParcelJoin (see comment there).
-        solar = solar.drop(columns=[c for c in ("distress_tier", "persistent_poverty") if c in solar.columns])
+        solar = solar.drop(
+            columns=[c for c in ("distress_tier", "persistent_poverty") if c in solar.columns]
+        )
         merged = solar.merge(
             agg.rename(columns={"tier": "distress_tier"}),
-            on="county_fips", how="left",
+            on="county_fips",
+            how="left",
         )
         if "geometry" in merged.columns:
             merged = gpd.GeoDataFrame(merged, geometry="geometry", crs=solar.crs)

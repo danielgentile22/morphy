@@ -1,0 +1,75 @@
+# Project-wide tooling configuration.
+# Runtime dependencies stay in requirements.txt for backwards compatibility
+# with the puller install flow; dev dependencies live in requirements-dev.txt.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [
+    ".venv",
+    "build",
+    "dist",
+    "docs/archive",
+    "data",
+]
+
+[tool.ruff.lint]
+# Conservative ruleset for now — bias toward catching real bugs rather than
+# style nitpicks. Section 6 of the production-readiness plan may tighten this.
+select = [
+    "E",      # pycodestyle errors
+    "F",      # pyflakes (unused imports, undefined names)
+    "W",      # pycodestyle warnings
+    "I",      # isort (import ordering)
+    "B",      # flake8-bugbear (likely-buggy patterns)
+    "UP",     # pyupgrade (deprecated-syntax)
+]
+ignore = [
+    "E501",   # line length — we set 100 above; let ruff format handle wrapping
+    "E731",   # lambda assignments (acceptable in tiny helpers)
+    "B008",   # function default values (acceptable for dataclass-style helpers)
+    "UP042",  # str + Enum subclassing — Python 3.11 StrEnum is subtly different; defer migration
+    "B904",   # raise-from chains — fix opportunistically as we touch each source in Section 4
+    "B905",   # zip(..., strict=) — fix opportunistically; not a bug, just hardening
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests are allowed to use unused imports (for fixtures), assert, etc.
+"tests/**" = ["F401", "F811", "B011"]
+# Schema files have intentional bare `pass` patterns
+"scripts/preprocess/base.py" = ["B027"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",                # short summary of (a)ll non-passing results
+    "--strict-markers",   # error on undeclared markers
+    "--strict-config",    # error on undeclared config keys
+]
+markers = [
+    "slow: marks tests as slow (deselect with -m 'not slow')",
+    "integration: requires real data on disk (deselect with -m 'not integration')",
+]
+
+[tool.coverage.run]
+source = ["scripts/preprocess", "scripts/fetch"]
+omit = [
+    "scripts/_legacy/*",
+    "scripts/preprocess/normalizers/__init__.py",
+    "scripts/preprocess/joins/__init__.py",
+    "scripts/preprocess/views/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]

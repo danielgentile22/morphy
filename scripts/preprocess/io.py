@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional
 
 import geopandas as gpd
 import pandas as pd
@@ -54,6 +54,7 @@ def _prep_complex_cols(df):
             if isinstance(v, (dict, list)):
                 return json.dumps(v, default=str)
             return v
+
         df[col] = df[col].map(_encode)
     return df
 
@@ -97,9 +98,7 @@ def write_geojson(
     g = gdf.copy()
     if use_simplified_geometry:
         if "geom_simplified" not in g.columns:
-            raise ValueError(
-                "use_simplified_geometry=True but geom_simplified column missing"
-            )
+            raise ValueError("use_simplified_geometry=True but geom_simplified column missing")
         g = g.set_geometry("geom_simplified", drop=True, crs=g.crs or "EPSG:4326")
 
     drop = [c for c in g.columns if c in _GEOJSON_DROP_COLS and c != g.geometry.name]
@@ -196,7 +195,7 @@ def _sanitize_col(name) -> str:
     return s.replace("/", "_").replace(".", "_")
 
 
-def read_geoparquet(path: Path, *, columns: Optional[Iterable[str]] = None) -> gpd.GeoDataFrame:
+def read_geoparquet(path: Path, *, columns: Iterable[str] | None = None) -> gpd.GeoDataFrame:
     """Read GeoParquet, optionally with column projection."""
     if columns is not None:
         cols = list(columns)
@@ -206,7 +205,7 @@ def read_geoparquet(path: Path, *, columns: Optional[Iterable[str]] = None) -> g
     return gpd.read_parquet(path)
 
 
-def read_parquet(path: Path, *, columns: Optional[Iterable[str]] = None) -> pd.DataFrame:
+def read_parquet(path: Path, *, columns: Iterable[str] | None = None) -> pd.DataFrame:
     """Read plain Parquet, optionally with column projection."""
     if columns is not None:
         return pd.read_parquet(path, columns=list(columns))

@@ -28,12 +28,17 @@ from __future__ import annotations
 import sys
 import time
 import webbrowser
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Optional
+from datetime import UTC, datetime
 
-from PySide6.QtCore import Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QPalette
+from diagnose import DiagnoseUnavailable, diagnose
+from fetch import RAW_ROOT
+from fetch.base import DataSource
+from fetch.legal import AutomationPolicy, CommercialUse
+from fetch.manifest import Manifest, SourceEntry
+from fetch.registry import all_sources, get_source, grouped
+from fetch.storage import current_dir, directory_bytes, human_bytes
+from PySide6.QtCore import Qt, QThread, QTimer
+from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -46,7 +51,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QSizePolicy,
     QSplitter,
     QTextBrowser,
     QTextEdit,
@@ -55,21 +59,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from verify_raw import verify_all, verify_one
-from diagnose import diagnose, DiagnoseUnavailable
 
 from .preprocess_dialog import PreprocessDialog
-
-from fetch import PROJECT_ROOT, RAW_ROOT
-from fetch.base import DataSource
-from fetch.legal import AutomationPolicy, CommercialUse
-from fetch.manifest import Manifest, SourceEntry
-from fetch.registry import all_sources, get_source, grouped
-from fetch.storage import current_dir, directory_bytes, human_bytes
-
 from .workers import CheckWorker, FetchWorker
-
 
 # ── status presentation ──────────────────────────────────────────────────────
 
@@ -97,7 +90,10 @@ def status_for(source: DataSource, entry: SourceEntry) -> str:
         if entry.is_installed():
             return "ok"
         return "manual_only"
-    if source.legal.automation == AutomationPolicy.CREDENTIALED and not source.credentials_available():
+    if (
+        source.legal.automation == AutomationPolicy.CREDENTIALED
+        and not source.credentials_available()
+    ):
         if entry.is_installed():
             return "ok"
         return "needs_credentials"
@@ -135,13 +131,13 @@ class MainWindow(QMainWindow):
         self._detect_manual_installs()
 
         # threads / workers held to keep alive
-        self._check_thread: Optional[QThread] = None
-        self._fetch_thread: Optional[QThread] = None
-        self._check_worker: Optional[CheckWorker] = None
-        self._fetch_worker: Optional[FetchWorker] = None
+        self._check_thread: QThread | None = None
+        self._fetch_thread: QThread | None = None
+        self._check_worker: CheckWorker | None = None
+        self._fetch_worker: FetchWorker | None = None
 
         # progress accounting for rate calc
-        self._dl_start_ts: Optional[float] = None
+        self._dl_start_ts: float | None = None
         self._dl_start_bytes: int = 0
 
         self._build_ui()
@@ -181,7 +177,8 @@ class MainWindow(QMainWindow):
             if has_files and not entry.local_version:
                 files = [
                     str(p.relative_to(RAW_ROOT))
-                    for p in cur.rglob("*") if p.is_file() and not p.is_symlink()
+                    for p in cur.rglob("*")
+                    if p.is_file() and not p.is_symlink()
                 ]
                 entry.local_version = "manual"
                 entry.status = "ok"
@@ -189,8 +186,9 @@ class MainWindow(QMainWindow):
                 entry.files = files
                 entry.error = None
                 if entry.fetched_at is None:
-                    from datetime import datetime, timezone
-                    entry.fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                    from datetime import datetime
+
+                    entry.fetched_at = datetime.now(UTC).isoformat(timespec="seconds")
                 n_detected += 1
             elif not has_files and entry.local_version and entry.status == "ok":
                 # User deleted the data manually — reflect that
@@ -308,8 +306,14 @@ class MainWindow(QMainWindow):
         self.btn_cancel.setEnabled(False)
         self.btn_cancel.clicked.connect(self._cancel_active)  # type: ignore
 
-        for b in (self.btn_check, self.btn_pull_stale, self.btn_pull_missing,
-                  self.btn_rescan, self.btn_verify, self.btn_preprocess):
+        for b in (
+            self.btn_check,
+            self.btn_pull_stale,
+            self.btn_pull_missing,
+            self.btn_rescan,
+            self.btn_verify,
+            self.btn_preprocess,
+        ):
             b.setMinimumHeight(30)
         self.btn_cancel.setMinimumHeight(30)
 
@@ -417,7 +421,8 @@ class MainWindow(QMainWindow):
         v.setContentsMargins(12, 8, 12, 8)
 
         title = QLabel("Activity")
-        f = QFont(); f.setBold(True)
+        f = QFont()
+        f.setBold(True)
         title.setFont(f)
         v.addWidget(title)
 
@@ -437,7 +442,8 @@ class MainWindow(QMainWindow):
             if not sources:
                 continue
             cat_item = QTreeWidgetItem([category, "", "", "", "", ""])
-            f = QFont(); f.setBold(True)
+            f = QFont()
+            f.setBold(True)
             cat_item.setFont(COL_NAME, f)
             self.tree.addTopLevelItem(cat_item)
             cat_item.setExpanded(True)
@@ -483,10 +489,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_header(self) -> None:
         total = directory_bytes(RAW_ROOT)
-        n_installed = sum(
-            1 for s in self._sources
-            if self._manifest.entry(s.id).is_installed()
-        )
+        n_installed = sum(1 for s in self._sources if self._manifest.entry(s.id).is_installed())
         self.lbl_storage.setText(
             f"Total raw data: <b>{human_bytes(total)}</b>  "
             f"·  installed: <b>{n_installed} / {len(self._sources)} sources</b>  "
@@ -521,7 +524,7 @@ class MainWindow(QMainWindow):
         self.det_body.setHtml("")
         self.btn_action.setEnabled(False)
         self.btn_manual.setEnabled(False)
-        self._current_source_id: Optional[str] = None
+        self._current_source_id: str | None = None
 
     def _show_source(self, s: DataSource) -> None:
         self._current_source_id = s.id
@@ -530,20 +533,18 @@ class MainWindow(QMainWindow):
         status_label, _ = STATUS_LABELS[status]
 
         self.det_title.setText(s.name)
-        self.det_subtitle.setText(
-            f"{s.category}  ·  {s.coverage}  ·  updated {s.cadence}"
-        )
+        self.det_subtitle.setText(f"{s.category}  ·  {s.coverage}  ·  updated {s.cadence}")
 
         bytes_local = directory_bytes(current_dir(s.id))
 
         def esc(v) -> str:
             from html import escape
+
             return escape(str(v)) if v is not None else "—"
 
         automation_explain = {
             AutomationPolicy.ALLOWED: (
-                "Publisher provides an explicit bulk-download endpoint. "
-                "Safe to pull automatically."
+                "Publisher provides an explicit bulk-download endpoint. Safe to pull automatically."
             ),
             AutomationPolicy.TOLERATED: (
                 "No explicit bulk endpoint, but published files are linked "
@@ -603,9 +604,9 @@ class MainWindow(QMainWindow):
            <span class="badge">{esc(s.legal.automation.value)}</span> &nbsp; {automation_explain}</p>
         <p><span class="k">Source page:</span>
            <a href="{esc(s.legal.manual_url)}">{esc(s.legal.manual_url)}</a></p>
-        {('<p><span class="k">Attribution:</span> ' + esc(s.legal.attribution) + '</p>') if s.legal.attribution else ''}
-        {('<p><span class="k">Notes:</span> ' + esc(notes) + '</p>') if notes else ''}
-        {('<p style="color:' + err_color + '"><b>Last error:</b> ' + esc(entry.error) + '</p>') if entry.error else ''}
+        {('<p><span class="k">Attribution:</span> ' + esc(s.legal.attribution) + "</p>") if s.legal.attribution else ""}
+        {('<p><span class="k">Notes:</span> ' + esc(notes) + "</p>") if notes else ""}
+        {('<p style="color:' + err_color + '"><b>Last error:</b> ' + esc(entry.error) + "</p>") if entry.error else ""}
         """
         self.det_body.setHtml(body)
 
@@ -653,9 +654,10 @@ class MainWindow(QMainWindow):
                 targets.append(s)
         if not targets:
             QMessageBox.information(
-                self, "Nothing stale",
+                self,
+                "Nothing stale",
                 "No sources have a newer version available. "
-                "Run 'Check for updates' first if you suspect this is wrong."
+                "Run 'Check for updates' first if you suspect this is wrong.",
             )
             return
         self._start_fetch(targets)
@@ -668,7 +670,9 @@ class MainWindow(QMainWindow):
             if status == "missing":
                 targets.append(s)
         if not targets:
-            QMessageBox.information(self, "Nothing missing", "Every automatable source is already installed.")
+            QMessageBox.information(
+                self, "Nothing missing", "Every automatable source is already installed."
+            )
             return
         self._start_fetch(targets)
 
@@ -701,9 +705,10 @@ class MainWindow(QMainWindow):
         if manuals:
             names = "\n".join(f" · {s.name}\n     {s.legal.manual_url}" for s in manuals)
             QMessageBox.information(
-                self, "Manual downloads required",
+                self,
+                "Manual downloads required",
                 "The following sources do not permit automated download. "
-                "Please use these URLs manually:\n\n" + names
+                "Please use these URLs manually:\n\n" + names,
             )
 
         if not sources:
@@ -774,22 +779,24 @@ class MainWindow(QMainWindow):
             size = _hb(r.nbytes) if r.nbytes else "—"
             label_html = (
                 f'<div style="color:{muted};font-size:11px;margin-left:24px">'
-                f'expected: {r.label}</div>'
-                if r.label and r.verdict in ("FAIL", "EMPTY") else ""
+                f"expected: {r.label}</div>"
+                if r.label and r.verdict in ("FAIL", "EMPTY")
+                else ""
             )
             diag_link = (
                 f' &nbsp;<a href="diagnose:{r.source_id}" '
                 f'style="color:{link_color};text-decoration:none">'
-                f'[Diagnose with AI]</a>'
-                if r.verdict in ("FAIL", "EMPTY") else ""
+                f"[Diagnose with AI]</a>"
+                if r.verdict in ("FAIL", "EMPTY")
+                else ""
             )
             rows.append(
                 f'<div style="margin:4px 0">'
                 f'<span style="color:{color};font-weight:bold">{mark} {r.source_id}</span> '
                 f'<span style="color:{muted}">— {size}</span>'
-                f'{diag_link}<br>'
+                f"{diag_link}<br>"
                 f'<span style="color:{text};margin-left:24px">{r.detail}</span>'
-                f'{label_html}</div>'
+                f"{label_html}</div>"
             )
 
         summary = (
@@ -797,9 +804,12 @@ class MainWindow(QMainWindow):
             f'<span style="color:{ok_color}"><b>{n_ok} OK</b></span> &nbsp;·&nbsp; '
             f'<span style="color:{fail_color}"><b>{n_fail} failing</b></span> &nbsp;·&nbsp; '
             f'<span style="color:{muted}">{n_missing} not installed</span>'
-            + (f' &nbsp;·&nbsp; <span style="color:{unknown_color}">{n_unknown} unknown</span>'
-               if n_unknown else "")
-            + '</div>'
+            + (
+                f' &nbsp;·&nbsp; <span style="color:{unknown_color}">{n_unknown} unknown</span>'
+                if n_unknown
+                else ""
+            )
+            + "</div>"
         )
 
         dlg = QDialog(self)
@@ -841,9 +851,8 @@ class MainWindow(QMainWindow):
 
     def _diagnose_one(self, source_id: str, parent) -> None:
         result = verify_one(source_id)
-        is_dark = self._is_dark()
-        muted = self._muted_hex()
         text = self._text_hex()
+        muted = self._muted_hex()
 
         dlg = QDialog(parent)
         dlg.setWindowTitle(f"Diagnose: {source_id}")
@@ -853,7 +862,7 @@ class MainWindow(QMainWindow):
         header = QLabel(
             f'<div style="font-size:13px;color:{text}"><b>{source_id}</b></div>'
             f'<div style="color:{muted};font-size:11px;margin-top:2px">'
-            f'verify reason: {result.detail}</div>'
+            f"verify reason: {result.detail}</div>"
         )
         header.setTextFormat(Qt.RichText)
         header.setWordWrap(True)
@@ -861,8 +870,7 @@ class MainWindow(QMainWindow):
 
         body = QTextBrowser()
         body.setHtml(
-            f'<div style="color:{muted};font-style:italic">'
-            f'Asking Claude to diagnose…</div>'
+            f'<div style="color:{muted};font-style:italic">Asking Claude to diagnose…</div>'
         )
         v.addWidget(body, stretch=1)
 
@@ -875,6 +883,7 @@ class MainWindow(QMainWindow):
         QApplication.processEvents()
 
         buf: list[str] = []
+
         def on_chunk(text_chunk: str) -> None:
             buf.append(text_chunk)
             joined = "".join(buf).replace("\n", "<br>")
@@ -887,9 +896,7 @@ class MainWindow(QMainWindow):
         try:
             diagnose(result, on_chunk=on_chunk)
         except DiagnoseUnavailable as e:
-            body.setHtml(
-                f'<div style="color:{muted}">Diagnosis unavailable.<br><br>{e}</div>'
-            )
+            body.setHtml(f'<div style="color:{muted}">Diagnosis unavailable.<br><br>{e}</div>')
 
         dlg.exec()
 
@@ -944,9 +951,7 @@ class MainWindow(QMainWindow):
             done_str = human_bytes(bytes_done)
             tot_str = human_bytes(bytes_total)
             rate = self._rate(bytes_done)
-            self.pb_substatus.setText(
-                f"{fname} — {done_str} / {tot_str}  ({pct:.1f}%)   {rate}"
-            )
+            self.pb_substatus.setText(f"{fname} — {done_str} / {tot_str}  ({pct:.1f}%)   {rate}")
             self.progress.setFormat(f"{pct:.1f}%")
         else:
             # Indeterminate
@@ -1013,14 +1018,17 @@ class MainWindow(QMainWindow):
         ts = datetime.now().strftime("%H:%M:%S")
         muted = self._muted_hex()
         prefix = f"<span style='color:{muted}'>[{ts}]</span> "
-        color = "#e57373" if error and self._is_dark() else ("#c62828" if error else self._text_hex())
+        color = (
+            "#e57373" if error and self._is_dark() else ("#c62828" if error else self._text_hex())
+        )
         self.log.append(f"{prefix}<span style='color:{color}'>{msg}</span>")
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         # If a download is running, ask before quitting
         if self._fetch_thread is not None:
             res = QMessageBox.question(
-                self, "Pull in progress",
+                self,
+                "Pull in progress",
                 "A data pull is still running. Quit anyway?\n"
                 "(In-progress download will be discarded.)",
                 QMessageBox.Yes | QMessageBox.No,

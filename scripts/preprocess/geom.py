@@ -17,11 +17,8 @@ Conventions:
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import geopandas as gpd
-import pandas as pd
-from shapely.geometry import box
 
 log = logging.getLogger("preprocess.geom")
 
@@ -31,7 +28,7 @@ DEFAULT_SIMPLIFY_TOL_DEG = 0.0001
 # enough to be useful for clustering).
 DEFAULT_H3_RES = 8
 
-_AREA_CRS = "EPSG:5070"      # NAD83 / Conus Albers Equal Area Conic, metres
+_AREA_CRS = "EPSG:5070"  # NAD83 / Conus Albers Equal Area Conic, metres
 
 _h3_module = None
 _h3_warned = False
@@ -44,6 +41,7 @@ def _h3():
         return _h3_module
     try:
         import h3 as h3_module  # type: ignore
+
         _h3_module = h3_module
         return h3_module
     except ImportError:
@@ -79,6 +77,7 @@ def add_polygon_derivatives(
     # Centroid (in 4326). suppress shapely warnings about lat/lon centroid
     # being approximate — for our use this is fine (low zoom marker).
     import warnings
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         gdf["geom_centroid"] = gdf.geometry.centroid
@@ -92,15 +91,11 @@ def add_polygon_derivatives(
 
     # Bounding box as a JSON-serializable list [minx, miny, maxx, maxy].
     bounds = gdf.geometry.bounds
-    gdf["geom_bbox"] = bounds.apply(
-        lambda r: [r["minx"], r["miny"], r["maxx"], r["maxy"]], axis=1
-    )
+    gdf["geom_bbox"] = bounds.apply(lambda r: [r["minx"], r["miny"], r["maxx"], r["maxy"]], axis=1)
 
     # Simplified geometry — Douglas-Peucker @ tolerance. preserve_topology=True
     # to avoid self-intersections.
-    gdf["geom_simplified"] = gdf.geometry.simplify(
-        simplify_tol_deg, preserve_topology=True
-    )
+    gdf["geom_simplified"] = gdf.geometry.simplify(simplify_tol_deg, preserve_topology=True)
 
     return gdf
 

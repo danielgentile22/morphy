@@ -29,7 +29,6 @@ from ..http import HttpError, download, fetch_text, head
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ._helpers import parse_http_date, safe_extract_zip
 
-
 DATA_PAGE = "https://eerscmap.usgs.gov/uspvdb/data/"
 SHP_ZIP_URL = "https://eerscmap.usgs.gov/uspvdb/assets/data/uspvdbSHP.zip"
 
@@ -72,10 +71,7 @@ class Uspvdb(DataSource):
         commercial_use=CommercialUse.ALLOWED,
         # Direct shapefile zip — clicking starts the ~7 MB download.
         manual_url=SHP_ZIP_URL,
-        attribution=(
-            "Source: USGS US Large-Scale Solar Photovoltaic Database. "
-            "Fujita et al."
-        ),
+        attribution=("Source: USGS US Large-Scale Solar Photovoltaic Database. Fujita et al."),
         notes=(
             "Direct download: uspvdbSHP.zip (~7 MB shapefile bundle).\n"
             "\n"

@@ -30,9 +30,7 @@ class StateSummaryView(View):
             billboard_count = len(ctx.get("billboard"))
 
         df = parcels.copy()
-        df["_any_infra"] = (
-            df["has_tower"] | df["has_solar"] | df["has_billboard"]
-        )
+        df["_any_infra"] = df["has_tower"] | df["has_solar"] | df["has_billboard"]
 
         # Top 20 owners by total assessed value
         top_owners = (
@@ -61,24 +59,28 @@ class StateSummaryView(View):
             .head(20)
         )
 
-        summary = pd.DataFrame([{
-            "state_fips": ctx.state_fips,
-            "state_name": ctx.state_name,
-            "tower_count": tower_count,
-            "parcel_count": len(parcels),
-            "solar_facility_count": solar_count,
-            "billboard_count": billboard_count,
-            "parcels_hosting_infra": int(df["_any_infra"].sum()),
-            "llc_owned_parcels": int((df["owner_kind"] == "llc").sum()),
-            "parcels_in_oz": int(df.get("in_oz", False).fillna(False).sum()),
-            "parcels_in_qct": int(df.get("in_qct", False).fillna(False).sum()),
-            "parcels_distressed_county": int(
-                df.get("distress_tier", "").fillna("").isin(["distressed"]).sum()
-            ),
-            "parcels_persistent_poverty": int(
-                df.get("persistent_poverty", False).fillna(False).sum()
-            ),
-            "top_owners": top_owners.to_dict(orient="records"),
-            "top_counties": top_counties.to_dict(orient="records"),
-        }])
+        summary = pd.DataFrame(
+            [
+                {
+                    "state_fips": ctx.state_fips,
+                    "state_name": ctx.state_name,
+                    "tower_count": tower_count,
+                    "parcel_count": len(parcels),
+                    "solar_facility_count": solar_count,
+                    "billboard_count": billboard_count,
+                    "parcels_hosting_infra": int(df["_any_infra"].sum()),
+                    "llc_owned_parcels": int((df["owner_kind"] == "llc").sum()),
+                    "parcels_in_oz": int(df.get("in_oz", False).fillna(False).sum()),
+                    "parcels_in_qct": int(df.get("in_qct", False).fillna(False).sum()),
+                    "parcels_distressed_county": int(
+                        df.get("distress_tier", "").fillna("").isin(["distressed"]).sum()
+                    ),
+                    "parcels_persistent_poverty": int(
+                        df.get("persistent_poverty", False).fillna(False).sum()
+                    ),
+                    "top_owners": top_owners.to_dict(orient="records"),
+                    "top_counties": top_counties.to_dict(orient="records"),
+                }
+            ]
+        )
         return summary

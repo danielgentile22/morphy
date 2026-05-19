@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Optional
 
 from ..base import (
     CATEGORY_SOLAR,
@@ -25,14 +24,25 @@ from ..base import (
 from ..http import HttpError, download, head
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 
-
 MONTHS = (
-    "january", "february", "march", "april", "may", "june",
-    "july", "august", "september", "october", "november", "december",
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
 )
 
 CURRENT_PATTERN = "https://www.eia.gov/electricity/data/eia860m/xls/{month}_generator{year}.xlsx"
-ARCHIVE_PATTERN = "https://www.eia.gov/electricity/data/eia860m/archive/xls/{month}_generator{year}.xlsx"
+ARCHIVE_PATTERN = (
+    "https://www.eia.gov/electricity/data/eia860m/archive/xls/{month}_generator{year}.xlsx"
+)
 
 MIN_REAL_BYTES = 1_000_000  # real workbooks are ~13 MB; HTML stubs are ~67 KB
 

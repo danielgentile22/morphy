@@ -15,8 +15,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Iterable, Optional
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -28,6 +28,7 @@ from verify_raw import SIGNATURES, VerifyResult
 # Anthropic SDK is optional — only import when actually diagnosing.
 def _client():
     import anthropic  # noqa: WPS433 — deferred import is intentional
+
     return anthropic.Anthropic()
 
 
@@ -43,8 +44,10 @@ def _build_system_prompt() -> list[dict]:
     is treated as one cached prefix.
     """
     sigs_text = json.dumps(
-        {sid: {k: (sorted(v) if isinstance(v, set) else v) for k, v in sig.items()}
-         for sid, sig in SIGNATURES.items()},
+        {
+            sid: {k: (sorted(v) if isinstance(v, set) else v) for k, v in sig.items()}
+            for sid, sig in SIGNATURES.items()
+        },
         indent=2,
         sort_keys=True,
     )
@@ -73,15 +76,18 @@ def _build_system_prompt() -> list[dict]:
         "about (filenames that must / should / must-not appear):\n\n"
         f"```json\n{sigs_text}\n```"
     )
-    return [{
-        "type": "text",
-        "text": framing,
-        "cache_control": {"type": "ephemeral"},
-    }]
+    return [
+        {
+            "type": "text",
+            "text": framing,
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
 
 
-def _gather_folder_context(source_id: str, max_files_listed: int = 80,
-                            max_file_samples: int = 3, sample_bytes: int = 2000) -> dict:
+def _gather_folder_context(
+    source_id: str, max_files_listed: int = 80, max_file_samples: int = 3, sample_bytes: int = 2000
+) -> dict:
     """Collect a structured snapshot of what's actually in the folder."""
     folder = RAW_ROOT / source_id / "current"
     if not folder.exists():
@@ -100,7 +106,8 @@ def _gather_folder_context(source_id: str, max_files_listed: int = 80,
     # Sample a few suspicious files' headers. Prefer the smaller .dat files
     # (counts, schema, etc.) and any plausibly-textual files.
     text_candidates = [
-        f for f in files
+        f
+        for f in files
         if f.suffix.lower() in (".csv", ".txt", ".dat", ".json", ".xml", ".md", ".tsv")
     ]
     text_candidates.sort(key=lambda p: p.stat().st_size)
@@ -109,11 +116,13 @@ def _gather_folder_context(source_id: str, max_files_listed: int = 80,
         try:
             with open(f, "rb") as fh:
                 raw = fh.read(sample_bytes)
-            samples.append({
-                "path": str(f.relative_to(folder)),
-                "size": f.stat().st_size,
-                "head": raw.decode("utf-8", errors="replace"),
-            })
+            samples.append(
+                {
+                    "path": str(f.relative_to(folder)),
+                    "size": f.stat().st_size,
+                    "head": raw.decode("utf-8", errors="replace"),
+                }
+            )
         except OSError:
             continue
 
@@ -152,8 +161,7 @@ def _build_user_message(result: VerifyResult) -> str:
     )
 
 
-def diagnose(result: VerifyResult,
-             on_chunk: Optional[Callable[[str], None]] = None) -> str:
+def diagnose(result: VerifyResult, on_chunk: Callable[[str], None] | None = None) -> str:
     """Diagnose a single failed VerifyResult. Streams to ``on_chunk`` if given.
 
     Returns the full response text. Raises DiagnoseUnavailable if the
@@ -169,8 +177,7 @@ def diagnose(result: VerifyResult,
         client = _client()
     except ImportError as e:
         raise DiagnoseUnavailable(
-            "anthropic SDK not installed. Run: "
-            "./.venv/bin/python -m pip install 'anthropic>=0.40'"
+            "anthropic SDK not installed. Run: ./.venv/bin/python -m pip install 'anthropic>=0.40'"
         ) from e
 
     system = _build_system_prompt()

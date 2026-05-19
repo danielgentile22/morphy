@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Optional
 
-from PySide6.QtCore import Qt, QThread
+from PySide6.QtCore import QThread
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -21,16 +20,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QSplitter,
     QTextEdit,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
-    QWidget,
 )
 
 from .workers import PreprocessWorker, make_thread
-
 
 # Make scripts/ importable for accessing the preprocess registry.
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
@@ -46,8 +42,8 @@ class PreprocessDialog(QDialog):
         self.setWindowTitle("Preprocess")
         self.resize(900, 660)
         self._dark = dark_mode
-        self._worker: Optional[PreprocessWorker] = None
-        self._thread: Optional[QThread] = None
+        self._worker: PreprocessWorker | None = None
+        self._thread: QThread | None = None
         self._source_items: dict[str, QTreeWidgetItem] = {}
         self._state_items: dict[str, QTreeWidgetItem] = {}
 
@@ -123,6 +119,7 @@ class PreprocessDialog(QDialog):
         try:
             from preprocess import registry  # noqa: F401
             from preprocess.geographies import all_states
+
             for st in all_states():
                 self.state_combo.addItem(f"{st.abbr} — {st.name}", st.fips)
         except Exception as e:
@@ -137,7 +134,9 @@ class PreprocessDialog(QDialog):
         from preprocess.base import all_normalizers
 
         norm_root = QTreeWidgetItem(["Normalize", "pending", ""])
-        f = norm_root.font(0); f.setBold(True); norm_root.setFont(0, f)
+        f = norm_root.font(0)
+        f.setBold(True)
+        norm_root.setFont(0, f)
         self.tree.addTopLevelItem(norm_root)
         norm_root.setExpanded(True)
         for n in all_normalizers():
@@ -146,7 +145,9 @@ class PreprocessDialog(QDialog):
             self._source_items[n.source_id] = item
 
         comp_root = QTreeWidgetItem(["Compose (per state)", "pending", ""])
-        f = comp_root.font(0); f.setBold(True); comp_root.setFont(0, f)
+        f = comp_root.font(0)
+        f.setBold(True)
+        comp_root.setFont(0, f)
         self.tree.addTopLevelItem(comp_root)
         comp_root.setExpanded(True)
         # Rows for states populated dynamically when compose_start fires.
@@ -167,9 +168,7 @@ class PreprocessDialog(QDialog):
             self.tree.invisibleRootItem().removeChild(item)
         self._state_items.clear()
 
-        self._log_line(
-            f"Preprocess starting: state={state_fips or 'all'}, force={force}"
-        )
+        self._log_line(f"Preprocess starting: state={state_fips or 'all'}, force={force}")
 
         worker = PreprocessWorker(state_fips=state_fips, force_rebuild=force)
         thread = make_thread(worker)
@@ -195,22 +194,22 @@ class PreprocessDialog(QDialog):
             elif phase == "normalize_ok":
                 rows = info.get("rows", 0)
                 bytes_ = info.get("bytes", 0)
-                self._set_status(item, "✓ ok",
-                                 f"{rows:,} rows · {bytes_/1_000_000:.1f} MB",
-                                 color=self._ok_hex())
+                self._set_status(
+                    item,
+                    "✓ ok",
+                    f"{rows:,} rows · {bytes_ / 1_000_000:.1f} MB",
+                    color=self._ok_hex(),
+                )
                 self._log_line(f"✓ {key}: {rows:,} rows")
             elif phase == "normalize_fail":
                 err = info.get("error", "")
-                self._set_status(item, "✗ FAIL", str(err)[:80],
-                                 color=self._fail_hex())
+                self._set_status(item, "✗ FAIL", str(err)[:80], color=self._fail_hex())
                 self._log_line(f"✗ {key}: {err}", level="err")
             elif phase == "normalize_skip":
                 reason = info.get("reason", "")
-                self._set_status(item, "· skipped", reason,
-                                 color=self._muted_hex())
+                self._set_status(item, "· skipped", reason, color=self._muted_hex())
             elif phase == "normalize_unavailable":
-                self._set_status(item, "– unavailable", "no raw data",
-                                 color=self._muted_hex())
+                self._set_status(item, "– unavailable", "no raw data", color=self._muted_hex())
         elif phase.startswith("compose_"):
             item = self._state_items.get(key)
             if phase == "compose_start":
@@ -263,13 +262,15 @@ class PreprocessDialog(QDialog):
 
     def _set_status(self, item: QTreeWidgetItem, status: str, detail: str, *, color: str) -> None:
         from PySide6.QtGui import QColor
+
         item.setText(1, status)
         item.setText(2, detail)
         item.setForeground(1, QColor(color))
 
     def _log_line(self, msg: str, *, level: str = "info") -> None:
-        muted = self._muted_hex()
-        color = self._fail_hex() if level == "err" else (self._muted_hex() if level == "warn" else None)
+        color = (
+            self._fail_hex() if level == "err" else (self._muted_hex() if level == "warn" else None)
+        )
         if color:
             self.log.append(f'<span style="color:{color}">{msg}</span>')
         else:

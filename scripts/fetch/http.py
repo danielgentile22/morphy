@@ -14,23 +14,18 @@ publishers can see this is not anonymous scraping.
 from __future__ import annotations
 
 import os
-import socket
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
+USER_AGENT = "PilotDataPuller/0.1 (lease-optimization research; contact: 43241327+danielgentile22@users.noreply.github.com)"
 
-USER_AGENT = (
-    "PilotDataPuller/0.1 (lease-optimization research; "
-    "contact: 43241327+danielgentile22@users.noreply.github.com)"
-)
-
-DEFAULT_TIMEOUT = 60                 # seconds, per download request
-PROBE_TIMEOUT = 15                   # seconds, per HEAD / cheap metadata GET
-CHUNK = 1024 * 64                    # 64 KiB streaming chunk
-RETRY_DELAYS = (1, 4, 16)            # exponential backoff between attempts
+DEFAULT_TIMEOUT = 60  # seconds, per download request
+PROBE_TIMEOUT = 15  # seconds, per HEAD / cheap metadata GET
+CHUNK = 1024 * 64  # 64 KiB streaming chunk
+RETRY_DELAYS = (1, 4, 16)  # exponential backoff between attempts
 
 
 class HttpError(RuntimeError):
@@ -43,7 +38,7 @@ def _opener() -> urllib.request.OpenerDirector:
     return opener
 
 
-def head(url: str) -> dict[str, Optional[str]]:
+def head(url: str) -> dict[str, str | None]:
     """Return key response headers via HTTP HEAD.
 
     Keys: 'etag', 'last_modified', 'content_length', 'content_type'.
@@ -65,11 +60,11 @@ def head(url: str) -> dict[str, Optional[str]]:
         if e.code in (403, 405, 501):
             return _head_via_get(url)
         raise HttpError(f"HEAD {url} → HTTP {e.code}") from e
-    except (urllib.error.URLError, socket.timeout) as e:
+    except (TimeoutError, urllib.error.URLError) as e:
         raise HttpError(f"HEAD {url} → {e}") from e
 
 
-def _head_via_get(url: str) -> dict[str, Optional[str]]:
+def _head_via_get(url: str) -> dict[str, str | None]:
     """Fallback when HEAD isn't supported: issue a Range: bytes=0-0 GET."""
     req = urllib.request.Request(
         url,
@@ -92,7 +87,7 @@ def _head_via_get(url: str) -> dict[str, Optional[str]]:
                 "content_type": h.get("Content-Type"),
                 "status": str(resp.status),
             }
-    except (urllib.error.HTTPError, urllib.error.URLError, socket.timeout) as e:
+    except (TimeoutError, urllib.error.HTTPError, urllib.error.URLError) as e:
         raise HttpError(f"GET-as-HEAD {url} → {e}") from e
 
 
@@ -106,17 +101,17 @@ def fetch_text(url: str, max_bytes: int = 5 * 1024 * 1024) -> str:
                 raise HttpError(f"response exceeded {max_bytes} bytes")
             enc = resp.headers.get_content_charset() or "utf-8"
             return data.decode(enc, errors="replace")
-    except (urllib.error.HTTPError, urllib.error.URLError, socket.timeout) as e:
+    except (TimeoutError, urllib.error.HTTPError, urllib.error.URLError) as e:
         raise HttpError(f"GET {url} → {e}") from e
 
 
 def download(
     url: str,
     dest: Path,
-    on_progress: Optional[Callable[[int, Optional[int]], None]] = None,
+    on_progress: Callable[[int, int | None], None] | None = None,
     *,
     expected_min_bytes: int = 0,
-    cancel_check: Optional[Callable[[], bool]] = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> int:
     """Stream-download ``url`` into ``dest`` atomically.
 
@@ -134,11 +129,11 @@ def download(
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".partial")
 
-    last_err: Optional[Exception] = None
+    last_err: Exception | None = None
     for attempt in range(len(RETRY_DELAYS) + 1):
         try:
             return _do_download(url, tmp, dest, on_progress, expected_min_bytes, cancel_check)
-        except (HttpError, urllib.error.URLError, socket.timeout, OSError) as e:
+        except (TimeoutError, HttpError, urllib.error.URLError, OSError) as e:
             last_err = e
             try:
                 if tmp.exists():
@@ -156,13 +151,13 @@ def _do_download(
     url: str,
     tmp: Path,
     dest: Path,
-    on_progress: Optional[Callable[[int, Optional[int]], None]],
+    on_progress: Callable[[int, int | None], None] | None,
     expected_min_bytes: int,
-    cancel_check: Optional[Callable[[], bool]],
+    cancel_check: Callable[[], bool] | None,
 ) -> int:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=DEFAULT_TIMEOUT) as resp:
-        total: Optional[int] = None
+        total: int | None = None
         cl = resp.headers.get("Content-Length")
         if cl is not None:
             try:
@@ -184,9 +179,7 @@ def _do_download(
                     on_progress(bytes_done, total)
 
     if expected_min_bytes and bytes_done < expected_min_bytes:
-        raise HttpError(
-            f"downloaded only {bytes_done} bytes, expected ≥ {expected_min_bytes}"
-        )
+        raise HttpError(f"downloaded only {bytes_done} bytes, expected ≥ {expected_min_bytes}")
 
     os.replace(tmp, dest)
     if on_progress is not None:

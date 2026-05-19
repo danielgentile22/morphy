@@ -7,6 +7,7 @@ HIFLD. Returns ~8,700 census-tract polygons.
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from pathlib import Path
 
 from ..base import (
@@ -15,10 +16,9 @@ from ..base import (
     FetchResult,
     ProgressCallback,
 )
-from ..http import HttpError, download, fetch_text
+from ..http import HttpError, fetch_text
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ._helpers import arcgis_query_all
-
 
 # HUD reshuffled their ArcGIS Online org in 2025: the OZ layer moved
 # from FeatureServer/0 to FeatureServer/13 inside the same service.
@@ -80,10 +80,11 @@ class HudOz(DataSource):
             raise HttpError(f"HUD OZ metadata not JSON: {e}")
         edit_ms = (meta.get("editingInfo") or {}).get("lastEditDate")
         if isinstance(edit_ms, (int, float)):
-            from datetime import datetime, timezone
-            dt = datetime.fromtimestamp(edit_ms / 1000, tz=timezone.utc)
+            from datetime import datetime
+
+            dt = datetime.fromtimestamp(edit_ms / 1000, tz=UTC)
             return dt.date().isoformat()
-        return f"n-{meta.get('name','?')}"
+        return f"n-{meta.get('name', '?')}"
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
         out = dest_dir / "opportunity_zones.geojson"

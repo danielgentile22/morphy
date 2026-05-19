@@ -8,21 +8,19 @@ exclusively via Qt signals — no shared mutable state.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional
-
-from PySide6.QtCore import QObject, QThread, Signal
 
 from fetch.base import DataSource
 from fetch.manifest import Manifest
 from fetch.puller import check_one, fetch_one
-
+from PySide6.QtCore import QObject, QThread, Signal
 
 CHECK_PARALLELISM = 8
 
 
 class CheckWorker(QObject):
     """Check remote_version() for every source. Emits per-source updates."""
-    progress = Signal(str, str)        # (source_id, status_text)
+
+    progress = Signal(str, str)  # (source_id, status_text)
     one_done = Signal(str, bool, str)  # (source_id, ok, remote_version_or_error)
     all_done = Signal()
 
@@ -68,10 +66,11 @@ class FetchWorker(QObject):
     sources hit the same publisher (FCC) so parallel pulls would just
     rate-limit ourselves.
     """
+
     progress = Signal(str, int, int, str)
     # (source_id, bytes_done, bytes_total_or_-1, filename)
 
-    started = Signal(str, str)         # (source_id, source_name)
+    started = Signal(str, str)  # (source_id, source_name)
     one_done = Signal(str, bool, str)  # (source_id, ok, message)
     all_done = Signal()
 
@@ -92,11 +91,13 @@ class FetchWorker(QObject):
 
                 self.started.emit(s.id, s.name)
 
-                def _progress(done: int, total: Optional[int], fname: str, _sid=s.id) -> None:
+                def _progress(done: int, total: int | None, fname: str, _sid=s.id) -> None:
                     self.progress.emit(_sid, done, total if total is not None else -1, fname)
 
                 outcome = fetch_one(
-                    s, self._manifest, _progress,
+                    s,
+                    self._manifest,
+                    _progress,
                     cancel_check=lambda: self._cancel,
                 )
 
@@ -105,9 +106,9 @@ class FetchWorker(QObject):
                     self.one_done.emit(s.id, True, msg)
                 elif outcome.ok:
                     self.one_done.emit(
-                        s.id, True,
-                        f"Pulled {outcome.bytes:,} bytes "
-                        f"(version {outcome.remote_version}).",
+                        s.id,
+                        True,
+                        f"Pulled {outcome.bytes:,} bytes (version {outcome.remote_version}).",
                     )
                 else:
                     self.one_done.emit(s.id, False, outcome.error or "Failed.")
@@ -131,6 +132,7 @@ class PreprocessWorker(QObject):
     The preprocess framework's progress callback fires per phase; we re-emit
     each one as a Qt signal so the dialog can update rows in real time.
     """
+
     progress = Signal(str, str, dict)
     # (phase, key, info_dict)
     all_done = Signal(bool, dict)
@@ -139,7 +141,7 @@ class PreprocessWorker(QObject):
     def __init__(
         self,
         *,
-        state_fips: Optional[str] = None,
+        state_fips: str | None = None,
         force_rebuild: bool = False,
     ) -> None:
         super().__init__()
@@ -158,6 +160,7 @@ class PreprocessWorker(QObject):
         # button (keeps app startup fast).
         import sys
         from pathlib import Path
+
         scripts_dir = Path(__file__).resolve().parent.parent / "scripts"
         if str(scripts_dir) not in sys.path:
             sys.path.insert(0, str(scripts_dir))
@@ -185,10 +188,7 @@ class PreprocessWorker(QObject):
                 "composed_ok": outcome.composed_ok,
                 "composed_failed": outcome.composed_failed,
             }
-            success = (
-                len(outcome.normalized_failed) == 0
-                and len(outcome.composed_failed) == 0
-            )
+            success = len(outcome.normalized_failed) == 0 and len(outcome.composed_failed) == 0
         except Exception as e:
             success = False
             outcome_data = {"error": f"{type(e).__name__}: {e}"}

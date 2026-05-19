@@ -17,8 +17,13 @@ class ParcelHostsInfraJoin(Join):
     inputs = ["parcel"]
     annotates = "parcel"
     columns_added = [
-        "has_tower", "tower_count", "has_solar", "solar_count",
-        "has_billboard", "billboard_count", "infrastructure_summary",
+        "has_tower",
+        "tower_count",
+        "has_solar",
+        "solar_count",
+        "has_billboard",
+        "billboard_count",
+        "infrastructure_summary",
     ]
     depends_on = ["TowerToParcelJoin", "SolarToParcelJoin", "BillboardToParcelJoin"]
 
@@ -40,22 +45,27 @@ class ParcelHostsInfraJoin(Join):
                     continue
                 pid = str(pid)
                 counts[pid] = counts.get(pid, 0) + 1
-                summaries.setdefault(pid, []).append({
-                    "type": kind,
-                    "id": str(r.get(id_col) or ""),
-                    "owner": str(r.get(owner_col) or ""),
-                })
+                summaries.setdefault(pid, []).append(
+                    {
+                        "type": kind,
+                        "id": str(r.get(id_col) or ""),
+                        "owner": str(r.get(owner_col) or ""),
+                    }
+                )
             return counts
 
         tower_counts = _index("tower", "tower", "asr_number", "owner_name")
         solar_counts = _index("solar_facility", "solar", "facility_id", "operator")
         billboard_counts = _index("billboard", "billboard", "permit_no", "owner")
 
-        def _lookup(pid, m): return int(m.get(str(pid), 0)) if pid else 0
+        def _lookup(pid, m):
+            return int(m.get(str(pid), 0)) if pid else 0
 
         parcels["tower_count"] = parcels["parcel_id_full"].map(lambda p: _lookup(p, tower_counts))
         parcels["solar_count"] = parcels["parcel_id_full"].map(lambda p: _lookup(p, solar_counts))
-        parcels["billboard_count"] = parcels["parcel_id_full"].map(lambda p: _lookup(p, billboard_counts))
+        parcels["billboard_count"] = parcels["parcel_id_full"].map(
+            lambda p: _lookup(p, billboard_counts)
+        )
         parcels["has_tower"] = parcels["tower_count"] > 0
         parcels["has_solar"] = parcels["solar_count"] > 0
         parcels["has_billboard"] = parcels["billboard_count"] > 0

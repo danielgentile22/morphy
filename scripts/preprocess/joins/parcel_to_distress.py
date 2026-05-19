@@ -32,7 +32,8 @@ class ParcelToDistressJoin(Join):
                 hit = gpd.sjoin(
                     parcels[["geometry"]].reset_index(),
                     subset[["geometry"]],
-                    how="inner", predicate="intersects",
+                    how="inner",
+                    predicate="intersects",
                 )
             except Exception:
                 continue

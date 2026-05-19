@@ -9,14 +9,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import geopandas as gpd
-import pandas as pd
 
 from ..base import (
-    NormalizeResult,
     Normalizer,
+    NormalizeResult,
     add_system_columns,
     quality_report,
     register_normalizer,
@@ -50,35 +48,40 @@ class HifldTowersNormalizer(Normalizer):
             lat = geom.y if (geom is not None and not geom.is_empty) else None
             lon = geom.x if (geom is not None and not geom.is_empty) else None
             state_fips = canon_state_fips(r.get("LocState") or r.get("STATE"))
-            rows.append({
-                "asr_number": safe_str(r.get("TowReg") or r.get("Tower_ID") or r.get("OBJECTID")),
-                "owner_name": safe_str(r.get("Licensee") or r.get("Owner")),
-                "height_m": (to_float(r.get("AllStruc") or r.get("Height_ft")) or 0) * 0.3048 or None,
-                "structure_type": safe_str(r.get("StrucType")),
-                "structure_type_desc": safe_str(r.get("StrucType")),
-                "status": safe_str(r.get("LicStatus")),
-                "status_desc": "Active" if safe_str(r.get("LicStatus")) == "A" else "",
-                "is_active": safe_str(r.get("LicStatus")) == "A",
-                "date_built": None,
-                "date_dismantled": None,
-                "street": safe_str(r.get("LocAdd")),
-                "city": safe_str(r.get("LocCity")),
-                "state": safe_str(r.get("LocState")),
-                "zip": None,
-                "county_fips": None,
-                "state_fips": state_fips,
-                "lat": lat,
-                "lon": lon,
-                "owner_street": None,
-                "owner_city": None,
-                "owner_state": None,
-                "owner_zip": None,
-                "owner_phone": None,
-                "coordinate_type": None,
-                "extras": {"call_sign": r.get("Callsign"), "loc_county": r.get("LocCounty")},
-                "_source_row_id": safe_str(r.get("OBJECTID") or r.get("TowReg")),
-                "geometry": geom,
-            })
+            rows.append(
+                {
+                    "asr_number": safe_str(
+                        r.get("TowReg") or r.get("Tower_ID") or r.get("OBJECTID")
+                    ),
+                    "owner_name": safe_str(r.get("Licensee") or r.get("Owner")),
+                    "height_m": (to_float(r.get("AllStruc") or r.get("Height_ft")) or 0) * 0.3048
+                    or None,
+                    "structure_type": safe_str(r.get("StrucType")),
+                    "structure_type_desc": safe_str(r.get("StrucType")),
+                    "status": safe_str(r.get("LicStatus")),
+                    "status_desc": "Active" if safe_str(r.get("LicStatus")) == "A" else "",
+                    "is_active": safe_str(r.get("LicStatus")) == "A",
+                    "date_built": None,
+                    "date_dismantled": None,
+                    "street": safe_str(r.get("LocAdd")),
+                    "city": safe_str(r.get("LocCity")),
+                    "state": safe_str(r.get("LocState")),
+                    "zip": None,
+                    "county_fips": None,
+                    "state_fips": state_fips,
+                    "lat": lat,
+                    "lon": lon,
+                    "owner_street": None,
+                    "owner_city": None,
+                    "owner_state": None,
+                    "owner_zip": None,
+                    "owner_phone": None,
+                    "coordinate_type": None,
+                    "extras": {"call_sign": r.get("Callsign"), "loc_county": r.get("LocCounty")},
+                    "_source_row_id": safe_str(r.get("OBJECTID") or r.get("TowReg")),
+                    "geometry": geom,
+                }
+            )
         out = gpd.GeoDataFrame(rows, geometry="geometry", crs="EPSG:4326")
         out = add_point_derivatives(out)
         out = add_system_columns(out, self.source_id, "tower")
@@ -97,7 +100,7 @@ class HifldTowersNormalizer(Normalizer):
         )
 
     @staticmethod
-    def _find_geojson(raw_dir: Path) -> Optional[Path]:
+    def _find_geojson(raw_dir: Path) -> Path | None:
         if not raw_dir.exists():
             return None
         cand = list(raw_dir.rglob("*.geojson")) + list(raw_dir.rglob("*.json"))

@@ -22,9 +22,8 @@ from ..base import (
     FetchResult,
     ProgressCallback,
 )
-from ..http import HttpError, download, fetch_text
+from ..http import HttpError, fetch_text
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
-
 
 LANDING_URL = "https://emp.lbl.gov/tracking-the-sun"
 

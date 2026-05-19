@@ -19,13 +19,11 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent))
 
 from fetch import RAW_ROOT
 from fetch.registry import all_sources
-
 
 # Signature schema (every key optional unless noted):
 #   label           — human description
@@ -38,9 +36,7 @@ from fetch.registry import all_sources
 #                       and verify substring appears in first 2 KB
 #   min_total_bytes — folder bytes must be ≥ this (catches truncated downloads)
 SIGNATURES: dict[str, dict] = {
-
     # ── Towers ────────────────────────────────────────────────────────────
-
     "fcc_asr": {
         "label": "FCC ASR — Registrations + FAA Determinations",
         "required": {"RA.dat"},
@@ -101,9 +97,7 @@ SIGNATURES: dict[str, dict] = {
         "content_signature": ("*.geojson", '"FeatureCollection"'),
         "min_total_bytes": 100_000,
     },
-
     # ── Solar ─────────────────────────────────────────────────────────────
-
     "eia_860": {
         "label": "EIA Form 860 Excel bundle",
         # Annual release; many .xlsx workbooks
@@ -130,9 +124,7 @@ SIGNATURES: dict[str, dict] = {
         "any_ext_ok": True,
         "min_total_bytes": 100_000_000,
     },
-
     # ── Billboards ────────────────────────────────────────────────────────
-
     "fdot_billboards": {
         "label": "FDOT Outdoor Advertising permits (Excel)",
         "required_exts": [".xlsx"],
@@ -150,9 +142,7 @@ SIGNATURES: dict[str, dict] = {
         "any_ext_ok": True,
         "min_total_bytes": 1_000,
     },
-
     # ── Parcels ───────────────────────────────────────────────────────────
-
     "nc_onemap_parcels": {
         "label": "NC OneMap statewide parcels (shapefile or .gdb)",
         # Modern downloads come as a shapefile zip
@@ -209,9 +199,7 @@ SIGNATURES: dict[str, dict] = {
         "any_ext_ok": True,
         "min_total_bytes": 100_000_000,
     },
-
     # ── Distress ──────────────────────────────────────────────────────────
-
     "hud_oz": {
         "label": "HUD Opportunity Zones (GeoJSON)",
         "required_exts": [".geojson"],
@@ -241,10 +229,10 @@ SIGNATURES: dict[str, dict] = {
 @dataclass
 class VerifyResult:
     source_id: str
-    verdict: str          # 'OK', 'FAIL', 'EMPTY', 'NOT_INSTALLED', 'UNKNOWN'
+    verdict: str  # 'OK', 'FAIL', 'EMPTY', 'NOT_INSTALLED', 'UNKNOWN'
     nbytes: int
     detail: str
-    label: Optional[str] = None
+    label: str | None = None
 
 
 def _human_bytes(n: int) -> str:
@@ -261,13 +249,13 @@ def _list_files(folder: Path) -> list[Path]:
     return [p for p in folder.rglob("*") if p.is_file() and not p.is_symlink()]
 
 
-def _check_content(folder: Path, glob: str, must_contain: str) -> Optional[str]:
+def _check_content(folder: Path, glob: str, must_contain: str) -> str | None:
     """Return error string if no file in folder matches glob or content missing."""
     matches = list(folder.rglob(glob))
     if not matches:
         return f"no file matching {glob} found"
     try:
-        with open(matches[0], "r", encoding="utf-8", errors="replace") as f:
+        with open(matches[0], encoding="utf-8", errors="replace") as f:
             head = f.read(4096)
     except OSError as e:
         return f"could not read {matches[0].name}: {e}"
@@ -291,14 +279,16 @@ def verify_one(source_id: str) -> VerifyResult:
 
     if not sig:
         return VerifyResult(
-            source_id, "UNKNOWN", nbytes,
-            f"{len(files)} file(s) — no signature configured", label,
+            source_id,
+            "UNKNOWN",
+            nbytes,
+            f"{len(files)} file(s) — no signature configured",
+            label,
         )
 
     fail_reasons: list[str] = []
 
     filenames = {p.name for p in files}
-    filenames_ci = {p.name.lower() for p in files}
     extensions = {p.suffix.lower() for p in files if p.suffix}
     # Geodatabase / GeoPackage / SQLite "files" are actually directories.
     # Add their suffixes via the directory tree so signature checks work.
@@ -320,9 +310,7 @@ def verify_one(source_id: str) -> VerifyResult:
     if required_exts:
         if sig.get("any_ext_ok"):
             if not any(ext in extensions for ext in required_exts):
-                fail_reasons.append(
-                    f"no file with any of these extensions: {required_exts}"
-                )
+                fail_reasons.append(f"no file with any of these extensions: {required_exts}")
         else:
             missing_exts = [e for e in required_exts if e not in extensions]
             if missing_exts:
@@ -354,7 +342,9 @@ def verify_one(source_id: str) -> VerifyResult:
     if required_exts:
         detail_parts.append(f"ext ✓ {[e for e in required_exts if e in extensions]}")
     return VerifyResult(
-        source_id, "OK", nbytes,
+        source_id,
+        "OK",
+        nbytes,
         ", ".join(detail_parts) if detail_parts else f"{len(files)} file(s)",
         label,
     )
@@ -366,6 +356,7 @@ def verify_all() -> list[VerifyResult]:
 
 # ── CLI ──────────────────────────────────────────────────────────────────
 
+
 def main() -> int:
     results = verify_all()
     name_w = max(len(r.source_id) for r in results)
@@ -374,7 +365,10 @@ def main() -> int:
     n_fail = n_ok = n_missing = n_unknown = 0
     for r in results:
         marker = {
-            "OK": "✓", "FAIL": "✗", "EMPTY": "✗", "NOT_INSTALLED": " ",
+            "OK": "✓",
+            "FAIL": "✗",
+            "EMPTY": "✗",
+            "NOT_INSTALLED": " ",
             "UNKNOWN": "?",
         }.get(r.verdict, "?")
         size = _human_bytes(r.nbytes) if r.nbytes else "—"

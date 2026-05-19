@@ -14,21 +14,19 @@ from __future__ import annotations
 
 import logging
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
 
-from . import NORMALIZED_ROOT, PROCESSED_ROOT, RAW_ROOT
+from . import NORMALIZED_ROOT, RAW_ROOT
 from .base import (
     ComposeResult,
-    Normalizer,
     NormalizeResult,
     all_normalizers,
     get_normalizer,
-    utcnow_iso,
 )
 from .compose import ComposeConfig, compose
-from .geographies import StateGeography, all_states, get_state
+from .geographies import StateGeography, get_state
 from .manifest import PreprocessManifest, get_raw_local_version
 
 log = logging.getLogger("preprocess.runner")
@@ -58,8 +56,8 @@ def run_normalize_one(
     manifest: PreprocessManifest,
     *,
     force_rebuild: bool = False,
-    progress_callback: Optional[ProgressCallback] = None,
-) -> tuple[str, Optional[NormalizeResult]]:
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[str, NormalizeResult | None]:
     """Normalize a single source. Returns (status, result_or_None).
 
     Status one of 'ok', 'failed', 'skipped', 'unavailable'.
@@ -74,7 +72,9 @@ def run_normalize_one(
 
     raw_lv = get_raw_local_version(source_id)
     if not force_rebuild and manifest.is_normalize_fresh(
-        source_id, raw_local_version=raw_lv, out_dir=out_dir,
+        source_id,
+        raw_local_version=raw_lv,
+        out_dir=out_dir,
     ):
         _emit(progress_callback, "normalize_skip", source_id, {"reason": "unchanged"})
         return "skipped", None
@@ -113,9 +113,15 @@ def run_normalize_one(
         quality_report_path=str(out_dir / "quality_report.json"),
         status="ok",
     )
-    _emit(progress_callback, "normalize_ok", source_id, {
-        "rows": result.canonical_rows, "bytes": result.bytes,
-    })
+    _emit(
+        progress_callback,
+        "normalize_ok",
+        source_id,
+        {
+            "rows": result.canonical_rows,
+            "bytes": result.bytes,
+        },
+    )
     return "ok", result
 
 
@@ -123,7 +129,7 @@ def run_normalize_all(
     manifest: PreprocessManifest,
     *,
     force_rebuild: bool = False,
-    progress_callback: Optional[ProgressCallback] = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, str]:
     """Normalize every registered source. Returns {source_id: status}."""
     statuses: dict[str, str] = {}
@@ -144,8 +150,8 @@ def run_compose_one(
     manifest: PreprocessManifest,
     *,
     force_rebuild: bool = False,
-    progress_callback: Optional[ProgressCallback] = None,
-) -> Optional[ComposeResult]:
+    progress_callback: ProgressCallback | None = None,
+) -> ComposeResult | None:
     _emit(progress_callback, "compose_start", state.fips, {"name": state.name})
     try:
         cfg = ComposeConfig(state=state, force_rebuild=force_rebuild)
@@ -173,28 +179,34 @@ def run_compose_one(
         counts=result.counts,
         status="ok",
     )
-    _emit(progress_callback, "compose_ok", state.fips, {
-        "sources": len(result.sources_used),
-        "joins": len(result.joins_applied),
-        "views": len(result.views_built),
-        "counts": result.counts,
-    })
+    _emit(
+        progress_callback,
+        "compose_ok",
+        state.fips,
+        {
+            "sources": len(result.sources_used),
+            "joins": len(result.joins_applied),
+            "views": len(result.views_built),
+            "counts": result.counts,
+        },
+    )
     return result
 
 
 def run_compose_all(
     manifest: PreprocessManifest,
     *,
-    states: Optional[list[StateGeography]] = None,
+    states: list[StateGeography] | None = None,
     force_rebuild: bool = False,
-    progress_callback: Optional[ProgressCallback] = None,
-) -> dict[str, Optional[ComposeResult]]:
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, ComposeResult | None]:
     if states is None:
         states = _states_with_normalized_parcel_data(manifest)
-    results: dict[str, Optional[ComposeResult]] = {}
+    results: dict[str, ComposeResult | None] = {}
     for s in states:
         results[s.fips] = run_compose_one(
-            s, manifest,
+            s,
+            manifest,
             force_rebuild=force_rebuild,
             progress_callback=progress_callback,
         )
@@ -204,18 +216,21 @@ def run_compose_all(
 
 def run_all(
     *,
-    state_fips: Optional[str] = None,
+    state_fips: str | None = None,
     force_rebuild: bool = False,
-    progress_callback: Optional[ProgressCallback] = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> RunOutcome:
     """Normalize all sources, then compose either one state or all that have data."""
     import time
+
     t0 = time.monotonic()
     outcome = RunOutcome()
     manifest = PreprocessManifest.load()
 
     normalize_statuses = run_normalize_all(
-        manifest, force_rebuild=force_rebuild, progress_callback=progress_callback,
+        manifest,
+        force_rebuild=force_rebuild,
+        progress_callback=progress_callback,
     )
     for sid, st in normalize_statuses.items():
         if st == "ok":
@@ -233,7 +248,9 @@ def run_all(
         states = _states_with_normalized_parcel_data(manifest)
 
     compose_results = run_compose_all(
-        manifest, states=states, force_rebuild=force_rebuild,
+        manifest,
+        states=states,
+        force_rebuild=force_rebuild,
         progress_callback=progress_callback,
     )
     for fips, res in compose_results.items():
@@ -243,11 +260,16 @@ def run_all(
             outcome.composed_ok.append(fips)
 
     outcome.duration_seconds = time.monotonic() - t0
-    _emit(progress_callback, "all_done", "", {
-        "duration": outcome.duration_seconds,
-        "normalized_ok": len(outcome.normalized_ok),
-        "composed_ok": len(outcome.composed_ok),
-    })
+    _emit(
+        progress_callback,
+        "all_done",
+        "",
+        {
+            "duration": outcome.duration_seconds,
+            "normalized_ok": len(outcome.normalized_ok),
+            "composed_ok": len(outcome.composed_ok),
+        },
+    )
     return outcome
 
 
@@ -260,14 +282,14 @@ def _states_with_normalized_parcel_data(manifest: PreprocessManifest) -> list[St
             continue
         if (entry or {}).get("status") != "ok":
             continue
-        for f in (entry.get("states_covered") or []):
+        for f in entry.get("states_covered") or []:
             seen.add(f)
     if not seen:
         # Fallback: if no parcel data normalized yet, compose for every state
         # that's covered by tower / distress data so the user gets *something*.
         log.info("no normalized parcel data — composing for every state with any normalized data")
-        for sid, entry in (manifest.normalized or {}).items():
-            for f in ((entry or {}).get("states_covered") or []):
+        for _sid, entry in (manifest.normalized or {}).items():
+            for f in (entry or {}).get("states_covered") or []:
                 seen.add(f)
     return [get_state(f) for f in sorted(seen) if f]
 
@@ -277,6 +299,7 @@ def _infer_states_covered(out_dir: Path) -> list[str]:
     states: set[str] = set()
     try:
         import pandas as pd  # noqa: WPS433
+
         for p in out_dir.glob("*.parquet"):
             if p.name == "raw.parquet":
                 continue
@@ -293,7 +316,7 @@ def _infer_states_covered(out_dir: Path) -> list[str]:
     return sorted(states)
 
 
-def _emit(cb: Optional[ProgressCallback], phase: str, key: str, info: dict) -> None:
+def _emit(cb: ProgressCallback | None, phase: str, key: str, info: dict) -> None:
     if cb is None:
         return
     try:
