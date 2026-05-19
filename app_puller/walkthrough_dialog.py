@@ -9,10 +9,8 @@ manual install.
 from __future__ import annotations
 
 import webbrowser
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from fetch import RAW_ROOT
 from fetch.base import DataSource
 from fetch.manifest import Manifest
 from fetch.storage import current_dir, directory_bytes
@@ -290,24 +288,9 @@ class WalkthroughDialog(QDialog):
             )
             return
 
-        entry = self._manifest.entry(self._source.id)
-        now = datetime.now(UTC)
-        entry.local_version = "manual"
-        entry.status = "ok"
-        entry.bytes = directory_bytes(cur)
-        entry.files = [str(p.relative_to(RAW_ROOT)) for p in files]
-        entry.error = None
-        entry.fetched_at = now.isoformat(timespec="seconds")
-        entry.checked_at = entry.fetched_at
-        cadence = self._source.update_cadence_days
-        entry.update_cadence_days = cadence
-        if cadence is not None:
-            entry.next_recommended_check_at = (now + timedelta(days=cadence)).isoformat(
-                timespec="seconds"
-            )
-        else:
-            entry.next_recommended_check_at = None
-        self._manifest.save()
+        from .upload import mark_manual_install
+
+        mark_manual_install(self._source, self._manifest)
         self._completed = True
         self.accept()
 

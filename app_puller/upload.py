@@ -13,11 +13,14 @@ to keep the flow non-modal-heavy.
 from __future__ import annotations
 
 import shutil
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from fetch import RAW_ROOT
 from fetch.base import DataSource
+from fetch.manifest import Manifest
 from fetch.sources._helpers import safe_extract_zip
-from fetch.storage import current_dir
+from fetch.storage import current_dir, directory_bytes
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 
@@ -118,7 +121,13 @@ def _move_into_current(
     for zp in zips:
         try:
             if extract_zips:
-                files = safe_extract_zip(zp, cur)
+                # Extract into a same-named subfolder so multi-zip sources
+                # like fcc_asr land in current/r_tower/ + current/d_tower/
+                # (matching the fetch pipeline's layout). Parcel sources'
+                # normalizers use rglob, so subfolders are harmless there.
+                sub = cur / zp.stem
+                sub.mkdir(parents=True, exist_ok=True)
+                files = safe_extract_zip(zp, sub)
                 extracted += len(files)
             else:
                 shutil.copy2(zp, cur / zp.name)
@@ -127,3 +136,34 @@ def _move_into_current(
             errors.append(f"{zp.name}: {type(e).__name__}: {e}")
 
     return (copied, extracted, errors)
+
+
+def mark_manual_install(source: DataSource, manifest: Manifest) -> None:
+    """Stamp the manifest entry to reflect a successful manual install.
+
+    Resets ``status`` to ``"ok"``, clears any prior ``fetch_failed`` /
+    ``check_failed`` error, refreshes the file list and byte count from
+    disk, and recomputes ``next_recommended_check_at`` from the source's
+    declared cadence. Called from both the upload button and the
+    walkthrough finalize step.
+    """
+    cur = current_dir(source.id)
+    files = [p for p in cur.rglob("*") if p.is_file() and not p.is_symlink()]
+    entry = manifest.entry(source.id)
+    now = datetime.now(UTC)
+    entry.local_version = "manual"
+    entry.status = "ok"
+    entry.bytes = directory_bytes(cur)
+    entry.files = [str(p.relative_to(RAW_ROOT)) for p in files]
+    entry.error = None
+    entry.fetched_at = now.isoformat(timespec="seconds")
+    entry.checked_at = entry.fetched_at
+    cadence = source.update_cadence_days
+    entry.update_cadence_days = cadence
+    if cadence is not None:
+        entry.next_recommended_check_at = (now + timedelta(days=cadence)).isoformat(
+            timespec="seconds"
+        )
+    else:
+        entry.next_recommended_check_at = None
+    manifest.save()

@@ -74,7 +74,7 @@ from verify_raw import verify_all, verify_one
 
 from . import state as ui_state
 from .preprocess_dialog import PreprocessDialog
-from .upload import pick_and_upload
+from .upload import mark_manual_install, pick_and_upload
 from .walkthrough_dialog import WalkthroughDialog
 from .workers import CheckWorker, FetchWorker
 
@@ -867,8 +867,14 @@ class MainWindow(QMainWindow):
         self._append_log(msg)
         for err in errors:
             self._append_log(f"  ✗ {err}", error=True)
-        # Pick up the new files in the manifest as a manual install.
-        self._detect_manual_installs()
+
+        # Always reset the manifest entry on a successful upload — this
+        # clears any prior fetch_failed / check_failed left over from an
+        # earlier auto-fetch attempt. Without this the status column
+        # would stay at "Fetch failed" even though files are now on disk.
+        if (copied or extracted) and not errors:
+            mark_manual_install(s, self._manifest)
+
         self._refresh_all_rows()
         if getattr(self, "_current_source_id", None) == sid:
             self._show_source(s)
