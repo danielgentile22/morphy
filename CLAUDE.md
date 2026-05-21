@@ -4,8 +4,9 @@ Orientation for Claude Code sessions working in this repo. Read this
 first; then dip into the relevant doc under [docs/](docs/) when you
 need depth.
 
-**Last updated:** 2026-05-19 (slimmed during the production-readiness
-push; full deep-dives now live in `docs/`).
+**Last updated:** 2026-05-20 (full deep-dives live in `docs/`; read
+[docs/STATUS.md](docs/STATUS.md) first — it is the current-state
+handoff snapshot).
 
 ---
 
@@ -108,20 +109,25 @@ The full repository layout + system diagram is in
 
 ## 3. The current work plan
 
-Active in `.claude/plans/cached-wobbling-token.md`. Eight sections in
-sequence — documentation first, then code:
+Eight sections in sequence — documentation first, then code:
 
-1. Documentation foundation
-2. Version control + GitHub setup
-3. Data puller overhaul
-4. Data hygiene (raw data refresh)
-5. Preprocess code hygiene
-6. Testing
-7. Pitch readiness
-8. Map app (deferred + minimal patches)
+1. Documentation foundation — ✅ done
+2. Version control + GitHub setup — ✅ done
+3. Data puller overhaul — ✅ done
+4. Data hygiene (raw data refresh) — ⚠️ AR/MT pulled and solid; FL raw intact, processed deleted 2026-05-20; NC all data deleted 2026-05-20 (needs re-fetch)
+5. Preprocess code hygiene — ⚠️ in progress; code uncommitted; FL/NC need chunked compose (ADR-051) before re-normalizing + composing
+6. Testing — ⬜ not started
+7. Pitch readiness — ⬜ not started
+8. Map app (deferred + minimal patches) — ⬜ not started
+
+Note: the plan file `.claude/plans/cached-wobbling-token.md` is
+currently **missing from disk** — [docs/STATUS.md](docs/STATUS.md) §6
+is the authoritative section tracker until it is restored.
 
 Always check the plan before starting a new task. Each section ends
-with explicit verification before the next starts.
+with explicit verification before the next starts. For the precise
+current state — including known bugs with their fixes and the
+uncommitted-work list — read [docs/STATUS.md](docs/STATUS.md).
 
 ---
 
@@ -152,7 +158,7 @@ these. Highlights:
 - Current-only versioning (no history retained).
 - On-demand pull only (no daemons / cron).
 - Static-site map app (no backend).
-- Anchor states: AR + NC + MT + UT (+ FL stretch).
+- Anchor states: AR + NC + MT (+ FL stretch). UT dropped — no owner data (ADR-049).
 - Free-only budget for v1 pitch; Regrid out of scope.
 - FCC ULS normalizers + billboards deferred to post-pitch.
 - HIFLD retired; LBNL TTS dropped; current FL FGDL replaced by `fdor_nal`.
@@ -220,8 +226,8 @@ Currently anchored at the **state** level (per ADR-001). See
 County NC (`37075`) is the original pilot context; expansion to multi-
 state is the current cut.
 
-Key state FIPS used throughout: `05` (AR), `12` (FL), `18` (IN, dropped),
-`30` (MT), `37` (NC), `49` (UT).
+Key state FIPS used throughout: `05` (AR), `12` (FL), `30` (MT),
+`37` (NC). Dropped (no owner data): `18` (IN), `49` (UT).
 
 ---
 

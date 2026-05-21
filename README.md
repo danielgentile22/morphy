@@ -112,12 +112,12 @@ ruff check . && ruff format --check .
 | State | FIPS | Status |
 |---|---|---|
 | Arkansas | 05 | ✅ Working end-to-end |
-| North Carolina | 37 | 🟡 Refresh needed |
-| Montana | 30 | 🟡 Pull required |
-| Utah | 49 | 🟡 Pull required |
-| Florida | 12 | 🟡 Stretch (via per-county FDOR NAL) |
+| Montana | 30 | ✅ Working end-to-end |
+| Florida | 12 | 🔴 Raw intact (all 67 counties); normalized + composite deleted 2026-05-20 — needs re-normalize + compose |
+| North Carolina | 37 | 🔴 All raw data deleted 2026-05-20 — needs full re-fetch, normalize, and compose |
 
-See [docs/SCOPE.md §2](docs/SCOPE.md) for why these.
+See [docs/SCOPE.md §2](docs/SCOPE.md) for why these, and
+[docs/STATUS.md](docs/STATUS.md) for the live state.
 
 ---
 
@@ -155,6 +155,7 @@ contain parcel-owner names + mailing addresses (PII when combined) —
 treat per [docs/SECURITY.md](docs/SECURITY.md). The repo itself is
 private until access controls land.
 
-Active work plan lives at
-`.claude/plans/cached-wobbling-token.md` (in-flight production-
-readiness push). Doc work is the current phase.
+In-flight production-readiness push: Sections 1–3 are done, Section 4
+complete for AR/MT (FL raw intact; NC raw deleted and needs re-fetch),
+Section 5 (preprocess code hygiene) in progress — see
+[docs/STATUS.md](docs/STATUS.md).

@@ -1,6 +1,6 @@
 # CHANGELOG
 
-**Last updated:** 2026-05-19
+**Last updated:** 2026-05-20
 
 History of meaningful changes to the project. Newest at the top.
 Format follows [Keep a Changelog](https://keepachangelog.com/)
@@ -13,7 +13,106 @@ Changes are grouped under section headers (`Added` / `Changed` /
 
 ## Unreleased — production-readiness push (in progress)
 
-Active work plan in `/.claude/plans/cached-wobbling-token.md`.
+As of 2026-05-20, Sections 1–3 are done, Section 4 complete for AR/MT
+(FL raw intact; NC raw deleted and needs re-fetch), and Section 5's
+code is written but **not yet committed** (last commit `a067a49`).
+FL/NC compose is blocked pending a chunked-compose refactor (ADR-051).
+See [STATUS.md](./STATUS.md) for the current snapshot.
+
+### Removed (data cleanup — 2026-05-20)
+
+- **`data/processed/normalized/fdor_nal/`** (10.2 GB) — FL normalized
+  parcels deleted to recover disk space. Raw FDOR data at
+  `data/raw/fdor_nal/current/` is untouched. Re-run
+  `python scripts/preprocess.py --state 12` once chunked compose
+  is built (ADR-051).
+- **`data/processed/composite/12/`** (70 MB) — FL composite deleted.
+  Same precondition as above.
+- **`data/raw/nc_onemap_parcels/`** (8.3 GB) — NC raw MapServer pages
+  deleted (was stalled at 1,106/1,186 pages on a server 504). Needs
+  a full re-fetch when the NC OneMap endpoint is confirmed stable.
+- **`data/raw/NC/`** (958 MB) — legacy NC raw directory (Graham County
+  shapefiles + old FCC docs). FCC content was a duplicate of
+  `data/raw/fcc_asr/current/`; Graham County parcels were v0 pilot
+  data superseded by nc_onemap_parcels.
+- **`data/_stale_backup/`** (2.3 GB) — old FL FGDL DSL normalized
+  parcels + old composite/12; superseded by fdor_nal (ADR-046).
+
+`preprocess_manifest.json` rebuilt via `--rebuild-manifest`; now
+shows 9 normalized sources + 3 composed states (AR/IN/MT).
+
+### Fixed (Section 5 — 2026-05-20)
+
+- **Latent bug:** `scripts/preprocess/registry.py` was empty — no
+  normalizer / join / view modules were imported, so every registry
+  was empty and `preprocess.py` was a silent no-op. Populated it with
+  all 11 normalizer, 12 join, and 8 view module imports.
+- **MT field map was wrong.** `mt_cadastral_parcels` had incorrect
+  column names, and a silent "fall back to all layers" path
+  concatenated all 12 Montana shapefiles (including PLSS points and
+  water) into one garbage 6.5M-row output with 0 owner names.
+  Corrected the field map to the real schema (`OwnerName`,
+  `PARCELID`, `GISAcres`, `TotalValue`, …) and replaced the silent
+  fallback with a loud `RuntimeError`. MT now normalizes to 920,111
+  rows, 96% owner names, all 56 counties resolved to FIPS.
+
+### Added (Section 5 — 2026-05-20)
+
+- FDOR NAL parcel normalizer (`fdor_nal` in `state_parcels.py`):
+  field map verified against the real 2025 PAR `.dbf` schema
+  (`OWN_NAME`, `OWN_ADDR1`, `JV`, `LND_VAL`, `DOR_UC`, `ACT_YR_BLT`,
+  county FIPS sliced from the `CENSUS_BK` GEOID).
+- `safe_merge()` helper in `preprocess/base.py` — drops a
+  Normalizer's placeholder columns before a Join merges the real
+  values, preventing silent `_x` / `_y` collisions. Applied to all
+  three `county_score_to_*` joins.
+- `preprocess.py --source <id>` — re-normalize one source through the
+  manifest without touching the others.
+- `catalog.json` now carries `sources_used_versions` —
+  `{source_id: raw_local_version}` lineage per state composite.
+- `canon_county_fips()` now accepts census tract/block GEOIDs
+  (slices positions 0-4) — needed for FDOR, whose only county
+  identifier is `CENSUS_BK`.
+
+### Changed (Section 5 — 2026-05-20)
+
+- **Rewrote the parcel normalizer to stream per-county** (ADR-050).
+  The old design read every layer of a multi-layer source, held them
+  all in memory, and concatenated — which would need ~50 GB peak for
+  Florida's 67-county / ~28 GB FDOR set. The normalizer now processes
+  one county-layer at a time and writes a per-county parquet file
+  under `normalized/<source>/parcels/<county>.parquet` (plus a raw
+  copy under `raw/`). Peak memory is bounded to a single county.
+- Normalize-stage GeoJSON output was dropped — only GeoParquet is
+  written at the normalize stage now (the Composer still dual-writes
+  GeoParquet + GeoJSON for the map app). This made AR's normalize
+  *faster and smaller*: ~2m29s wall-clock, 1.3 GB output (down from
+  the earlier dual-write).
+- Vectorized the parcel-normalize mapping step (was a per-row
+  `iterrows` loop — the documented hot path). Every canonical column
+  is now a column-wise operation; the three regex-heavy scalar
+  functions (`infer_owner_kind`, `normalize_owner_name`,
+  `normalize_address`) run once per *distinct* value via a
+  unique-lookup.
+
+### Data (Section 4–5 — 2026-05-20)
+
+- **AR** re-normalized + re-composed clean after the normalizer
+  rewrite: 2,116,976 parcels, 9 joins, 8 views, 0 warnings.
+- **MT** normalized + composed clean: 920,111 parcels, 9 joins, 8
+  views, 0 warnings.
+- **FL (`fdor_nal`)** re-normalized clean: all 67 counties,
+  **11,184,113 parcels** (68 county parquet files, incl. the
+  Miami-Dade condo supplement). The unclosed-ring geometry bug is
+  fixed — `on_invalid="fix"` on the layer reads + an `is_file()` guard
+  on the `.shp` glob; 2,976 rows (0.03%) dropped for unrepairable
+  geometry. **FL compose is blocked** — ~19.5 GB peak RAM + ~16–20 GB
+  output won't fit the 16 GB / near-full-disk dev machine. See
+  [STATUS.md §4.1](./STATUS.md).
+- **NC** fetch is ~93% done — **1,106 of 1,186** MapServer pages
+  (~8.6 GB) fetched and valid; the fetch then stalled on a server-side
+  HTTP 504 at deep offsets. Not yet normalized or composed. See
+  [STATUS.md §4.2](./STATUS.md).
 
 ### Added (Section 2 — 2026-05-19)
 
@@ -64,6 +163,14 @@ Active work plan in `/.claude/plans/cached-wobbling-token.md`.
 - ADR-042: Documentation moved to `docs/` subfolder.
 - ADR-043: pytest now; Vitest + Playwright deferred to map app v2.
 - ADR-044: CI on GitHub Actions.
+- ADR-045: Registry split into `_ACTIVE` / `_DEFERRED` blocks.
+- ADR-046 / ADR-047: FL FDOR NAL replaces FGDL DSL; coverage expanded
+  to all 67 counties.
+- ADR-048: NC OneMap auto-fetch via MapServer pagination.
+- ADR-049: Utah dropped from anchor states (no owner data).
+- ADR-050: Streaming per-county parcel normalize.
+- ADR-051: Chunked compose for memory-bounded large states (approved;
+  not yet implemented).
 
 ---
 

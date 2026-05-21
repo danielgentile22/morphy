@@ -1,7 +1,7 @@
 # DATA_SOURCES
 
-**Last updated:** 2026-05-19 (header refresh; per-source detail will be
-re-audited during Section 4 of the production-readiness push).
+**Last updated:** 2026-05-20 (per-source detail reconciled with the
+Section 4 raw-data pulls).
 
 Reference for every data feed the puller knows about. Serves two audiences:
 
@@ -62,19 +62,19 @@ per-source table below):
 | 14 | FDOT Outdoor Advertising permits | Billboards | Florida | ✅ | ⊘ deferred | ✅ Yes (public records) |
 | 15 | NCDOT Outdoor Advertising permits | Billboards | North Carolina | 🚫 | ⊘ deferred | ✅ Yes (public records) |
 | 16 | TxDOT Outdoor Advertising permits | Billboards | Texas | 🚫 | ⊘ deferred | ✅ Yes (public records) |
-| 17 | NC OneMap statewide parcels | Parcels | NC (100 counties) | ✅ | ✓ active | ✅ Yes, with attribution |
+| 17 | NC OneMap statewide parcels | Parcels | NC (100 counties) | ✅ | ✓ active — raw deleted 2026-05-20; needs re-fetch | ✅ Yes, with attribution |
 | 18 | FL FGDL DSL parcels | Parcels | Florida | 🚫 | ⊘ deferred (wrong dataset; replaced by #29) | ✅ Yes, with attribution |
 | 19 | Montana Cadastral parcels | Parcels | Montana | 🚫 | ✓ active | ✅ Yes, with attribution |
 | 20 | Minnesota statewide parcels (MnGeo) | Parcels | Minnesota | 🚫 | ⊘ deferred (license ambiguity) | ✅ Yes, with attribution |
 | 21 | Indiana statewide parcels (IGIO) | Parcels | Indiana | 🚫 | ⊘ deferred (no owner data) | ✅ Yes, with attribution |
 | 22 | Arkansas statewide parcels | Parcels | Arkansas | 🚫 | ✓ active | ✅ Yes, with attribution |
-| 23 | Utah AGRC LIR parcels | Parcels | Utah | 🚫 | ✓ active | ✅ Yes, with attribution |
+| 23 | Utah UGRC LIR parcels | Parcels | Utah | 🚫 | ⊘ deferred (no owner data — ADR-049) | ✅ Yes, with attribution |
 | 24 | Regrid (Landgrid) nationwide parcels | Parcels | All 50 states (configurable) | 🔒 | ⊘ deferred (paid; free-only budget) | ✅ Yes, per license |
 | 25 | HUD Opportunity Zones | Distress | National | ✅ | ✓ active | ✅ Yes (public domain) |
 | 26 | HUD Qualified Census Tracts | Distress | National | ✅ | ✓ active | ✅ Yes (public domain) |
 | 27 | ARC County Economic Status | Distress | Appalachia (13 states) | ✅ | ✓ active | ✅ Yes (public domain) |
 | 28 | USDA ERS Persistent Poverty Counties | Distress | National | 🟡 | ✓ active | ✅ Yes (public domain) |
-| 29 | **FL FDOR NAL** (per-county tax roll) — NEW | Parcels | FL (10 v1 counties) | 🚫 | ✓ active | ✅ Yes, with attribution |
+| 29 | **FL FDOR NAL** (per-county tax roll) — NEW | Parcels | FL (all 67 counties) | 🚫 | ✓ active — raw intact; normalized + composite deleted 2026-05-20, needs re-run | ✅ Yes, with attribution |
 
 ---
 
@@ -376,16 +376,29 @@ coordinates if available". Drop file in `data/raw/txdot_billboards/current/`.
 
 ## 17. NC OneMap — statewide parcels
 
-- **ID:** `nc_onemap_parcels` · **Cadence:** Monthly (per-county) · **Size:** ~2.2 GB
-- **Source page:** <https://www.nconemap.gov/datasets/nconemap::nc-parcels-poly/about>
-- **Direct bulk:** `https://services.nconemap.gov/data/parcels/NCParcels.gdb.zip`
+- **ID:** `nc_onemap_parcels` · **Cadence:** Monthly (per-county) · **Size:** ~10 GB on disk (1186 paginated GeoJSON files)
+- **Source page:** <https://www.nconemap.gov/datasets/nconemap::north-carolina-parcels-polygons>
+- **Bulk API (broken):** `https://www.nconemap.gov/api/download/v1/items/.../shapefile` — returns persistent HTTP 500 since mid-2026
+- **MapServer query (used by auto-fetch):** `https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/MapServer/1/query`
 - **License:** Open data / NC public records
-- **Automation:** ✅ · **Commercial:** ✅ with attribution.
+- **Automation:** ✅ Auto-fetch via MapServer pagination (ADR-048). Runs ~30–60 min unattended; resumable on interruption.
+- **Commercial:** ✅ with attribution.
+
+### Current data status
+
+`data/raw/nc_onemap_parcels/` was **deleted 2026-05-20** (was 8.3 GB,
+1,106 of 1,186 pages fetched before a server-side HTTP 504 stalled the
+fetch). Needs a full re-fetch via the puller when the NC OneMap
+endpoint is confirmed stable.
 
 ### Structure
-File Geodatabase (`.gdb`) inside a zip. One statewide polygon feature
-class aggregating all 100 NC counties, normalised to the NC OneMap
-parcel content standard.
+On-disk layout: `data/raw/nc_onemap_parcels/current/page_NNNN.geojson`
+— one GeoJSON FeatureCollection per 5000-feature page (5.9M records
+total → ~1186 pages). EPSG:4326. The normalizer's existing GeoJSON
+rglob path picks them up transparently. MapServer field names are
+lowercase (`ownname`, `mailadd`, `cntyfips` etc.); the field map in
+`scripts/preprocess/normalizers/state_parcels.py` declares both
+casings for forward + back compat with legacy shapefile bulk downloads.
 
 ### Standardized fields
 | Field | Description |
@@ -472,13 +485,24 @@ Statewide shapefile with normalised owner, mailing, value, acreage.
 
 ---
 
-## 23. Utah AGRC LIR parcels
+## 23. Utah UGRC LIR parcels — DEFERRED (no owner data)
 
 - **ID:** `ut_parcels` · **Cadence:** Quarterly · **Size:** ~900 MB
-- **Source page:** <https://gis.utah.gov/data/cadastre/parcels/>
+- **Source page:** <https://gis.utah.gov/products/sgid/cadastre/parcels/>
 - **License:** UT public records
-- **Automation:** 🚫 Manual only
+- **Automation:** 🚫 Manual only · **Registry:** ⊘ deferred
 - **Commercial:** ✅ With attribution.
+
+**Deferred from the v1 anchor set (ADR-049).** UGRC's parcel layers —
+the statewide aggregate, the per-county basic parcels, and the
+per-county LIR parcels (all 29 counties) — carry value, acreage,
+property class, year built, and situs address but **no owner name**.
+UGRC's Land Information Record standard omits owner name; the only
+owner-adjacent field is `OWN_TYPE` (a private/government category).
+Owner data lives behind per-county assessor portals with no bulk
+download. Same blocker as Indiana (#22). Kept in the registry's
+deferred block so it can be re-promoted if a Utah owner-data source
+ever materialises.
 
 ---
 
@@ -581,7 +605,7 @@ County FIPS.
 
 ## 29. FL FDOR — per-county PAR parcel shapefiles (PIN + NAL joined)
 
-- **ID:** `fdor_nal` · **Cadence:** Annual (Map Data refresh each August) · **Size:** ~500 MB (10 counties)
+- **ID:** `fdor_nal` · **Cadence:** Annual (Map Data refresh each August) · **Size:** ~28 GB raw on disk (all 67 counties; the `.dbf` attribute tables dominate)
 - **Source page:** <https://floridarevenue.com/property/Pages/DataPortal_RequestAssessmentRollGISData.aspx>
 - **Map Data directory:** linked from the FDOR page (where the PAR shapefiles live)
 - **License:** Florida public records (Ch. 119, F.S.) — commercial reuse with attribution
@@ -593,7 +617,7 @@ FGDL DSL covers state-owned land, not private parcels — wrong dataset
 for landowner outreach. FDOR's per-county PAR shapefiles are the
 canonical Florida private-parcel landowner data (every county's
 parcel polygons joined with the current-year NAL tax-roll). v1 ships
-10 representative counties; expand to all 67 post-pitch.
+all 67 Florida counties (ADR-047).
 
 ### PIN vs PAR (per FDOR's Parcel Shapefiles Readme)
 - **PIN** = parcel geometry only (FID + Shape + PARCELNO). **Skip.**
@@ -604,18 +628,20 @@ directory are the same attributes minus geometry — not needed because
 PAR has them merged.
 
 ### v1 county set
-Miami-Dade, Hillsborough, Orange, Duval, Pinellas, Lee, Polk, Brevard,
-Volusia, Marion (~60% of FL population; representative geographic and
-market mix). **Miami-Dade and St. Johns** ship separate condominium
-property records — grab those extras alongside the main PAR (only
-Miami-Dade matters for v1).
+**All 67 Florida counties** (per ADR-047). FDOR publishes one PAR ZIP
+per county on the Map Data directory; the walkthrough lists every
+county alphabetically as a download checklist. **Miami-Dade and
+St. Johns** ship separate condominium property records — grab both
+condo files (`miamidade_condos_2025par.zip`, `stjohnscondos_2025.zip`)
+alongside the main per-county PAR ZIPs.
 
 ### Workflow
 The puller's **Walk me through** button surfaces step-by-step
 instructions: skim the Parcel Shapefiles Readme, open the Map Data
-directory, pick the latest year, download the PAR shapefile for each
-v1 county, upload them via the puller's Upload button (auto-extract
-into per-county subfolders).
+directory, pick the latest year, download all 67 PAR ZIPs (plus the
+two condo extras), upload them via the puller's Upload button
+(auto-extract into per-county subfolders). The normalizer uses rglob,
+so per-county subfolder layout is transparent.
 
 ### Structure
 Per-county shapefile with NAL columns joined on PARCELNO. Key columns

@@ -1,161 +1,169 @@
 # STATUS — Where the project stands today
 
-**Last updated:** 2026-05-19
-**Updated by:** automated audit at start of production-readiness push
-**Updated when:** at the start of every section in the work plan, plus
-weekly during execution.
+**Last updated:** 2026-05-20
+**Updated by:** data cleanup — FL processed data + NC raw and processed data deleted
+**Update cadence:** at the start of every work-plan section and at every session handoff.
 
-This document is a **snapshot of reality**. If something here disagrees
-with the code or data, the code/data wins and this doc is wrong (file a
-fix). Aspirational state lives in [ROADMAP.md](./ROADMAP.md); the
-working plan lives in `/.claude/plans/cached-wobbling-token.md`.
+A snapshot of reality. If this disagrees with the code or data, the
+code/data wins — fix the doc.
+
+---
+
+## 0. TL;DR
+
+Mid-**Section 5** (preprocess code hygiene). Sections 1–4 done.
+Section 5 code is written but **not committed** (last commit `a067a49`).
+
+- **AR + MT** — compose cleanly end-to-end. Solid.
+- **FL** — raw data intact (all 67 counties, ~28 GB). Normalized data
+  and composite **deleted 2026-05-20** to free disk. Needs full
+  re-normalize + compose before pitch. The chunked compose (ADR-051)
+  must be built first — §4.1.
+- **NC** — all raw data **deleted 2026-05-20** (nc_onemap_parcels +
+  legacy NC/ directory). Was never normalized or composed. Needs a
+  full re-fetch from NC OneMap, then normalize + compose — §4.2.
+
+**Next steps, in order:** (1) build the chunked compose (ADR-051);
+(2) re-normalize + compose FL; (3) re-fetch NC when the endpoint is
+stable, then normalize + compose NC; (4) commit Section 5;
+(5) Section 6 (testing).
 
 ---
 
 ## 1. Anchor states
 
-| State | Raw data | Normalized | Composed | Views | Notes |
-|---|---|---|---|---|---|
-| **AR** (05) | ✅ on disk | ✅ 2,116,976 parcels, owners populated | ✅ 9/9 joins, 0 warnings | **8** | Working end-to-end |
-| **NC** (37) | ⚠ stale (2025-07-15, 11 months old); endpoint now responding again | — | — | — | User pulls fresh via puller in Section 4.4 |
-| **MT** (30) | ❌ not yet pulled | — | — | — | MANUAL_ONLY; user pulls via puller walkthrough in Section 4.4 |
-| **UT** (49) | ❌ not yet pulled | — | — | — | MANUAL_ONLY; user pulls in Section 4.4 |
-| **FL** (12) | ❌ FGDL DSL deferred; FDOR NAL source added but no counties downloaded yet | — | — | — | User pulls 10 v1 counties via `fdor_nal` walkthrough in Section 4.4 |
+| State | Raw data | Normalized | Composed | Notes |
+|---|---|---|---|---|
+| **AR** (05) | ✅ | ✅ 2,116,976 parcels | ✅ 9 joins, 8 views, 0 warnings | Works end-to-end. |
+| **MT** (30) | ✅ all 56 counties | ✅ 920,111 parcels, 96% owner names | ✅ 9 joins, 8 views, 0 warnings | Works end-to-end. |
+| **FL** (12) | ✅ all 67 counties (~28 GB raw intact) | ❌ deleted 2026-05-20 | ❌ | Needs re-normalize + compose; chunked compose required first (§4.1). |
+| **NC** (37) | ❌ deleted 2026-05-20 | ❌ | ❌ | All raw deleted; needs full re-fetch from NC OneMap (§4.2). |
 
-States that are **dropped from this cut** but still have data on disk:
+Dropped from this cut: IN (18) and UT (49) — no owner data; MN (27) —
+license ambiguity.
 
-| State | Status | Reason |
+---
+
+## 2. What works
+
+- **AR + MT end-to-end** — pull → normalize → compose → 8 views.
+- The v3 preprocess framework, the puller (Section 3), Git + CI.
+- **FL normalizer code** is correct and verified (geometry bug fixed;
+  ADR-050 streaming per-county normalizer). The normalized output was
+  deleted for disk space; re-running `python scripts/preprocess.py
+  --state 12` will re-produce it once disk space is available and the
+  chunked compose is in place.
+
+---
+
+## 3. What does NOT work / is incomplete
+
+| Item | Severity | Detail |
 |---|---|---|
-| IN (18) | Composed; 3.7M parcels with no `owner_name` column | Indiana publishes no owner data. Deferred until paid source. |
-| MN (27) | Not pulled | License "No License Provided" despite Open branding; deferred pending MnGeo confirmation |
+| FL normalized data | 🚫 Deleted | Deleted 2026-05-20 to free disk. Re-run normalizer when chunked compose is ready. |
+| FL compose | 🚫 Blocked | Needs chunked compose (ADR-051) first, then re-normalize, then compose. §4.1 |
+| NC raw data | 🚫 Deleted | Deleted 2026-05-20. Needs full re-fetch from NC OneMap when endpoint is stable. §4.2 |
+| NC normalize + compose | 🚫 Blocked | Gated on NC re-fetch; will also need chunked compose. |
+| Chunked compose | ⬜ To build | Approved (ADR-051); not started. Required for both FL and NC. |
+| Section 5 commit | ⏳ Pending | ~33 files modified, uncommitted. §5 |
+| `composite/18`, `normalized/in_parcels` | ℹ️ Note | Still on disk; safe to delete (IN dropped from this cut). |
+| `preprocess_manifest.json` | ℹ️ Rebuilt | Rebuilt 2026-05-20 via `--rebuild-manifest`; shows 9 normalized sources + 3 composed states (AR/IN/MT). |
+| Tests | ⬜ Not started | Section 6. |
 
 ---
 
-## 2. Data sources
+## 4. Known issues — detail
 
-### Working
+### 4.1 FL — normalized data deleted; chunked compose needed
 
-| Source | Last fetched | Cadence | Status |
-|---|---|---|---|
-| `fcc_asr` | 2026-05-18 | Weekly | ✅ |
-| `faa_oeaaa` | 2026-05-15 | Daily | ✅ |
-| `eia_860` | 2024 (annual) | Annual | ✅ post-openpyxl install |
-| `eia_860m` | 2026-03 | Monthly | ✅ post-openpyxl install |
-| `arc_distressed` | FY2026 | Annual | ✅ post-openpyxl install |
-| `uspvdb` | 2026-04-14 | Quarterly | ✅ |
-| `ar_parcels` | manual (current) | Annual | ✅ |
-| `regrid_parcels` | — | — | Stub only (paid; out of scope) |
+FL's normalized output (~10.2 GB, 68 county parquet files, 11,184,113
+parcels) was deleted 2026-05-20 to recover disk space. The raw FDOR
+NAL data is untouched at `data/raw/fdor_nal/current/` (~28 GB, all 67
+counties).
 
-### Previously-broken endpoints (Section 4.1 — RESOLVED)
+Re-normalizing is straightforward — the normalizer code is correct and
+verified. The blocker is composing: FL's 11.18M parcels require
+**~19.5 GB peak RAM** and **~16–20 GB disk** for the composite output,
+which exceeds the 16 GB dev machine. The fix is the **chunked compose**
+(ADR-051): stream parcels county-by-county so peak memory stays bounded.
 
-The 2025-cycle source-code fixes already landed in `scripts/fetch/sources/`
-(URL updates baked in). As of 2026-05-19 all four endpoints respond on
-`remote_version()`:
+**To re-run FL end-to-end once chunked compose is built:**
+```bash
+python scripts/preprocess.py --state 12
+```
 
-| Source | Last probe | Status |
-|---|---|---|
-| `hud_oz` | 2026-05-19 | ✅ returns 2026-02-24 |
-| `hud_qct` | 2026-05-19 | ✅ returns 2025-09-22 |
-| `usda_persistent_poverty` | 2026-05-19 | ✅ returns content-length fallback |
-| `nc_onemap_parcels` | 2026-05-19 | ✅ returns layer-name fallback |
-| `hifld_towers` | n/a | ⊘ RETIRED — moved to `_DEFERRED` (DHS removed layer in 2024) |
+### 4.2 NC — all raw data deleted; needs full re-fetch
 
-### Deferred sources (ADR-045)
+Both `data/raw/nc_onemap_parcels/` (~8.3 GB, 1,106 of 1,186 MapServer
+pages) and `data/raw/NC/` (~958 MB, Graham County shapefiles + legacy
+FCC docs) were deleted 2026-05-20.
 
-Moved to `_DEFERRED` in `scripts/fetch/registry.py` — imported, but
-hidden from the puller and preprocess. Reactivate by moving one line:
+NC OneMap's auto-fetch paginates 1,186 pages (5,000 parcels each,
+~5.9M total). The previous fetch stalled at page 1,106 on a server-side
+HTTP 504 at deep offsets — an intermittent server degradation, not a
+code bug. Re-fetch when the endpoint is confirmed stable.
 
-`hifld_towers`, `fcc_uls_*` (6 bands), `fcc_uls_meta`, `lbnl_tts`,
-`fdot_billboards`, `ncdot_billboards`, `txdot_billboards`,
-`fl_fgdl_parcels`, `in_parcels`, `mn_parcels`, `regrid_parcels`
-(15 total).
+**To re-fetch NC:**
+```bash
+python -m app_puller   # use auto-fetch for nc_onemap_parcels
+```
+NC compose will also need the chunked compose (ADR-051) for the same
+memory reasons as FL.
 
-### New for v1: `fdor_nal` (ADR-046)
+NB: the puller's `prepare_fresh_partial()` wipes `.partial/` at the
+start of every fetch, which means the new fetch cannot resume from the
+prior partial. A real resumability fix is a known follow-up.
 
-Florida Department of Revenue per-county tax roll, MANUAL_ONLY with a
-walkthrough listing 10 representative counties. Replaces the deferred
-`fl_fgdl_parcels` (state-domain land, no owner data).
+### 4.3 Disk freed by cleanup
+
+The 2026-05-20 cleanup deleted ~20.9 GB:
+- `data/raw/nc_onemap_parcels/` — 8.3 GB
+- `data/raw/NC/` — 0.9 GB
+- `data/processed/normalized/fdor_nal/` — 10.2 GB
+- `data/processed/composite/12/` — 70 MB
+- `data/_stale_backup/` — 2.3 GB
+
+FL raw at `data/raw/fdor_nal/current/` is untouched (~28 GB).
+
+### 4.4 Remaining stale on-disk items
+
+- **`composite/18` and `normalized/in_parcels`** — still on disk; safe
+  to delete (IN dropped from this cut — ADR-017).
 
 ---
 
-## 3. Code state
+## 5. Uncommitted work
 
-| Surface | State |
+All of Section 5 + the Section 4 source rewrites + doc updates are
+uncommitted (~33 files; last commit `a067a49`). Commit after FL
+composes cleanly so the commit captures a verified-working state.
+`data/` is git-ignored — never commit raw or composite data.
+
+---
+
+## 6. Work-plan progress
+
+| Section | State |
 |---|---|
-| `scripts/fetch/` | Headless puller library; 5 broken sources to fix in Section 4 |
-| `scripts/preprocess/` | v3 framework running (Normalizer/Join/View registries, per-state Composer) |
-| `scripts/preprocess/normalizers/` | 11 working + 16 source IDs with no normalizer |
-| `scripts/preprocess/joins/` | 12 joins; 3 `county_score_to_*` recently patched for placeholder-column collision |
-| `scripts/preprocess/views/` | 8 views |
-| `app_puller/` | Qt desktop puller; functional but UX needs the Section 3 overhaul |
-| `app/` | v1 Leaflet map with v3 catalog-discovery patches; cannot load huge parcel GeoJSONs (3.6 GB AR, 5.6 GB IN); title still hard-codes Graham County |
-| `scripts/_legacy/preprocess_v1.py` | Dead code; archive + delete in Section 5.6 |
+| 1 — Documentation foundation | ✅ Complete |
+| 2 — Version control + GitHub | ✅ Complete |
+| 3 — Data puller overhaul | ✅ Complete |
+| 4 — Data hygiene / raw refresh | ⚠️ AR/MT pulled and solid; FL raw intact, processed deleted; NC all data deleted |
+| 5 — Preprocess code hygiene | ⚠️ Code written + uncommitted; AR/MT verified; FL/NC need chunked compose before re-running |
+| 6 — Testing | ⬜ Not started |
+| 7 — Pitch readiness | ⬜ Not started |
+| 8 — Map app (minimal patches) | ⬜ Not started |
 
-### Known performance hotspots
-
-- `scripts/preprocess/normalizers/state_parcels.py:316` — `iterrows()`
-  over 2–4M parcel rows; ~10 min per large state. Vectorize in Section 5.2.
-
-### Manifest sync
-
-- `data/manifest.json` (fetch manifest) — current per puller's last
-  sweep.
-- `data/processed/preprocess_manifest.json` — **stale**. Shows old
-  failures already fixed (openpyxl) and AR with 1 view when it actually
-  has 8. Resolved by `--rebuild-manifest` in Section 4.5.
+NB: CLAUDE.md and this doc reference a work-plan file at
+`.claude/plans/cached-wobbling-token.md` — that file is **not on disk**.
+The section table above is the authoritative tracker until it is
+restored.
 
 ---
 
-## 4. Tests + CI
+## 7. Outstanding decisions for the user
 
-| Surface | State |
+| Item | Notes |
 |---|---|
-| Unit tests | **None** (Section 6) |
-| Integration tests | **None** (Section 6) |
-| E2E tests | **None** (Section 6) |
-| CI | ✅ `lint.yml` (ruff) live on every push; `test.yml` is a placeholder until Section 6 |
-| Schema validation | Not enforced yet (Section 6) |
-
----
-
-## 5. Version control
-
-| Surface | State |
-|---|---|
-| `git init` | ✅ Done 2026-05-19 |
-| GitHub repo | ✅ `danielgentile22/infra-lease-analytics` (private) |
-| `.gitignore` + `.gitattributes` | ✅ In place |
-| CI workflows | ✅ `lint.yml` (ruff) + `test.yml` (placeholder until Section 6) |
-| PR template + CODEOWNERS | ✅ In place |
-| Branch protection | Deferred — adds full enforcement once tests land in Section 6 |
-
----
-
-## 6. Documentation
-
-| Surface | State |
-|---|---|
-| Root .md files | **3** files (README, CLAUDE, PROJECT_BRIEF); reorg complete 2026-05-19 |
-| `docs/` directory | 15 docs + `archive/` + `pitch-assets/`; created 2026-05-19 |
-| Stale references | Resolved 2026-05-19: PREPROCESSING_PLAN.md split → ARCHITECTURE.md + archive; CLAUDE.md slimmed; LIMITATIONS.md expanded; MAP_APP_REHAUL.md has DEFERRED header |
-| New docs written | SCOPE, GOALS, STATUS, ROADMAP, DECISIONS, GLOSSARY, ARCHITECTURE, DATA_FRESHNESS, LIMITATIONS, TESTING, DEPLOYMENT, SECURITY, PULLER_UX, CHANGELOG, MAP_APP_REHAUL (moved + status-stamped) |
-
----
-
-## 7. Outstanding blockers
-
-| Blocker | Owner | Notes |
-|---|---|---|
-| GitHub repo visibility (private vs public) | User | Recommend private given PII (parcel-owner names + addresses) |
-| FL FDOR NAL coverage list (which counties) | User | Recommend 5–10 representative: Miami-Dade, Hillsborough, Orange, Duval, Pinellas, Lee, Polk, Brevard, Volusia, Marion |
-| Pitch-deck visual style (existing template / brand?) | User | Affects screenshot framing in Section 7.2 |
-
----
-
-## 8. Most recent change
-
-**2026-05-19** — Section 2 complete. GitHub repo
-`danielgentile22/infra-lease-analytics` is live (private). CI
-workflows green on first push. Ruff baseline applied across the
-codebase (62 files reformatted, 281 lint auto-fixes). Now starting
-Section 3 (data puller overhaul).
+| Chunked compose | Approved (ADR-051); implementation not started. Required before FL re-normalize + compose and NC compose. |
+| Pitch-deck visual style | Still open (affects Section 7 screenshot framing). |

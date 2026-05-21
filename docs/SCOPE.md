@@ -1,6 +1,6 @@
 # SCOPE — v1 Pitch / Demo Cut
 
-**Last updated:** 2026-05-19
+**Last updated:** 2026-05-20
 **Status:** Active — execution in progress
 **Owner of this doc:** Whoever is currently driving the project (single dev today)
 
@@ -32,10 +32,9 @@ the full caveat list.
 | State | FIPS | Role | Why |
 |---|---|---|---|
 | **Arkansas** | 05 | Primary demo state | 2.1M parcels, full owner data, 222K LLCs, working end-to-end |
-| **North Carolina** | 37 | Original pilot context (Graham County) | Where the thesis was first proven; needs refresh |
-| **Montana** | 30 | Western proof point | Free cadastral with owner data; rural-tower representative |
-| **Utah** | 49 | Small, clean dataset | Smaller state lets us validate the whole stack quickly |
-| **Florida** | 12 | Stretch target | Only if FDOR NAL (per-county tax roll) is reachable |
+| **North Carolina** | 37 | Original pilot context (Graham County) | Where the thesis was first proven; all raw data deleted 2026-05-20 — needs full re-fetch |
+| **Montana** | 30 | Western proof point | Free cadastral with owner data; rural-tower representative; small enough to validate the stack quickly |
+| **Florida** | 12 | Anchor — full state | FDOR NAL — all 67 counties, per-county PAR shapefiles; raw intact, processed deleted 2026-05-20 — needs re-normalize + compose |
 
 **Dropped from this cut** (will revisit later — see ROADMAP):
 
@@ -43,6 +42,14 @@ the full caveat list.
   `owner_name` column at all. Cannot generate the LLC-owner / cluster
   scenarios that anchor the demo. Mothball until a paid source unlocks
   owners.
+- **Utah (FIPS 49)** — same blocker as Indiana. UGRC's statewide and
+  per-county parcel layers (basic + LIR) carry value / acreage /
+  property class / situs address but **no owner name** — UGRC's Land
+  Information Record standard omits it. Confirmed across all 29
+  county LIR layers. Owner data lives behind per-county assessor
+  portals with no bulk download. Dropped from the anchor set
+  (ADR-049). Was originally the "small, clean dataset" anchor; MT now
+  fills that role.
 - **Minnesota (FIPS 27)** — MN Geo's parcel feed is published as "Plan
   Parcels Open" but the license metadata reads "No License Provided."
   Defer until MnGeo confirms commercial-use status (see SECURITY.md).
@@ -67,8 +74,8 @@ For each anchor state, we ingest, normalize, and join:
 ### Landowner-side
 
 - **State parcel layers** for each anchor state (NC OneMap, AR Geographic
-  Information Office, MT Cadastral, UT Parcel Project, and — if pursued —
-  FL FDOR NAL per-county downloads).
+  Information Office, MT Cadastral, and FL FDOR NAL per-county downloads,
+  all 67 counties).
 
 ### Distress overlays
 
@@ -114,8 +121,10 @@ For each anchor state, we ingest, normalize, and join:
    Numbers come from `views/owner_clusters.parquet` and
    `views/interestingness_top_1000.parquet`.
 3. **Cross-state coverage comparison.** Side-by-side totals + top
-   opportunities for the anchor states (AR, NC, MT, UT, FL-if-available).
-   Numbers come from each state's `summary.json`.
+   opportunities for the anchor states (AR, NC, MT, FL).
+   Numbers come from each state's `summary.json`. Note: FL processed
+   data and all NC data deleted 2026-05-20 — both need to be
+   (re-)built before this scenario is demonstrable.
 
 Every number on the screen during these scenarios must be traceable to
 a specific parquet file + query. See [NUMBERS.md](./NUMBERS.md) (filled

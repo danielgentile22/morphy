@@ -1,6 +1,6 @@
 # ROADMAP — Past, Present, Future
 
-**Last updated:** 2026-05-19
+**Last updated:** 2026-05-20
 **Pairs with:** [SCOPE.md](./SCOPE.md) (this cut), [STATUS.md](./STATUS.md)
 (today), [GOALS.md](./GOALS.md) (why), [DECISIONS.md](./DECISIONS.md)
 (locked-in choices).
@@ -62,18 +62,19 @@ A registry-driven preprocessing system replacing the one-shot script:
 Active work plan in `/.claude/plans/cached-wobbling-token.md`. Eight
 sections in sequence:
 
-1. Documentation foundation *(in progress)*
-2. Version control + GitHub setup
-3. Data puller overhaul
-4. Data hygiene (raw data refresh)
-5. Preprocess code hygiene
-6. Testing
-7. Pitch readiness
-8. Map app (deferred + minimal patches)
+1. Documentation foundation — ✅ complete
+2. Version control + GitHub setup — ✅ complete
+3. Data puller overhaul — ✅ complete
+4. Data hygiene (raw data refresh) — ⚠️ AR/MT pulled and solid; FL raw intact, processed deleted; NC all data deleted (needs re-fetch)
+5. Preprocess code hygiene — ⚠️ in progress; FL/NC need chunked compose (ADR-051) before re-running
+6. Testing — ⬜ not started
+7. Pitch readiness — ⬜ not started
+8. Map app (deferred + minimal patches) — ⬜ not started
 
-Goal: a pitch-quality demo cut across 4–5 anchor states with
+Goal: a pitch-quality demo cut across 4 anchor states with
 defensible numbers, tests, CI, and coherent docs. See
-[SCOPE.md](./SCOPE.md) for the full definition.
+[SCOPE.md](./SCOPE.md) for the full definition and
+[STATUS.md](./STATUS.md) for today's exact state.
 
 ---
 
@@ -81,8 +82,13 @@ defensible numbers, tests, CI, and coherent docs. See
 
 Per [SCOPE.md](./SCOPE.md):
 
-- **Anchor states:** AR + NC + MT + UT (locked); FL stretch if FDOR
-  NAL reachable.
+- **Anchor states:** AR + NC + MT + FL (all four; UT dropped — no
+  owner data, ADR-049). AR and MT compose cleanly today. FL raw data
+  is intact (all 67 counties) but normalized + composite were deleted
+  2026-05-20 to free disk; needs re-normalize + compose once the
+  chunked compose is built (ADR-051). NC all raw data deleted
+  2026-05-20; needs full re-fetch, normalize, and compose. See
+  [STATUS.md](./STATUS.md).
 - **Sources:** working set is FCC ASR, FAA OEAAA, state parcels for
   anchor states, HUD OZ + QCT, ARC distressed, USDA persistent
   poverty, EIA 860/860M, USPVDB.
@@ -197,7 +203,7 @@ The data layer is "the input." Everything else lives elsewhere.
 
 ### Geographic expansion ladder (long-term)
 
-1. **Anchor states** (this cut): AR + NC + MT + UT (+ FL).
+1. **Anchor states** (this cut): AR + NC + MT (+ FL).
 2. **Free-data multi-state expansion:** add IA, AR-already-done,
    any other states with clean free statewide parcel feeds.
 3. **Paid nationwide via Regrid:** instant ~150M parcels with
