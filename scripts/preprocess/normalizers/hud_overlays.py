@@ -71,6 +71,15 @@ def _normalize_overlay(
         )
         county_fips_raw = r.get("COUNTY") or r.get("COUNTYFP") or r.get("county_fips")
         county_fips = canon_county_fips(county_fips_raw, state_fips=state_fips)
+        # Fallback: HUD's OZ/QCT exports don't always carry STATE/COUNTY
+        # attributes. Derive both from the 11-digit census-tract GEOID
+        # (chars 0-1 = state FIPS, 0-4 = county FIPS). Without this the
+        # composer's per-state filter drops every overlay row.
+        geoid_digits = safe_str(geoid)
+        if county_fips is None and len(geoid_digits) >= 11 and geoid_digits.isdigit():
+            county_fips = canon_county_fips(geoid_digits)
+        if state_fips is None and county_fips:
+            state_fips = county_fips[:2]
         tract = safe_str(r.get("TRACT") or r.get("tract") or r.get("TRACTCE"))
         rural = r.get("Rural") or r.get("rural") or r.get("RURAL")
         rural_flag = None
@@ -119,12 +128,15 @@ class HudOzNormalizer(Normalizer):
     canonical_types = ["distress_overlay"]
 
     def normalize(self, raw_dir: Path, out_dir: Path) -> NormalizeResult:
+        # basename must be "distress_overlays" — the composer's
+        # _load_state_data looks up the canonical type via OUTPUT_BASENAMES
+        # ("distress_overlay" -> "distress_overlays").
         return _normalize_overlay(
             raw_dir,
             out_dir,
             self.source_id,
             "opportunity_zone",
-            "opportunity_zones",
+            "distress_overlays",
         )
 
 
@@ -134,10 +146,11 @@ class HudQctNormalizer(Normalizer):
     canonical_types = ["distress_overlay"]
 
     def normalize(self, raw_dir: Path, out_dir: Path) -> NormalizeResult:
+        # basename must be "distress_overlays" — see HudOzNormalizer above.
         return _normalize_overlay(
             raw_dir,
             out_dir,
             self.source_id,
             "qct",
-            "qualified_census_tracts",
+            "distress_overlays",
         )

@@ -1,6 +1,6 @@
 # GLOSSARY — Domain Terms
 
-**Last updated:** 2026-05-19
+**Last updated:** 2026-05-20
 
 Alphabetical reference for every domain-specific term used across the
 docs and code. If a doc uses a term not defined here, file a fix.

@@ -19,7 +19,12 @@ class InterestingnessTop1000View(View):
         parcels = ctx.get("parcel")
         if parcels is None or "interestingness_score" not in parcels.columns:
             return None
-        sorted_p = parcels.sort_values("interestingness_score", ascending=False)
+        # Outreach list — drop government / school owners so federal land
+        # hosting infrastructure can't crowd out actionable targets.
+        eligible = parcels
+        if "owner_kind" in parcels.columns:
+            eligible = parcels[~parcels["owner_kind"].isin(("gov", "school"))]
+        sorted_p = eligible.sort_values("interestingness_score", ascending=False)
         top = sorted_p.head(1000).copy()
         # Only keep rows with score > 0 — no point in writing 1000 zero-score parcels
         top = top[top["interestingness_score"] > 0]

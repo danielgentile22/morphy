@@ -20,17 +20,16 @@ previously in the registry (DSL covers state-owned land, not the
 private parcels we care about).
 
 The portal requires per-county selection + license click-through, so
-this source is MANUAL_ONLY with a walkthrough that lists the v1
-representative counties.
+this source is MANUAL_ONLY with a walkthrough that covers all 67
+Florida counties.
 
-V1 county coverage (locked in :: docs/SCOPE.md):
-  Miami-Dade, Hillsborough, Orange, Duval, Pinellas, Lee, Polk,
-  Brevard, Volusia, Marion — 10 counties covering ~60% of FL
-  population and a representative geographic / market mix.
+V1 coverage: **all 67 Florida counties** (per docs/SCOPE.md). FDOR
+publishes one PAR ZIP per county on the Map Data directory; the user
+downloads them in one batch and uploads via the puller.
 
 Miami-Dade and St. Johns maintain condo records in separate files
-(per the FDOR shapefile readme). Miami-Dade is in v1, so the
-walkthrough flags grabbing those extras too.
+(per the FDOR shapefile readme) — the walkthrough flags grabbing
+those condo extras alongside the main per-county PAR ZIPs.
 """
 
 from __future__ import annotations
@@ -46,20 +45,22 @@ from ..base import (
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ..walkthroughs import ManualStep, ManualWalkthrough
 
-# V1 representative counties — see docs/SCOPE.md for the rationale on
-# why these ten (not all 67). The FDOR portal exposes one ZIP per
-# county per year.
-V1_COUNTIES: list[tuple[str, str]] = [
-    ("Miami-Dade", "23"),
-    ("Hillsborough", "29"),
-    ("Orange", "48"),
-    ("Duval", "16"),
-    ("Pinellas", "52"),
-    ("Lee", "36"),
-    ("Polk", "53"),
-    ("Brevard", "05"),
-    ("Volusia", "64"),
-    ("Marion", "42"),
+# All 67 Florida counties — FDOR publishes one PAR ZIP per county on
+# the Map Data directory. Listed alphabetically to match the directory
+# listing order; the walkthrough uses this as a download checklist.
+FL_COUNTIES: list[str] = [
+    "Alachua", "Baker", "Bay", "Bradford", "Brevard", "Broward",
+    "Calhoun", "Charlotte", "Citrus", "Clay", "Collier", "Columbia",
+    "DeSoto", "Dixie", "Duval", "Escambia", "Flagler", "Franklin",
+    "Gadsden", "Gilchrist", "Glades", "Gulf", "Hamilton", "Hardee",
+    "Hendry", "Hernando", "Highlands", "Hillsborough", "Holmes",
+    "Indian River", "Jackson", "Jefferson", "Lafayette", "Lake", "Lee",
+    "Leon", "Levy", "Liberty", "Madison", "Manatee", "Marion", "Martin",
+    "Miami-Dade", "Monroe", "Nassau", "Okaloosa", "Okeechobee", "Orange",
+    "Osceola", "Palm Beach", "Pasco", "Pinellas", "Polk", "Putnam",
+    "Santa Rosa", "Sarasota", "Seminole", "St. Johns", "St. Lucie",
+    "Sumter", "Suwannee", "Taylor", "Union", "Volusia", "Wakulla",
+    "Walton", "Washington",
 ]
 
 LANDING_PAGE = (
@@ -77,9 +78,9 @@ class FdorNal(DataSource):
     id = "fdor_nal"
     name = "FL FDOR — Name/Address/Legal (per-county tax roll)"
     category = CATEGORY_PARCELS
-    coverage = "State: Florida (10 representative counties for v1)"
+    coverage = "State: Florida (all 67 counties)"
     cadence = "Annual (mid-year release)"
-    estimated_size_mb = 500.0  # ~10 counties × ~40-100 MB CSV each
+    estimated_size_mb = 3500.0  # 67 counties × ~30-100 MB PAR ZIP each
     update_cadence_days = 365
     description = (
         "Florida Department of Revenue per-county PAR parcel shapefiles — "
@@ -87,8 +88,7 @@ class FdorNal(DataSource):
         "attributes. Per-county annual files with owner name, mailing "
         "address, just/assessed value, use code, and land/improvement "
         "values, all carrying geometry. Replaces the FGDL DSL state-land "
-        "layer previously tracked. V1 ships 10 representative counties "
-        "(~60% of FL population)."
+        "layer previously tracked. Ships all 67 Florida counties."
     )
     legal = LegalInfo(
         publisher="Florida Department of Revenue (FDOR)",
@@ -126,7 +126,14 @@ class FdorNal(DataSource):
         raise RuntimeError(f"{self.id} is MANUAL_ONLY — see walkthrough.")
 
     def manual_walkthrough(self) -> ManualWalkthrough:
-        county_list = "\n".join(f"  - {name} (county code {code})" for name, code in V1_COUNTIES)
+        # Format as a 3-column checklist so 67 names don't dominate the modal.
+        col_h = (len(FL_COUNTIES) + 2) // 3
+        cols = [FL_COUNTIES[i : i + col_h] for i in range(0, len(FL_COUNTIES), col_h)]
+        rows = []
+        for r in range(col_h):
+            cells = [cols[c][r] if r < len(cols[c]) else "" for c in range(len(cols))]
+            rows.append("  " + "  ·  ".join(f"{n:<14}" for n in cells))
+        county_list = "\n".join(rows)
         return ManualWalkthrough(
             landing_page_url=LANDING_PAGE,
             steps=[
@@ -162,16 +169,25 @@ class FdorNal(DataSource):
                     ),
                 ),
                 ManualStep(
-                    title="Download the PAR shapefile for each v1 county",
+                    title="Download all 67 PAR shapefiles",
                     body=(
-                        "For each county below, download the **PAR** zip "
-                        "(not PIN — PIN has no owner data). The 10 v1 "
-                        "counties:\n"
+                        "FDOR publishes one PAR zip per Florida county. "
+                        "Download **all 67** — the file naming pattern is "
+                        "`<county>_2025par.zip` (a few use `2025Ppar.zip` "
+                        "— same format, FDOR is just inconsistent). Skip "
+                        "any `PIN` zips: PIN is geometry only, no owner "
+                        "data.\n"
+                        "\n"
+                        "Also grab the two condo extras (separate files):\n"
+                        "  • `miamidade_condos_2025par.zip`\n"
+                        "  • `stjohnscondos_2025.zip`\n"
+                        "\n"
+                        "The 67 counties (alphabetical):\n"
                         f"\n{county_list}\n"
-                        "\nFor **Miami-Dade**, also grab any condo-related "
-                        "files in that county's folder (separate from the "
-                        "main PAR zip). Each PAR zip is ~30–150 MB. The "
-                        "portal serves them directly — no queueing."
+                        "\nEach PAR zip is ~30–150 MB; total ~2-3 GB. The "
+                        "portal serves them directly — no queueing. Tip: "
+                        "right-click → 'Save Link As' (or middle-click) on "
+                        "each name to bulk-download without leaving the page."
                     ),
                 ),
                 ManualStep(

@@ -1,6 +1,6 @@
 # LIMITATIONS
 
-**Last updated:** 2026-05-19
+**Last updated:** 2026-05-20
 
 Open issues, data caveats, licensing constraints, and known gaps —
 things a reader must know before trusting any output of this system
@@ -19,54 +19,145 @@ audit trail survives.
 
 ---
 
-## 🚫 Parcel data staleness — NC at 11 months old
+## ℹ Owner-type classification has a small residual
 
-**Added 2026-05-19.**
+**Added 2026-05-21.**
 
-The Graham County / NC parcel data on disk was last refreshed
-**2025-07-15** — nearly a year old as of this writing. Ownership /
-mailing address / valuation changes from the past 11 months are not
-reflected. Stale parcel data leads to false-positive outreach (owner
-sold; new owner unaware of context).
+`infer_owner_kind` regex-classifies each parcel's `owner_name` into
+llc / trust / corporation / partnership / gov / church / school /
+individual / unknown. After the 2026-05-21 remediation the `unknown`
+rate is **2.1 % (AR) / 4.9 % (MT)** — down from ~51 % / ~35 % — and the
+government patterns catch federal, state, county, tribal, and
+public-authority owners. Two residuals remain, documented rather than
+chased further:
+
+- **The `individual` bucket absorbs some unincorporated businesses** —
+  family farms, sole proprietorships, and `&`-joined names with no
+  LLC/INC/CORP token read as person-names. This does not affect the
+  LLC / trust outreach segments (entity-token matched) — only the
+  individual vs. small-business split.
+- **A long tail of keyword-less government names** — e.g. bare
+  "HIGHWAY" / "HWY" / "COUNTY ROAD" right-of-way fragments — stay
+  classified `individual`. They are tiny clusters (≤ 30 parcels) and
+  rank far below the top of any outreach view.
 
 Implication:
 
-- Pre-pitch: refresh NC before any partner walkthrough.
-- Outreach: minimum quarterly refresh for any state used in active
-  outreach, ideally monthly.
-- Address-deliverability: independently verify the mailing address
-  immediately before any physical mail.
+- The outreach views (`owner_clusters`, `interestingness_top_1000`)
+  are clean of government at the top — verified in the audit by
+  re-classifying the largest clusters of each state.
+- For commercial outreach a human should still confirm the owner type
+  on any high-value target.
 
 How to mitigate:
 
-1. Pull fresh NC OneMap data via the puller (Section 4.4 of the work
-   plan).
-2. After every NC refresh, log a CHANGELOG entry noting the new
-   `local_version` and re-run NC's compose.
-3. Long-term: subscribe to a paid provider (Regrid, ATTOM) for
-   verified address-current data when budget unlocks.
+- The classifier is a deterministic regex table in
+  `scripts/preprocess/cluster.py` — straightforward to extend when new
+  patterns surface.
 
 ---
 
-## 🚫 Five upstream endpoints currently fail
+## 🚫 Large-state composites exceed the 16 GB dev machine
 
-**Added 2026-05-19.**
+**Added 2026-05-20.**
 
-The following sources return HTTP errors as of 2026-05-19:
-
-| Source | Error | Action plan |
-|---|---|---|
-| `hud_oz` | HTTP 400 from ArcGIS service | Switch to HUD's static OZ shapefile (Section 4.1) |
-| `hud_qct` | HTTP 400 from ArcGIS service | Static shapefile fallback (Section 4.1) |
-| `usda_persistent_poverty` | HTTP 404 (URL migrated) | Find current ERS path; static fallback (Section 4.1) |
-| `nc_onemap_parcels` | HTTP 500 | Retry; MANUAL_ONLY walkthrough if persistent (Section 4.1) |
-| `hifld_towers` | HTTP 400 | Retire (Section 4.1); DHS pulled the public layer in 2024 |
+The Composer's `_load_state_data` loads every county parquet for a
+state into memory and `pd.concat`s them — measured at ~1,710
+bytes/parcel, so **~19.5 GB peak** for Florida's 11.18M parcels on a
+16 GB machine. A local FL compose this session ran through the load
+and **all 9 joins** (macOS swaps rather than OOM-killing) but died
+writing `parcels.parquet`: the ~13 GB output exhausted the disk, which
+was only 11 GB free with swap competing for the same disk.
 
 Implication:
 
-- These four (excluding HIFLD) are needed for the v1 pitch.
-- All resolution paths are documented; Section 4.1 of the work plan
-  executes them.
+- **FL cannot be composed locally**, and NC (~5.9M parcels) will hit
+  the same wall.
+- Two-sided constraint — RAM (~19.5 GB working set) and disk (~16–20
+  GB composite output on a disk that runs 93%+ full).
+
+How to mitigate:
+
+1. **Chunked compose** (approved — ADR-051): refactor the Composer to
+   process parcels county-by-county so peak memory stays bounded. Not
+   yet implemented.
+2. Free disk before any large compose (~32 GB free after this
+   session's cleanup; FL's composite needs ~16–20 GB).
+
+---
+
+## ~~FL FDOR — 6 of 67 counties dropped on a geometry error~~ ✅ RESOLVED
+
+**Added 2026-05-20. RESOLVED 2026-05-20.**
+
+`fdor_nal` originally normalized 63 of 67 counties — five had
+unclosed-ring polygons GEOS rejected on read, and one
+(`stjohnscondos_2025`) ships as a geometry-less `.dbf`. **Fixed:**
+`on_invalid="fix"` on the layer reads plus an `is_file()` guard on the
+`.shp` glob (so a `*.shp`-suffixed *directory* — leon — is not
+mis-read). Re-normalized clean: **all 67 counties, 11,184,113 parcels**
+(68 county parquet files), 2,976 rows (0.03%) dropped for unrepairable
+geometry. `stjohnscondos_2025` is correctly excluded — a condo
+supplement with no `.shp` cannot enter a spatial pipeline.
+
+---
+
+## 🚫 NC parcel fetch incomplete — stalled on a server 504
+
+**Added 2026-05-20. Updated 2026-05-20.**
+
+The NC OneMap MapServer auto-fetch (ADR-048) is **~93% done** —
+**1,106 of 1,186** pages (offsets 0–5,525,000, ~8.6 GB) are fetched
+and valid in `data/raw/nc_onemap_parcels/.partial/`. The fetch then
+stalled: the MapServer returns **HTTP 504 Gateway Time-out** on the
+deep-offset query at `resultOffset=5,530,000`. Earlier probes of other
+deep offsets succeeded (~35 s each), so this is an intermittent
+server-side degradation, not a code bug.
+
+Separate quirk: the puller's `prepare_fresh_partial()` wipes
+`.partial/` at the start of every fetch, defeating the NC source's
+documented resumability — a puller re-run would restart from page 0.
+This session preserved the 1,106 pages by resuming with a headless
+driver pointed at the existing `.partial/`.
+
+Implication:
+
+- NC cannot be normalized or composed until the remaining ~80 pages
+  land. NC remains a blocker for "all 4 anchor states compose."
+- NC compose (~5.9M parcels) will also hit the memory wall above.
+
+How to mitigate:
+
+1. Re-run the resumable fetch when the endpoint recovers — it skips
+   the 1,106 completed pages.
+2. Then normalize + compose NC. Detail in [STATUS.md §4.2](./STATUS.md).
+3. Outreach-grade use later needs a quarterly-or-better refresh
+   cadence; verify mailing addresses immediately before any physical
+   mail.
+
+---
+
+## ~~🚫 Five upstream endpoints currently fail~~ ✅ RESOLVED
+
+**Added 2026-05-19. Updated 2026-05-21 — HUD + USDA resolved.**
+
+The HUD and USDA endpoints were recorded as dead during the 2026-05-19
+triage. Re-checked 2026-05-21: **all three respond normally** — the
+sources had simply never been pulled (the raw directories did not
+exist). HUD OZ + QCT (ArcGIS FeatureServer pagination) and USDA ERS
+(direct CSV) all fetch and normalize cleanly, and now feed the AR + MT
+distress overlays / county scores. No fetch-code change was needed.
+
+| Source | Original error (2026-05-19) | Status |
+|---|---|---|
+| ~~`hud_oz`~~ | ~~HTTP 400~~ | ✅ RESOLVED 2026-05-21 — endpoint live; pulled + normalized |
+| ~~`hud_qct`~~ | ~~HTTP 400~~ | ✅ RESOLVED 2026-05-21 — endpoint live; pulled + normalized |
+| ~~`usda_persistent_poverty`~~ | ~~HTTP 404~~ | ✅ RESOLVED 2026-05-21 — ERS county-typology CSV live |
+| ~~`nc_onemap_parcels`~~ | ~~HTTP 500~~ | RESOLVED 2026-05-19 — rewired to MapServer pagination (ADR-048) |
+| `hifld_towers` | HTTP 400 | Retired — DHS pulled the public layer in 2024 |
+
+NB: the NC *fetch* is resolved as a code path but the pull itself is
+still incomplete — see the NC entry above.
 
 ---
 
@@ -112,9 +203,9 @@ Implication:
 
 How to mitigate:
 
-- New source `scripts/fetch/sources/fdor_nal.py` planned for Section 4.2.
-- FDOR NAL is per-county; user pulls 5–10 representative counties for
-  the pitch.
+- New source `scripts/fetch/sources/fdor_nal.py` shipped in Section 4.2.
+- FDOR NAL is per-county; user pulls all 67 counties via the puller's
+  walkthrough (ADR-047).
 - The FGDL DSL source is dropped from the active registry.
 
 ---
@@ -313,27 +404,31 @@ Permanent — see ADR-041.
 
 ---
 
-## ⚠ Map app cannot load huge parcel layers
+## ⚠ Map app cannot load an all-parcels layer
 
-**Added 2026-05-19.**
+**Added 2026-05-19. Updated 2026-05-21 — composer no longer emits the
+huge GeoJSON (ADR-052).**
 
-The current Leaflet app loads parcel layers via `fetch()` + JSON parse.
-For AR (3.6 GB simplified GeoJSON) or IN (5.6 GB) this will crash any
-browser. FL at 491 MB freezes for several seconds.
+The Composer used to write a per-state `parcels.geojson` (AR's was
+3.9 GB simplified geometry, MT's 1.8 GB) — large enough to crash any
+browser the Leaflet app loaded it in. As of ADR-052 the Composer
+writes **Parquet only** for layers at/above 250K rows, so
+`parcels.geojson` is no longer produced at all.
 
 Implication:
 
-- Current app reliably handles only small-parcel states.
-- AR demo currently works because the GeoJSON is gated behind the
-  state selector and only fires after click; even so, performance is
-  poor.
+- The "browser crashes on the all-parcels layer" failure mode is gone
+  at the source — there is no all-parcels GeoJSON to load.
+- The map app must render parcels through the per-state Views
+  (`interestingness_top_1000`, `llc_owned_parcels_with_infra`, etc.),
+  which are all 2–9 MB and browser-safe.
+- A full all-parcels interactive map still needs the vector-tile rehaul.
 
 How to mitigate:
 
-- Minimal patches in Section 8 of the work plan add a state-selector
-  guard.
-- Full fix in [MAP_APP_REHAUL.md](./MAP_APP_REHAUL.md) — MapLibre +
-  PMTiles vector tiles handle 3.7M+ parcels at 60fps. Deferred.
+- Map app renders parcels via the View GeoJSONs (already browser-safe).
+- Full all-parcels fix in [MAP_APP_REHAUL.md](./MAP_APP_REHAUL.md) —
+  MapLibre + PMTiles vector tiles handle 3.7M+ parcels at 60fps. Deferred.
 
 ---
 

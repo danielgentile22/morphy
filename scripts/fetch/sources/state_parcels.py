@@ -55,12 +55,13 @@ class MtCadastralParcels(_ManualParcels):
     category = CATEGORY_PARCELS
     coverage = "State: Montana"
     cadence = "Quarterly"
-    estimated_size_mb = 600.0
+    estimated_size_mb = 1000.0
     update_cadence_days = 90
     description = (
         "Montana statewide cadastral framework, hosted by MT State "
-        "Library. Standardised owner, address, value, acreage. Portal "
-        "delivers per-county or statewide shapefile after selection."
+        "Library on their public FTP mirror "
+        "(ftpgeoinfo.msl.mt.gov). Standardised owner, address, value, "
+        "acreage. Statewide SHP zip is ~1 GB."
     )
     legal = _make_legal(
         "Montana State Library / MT Dept. of Administration",
@@ -76,61 +77,64 @@ class MtCadastralParcels(_ManualParcels):
 
     def manual_walkthrough(self) -> ManualWalkthrough:
         return ManualWalkthrough(
-            landing_page_url="https://geoinfo.msl.mt.gov/",
+            landing_page_url="https://ftpgeoinfo.msl.mt.gov/Data/Spatial/MSDI/Cadastral/",
             steps=[
                 ManualStep(
-                    title="Open the Montana State Library GIS portal",
+                    title="Open MT's cadastral FTP directory",
                     body=(
-                        "Click the deep link below to open the MT State Library's "
-                        "Geographic Information portal in your browser. The landing "
-                        "page lists their data products."
+                        "Click the deep link below to open the MT State "
+                        "Library's bulk-download FTP listing for the "
+                        "statewide cadastral framework. The two main files "
+                        "you'll see are `MontanaCadastral_SHP.zip` (~1 GB "
+                        "shapefile) and `MontanaCadastral_GDB.zip` (~825 "
+                        "MB File Geodatabase). Refreshed quarterly; check "
+                        "the file date to confirm freshness."
                     ),
-                    deep_link="https://geoinfo.msl.mt.gov/",
+                    deep_link="https://ftpgeoinfo.msl.mt.gov/Data/Spatial/MSDI/Cadastral/",
                 ),
                 ManualStep(
-                    title="Find the Cadastral Framework download",
+                    title="Download MontanaCadastral_SHP.zip",
                     body=(
-                        "Use the portal search for **Cadastral** or follow the "
-                        "**Cadastral / Framework** link from the data-products "
-                        "list. The statewide layer is ~600 MB and refreshed "
-                        "quarterly."
-                    ),
-                    deep_link="https://geoinfo.msl.mt.gov/data/montana_cadastral_framework",
-                ),
-                ManualStep(
-                    title="Download the statewide shapefile",
-                    body=(
-                        "Choose the statewide download (not per-county). The portal "
-                        "will ask you to agree to terms of use; this is fine for "
-                        "internal evaluation but read [docs/LIMITATIONS.md] before "
-                        "any commercial use."
+                        "Click **`MontanaCadastral_SHP.zip`** (the larger "
+                        "of the two — ~1 GB). **Do not** download the "
+                        "`_GDB.zip` version — our normalizer reads "
+                        "shapefiles, not File Geodatabase. No terms-of-"
+                        "use click-through here; the file downloads "
+                        "directly from the FTP mirror."
                     ),
                 ),
                 ManualStep(
-                    title="Unzip into data/raw/mt_cadastral_parcels/current/",
+                    title="Upload via the puller",
                     body=(
-                        "Move the unzipped shapefile set (`*.shp`, `*.shx`, `*.dbf`, "
-                        "`*.prj`, optional `.cpg`) into\n"
-                        "```\n"
-                        "data/raw/mt_cadastral_parcels/current/\n"
-                        "```\n"
-                        "Keep all shapefile parts together — they're a single dataset."
+                        "Easiest: click **⤴ Upload file(s)…** in the puller "
+                        "and select the downloaded `MontanaCadastral_SHP.zip` "
+                        "— the puller auto-extracts it into "
+                        "`data/raw/mt_cadastral_parcels/current/`.\n"
+                        "\n"
+                        "Manual alternative: extract the ZIP yourself and "
+                        "drop the shapefile parts (`.shp`, `.shx`, `.dbf`, "
+                        "`.prj`, optional `.cpg`) into "
+                        "`data/raw/mt_cadastral_parcels/current/`. Keep "
+                        "all shapefile parts together — they're a single "
+                        "dataset."
                     ),
                 ),
                 ManualStep(
-                    title="Click 'Rescan disk' in the puller",
+                    title="Click 'I'm done' to verify + record",
                     body=(
-                        "Back in the puller, click **Rescan disk** so the manifest "
-                        "picks up the new files. Then click **Verify contents** to "
-                        "confirm the layer has the expected shape."
+                        "The puller will confirm the directory is non-"
+                        "empty and run `validate()`. Once recorded, the "
+                        "preprocess step (Section 5) will normalize MT "
+                        "parcels into the canonical `parcel` schema."
                     ),
                 ),
             ],
             expected_files=["*.shp", "*.dbf", "*.shx", "*.prj"],
             notes_on_failure=(
-                "If the portal URL has rotted, search "
-                "https://geoinfo.msl.mt.gov/ for 'cadastral framework' — MT "
-                "occasionally restructures the data products tree."
+                "If the FTP URL has rotted, the parent portal is "
+                "https://geoinfo.msl.mt.gov/ — search for 'cadastral "
+                "framework'. The FTP mirror is the canonical download "
+                "endpoint and rarely moves."
             ),
         )
 
@@ -322,15 +326,18 @@ class ArParcelsManual(_ManualParcels):
 # ── Utah AGRC statewide parcels ───────────────────────────────────────────
 class UtParcelsManual(_ManualParcels):
     id = "ut_parcels"
-    name = "Utah statewide parcels (AGRC LIR)"
+    name = "Utah statewide parcels (UGRC LIR)"
     category = CATEGORY_PARCELS
     coverage = "State: Utah"
     cadence = "Quarterly"
     estimated_size_mb = 900.0
     update_cadence_days = 365
     description = (
-        "Utah AGRC's Land Information Records (LIR) statewide parcel "
-        "layer with normalised owner + value attributes."
+        "Utah UGRC's Land Information Records (LIR) statewide parcel "
+        "layer — value, acreage, property class, year built, situs "
+        "address. NOTE: UGRC's LIR standard does NOT include owner "
+        "names; deferred from the v1 anchor set for that reason "
+        "(ADR-049)."
     )
     legal = _make_legal(
         "Utah Automated Geographic Reference Center (AGRC)",
@@ -398,19 +405,20 @@ class UtParcelsManual(_ManualParcels):
         )
 
 
-# ── active anchor states (AR + MT + UT) ──────────────────────────────────
+# ── active anchor states (AR + MT) ───────────────────────────────────────
 # NC has its own auto-fetch source (nc_onemap_parcels). FL has its own
-# manual source (fdor_nal). MN and IN are deferred — MN's license is
-# ambiguous (see [[mn-parcels-license-commercial-blocker]]) and IN's
-# parcels have no public owner_name column. Deferred classes stay imported
-# so they can be re-promoted by editing the active block alone.
+# manual source (fdor_nal). MN, IN, and UT are deferred — MN's license is
+# ambiguous (see [[mn-parcels-license-commercial-blocker]]); IN's and UT's
+# public parcels have no owner_name column (UGRC's LIR standard omits it —
+# see ADR-049). Deferred classes stay imported so they can be re-promoted
+# by editing the active block alone.
 SOURCES = [
     MtCadastralParcels(),
     ArParcelsManual(),
-    UtParcelsManual(),
 ]
 
 DEFERRED_SOURCES = [
     MnParcelsManual(),
     InParcelsManual(),
+    UtParcelsManual(),
 ]

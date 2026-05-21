@@ -1,6 +1,6 @@
 # ARCHITECTURE — How the system fits together
 
-**Last updated:** 2026-05-19
+**Last updated:** 2026-05-20
 **Audience:** engineers (human or AI) who need to understand or extend
 the code without reading every file.
 
@@ -24,8 +24,9 @@ Three loosely-coupled subsystems plus a shared on-disk data layout:
         ▼                                    ▼                                    ▼
    data/raw/<src>/current/            data/processed/                       browser only
    data/manifest.json                  ├── normalized/<src>/
-                                       │   ├── raw.parquet
-                                       │   ├── <type>.parquet (+ geojson)
+                                       │   ├── <type>.parquet      (simple sources)
+                                       │   ├── <type>/*.parquet    (per-county, large sources)
+                                       │   ├── raw.parquet | raw/  (full-fidelity copy)
                                        │   └── quality_report.json
                                        ├── composite/<fips>/
                                        │   ├── catalog.json
@@ -164,13 +165,23 @@ Every record gets system columns: `_source`, `_processed_at`,
 
 Every Normalizer writes both:
 
-- `raw.parquet` — every column from the source, untouched (renamed
+- a **raw** copy — every column from the source, untouched (renamed
   only to legal Parquet names if necessary), all rows, no filtering.
-- `<canonical_type>.parquet` — the canonical-schema view derived from
-  the raw. May filter, rename, retype, derive columns.
+- a **canonical** copy — the canonical-schema view derived from the
+  raw. May filter, rename, retype, derive columns.
 
 Future questions ("what's in the source's hidden `_dor_remarks` field?")
 get answered without re-downloading.
+
+**On-disk layout depends on source size.** Simple single-layer
+sources write `raw.parquet` + `<canonical_type>.parquet` at the
+source root. Large multi-layer parcel sources (the state-parcel
+normalizer — AR, MT, FL FDOR) **stream per-county**: the normalizer
+processes one county-layer at a time and writes one parquet per
+county under `normalized/<source>/<type>/<county>.parquet`, with the
+raw copy under `normalized/<source>/raw/<county>.parquet` (ADR-050).
+This keeps peak memory bounded to a single county — Florida's
+67-county / ~28 GB FDOR set would otherwise need ~50 GB of RAM.
 
 ### 3.4 Geometry derivatives
 
@@ -190,8 +201,10 @@ Every point record gets:
 
 `scripts/preprocess/compose.py`. For one state FIPS:
 
-1. Loads every canonical layer from `normalized/<source>/<type>.parquet`,
-   filters to the state (via `state_fips` column or bbox fallback).
+1. Loads every canonical layer from `normalized/<source>/` — either a
+   single `<type>.parquet` or, for per-county sources, every parquet
+   under `<type>/` — and filters to the state (via the `state_fips`
+   column or a bbox fallback).
 2. Runs all registered Joins in dependency order
    (`ordered_joins()` does the topo sort).
 3. Runs all registered Views.
@@ -204,9 +217,12 @@ Every point record gets:
 
 ### 3.6 Dual GeoParquet + GeoJSON output (ADR-003)
 
-Every spatial output is written as both formats; for layers ≥ 100K
-rows only the simplified-geometry GeoJSON is written. Parquet is
-canonical for analytics; GeoJSON is for the legacy Leaflet app.
+The **Composer** writes every spatial output as both formats; for
+layers ≥ 100K rows only the simplified-geometry GeoJSON is written.
+Parquet is canonical for analytics; GeoJSON is for the legacy Leaflet
+app. The **normalize** stage writes GeoParquet only (ADR-050) — the
+redundant normalize-stage GeoJSON was dropped, which made AR's
+normalize both faster and smaller.
 
 ### 3.7 Owner clustering + interestingness score
 
@@ -294,10 +310,10 @@ data/
 ├── manifest.json                    Fetch manifest (puller-owned)
 ├── fetch.log                        JSONL event log (puller-owned)
 └── processed/
-    ├── normalized/<source>/         Canonical-schema parquet + raw.parquet
-    │   ├── raw.parquet
-    │   ├── <canonical_type>.parquet
-    │   ├── <canonical_type>.geojson
+    ├── normalized/<source>/         Canonical-schema GeoParquet + raw copy
+    │   ├── <canonical_type>.parquet         (simple sources)
+    │   ├── <canonical_type>/*.parquet       (per-county, large sources)
+    │   ├── raw.parquet  OR  raw/*.parquet
     │   └── quality_report.json
     ├── composite/<state_fips>/      Per-state joined outputs
     │   ├── catalog.json

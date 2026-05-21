@@ -1,6 +1,6 @@
 # DECISIONS — Architecture Decision Records (ADRs)
 
-**Last updated:** 2026-05-19
+**Last updated:** 2026-05-20
 
 Compact ADRs for every locked-in choice. New decisions append; old
 decisions never disappear (struck through `~~like this~~` if reversed).
@@ -115,6 +115,7 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
 ### ADR-011 — Anchor states locked: AR + NC + MT + UT (+ FL stretch)
 
 - **Date:** 2026-05-19
+- **Status:** UT dropped by ADR-049 — anchor set is now AR + NC + MT + FL.
 - **Context:** Free-data states with usable owner attribution.
 - **Decision:** AR (confirmed great), NC (refresh from 11-month-stale
   data), MT (free cadastral), UT (small, clean). FL pursued only via
@@ -368,15 +369,182 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
 ### ADR-046 — FL parcel data: replace FGDL DSL with FDOR NAL
 
 - **Date:** 2026-05-19
+- **Status:** Superseded by ADR-047 (county set expanded from 10 to all 67).
 - **Context:** The previously-active `fl_fgdl_parcels` source pulls
   FGDL DSL (state-domain land — state-owned parcels) which has no
   private-landowner data. Composing FL with that produced empty
   `owner_name` columns and was useless for our pitch.
 - **Decision:** New source `fdor_nal` (Florida Department of Revenue
   Name-Address-Legal tax roll, per-county). MANUAL_ONLY with a
-  per-county walkthrough; v1 ships 10 representative counties
-  (~60% of FL population): Miami-Dade, Hillsborough, Orange, Duval,
-  Pinellas, Lee, Polk, Brevard, Volusia, Marion.
+  per-county walkthrough; v1 originally shipped 10 representative
+  counties (~60% of FL population): Miami-Dade, Hillsborough, Orange,
+  Duval, Pinellas, Lee, Polk, Brevard, Volusia, Marion.
 - **Consequences:** FL composite gains owner data. FGDL DSL moved to
-  deferred. Per-county scaling to all 67 counties is post-pitch work.
-  Each user-pulled county adds ~30–100 MB of CSV.
+  deferred.
+
+### ADR-047 — FL FDOR NAL coverage expanded to all 67 counties
+
+- **Date:** 2026-05-19
+- **Supersedes:** ADR-046 (county set).
+- **Context:** Original FDOR scope was 10 representative counties
+  (~60% of FL population) to keep manual-download effort bounded.
+  After confirming the PAR shapefiles are PIN+NAL joined and downloads
+  are direct (no queueing or click-through per county beyond the
+  one-time portal terms acceptance), the marginal effort to pull all
+  67 is low while the pitch narrative gets stronger ("all of Florida"
+  vs "representative counties").
+- **Decision:** `fdor_nal` ships all 67 Florida counties for v1. The
+  walkthrough lists every county alphabetically as a download
+  checklist. Both condo files (`miamidade_condos_2025par.zip` and
+  `stjohnscondos_2025.zip`) are included.
+- **Consequences:** FL raw footprint grows from ~500 MB to ~2-3 GB
+  (still well within budget — disk, not API). Preprocess time for FL
+  scales ~6.7x; this stress-tests the Section 5.2 vectorization work.
+  Strengthens the pitch by removing "10 counties, why those?" as an
+  objection vector. No change to the canonical schema, normalizer, or
+  the FGDL deferral.
+
+### ADR-048 — NC OneMap parcels: auto-fetch via MapServer pagination
+
+- **Date:** 2026-05-19
+- **Context:** `nc_onemap_parcels` was wired to NC OneMap's Hub
+  download API
+  (`https://www.nconemap.gov/api/download/v1/items/<id>/shapefile`)
+  which previously delivered the statewide shapefile bundle reliably.
+  As of 2026-05 the endpoint returns persistent HTTP 500 across
+  retries hours apart. A first pass flipped the source to
+  MANUAL_ONLY, but the manual path required the user to split the
+  5.9M-record layer into ~6 batches via Hub's Download tab (Hub's
+  async export ceiling is ~2M features) — wasting ~6 hours per
+  refresh. The underlying ArcGIS MapServer `/query` endpoint is
+  healthy and supports pagination at 5000 features/page.
+- **Decision:** Keep `AutomationPolicy.ALLOWED`. Replace the broken
+  bulk-API `fetch()` with a paginated MapServer query loop. Each
+  page (5000 features, geometry @ EPSG:4326, ~21 explicit fields) is
+  written as `page_NNNN.geojson` under
+  `data/raw/nc_onemap_parcels/current/`. Resumable on interruption:
+  pages already on disk are skipped. The normalizer reads them via
+  rglob (already supports GeoJSON). The field map in
+  `state_parcels.py` lists both casings (uppercase from legacy
+  shapefile bulk, lowercase from MapServer JSON) for forward + back
+  compat.
+- **Consequences:** Fetch takes ~30–60 min unattended (1,186
+  sequential requests). Disk footprint: ~10 GB (vs ~2 GB for the
+  old single-shapefile download — the per-page GeoJSON pages carry
+  redundant FeatureCollection envelopes and verbose JSON encoding;
+  acceptable trade-off for full automation). MapServer `/query` is
+  the canonical ArcGIS REST endpoint, version-stable, and won't
+  break with Hub UI redesigns. If NC restores the bulk-download API
+  we can swap back to the simpler single-file path; the MapServer
+  pagination remains as a documented fallback either way.
+
+### ADR-049 — Utah dropped from anchor states (no owner data)
+
+- **Date:** 2026-05-20
+- **Supersedes:** the UT portion of ADR-011.
+- **Context:** UT was an anchor state, picked as the "small, clean
+  dataset" to validate the stack quickly. While wiring up the
+  `ut_parcels` pull, an audit of UGRC's parcel data found that
+  **none** of its public parcel layers include an owner name: the
+  statewide aggregate (`UtahStatewideParcels`, 1.59M records), the
+  per-county basic parcels, and the per-county LIR parcels — all 29
+  counties scanned — carry value, acreage, property class, year
+  built, and situs address, but the only owner-adjacent field is
+  `OWN_TYPE` (a private/government category, not a name). UGRC's
+  Land Information Record standard deliberately omits owner name.
+  Owner data lives behind 29 separate county-assessor portals with
+  no bulk download.
+- **Decision:** Drop UT from the anchor set, mirroring the Indiana
+  decision (ADR-017) — owner data is the core of the pitch (LLC
+  identification, owner clustering, interestingness scoring) and a
+  UT composite would have empty `owner_name` columns. Anchor set is
+  now **AR + NC + MT + FL**. `UtParcelsManual` moved to the
+  registry's `_DEFERRED` block; it stays imported so it can be
+  re-promoted if a Utah owner-data source ever materialises. MT
+  absorbs UT's former "small clean state" role.
+- **Consequences:** Pitch narrative is 4 states, all with owner
+  data — a *more* consistent demo than 5 states where one behaves
+  differently. No code beyond the registry move + `ut_parcels`
+  description fix. The `ut_parcels.py` source's earlier description
+  ("normalised owner + value attributes") was factually wrong and
+  has been corrected.
+
+---
+
+## Code architecture (continued)
+
+### ADR-050 — Streaming per-county parcel normalize
+
+- **Date:** 2026-05-20
+- **Context:** The parcel normalizer originally read every layer of a
+  multi-layer source, materialised them all in memory, and
+  concatenated before mapping to canonical. Fine for single-layer
+  sources (AR), but Florida's FDOR set is 67 county shapefiles
+  totalling ~28 GB raw — concatenating would need ~50 GB peak RAM,
+  far past the 16 GB dev machine. The old code also had a silent
+  "fall back to all layers" path that, combined with a wrong MT
+  field map, concatenated 12 unrelated Montana shapefiles into one
+  garbage 6.5M-row output.
+- **Decision:** The normalizer **streams** — it processes one
+  county-layer at a time, maps it to canonical, and writes one
+  parquet per county under
+  `normalized/<source>/<canonical_type>/<county>.parquet`, with the
+  raw copy under `normalized/<source>/raw/<county>.parquet`. Peak
+  memory is bounded to a single county. Normalize-stage GeoJSON
+  output is dropped (GeoParquet only); the Composer still dual-writes
+  GeoParquet + GeoJSON for the map app (ADR-003). The Composer's
+  loader reads the per-county parquet directory transparently. The
+  silent layer-fallback was removed and replaced with a loud
+  `RuntimeError`.
+- **Consequences:** FL's 11.2M-parcel set normalizes within memory.
+  AR's re-normalize got *faster and smaller* (~2m29s, 1.3 GB output)
+  because the redundant GeoJSON write is gone. The MT garbage-output
+  failure mode is now impossible — a missing expected layer fails
+  loudly instead of silently widening scope.
+
+### ADR-051 — Chunked compose for memory-bounded large states
+
+- **Date:** 2026-05-20
+- **Status:** Approved; **not yet implemented** as of 2026-05-20.
+- **Context:** The normalizer streams (ADR-050), but the **Composer**
+  does not. `compose._load_state_data` loads every county parquet for
+  a state into memory and `pd.concat`s them — measured at ~1,710
+  bytes/parcel, so ~19.5 GB peak for Florida's 11.18M parcels, far
+  past the 16 GB dev machine. A local FL compose this session ran
+  through the load and all 9 joins (macOS swaps rather than
+  OOM-killing) but the ~13 GB `parcels.parquet` write exhausted the
+  near-full disk. NC (~5.9M parcels) will hit the same wall.
+- **Decision:** Refactor the Composer to **chunk** parcels — process
+  one county at a time, run the parcel-touching joins against the
+  small ancillary tables, and write per-county composite slices
+  (parcels become a multi-file layer, like the normalized layout).
+  Globally-scoped joins/views (e.g. owner clustering) get a slim
+  two-pass: pass 1 computes cluster IDs from an owner-columns-only
+  projection of all parcels; pass 2 attaches them per county. Peak
+  memory stays bounded to a single county.
+- **Consequences:** FL and NC compose locally, as will future large
+  states. The Composer plus the global joins/views need the refactor
+  and tests. No change to the canonical schema or the `catalog.json`
+  contract. Small single-layer states (AR, MT) are unaffected.
+
+### ADR-052 — `NO_GEOJSON_THRESHOLD`: Parquet-only for very large layers
+
+- **Date:** 2026-05-21
+- **Context:** `io.py` had a single `HUGE_GEOJSON_THRESHOLD` (100K rows)
+  that switched a layer from a *full* to a *simplified* GeoJSON. The
+  logic assumed "simplified ⇒ browser-safe", which is false past a few
+  hundred thousand polygons: AR's 2.1M-parcel simplified
+  `parcels.geojson` was **3.9 GB** and MT's **1.8 GB** — unloadable in
+  any browser. The audit flagged this as a P0 blocker.
+- **Decision:** Add a hard ceiling `NO_GEOJSON_THRESHOLD` (250,000 rows).
+  At or above it, `dual_write_spatial` writes **Parquet only** — no full
+  and no simplified GeoJSON. `catalog.json` advertises a `geojson_path`
+  only when the file actually exists on disk. The v1 Leaflet app never
+  loads an all-parcels layer (correct — that is the deferred PMTiles
+  rehaul's job); it renders parcels through the per-state Views, which
+  are all browser-safe (2–9 MB).
+- **Consequences:** AR/MT composites no longer carry a multi-GB
+  `parcels.geojson` (~5.7 GB disk reclaimed). Parquet stays the
+  canonical analytical format. Towers, solar, distress overlays and
+  every View sit well under the ceiling and keep their GeoJSON. No
+  change to the catalog contract beyond paths now being existence-gated.

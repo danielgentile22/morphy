@@ -2,10 +2,53 @@
 
 Single point of import for the CLI and the UI worker. Adding a new
 source / join / view = import its module here.
+
+Each imported module runs its ``@register_normalizer`` /
+``@register_join`` / ``@register_view`` decorators at import time,
+populating the registries in ``preprocess.base``. Without this module
+being imported, ``all_normalizers()`` / ``all_joins()`` / ``all_views()``
+return empty and the whole pipeline is a no-op.
 """
 
-# Normalizers
+# ── Normalizers ───────────────────────────────────────────────────────
+from .normalizers import (  # noqa: F401
+    arc_distressed,
+    eia_860,
+    eia_860m,
+    faa_oeaaa,
+    fcc_asr,
+    hifld_towers,
+    hud_overlays,
+    state_billboards,
+    state_parcels,
+    usda_persistent_poverty,
+    uspvdb,
+)
 
-# Joins
+# ── Joins ─────────────────────────────────────────────────────────────
+from .joins import (  # noqa: F401
+    billboard_to_parcel,
+    county_score_to_parcel,
+    county_score_to_solar,
+    county_score_to_tower,
+    geometry_derivatives,
+    interestingness_score,
+    owner_cluster,
+    parcel_hosts_infra,
+    parcel_to_distress,
+    solar_to_parcel,
+    tower_to_distress,
+    tower_to_parcel,
+)
 
-# Views
+# ── Views ─────────────────────────────────────────────────────────────
+from .views import (  # noqa: F401
+    county_summary,
+    distressed_parcels_hosting_infra,
+    interestingness_top_1000,
+    llc_owned_parcels_with_infra,
+    owner_clusters,
+    parcels_hosting_infra,
+    state_summary,
+    towers_with_landowner,
+)

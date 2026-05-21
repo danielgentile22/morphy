@@ -1,6 +1,6 @@
 # CHANGELOG
 
-**Last updated:** 2026-05-20
+**Last updated:** 2026-05-21
 
 History of meaningful changes to the project. Newest at the top.
 Format follows [Keep a Changelog](https://keepachangelog.com/)
@@ -13,11 +13,74 @@ Changes are grouped under section headers (`Added` / `Changed` /
 
 ## Unreleased — production-readiness push (in progress)
 
-As of 2026-05-20, Sections 1–3 are done, Section 4 complete for AR/MT
-(FL raw intact; NC raw deleted and needs re-fetch), and Section 5's
-code is written but **not yet committed** (last commit `a067a49`).
-FL/NC compose is blocked pending a chunked-compose refactor (ADR-051).
-See [STATUS.md](./STATUS.md) for the current snapshot.
+As of 2026-05-21, Sections 1–3 are done, Section 4 complete for AR/MT,
+and Section 5 (preprocess code hygiene) is complete. A full AR + MT
+data-quality remediation followed — both states pass a 9-check audit
+with **zero warnings**. FL/NC compose remains blocked pending a
+chunked-compose refactor (ADR-051). See [STATUS.md](./STATUS.md) for
+the current snapshot.
+
+### Fixed (AR + MT data-quality remediation — 2026-05-21)
+
+- **Tower geometry: ~25% → 100%.** The composite `towers` layer merges
+  FCC ASR + FAA OEAAA. The FAA normalizer's fixed-width column offsets
+  in `faa_oeaaa.py` were misaligned, so every FAA obstacle's lat/lon
+  failed to parse and the row landed with null geometry (~75% of AR
+  towers, ~69% of MT). Corrected `_FW_FIELDS` — verified all 636k FAA
+  rows now parse to a valid coordinate. FCC ASR was separately
+  re-normalized off a stale pre-baseline output. Tower→parcel join
+  rate rose to 88.6% (AR) / 99.2% (MT) from ~23–31%.
+- **Distress overlays recovered.** HUD Opportunity Zones, HUD Qualified
+  Census Tracts, and USDA persistent-poverty counties had never been
+  pulled — `in_oz` / `in_qct` / `persistent_poverty` were uniformly
+  `False` placeholders. Pulled all three; fixed `hud_overlays.py` to
+  write `distress_overlays.parquet` (the basename the composer's
+  `_load_state_data` looks up — it had been writing
+  `opportunity_zones.parquet` / `qualified_census_tracts.parquet`,
+  which were silently never loaded) plus a GEOID-derived state/county
+  fallback. `parcel_to_distress` + `tower_to_distress` joins now run —
+  **11 joins** total (was 9).
+- **`parcels.geojson` no longer multi-GB** — added `NO_GEOJSON_THRESHOLD`
+  (ADR-052): layers ≥ 250K rows write Parquet only. AR's 3.9 GB and
+  MT's 1.8 GB `parcels.geojson` are gone (~5.7 GB reclaimed).
+- **`owner_kind` government classification rewritten.** Federal, state,
+  county, tribal, and public-authority owners (BLM, USDA/USDI, Forest
+  Service, state highway commissions, housing/airport/port authorities,
+  "USA IN TRUST", Indian reservations, county governments, Montana's
+  consolidated city-counties) were mis-tagged `individual`/`trust`. The
+  expanded `cluster.py` patterns match a punctuation-normalised name so
+  abbreviations are caught; the outreach views are now clean of
+  government at the top.
+- **AR `unknown` owner rate 50.8% → 2.1%** (MT 35.4% → 4.9%) — the
+  classifier had rejected any comma/ampersand-formatted name, but AR
+  assessor data is overwhelmingly "SURNAME, FIRST" and "X & Y" joint
+  owners. Added separator-aware person-name detection.
+- **Federal owner-cluster fragmentation** — "USA" / "U S" / "U S A" /
+  "US US" now collapse to one canonical cluster key.
+- **`towers.geojson` carried null-geometry features** — `write_geojson`
+  drops null/empty geometry rows (Parquet keeps every row).
+- `catalog.json` now carries `schema_version: 3`; `summary.json`
+  records `joins_skipped`; catalog `geojson_path` is existence-gated;
+  `--rebuild-manifest` reads `summary.json` so the rebuilt manifest
+  carries the join/source lists.
+
+### Data (AR + MT remediation — 2026-05-21)
+
+- **AR** re-composed: 2,116,976 parcels, 15,846 towers, 246
+  distress-overlay tracts, 150 county scores, 11 joins, 8 views, 0
+  warnings.
+- **MT** re-composed: 920,111 parcels, 4,728 towers, 76
+  distress-overlay tracts, 112 county scores, 11 joins, 8 views, 0
+  warnings.
+- Tower *geometry* coverage went ~25% → 100% (the FAA fix); tower
+  *counts* are unchanged — FCC ASR registrations + FAA obstacles
+  combined, as before.
+- Distress now populated: AR 215,261 OZ / 309,318 QCT / 208,278
+  persistent-poverty parcels; MT 78,494 / 104,866 / 53,468.
+- `interestingness_score` is no longer capped at 0.700 — the distress
+  component is live (AR max 0.900, MT 0.950).
+- Sources newly feeding the AR/MT composites: `hud_oz`, `hud_qct`,
+  `usda_persistent_poverty`; `faa_oeaaa` + `fcc_asr` re-normalized.
 
 ### Removed (data cleanup — 2026-05-20)
 

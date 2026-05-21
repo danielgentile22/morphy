@@ -1,7 +1,7 @@
 # STATUS — Where the project stands today
 
-**Last updated:** 2026-05-20
-**Updated by:** data cleanup — FL processed data + NC raw and processed data deleted
+**Last updated:** 2026-05-21
+**Updated by:** AR + MT data-quality remediation (per `_review/AR_MT_FIX_PLAN.md`)
 **Update cadence:** at the start of every work-plan section and at every session handoff.
 
 A snapshot of reality. If this disagrees with the code or data, the
@@ -11,22 +11,26 @@ code/data wins — fix the doc.
 
 ## 0. TL;DR
 
-Mid-**Section 5** (preprocess code hygiene). Sections 1–4 done.
-Section 5 code is written but **not committed** (last commit `a067a49`).
+**Section 5** (preprocess code hygiene) is complete. A full AR + MT
+data-quality remediation followed (per `_review/AR_MT_FIX_PLAN.md`) —
+both states now pass a 9-check audit with **zero warnings**.
 
-- **AR + MT** — compose cleanly end-to-end. Solid.
+- **AR + MT** — compose cleanly end-to-end: 11 joins, 8 views, 0
+  warnings. Distress overlays (HUD OZ/QCT + USDA persistent poverty)
+  recovered; tower geometry 100% (was ~25%); owner classification
+  rebuilt (`unknown` 2–5%, was ~35–51%); no multi-GB `parcels.geojson`
+  (ADR-052). Solid.
 - **FL** — raw data intact (all 67 counties, ~28 GB). Normalized data
   and composite **deleted 2026-05-20** to free disk. Needs full
-  re-normalize + compose before pitch. The chunked compose (ADR-051)
-  must be built first — §4.1.
+  re-normalize + compose; the chunked compose (ADR-051) must be built
+  first — §4.1.
 - **NC** — all raw data **deleted 2026-05-20** (nc_onemap_parcels +
-  legacy NC/ directory). Was never normalized or composed. Needs a
-  full re-fetch from NC OneMap, then normalize + compose — §4.2.
+  legacy NC/ directory). Needs a full re-fetch from NC OneMap, then
+  normalize + compose — §4.2.
 
 **Next steps, in order:** (1) build the chunked compose (ADR-051);
 (2) re-normalize + compose FL; (3) re-fetch NC when the endpoint is
-stable, then normalize + compose NC; (4) commit Section 5;
-(5) Section 6 (testing).
+stable, then normalize + compose NC; (4) Section 6 (testing).
 
 ---
 
@@ -34,8 +38,8 @@ stable, then normalize + compose NC; (4) commit Section 5;
 
 | State | Raw data | Normalized | Composed | Notes |
 |---|---|---|---|---|
-| **AR** (05) | ✅ | ✅ 2,116,976 parcels | ✅ 9 joins, 8 views, 0 warnings | Works end-to-end. |
-| **MT** (30) | ✅ all 56 counties | ✅ 920,111 parcels, 96% owner names | ✅ 9 joins, 8 views, 0 warnings | Works end-to-end. |
+| **AR** (05) | ✅ | ✅ 2,116,976 parcels | ✅ 11 joins, 8 views, 0 warnings | Audited clean 2026-05-21. |
+| **MT** (30) | ✅ all 56 counties | ✅ 920,111 parcels | ✅ 11 joins, 8 views, 0 warnings | Audited clean 2026-05-21. |
 | **FL** (12) | ✅ all 67 counties (~28 GB raw intact) | ❌ deleted 2026-05-20 | ❌ | Needs re-normalize + compose; chunked compose required first (§4.1). |
 | **NC** (37) | ❌ deleted 2026-05-20 | ❌ | ❌ | All raw deleted; needs full re-fetch from NC OneMap (§4.2). |
 
@@ -65,9 +69,8 @@ license ambiguity.
 | NC raw data | 🚫 Deleted | Deleted 2026-05-20. Needs full re-fetch from NC OneMap when endpoint is stable. §4.2 |
 | NC normalize + compose | 🚫 Blocked | Gated on NC re-fetch; will also need chunked compose. |
 | Chunked compose | ⬜ To build | Approved (ADR-051); not started. Required for both FL and NC. |
-| Section 5 commit | ⏳ Pending | ~33 files modified, uncommitted. §5 |
 | `composite/18`, `normalized/in_parcels` | ℹ️ Note | Still on disk; safe to delete (IN dropped from this cut). |
-| `preprocess_manifest.json` | ℹ️ Rebuilt | Rebuilt 2026-05-20 via `--rebuild-manifest`; shows 9 normalized sources + 3 composed states (AR/IN/MT). |
+| `preprocess_manifest.json` | ℹ️ Rebuilt | Rebuilt 2026-05-21 via `--rebuild-manifest`; 12 normalized sources + 3 composed states (AR/IN/MT). |
 | Tests | ⬜ Not started | Section 6. |
 
 ---
@@ -132,12 +135,13 @@ FL raw at `data/raw/fdor_nal/current/` is untouched (~28 GB).
 
 ---
 
-## 5. Uncommitted work
+## 5. Commit state
 
-All of Section 5 + the Section 4 source rewrites + doc updates are
-uncommitted (~33 files; last commit `a067a49`). Commit after FL
-composes cleanly so the commit captures a verified-working state.
-`data/` is git-ignored — never commit raw or composite data.
+Section 5 + the Section 4 source rewrites + the AR/MT data-quality
+remediation + doc updates are committed once the **AR + MT audit is
+clean** — which it is, as of 2026-05-21 (revised gate; the prior gate
+"after FL composes" is moot while FL is deferred behind the chunked
+compose). `data/` is git-ignored — never commit raw or composite data.
 
 ---
 
@@ -148,8 +152,8 @@ composes cleanly so the commit captures a verified-working state.
 | 1 — Documentation foundation | ✅ Complete |
 | 2 — Version control + GitHub | ✅ Complete |
 | 3 — Data puller overhaul | ✅ Complete |
-| 4 — Data hygiene / raw refresh | ⚠️ AR/MT pulled and solid; FL raw intact, processed deleted; NC all data deleted |
-| 5 — Preprocess code hygiene | ⚠️ Code written + uncommitted; AR/MT verified; FL/NC need chunked compose before re-running |
+| 4 — Data hygiene / raw refresh | ⚠️ AR/MT solid (distress sources added 2026-05-21); FL raw intact, processed deleted; NC all data deleted |
+| 5 — Preprocess code hygiene | ⚠️ Code complete; AR/MT audited clean 2026-05-21; FL/NC need chunked compose before re-running |
 | 6 — Testing | ⬜ Not started |
 | 7 — Pitch readiness | ⬜ Not started |
 | 8 — Map app (minimal patches) | ⬜ Not started |

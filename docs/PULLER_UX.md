@@ -1,7 +1,8 @@
 # PULLER_UX — Design Spec for the Section 3 Overhaul
 
-**Last updated:** 2026-05-19
-**Status:** Design — implemented in Section 3 of the work plan.
+**Last updated:** 2026-05-20
+**Status:** Implemented — Section 3 of the work plan is complete. This
+document remains the design reference for the puller's behaviour.
 
 This document is the design spec for the data puller upgrade. The
 puller is the **single tool the user interacts with most often** to
@@ -107,7 +108,7 @@ Aggregates the top of the window. Surfaces, in priority order:
 1. **Endpoint-dead sources with walkthroughs available** (HUD OZ /
    QCT / NC OneMap / USDA after Section 4.1).
 2. **Stale sources** (past cadence).
-3. **Missing sources** for anchor states (NC, MT, UT, FL counties).
+3. **Missing sources** for anchor states (NC, MT, FL counties).
 4. **Sources past `next_recommended_check_at`** but otherwise OK.
 
 Each item is one-click-actionable from the panel:
@@ -251,10 +252,9 @@ When clicked:
    from `docs/SCOPE.md` — or hardcode in registry: AR/NC/MT/UT/FL).
 3. Surfaces a focused checklist:
    - [ ] AR — fresh
-   - [ ] NC — STALE — refresh now (walkthrough)
+   - [ ] NC — STALE — refresh now (auto-fetch, MapServer pagination)
    - [ ] MT — MISSING — walkthrough
-   - [ ] UT — MISSING — walkthrough
-   - [ ] FL — N/A (stretch)
+   - [ ] FL — MISSING — walkthrough (67-county FDOR NAL)
    - [ ] HUD OZ — endpoint dead — walkthrough
 4. After each item completes, the row checks itself.
 5. Bottom button: "Re-run preprocess for affected states" launches
@@ -322,9 +322,8 @@ The Section 3 work is **done** when:
 
 - [ ] Puller launches; freshness column populated for every installed
       source.
-- [ ] Selecting each MANUAL_ONLY anchor source (nc_onemap_parcels,
-      mt_cadastral_parcels, ut_parcels, fdor_nal) opens a walkthrough
-      with ≥ 3 ordered steps + deep link.
+- [ ] Selecting each MANUAL_ONLY anchor source (mt_cadastral_parcels,
+      fdor_nal) opens a walkthrough with ≥ 3 ordered steps + deep link.
 - [ ] "What needs my attention" panel lists the broken-endpoint sources.
 - [ ] Bulk "Refresh all stale (with manual prompts)" runs end-to-end.
 - [ ] `data/manifest.json` carries `next_recommended_check_at`.

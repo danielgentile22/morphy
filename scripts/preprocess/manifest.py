@@ -163,14 +163,15 @@ class PreprocessManifest:
             return False
         if entry.get("raw_local_version") != raw_local_version:
             return False
-        # Spot check: at least one output file still exists.
+        # Spot check: at least one output parquet still exists. rglob so
+        # it also finds the multi-file layout (normalized/<id>/parcels/*.parquet).
         try:
             from pathlib import Path
 
             p = Path(out_dir)
             if not p.exists():
                 return False
-            if not any(p.glob("*.parquet")):
+            if not any(p.rglob("*.parquet")):
                 return False
         except Exception:
             return False
@@ -241,11 +242,21 @@ def rebuild_from_disk() -> PreprocessManifest:
         for src_dir in sorted(NORMALIZED_ROOT.iterdir()):
             if not src_dir.is_dir():
                 continue
-            parquets = sorted(src_dir.glob("*.parquet"))
+            # Legacy single-file sources: <basename>.parquet at the root.
+            parquets = [p for p in sorted(src_dir.glob("*.parquet")) if p.name != "raw.parquet"]
+            canonical_types = [p.stem for p in parquets]
+            # Multi-file datasets: a <basename>/ subdir of per-county
+            # parquets (the parcel normalizer). Exclude the raw/ archive.
+            for sub in sorted(d for d in src_dir.iterdir() if d.is_dir()):
+                if sub.name == "raw":
+                    continue
+                sub_parquets = sorted(sub.glob("*.parquet"))
+                if sub_parquets:
+                    parquets += sub_parquets
+                    canonical_types.append(sub.name)
             if not parquets:
                 continue
             total_bytes = sum(p.stat().st_size for p in parquets)
-            canonical_types = [p.stem for p in parquets]
             states_covered: list[str] = []
             qreport = src_dir / "quality_report.json"
             qreport_path: str | None = None
@@ -286,6 +297,16 @@ def rebuild_from_disk() -> PreprocessManifest:
                 catalog = json.loads(catalog_path.read_text())
             except (json.JSONDecodeError, OSError):
                 continue
+            # joins_applied / joins_skipped / sources_used live in
+            # summary.json, not catalog.json — load it so a rebuilt
+            # manifest carries the full lists.
+            summary: dict = {}
+            summary_path = state_dir / "summary.json"
+            if summary_path.exists():
+                try:
+                    summary = json.loads(summary_path.read_text())
+                except (json.JSONDecodeError, OSError):
+                    summary = {}
             # catalog.json shape: {layers: {canonical_type: {rows: int, ...}},
             #                      views: {view_name: {...}}, ...}
             counts: dict[str, int] = {}
@@ -306,8 +327,9 @@ def rebuild_from_disk() -> PreprocessManifest:
             )
             m.composed[state_dir.name] = {
                 "preprocessed_at": ts,
-                "sources_used": list(catalog.get("sources_used") or []),
-                "joins_applied": list(catalog.get("joins_applied") or []),
+                "sources_used": list(summary.get("sources_used") or []),
+                "joins_applied": list(summary.get("joins_applied") or []),
+                "joins_skipped": list(summary.get("joins_skipped") or []),
                 "views_built": views_built,
                 "counts": counts,
                 "status": "ok",

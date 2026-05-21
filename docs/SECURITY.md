@@ -1,6 +1,6 @@
 # SECURITY — Data Handling Posture
 
-**Last updated:** 2026-05-19
+**Last updated:** 2026-05-20
 **Owner:** project lead (single dev today).
 
 This document records how we handle data that contains personally

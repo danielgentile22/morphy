@@ -19,6 +19,13 @@ class OwnerClustersView(View):
         df = parcels[parcels["owner_cluster_id"] != ""].copy()
         if df.empty:
             return None
+        # Outreach segment — drop government / school owners. They are not
+        # lease-renegotiation targets and otherwise dominate the top
+        # clusters (federal land holdings run into the thousands of parcels).
+        if "owner_kind" in df.columns:
+            df = df[~df["owner_kind"].isin(("gov", "school"))]
+        if df.empty:
+            return None
         agg = (
             df.groupby("owner_cluster_id")
             .agg(

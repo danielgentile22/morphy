@@ -1,6 +1,6 @@
 # DEPLOYMENT — How this runs
 
-**Last updated:** 2026-05-19
+**Last updated:** 2026-05-20
 **Status:** Local-only for v1 pitch. No cloud / hosted deployment.
 
 This doc describes how to stand up the project locally — what to install,

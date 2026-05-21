@@ -1,6 +1,6 @@
 # DATA_FRESHNESS — Per-source cadence rules
 
-**Last updated:** 2026-05-19
+**Last updated:** 2026-05-20
 **Pairs with:** [DATA_SOURCES.md](./DATA_SOURCES.md) (per-source schema
 + license) and [PULLER_UX.md](./PULLER_UX.md) (UX design for surfacing
 this in the puller).
@@ -53,7 +53,7 @@ Sources with `update_cadence_days = None` show no badge but display
 | `ar_parcels` | Annual (state aggregates from county CAMA) | **365** | Arkansas Geographic Information Office typically refreshes statewide layer annually |
 | `nc_onemap_parcels` | Per-county, varies (monthly–quarterly) | **90** | NC OneMap mirrors county exports; refresh quarterly to balance load |
 | `mt_cadastral_parcels` | Quarterly | **90** | MT Cadastral publishes a refresh quarterly |
-| `ut_parcels` | Annual | **365** | UT statewide parcel project refreshes annually |
+| `ut_parcels` | Annual | **365** | Deferred from the v1 anchor set (no owner data — ADR-049); cadence kept for if it is ever re-promoted |
 | `fdor_nal` | Annual (county-by-county certification each October) | **365** | FL DOR finalizes tax-roll certification by October; per-county downloads available shortly after |
 
 ---

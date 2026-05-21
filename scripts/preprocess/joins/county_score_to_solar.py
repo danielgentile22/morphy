@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import geopandas as gpd
-
-from ..base import ComposeContext, Join, register_join
+from ..base import ComposeContext, Join, register_join, safe_merge
 
 
 @register_join
@@ -28,18 +26,11 @@ class CountyScoreToSolarJoin(Join):
                 }
             )
             .reset_index()
+            .rename(columns={"tier": "distress_tier"})
         )
-        # Defensive drop, parallels CountyScoreToParcelJoin (see comment there).
-        solar = solar.drop(
-            columns=[c for c in ("distress_tier", "persistent_poverty") if c in solar.columns]
+        merged = safe_merge(
+            solar, agg, on="county_fips", columns_added=self.columns_added
         )
-        merged = solar.merge(
-            agg.rename(columns={"tier": "distress_tier"}),
-            on="county_fips",
-            how="left",
-        )
-        if "geometry" in merged.columns:
-            merged = gpd.GeoDataFrame(merged, geometry="geometry", crs=solar.crs)
         merged["distress_tier"] = merged["distress_tier"].fillna("")
         merged["persistent_poverty"] = merged["persistent_poverty"].fillna(False)
         ctx.set("solar_facility", merged)

@@ -324,6 +324,36 @@ def add_system_columns(
     return df
 
 
+# ── Join helper ───────────────────────────────────────────────────────────────
+
+
+def safe_merge(left, right, *, on, columns_added, how="left"):
+    """Left-merge ``right`` into ``left``, where ``right`` contributes
+    ``columns_added``.
+
+    Normalizers initialise reverse-summary columns (e.g. ``distress_tier``,
+    ``persistent_poverty`` on a parcel) as placeholders so the canonical
+    schema is stable before any Join runs. When a Join later merges in the
+    *real* values, pandas sees the column on both sides and produces
+    ``col_x`` / ``col_y`` — silently leaving the placeholder in place. This
+    helper drops the pre-existing ``columns_added`` from ``left`` first so
+    the merge populates fresh values cleanly.
+
+    Restores GeoDataFrame geometry registration when ``left`` was
+    geospatial — a plain ``merge`` can drop the geometry-column binding.
+
+    Callers still do their own ``fillna`` afterwards: the right default
+    differs per column ("" for a tier string, False for a boolean flag).
+    """
+    import geopandas as gpd
+
+    left_clean = left.drop(columns=[c for c in columns_added if c in left.columns])
+    merged = left_clean.merge(right, on=on, how=how)
+    if "geometry" in merged.columns:
+        merged = gpd.GeoDataFrame(merged, geometry="geometry", crs=getattr(left, "crs", None))
+    return merged
+
+
 # ── Quality-report builder ────────────────────────────────────────────────────
 
 

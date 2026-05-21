@@ -140,10 +140,14 @@ EN_COLS = [
     "frn",
 ]
 
-# Status code → descriptive label and an is_active flag.
+# Status code → descriptive label and an is_active flag. Codes per the
+# FCC ASR public-access definitions (pubacc_asr_codes_data_elem). The
+# live bulk file uses C/G/A/I/T; X/D/R/N are kept for completeness.
 STATUS_DESC = {
     "C": ("Constructed", True),
     "G": ("Granted, not constructed", True),
+    "A": ("Canceled", False),
+    "I": ("Dismantled", False),
     "T": ("Terminated", False),
     "X": ("Cancelled", False),
     "D": ("Dismantled", False),

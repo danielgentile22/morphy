@@ -36,9 +36,11 @@ per-source table below):
 - **`fl_fgdl_parcels`** is **REPLACED** by `fdor_nal` (ADR-019).
 - **`in_parcels`** is **MOTHBALLED** (no owner data — ADR-017).
 - **`mn_parcels`** is **DEFERRED** (license ambiguity — ADR-018).
-- **`hud_oz`, `hud_qct`, `usda_persistent_poverty`, `nc_onemap_parcels`**
-  endpoints currently broken; Section 4.1 of the production-readiness
-  plan switches these to MANUAL_ONLY walkthroughs with static URLs.
+- **`hud_oz`, `hud_qct`, `usda_persistent_poverty`** — endpoints
+  confirmed live 2026-05-21; pulled and normalized into the AR + MT
+  composites (OZ + QCT tract polygons, USDA persistent-poverty county
+  flags). **`nc_onemap_parcels`** fetch is still incomplete (server
+  504 at deep offsets — see LIMITATIONS.md).
 
 ---
 

@@ -4,7 +4,7 @@ Orientation for Claude Code sessions working in this repo. Read this
 first; then dip into the relevant doc under [docs/](docs/) when you
 need depth.
 
-**Last updated:** 2026-05-20 (full deep-dives live in `docs/`; read
+**Last updated:** 2026-05-21 (full deep-dives live in `docs/`; read
 [docs/STATUS.md](docs/STATUS.md) first — it is the current-state
 handoff snapshot).
 
@@ -114,8 +114,8 @@ Eight sections in sequence — documentation first, then code:
 1. Documentation foundation — ✅ done
 2. Version control + GitHub setup — ✅ done
 3. Data puller overhaul — ✅ done
-4. Data hygiene (raw data refresh) — ⚠️ AR/MT pulled and solid; FL raw intact, processed deleted 2026-05-20; NC all data deleted 2026-05-20 (needs re-fetch)
-5. Preprocess code hygiene — ⚠️ in progress; code uncommitted; FL/NC need chunked compose (ADR-051) before re-normalizing + composing
+4. Data hygiene (raw data refresh) — ⚠️ AR/MT solid (HUD OZ/QCT + USDA distress sources added 2026-05-21); FL raw intact, processed deleted 2026-05-20; NC all data deleted 2026-05-20 (needs re-fetch)
+5. Preprocess code hygiene — ⚠️ code complete; AR/MT audited clean 2026-05-21; FL/NC need chunked compose (ADR-051) before re-normalizing + composing
 6. Testing — ⬜ not started
 7. Pitch readiness — ⬜ not started
 8. Map app (deferred + minimal patches) — ⬜ not started
@@ -208,9 +208,9 @@ Per-source upstream-failure tracking is in
 
 - FCC ASR / ULS bulk URLs (publisher restructures occasionally).
 - FAA DOF archive page (path rename).
-- HUD ArcGIS layers (service rename / layer-ID change — currently
-  failing; Section 4.1 switches to static shapefiles).
-- USDA ERS URL migration (currently 404; same fix).
+- HUD ArcGIS layers (service rename / layer-ID change — live as of
+  2026-05-21 but restructure-prone; `remote_version()` probes them).
+- USDA ERS file URL (migrates between editions; current path live).
 - LBNL TTS annual filename (scraper finds newest).
 - EIA 860 / 860M placeholder pages (we check `min_bytes`).
 

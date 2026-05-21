@@ -3,6 +3,7 @@
 Usage:
   python scripts/preprocess.py                       # normalize all + compose all states with data
   python scripts/preprocess.py --state 37            # normalize all + compose just NC
+  python scripts/preprocess.py --source ar_parcels   # re-normalize just one source (no compose)
   python scripts/preprocess.py --normalize-only      # normalize, no compose
   python scripts/preprocess.py --compose-only --state 12   # compose FL (must already be normalized)
   python scripts/preprocess.py --force-rebuild       # ignore manifest, re-normalize everything
@@ -34,6 +35,7 @@ from preprocess.runner import (  # noqa: E402
     run_compose_all,
     run_compose_one,
     run_normalize_all,
+    run_normalize_one,
 )
 
 
@@ -97,6 +99,13 @@ def main() -> int:
     )
     parser.add_argument("--state", help="State FIPS to compose (default: all with parcel data)")
     parser.add_argument(
+        "--source",
+        help=(
+            "Re-normalize a single source by id (no compose). Goes through "
+            "the manifest like a full run, so the entry stays consistent."
+        ),
+    )
+    parser.add_argument(
         "--normalize-only", action="store_true", help="Run normalize but skip compose"
     )
     parser.add_argument(
@@ -159,6 +168,17 @@ def main() -> int:
         return 0
 
     manifest = PreprocessManifest.load()
+
+    if args.source:
+        status, _ = run_normalize_one(
+            args.source,
+            manifest,
+            force_rebuild=args.force_rebuild,
+            progress_callback=_stream_progress,
+        )
+        manifest.save()
+        print(f"\nnormalize {args.source}: {status}")
+        return 0 if status in ("ok", "skipped") else 1
 
     if args.compose_only:
         if args.state:

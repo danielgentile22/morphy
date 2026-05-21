@@ -101,6 +101,11 @@ def write_geojson(
             raise ValueError("use_simplified_geometry=True but geom_simplified column missing")
         g = g.set_geometry("geom_simplified", drop=True, crs=g.crs or "EPSG:4326")
 
+    # Null / empty-geometry rows make a GeoJSON malformed — most map
+    # renderers silently drop or throw on them. Parquet keeps every row
+    # (full fidelity); GeoJSON carries only the renderable features.
+    g = g[g.geometry.notna() & ~g.geometry.is_empty]
+
     drop = [c for c in g.columns if c in _GEOJSON_DROP_COLS and c != g.geometry.name]
     if drop:
         g = g.drop(columns=drop)
@@ -122,6 +127,13 @@ def write_geojson(
 # browser anyway, and Parquet remains the canonical format for analysis.
 HUGE_GEOJSON_THRESHOLD = 100_000
 
+# Above this row count, skip GeoJSON entirely — even simplified geometry
+# yields a multi-GB file no browser can load (a 2.1M-parcel layer's
+# simplified GeoJSON is ~4 GB). Parquet is the only output; the map app
+# renders these layers via the much smaller per-state Views. See
+# DECISIONS.md ADR-052.
+NO_GEOJSON_THRESHOLD = 250_000
+
 
 def dual_write_spatial(
     gdf: gpd.GeoDataFrame,
@@ -133,9 +145,13 @@ def dual_write_spatial(
 ) -> tuple[list[Path], int]:
     """Write {basename}.parquet plus GeoJSON variant(s). Returns (files, bytes).
 
-    For huge layers (rows ≥ HUGE_GEOJSON_THRESHOLD), the full GeoJSON is
-    skipped because browsers can't load it anyway — only the simplified
-    version is written. Parquet always wins for analytical use.
+    Three regimes by row count:
+      - rows ≥ NO_GEOJSON_THRESHOLD: Parquet only (no GeoJSON at all).
+      - HUGE_GEOJSON_THRESHOLD ≤ rows < NO_GEOJSON_THRESHOLD: simplified
+        GeoJSON only (written as {basename}.geojson).
+      - rows < HUGE_GEOJSON_THRESHOLD: full GeoJSON (+ a .simplified.geojson
+        when write_simplified_geojson is set).
+    Parquet always wins for analytical use.
     """
     written: list[Path] = []
     total = 0
@@ -144,7 +160,13 @@ def dual_write_spatial(
     total += write_geoparquet(gdf, parquet_path)
     written.append(parquet_path)
 
-    is_huge = skip_full_geojson_if_huge and len(gdf) >= HUGE_GEOJSON_THRESHOLD
+    n = len(gdf)
+    # Past NO_GEOJSON_THRESHOLD even simplified geometry is unusable in a
+    # browser — Parquet is the only output for this layer.
+    if n >= NO_GEOJSON_THRESHOLD:
+        return written, total
+
+    is_huge = skip_full_geojson_if_huge and n >= HUGE_GEOJSON_THRESHOLD
     if not is_huge:
         geojson_path = out_dir / f"{basename}.geojson"
         total += write_geojson(gdf, geojson_path)

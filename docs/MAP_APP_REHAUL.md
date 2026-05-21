@@ -1,7 +1,7 @@
 # Map App Rehaul — Architecture & Phased Plan
 
 > **Status: DEFERRED — revisit post-pitch.**
-> **Last updated:** 2026-05-19.
+> **Last updated:** 2026-05-20.
 >
 > Per [DECISIONS.md ADR-031](./DECISIONS.md), the audit that
 > preceded the production-readiness push surfaced bigger gaps

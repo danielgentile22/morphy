@@ -1,6 +1,6 @@
 # TESTING — Strategy & Conventions
 
-**Last updated:** 2026-05-19
+**Last updated:** 2026-05-20
 **Status:** Pre-implementation — test suite is built in Section 6 of the
 work plan. This document is the design.
 

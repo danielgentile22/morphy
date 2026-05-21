@@ -1,6 +1,6 @@
 # GOALS — What Success Looks Like
 
-**Last updated:** 2026-05-19
+**Last updated:** 2026-05-20
 **Pairs with:** [SCOPE.md](./SCOPE.md) (what we're building) and
 [STATUS.md](./STATUS.md) (where we are today).
 
@@ -61,9 +61,9 @@ If they can't get all five from the docs alone, the docs are not done.
 
 | KPI | Target | Where it's measured |
 |---|---|---|
-| **Anchor-state coverage** | 4 of 5 anchor states composed cleanly (AR + NC + MT + UT minimum; FL stretch) | `data/processed/composite/<fips>/summary.json` for each — `joins_applied` length = 9, `warnings` empty |
+| **Anchor-state coverage** | All 4 anchor states (AR + NC + MT + FL) composed cleanly; 3 of 4 minimum | `data/processed/composite/<fips>/summary.json` for each — `joins_applied` length = 9, `warnings` empty |
 | **Composite freshness** | Every anchor state's raw inputs ≤ 90 days old at pitch time | `data/manifest.json` `fetched_at` per source vs. today |
-| **View completeness** | ≥ 8 views built per state with owner data (AR/NC/MT/UT) | `summary.json` `views_built` length |
+| **View completeness** | ≥ 8 views built per state with owner data (AR/NC/MT/FL) | `summary.json` `views_built` length |
 | **Tests** | ≥ 30 tests passing; ≥ 70 % line coverage of `scripts/preprocess/` | `pytest --cov=scripts.preprocess` |
 | **CI green** | Every push to `main` has lint + tests green | GitHub Actions badge on README |
 | **Doc currency** | Every doc in `docs/` has `Last updated:` within 30 days at pitch time | Header on each `.md` file |

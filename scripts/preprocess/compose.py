@@ -35,8 +35,12 @@ from .io import (
     write_json,
     write_parquet,
 )
+from .manifest import get_raw_local_version
 
 log = logging.getLogger("preprocess.compose")
+
+# catalog.json schema version. Documented in ARCHITECTURE.md §6.
+CATALOG_SCHEMA_VERSION = 3
 
 
 @dataclass
@@ -99,11 +103,15 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
 
     # ── Run joins in dependency order ──────────────────────────────────
     joins_applied: list[str] = []
+    joins_skipped: list[str] = []
     for j in ordered_joins():
         if j.name in cfg.skip_joins:
+            joins_skipped.append(j.name)
+            log.info("skip join %s — disabled via config", j.name)
             continue
         if not j.is_applicable(ctx):
-            log.debug("skip join %s — inputs missing", j.name)
+            joins_skipped.append(j.name)
+            log.info("skip join %s — inputs missing", j.name)
             continue
         try:
             j.apply(ctx)
@@ -190,7 +198,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
         log.info("✓ view %s (%d rows)", v.name, len(result))
 
     # ── catalog.json (self-documenting layer manifest) ─────────────────
-    catalog = _build_catalog(state, ctx, view_meta, out_dir)
+    catalog = _build_catalog(state, ctx, view_meta, out_dir, sources_used)
     catalog_path = out_dir / "catalog.json"
     write_json(catalog, catalog_path)
     output_files.append(catalog_path)
@@ -203,6 +211,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
         "generated_at": utcnow_iso(),
         "sources_used": sources_used,
         "joins_applied": joins_applied,
+        "joins_skipped": joins_skipped,
         "views_built": views_built,
         "counts": counts,
         "warnings": ctx.warnings,
@@ -243,18 +252,22 @@ def _load_state_data(ctx: ComposeContext) -> list[str]:
             continue
         for ct in n.canonical_types:
             basename = OUTPUT_BASENAMES.get(ct, ct)
-            # Spatial sources may use a different basename per source (e.g. parcels.parquet);
-            # tabular sources are similar. Glob to be safe.
-            parquet_files = sorted(src_dir.glob("*.parquet"))
-            # Exclude raw.parquet and the wrong type's outputs.
-            candidates = []
-            for p in parquet_files:
-                if p.name == "raw.parquet":
-                    continue
-                # Direct name match
-                if p.name == f"{basename}.parquet":
-                    candidates.append(p)
-                    continue
+            candidates: list[Path] = []
+            subdir = src_dir / basename
+            if subdir.is_dir():
+                # Multi-file dataset: the parcel normalizer writes one
+                # parquet per county under normalized/<id>/parcels/.
+                candidates = sorted(subdir.glob("*.parquet"))
+            else:
+                # Legacy single-file layout: <basename>.parquet at the
+                # source root. (raw/ and raw.parquet are deliberately
+                # excluded — the non-recursive glob never descends into
+                # the raw/ archive subdir.)
+                for p in sorted(src_dir.glob("*.parquet")):
+                    if p.name == "raw.parquet":
+                        continue
+                    if p.name == f"{basename}.parquet":
+                        candidates.append(p)
             if not candidates:
                 continue
             for p in candidates:
@@ -323,6 +336,7 @@ def _build_catalog(
     ctx: ComposeContext,
     view_meta: dict[str, dict],
     out_dir: Path,
+    sources_used: list[str],
 ) -> dict:
     """Self-documenting layer manifest for the map app to consume."""
     layers: dict[str, dict] = {}
@@ -338,18 +352,29 @@ def _build_catalog(
         }
         if ct in SPATIAL_TYPES:
             layer["geometry_type"] = _geom_type(table)
-            layer["geojson_path"] = f"{basename}.geojson"
+            # Advertise a GeoJSON path only when the file was actually
+            # written — huge layers (parcels) are Parquet-only.
+            if (out_dir / f"{basename}.geojson").exists():
+                layer["geojson_path"] = f"{basename}.geojson"
             if (out_dir / f"{basename}.simplified.geojson").exists():
                 layer["simplified_geojson_path"] = f"{basename}.simplified.geojson"
         layers[basename] = layer
 
+    # Lineage: which raw version of each source fed this composite. Lets us
+    # answer "what raw vintages produced this state?" without parsing logs.
+    sources_used_versions = {
+        sid: get_raw_local_version(sid) for sid in sorted(sources_used)
+    }
+
     return {
+        "schema_version": CATALOG_SCHEMA_VERSION,
         "state_fips": state.fips,
         "state_name": state.name,
         "state_abbr": state.abbr,
         "generated_at": utcnow_iso(),
         "layers": layers,
         "views": view_meta,
+        "sources_used_versions": sources_used_versions,
     }
 
 

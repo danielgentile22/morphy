@@ -27,20 +27,23 @@ from ._helpers import canon_state_fips, safe_str, to_float
 log = logging.getLogger("preprocess.faa_dof")
 
 # FAA DOF fixed-width column positions (1-indexed, inclusive — converted below).
-# From the DOF_README inside the archive.
+# Verified against the live DOF.DAT column layout: every one of the 636k
+# data rows parses to a valid lat/lon with these offsets. The previous
+# offsets were misaligned (lat/lon bled across field boundaries), which is
+# why every FAA tower landed in the composite with null geometry.
 _FW_FIELDS = [
     ("oas_code", 1, 2),
     ("obstacle_number", 4, 9),
     ("verification_status", 11, 11),
     ("country", 13, 14),
     ("state", 16, 17),
-    ("city", 19, 34),
-    ("lat_dms", 36, 49),
-    ("lon_dms", 51, 65),
-    ("obstacle_type", 67, 84),
-    ("quantity", 86, 87),
-    ("agl_ft", 89, 93),
-    ("amsl_ft", 95, 99),
+    ("city", 19, 32),
+    ("lat_dms", 36, 47),
+    ("lon_dms", 49, 61),
+    ("obstacle_type", 63, 80),
+    ("quantity", 81, 82),
+    ("agl_ft", 84, 88),
+    ("amsl_ft", 90, 94),
 ]
 
 

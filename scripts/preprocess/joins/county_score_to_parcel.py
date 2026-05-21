@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..base import ComposeContext, Join, register_join
+from ..base import ComposeContext, Join, register_join, safe_merge
 
 
 @register_join
@@ -27,22 +27,11 @@ class CountyScoreToParcelJoin(Join):
                 }
             )
             .reset_index()
+            .rename(columns={"tier": "distress_tier"})
         )
-        # Parcel schema initialises distress_tier/persistent_poverty as placeholders;
-        # drop them so the merge populates fresh values without _x/_y collision.
-        parcels = parcels.drop(
-            columns=[c for c in ("distress_tier", "persistent_poverty") if c in parcels.columns]
+        merged = safe_merge(
+            parcels, agg, on="county_fips", columns_added=self.columns_added
         )
-        merged = parcels.merge(
-            agg.rename(columns={"tier": "distress_tier"}),
-            on="county_fips",
-            how="left",
-        )
-        # geopandas merge sometimes drops the geom registration; restore.
-        if "geometry" in merged.columns:
-            import geopandas as gpd
-
-            merged = gpd.GeoDataFrame(merged, geometry="geometry", crs=parcels.crs)
         merged["distress_tier"] = merged["distress_tier"].fillna("")
         merged["persistent_poverty"] = merged["persistent_poverty"].fillna(False)
         ctx.set("parcel", merged)

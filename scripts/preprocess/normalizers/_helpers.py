@@ -66,12 +66,19 @@ def canon_county_fips(value, *, state_fips: str | None = None) -> str | None:
       - 5-digit string (e.g. '37075')
       - 3-digit string + state_fips arg (e.g. '075', state_fips='37')
       - integer 75 with state_fips='37'
+      - census tract / block GEOID (≥10 digits, e.g. '120010019081') —
+        the county FIPS is positions 0-4. Used by FDOR PAR shapefiles,
+        whose only county identifier is the CENSUS_BK field.
     """
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     s = str(value).strip()
     if not s:
         return None
+    # Census GEOID: slice rather than int-parse so a leading-zero state
+    # code (e.g. Alabama '01...') isn't lost.
+    if s.isdigit() and len(s) >= 10:
+        return s[:5]
     try:
         n = int(float(s))
     except (TypeError, ValueError):
