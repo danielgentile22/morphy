@@ -310,39 +310,34 @@ A single Python script (`scripts/preprocess.py`) should:
 
 ## 6. The Prototype Web App
 
-A static single-page app under `app/`, runnable via
-`python -m http.server` from the project root, loading the three processed
-GeoJSON files via `fetch()`.
+The analytical map app under `app/` — a Svelte 5 single-page app
+(MapLibre GL JS, PMTiles, DuckDB-WASM). It is catalog-driven: it reads
+the preprocess output (`composite/index.json` + per-state
+`catalog.json`), so any state that composes appears with no app
+changes. Currently serves Arkansas + Montana.
 
-**Stack:** vanilla JavaScript + Leaflet + OpenStreetMap base tiles. **No build
-step, no framework** for this prototype.
+**What it shows:**
 
-**Layout:**
+- Every parcel as PMTiles vector tiles (2.1 M AR / 920 K MT), with a
+  county economic-distress choropleth at low zoom.
+- Tower, distress-overlay and solar layers, plus the interestingness
+  Views (top-1000, distressed-parcels-with-infrastructure, etc.) — all
+  toggleable, with a legend.
 
-- Full-screen map.
-- Left sidebar (~350 px, collapsible):
-  - Layer toggles: Towers / Parcels / Opportunity Zones.
-  - Filters: "only parcels with towers", "only parcels in Opportunity
-    Zones", owner dropdown (populated from data).
-  - A details panel that populates on feature click.
-  - A live count summary (towers visible / parcels visible).
+**What it does:**
 
-**Styling:**
+- **Filter** 2 M+ parcels in-browser (DuckDB-WASM) by owner type,
+  distress tier, hosted infrastructure, assessed value, acreage,
+  county and more — with a live match count and a map fade.
+- **Search** by owner name (autocomplete) or parcel APN.
+- **Click** any parcel or tower for a full detail panel — owner,
+  mailing address, value, the asset it hosts, distress context.
+- **Share** any view: the active state, filters and selection are
+  encoded in the URL.
 
-- Opportunity Zones: light translucent blue, drawn beneath everything.
-- Parcels: thin gray outline by default; **yellow fill if it hosts a tower**;
-  **orange fill if it hosts a tower AND is in an OZ**.
-- Towers: red circle markers, slightly enlarged where clustered.
-
-**Interaction:**
-
-- Click tower → details: ASR #, tower owner, height, structure type, status,
-  coordinates, the parcel it sits on, parcel owner, mailing address, OZ
-  status, assessed value.
-- Click parcel → details: PIN, owner, mailing address, acreage, assessed
-  value, OZ status, hosts-a-tower?.
-- Hover parcel → highlight boundary.
-- Default view = Graham County bounding box.
+Static-site model — no backend; the browser does all filtering. Built
+with `npm run build`; served against a range-capable static server.
+Full detail in [app/ARCHITECTURE.md](app/ARCHITECTURE.md).
 
 ---
 

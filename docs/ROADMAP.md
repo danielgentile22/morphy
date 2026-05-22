@@ -69,7 +69,7 @@ sections in sequence:
 5. Preprocess code hygiene — ⚠️ in progress; FL/NC need chunked compose (ADR-051) before re-running
 6. Testing — ⬜ not started
 7. Pitch readiness — ⬜ not started
-8. Map app (deferred + minimal patches) — ⬜ not started
+8. Map app rehaul — ✅ complete (Svelte 5 + MapLibre + PMTiles + DuckDB-WASM)
 
 Goal: a pitch-quality demo cut across 4 anchor states with
 defensible numbers, tests, CI, and coherent docs. See
@@ -94,8 +94,9 @@ Per [SCOPE.md](./SCOPE.md):
   poverty, EIA 860/860M, USPVDB.
 - **Output:** per-state `data/processed/composite/<fips>/` with
   Parquet + GeoJSON + catalog.json + summary.json + views/.
-- **Map app:** current Leaflet app with minimal patches; full rebuild
-  deferred.
+- **Map app:** rebuilt — Svelte 5 + MapLibre + PMTiles + DuckDB-WASM,
+  live at `app/` (see [../app/ARCHITECTURE.md](../app/ARCHITECTURE.md));
+  the v1 Leaflet app is retired to `app_legacy_v1/`.
 - **Tests + CI:** pytest scaffold + GitHub Actions in Section 6.
 
 See [STATUS.md](./STATUS.md) for today's exact state.
@@ -107,15 +108,6 @@ See [STATUS.md](./STATUS.md) for today's exact state.
 These are the things we deliberately deferred *within this cut* and
 will pick up as the next push. None of them are speculative — they
 have known scope and known need.
-
-### Map app rehaul (v2)
-
-Full rebuild of `app/` from Leaflet + GeoJSON to MapLibre GL JS +
-PMTiles + DuckDB-WASM + Svelte. Handles 3.7M-parcel states at 60 fps;
-unlocks the filter surface for every v3 schema field.
-
-Full plan in [MAP_APP_REHAUL.md](./MAP_APP_REHAUL.md) — 10 phases,
-~24 working days. Currently `Status: DEFERRED`.
 
 ### FCC ULS normalizers
 

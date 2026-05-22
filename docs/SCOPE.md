@@ -140,7 +140,7 @@ PROJECT_BRIEF §2 and refined for the multi-state context:
 - **No authentication / backend / database.** Static parquet + GeoJSON
   files on the local filesystem.
 - **No production deployment.** Runs locally; the puller is a desktop
-  app and the map is `python -m http.server`.
+  app and the map app is served from `app/` against a local data server.
 - **No carrier/tenant economics modeling.** ULS data is on disk but not
   yet normalized; lease-value modeling lives further downstream.
 - **No outreach / CRM / contact management.** We surface owners; we
@@ -149,10 +149,6 @@ PROJECT_BRIEF §2 and refined for the multi-state context:
   to resolve the human behind it.
 - **No nationwide coverage.** 3–5 anchor states; nationwide requires a
   paid parcel source (Regrid), which is out of budget for this cut.
-- **No map app rehaul during this cut.** The full Svelte/PMTiles
-  rebuild is scoped in [MAP_APP_REHAUL.md](./MAP_APP_REHAUL.md) and
-  marked DEFERRED. Only minimal patches to the current Leaflet app
-  during Section 8 of the work plan.
 
 ---
 

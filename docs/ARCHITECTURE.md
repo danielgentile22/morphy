@@ -17,8 +17,8 @@ Three loosely-coupled subsystems plus a shared on-disk data layout:
 ```
 ┌──────────────────────┐    raw/   ┌──────────────────────┐  normalized/  ┌──────────────────────┐
 │  app_puller/         │──────────▶│  scripts/preprocess/ │──────────────▶│  app/  (map browser) │
-│   PySide6 desktop UI │           │   Normalize → Join → │  composite/   │   Leaflet static SPA │
-│   data fetcher       │           │   View → Compose     │               │                      │
+│   PySide6 desktop UI │           │   Normalize → Join → │  composite/   │   Svelte + MapLibre  │
+│   data fetcher       │           │   View → Compose     │               │   PMTiles + DuckDB   │
 └──────────────────────┘           └──────────────────────┘               └──────────────────────┘
         │                                    │                                    │
         ▼                                    ▼                                    ▼
@@ -219,8 +219,9 @@ Every point record gets:
 
 The **Composer** writes every spatial output as both formats; for
 layers ≥ 100K rows only the simplified-geometry GeoJSON is written.
-Parquet is canonical for analytics; GeoJSON is for the legacy Leaflet
-app. The **normalize** stage writes GeoParquet only (ADR-050) — the
+Parquet is canonical for analytics; GeoJSON feeds the map app's
+catalog layers (its parcel base layer is PMTiles, built from the
+Parquet). The **normalize** stage writes GeoParquet only (ADR-050) — the
 redundant normalize-stage GeoJSON was dropped, which made AR's
 normalize both faster and smaller.
 
@@ -267,38 +268,41 @@ useful after interrupted runs.
 
 ## 4. Subsystem 3 — The map app (`app/`)
 
-Static single-page Leaflet app. Loads composite outputs from
-`data/processed/composite/<fips>/` via `fetch()`. No build step, no
-framework.
+A Svelte 5 + Vite + MapLibre GL JS single-page app. Catalog-driven: it
+binds to `composite/index.json` + per-state `catalog.json`, so any
+state that composes appears with no app changes. Full detail — stack,
+tile pipeline, filter engine, file layout — is in
+[../app/ARCHITECTURE.md](../app/ARCHITECTURE.md).
 
-### 4.1 Current capabilities
+### 4.1 What it does
 
-- **State selector** populated by probing `composite/<fips>/catalog.json`
-  for all 50 state FIPS in parallel.
-- **Layer toggles** — towers, parcels, opportunity zones (legacy name;
-  v3 calls this `distress_overlays`).
-- **View toggles** — auto-rendered from `catalog.json` `views` field.
-  Each view loads as a separate Leaflet layer.
-- **Filters** — "only parcels with towers", "only parcels in OZ",
-  tower-owner dropdown, ULS-carrier dropdown.
-- **Details panel** — click feature → renders attribute table.
+- **State selector** from `composite/index.json` (one read, no per-FIPS
+  probing).
+- **Parcel base layer** — PMTiles vector tiles (all 2.1 M AR / 920 K MT
+  parcels), read over HTTP Range.
+- **County distress choropleth** at low zoom; parcels fade in and take
+  over at z ≥ 10.
+- **Catalog layers + views** — towers, distress overlays, solar
+  facilities, the interestingness views — GeoJSON layers with toggles
+  and a legend.
+- **DuckDB-WASM filter & search** — filter 2 M+ parcels by owner type,
+  distress, hosted infrastructure, value, acreage, county, etc.;
+  owner-name + APN search; full-row detail panel; shareable URL
+  deep links.
 
-### 4.2 Known limitations of v1 map app
+### 4.2 Build inputs
 
-Documented in [LIMITATIONS.md](./LIMITATIONS.md):
+The app's data is produced by the preprocess pipeline and discovered by
+convention: `composite/index.json` (the index writer), per-state
+`parcels.pmtiles` (`tiles.py`), `parcels_attr.parquet` + `facets.json`
+(`facets.py`), `county_boundaries.geojson` (`county_boundaries.py`) —
+all behind `preprocess.py --app-assets` / `--tiles`. The app is served
+against the range-capable `scripts/serve.py`; `python -m http.server`
+cannot serve it (PMTiles + DuckDB-WASM need HTTP 206).
 
-- Title bar hard-coded to "Graham County, NC".
-- Cannot load huge parcel GeoJSONs (AR 3.6 GB, IN 5.6 GB).
-- No filters for v3 schema fields (`owner_kind`,
-  `interestingness_score`, `owner_cluster_size`, `distress_tier`).
-- No virtualized top-N list, no owner search.
-- Single per-state load (no cross-state view).
-
-### 4.3 Future-state
-
-The full rebuild is scoped in
-[MAP_APP_REHAUL.md](./MAP_APP_REHAUL.md). Marked DEFERRED. Tech stack
-locked in ADR-030 (MapLibre + PMTiles + DuckDB-WASM + Svelte).
+The v1 Leaflet prototype is retired to `app_legacy_v1/`. The realized
+design folded back from the rehaul plan
+([MAP_APP_REHAUL.md](./MAP_APP_REHAUL.md), ADR-030).
 
 ---
 
@@ -376,9 +380,9 @@ Each state's `composite/<fips>/catalog.json`:
 }
 ```
 
-The map app reads only `catalog.json` to discover what's available
-for a state — adding a new View at preprocess time produces a new
-toggle in the UI with zero JS changes.
+The map app reads `composite/index.json` for the state list and each
+state's `catalog.json` to discover its layers + views — adding a View
+at preprocess time produces a new toggle in the UI with zero JS changes.
 
 ---
 
@@ -413,6 +417,6 @@ toggle in the UI with zero JS changes.
 | Caveats + pre-commercial blockers? | [LIMITATIONS.md](./LIMITATIONS.md) |
 | PII / data-handling? | [SECURITY.md](./SECURITY.md) |
 | Glossary of terms? | [GLOSSARY.md](./GLOSSARY.md) |
-| Future map app? | [MAP_APP_REHAUL.md](./MAP_APP_REHAUL.md) |
+| Map app architecture? | [../app/ARCHITECTURE.md](../app/ARCHITECTURE.md) |
 | Test strategy? | [TESTING.md](./TESTING.md) |
 | Puller UX design? | [PULLER_UX.md](./PULLER_UX.md) |

@@ -144,10 +144,11 @@ tar -czf pilot-demo-$(date +%Y%m%d).tar.gz \
     README.md
 ```
 
-The recipient unpacks, runs `python -m http.server 8765`, opens
-localhost:8765/app/. Works without our env. **PII caveat:** this
-tarball contains parcel-owner names + mailing addresses. Encrypt at
-rest; share via secure channel.
+The recipient needs Node 20+: from `app/`, `npm install && npm run
+build`, then run `python scripts/serve.py 8765` (repo root) +
+`npm run preview` — see [../app/ARCHITECTURE.md](../app/ARCHITECTURE.md).
+**PII caveat:** this tarball contains parcel-owner names + mailing
+addresses. Encrypt at rest; share via a secure channel.
 
 ### 5.3 Pitch-deck assets
 
@@ -195,7 +196,7 @@ bucket; encrypted at rest.
 Locked architectural decisions for when we get there
 ([DECISIONS.md](./DECISIONS.md) ADR-030, ADR-031, ADR-040):
 
-- Map app v2: static-site hosted bundle (S3 + CloudFront or
+- Map app: static-site hosted bundle (S3 + CloudFront or
   equivalent) — no backend server.
 - Per-state PMTiles served via HTTP range requests.
 - DuckDB-WASM queries parquet files directly from object storage.
@@ -214,6 +215,6 @@ None of this is built. Tracked in
 |---|---|---|
 | Puller crashes on launch | PySide6 version mismatch | `pip install --upgrade --force-reinstall PySide6==6.7.3` |
 | Preprocess fails: `ImportError: openpyxl` | Missing optional dep | `pip install -r requirements.txt` (openpyxl is now required) |
-| Composite written but map shows "no data" | Catalog probe missed | Ensure `python -m http.server` was started from repo root (not from `app/`) |
+| Map app shows "Could not load the map data" | Data server down | Start `python scripts/serve.py 8765` from the repo root — not `http.server` (it has no Range support) |
 | Stale manifest disagrees with disk | Interrupted run | `python scripts/preprocess.py --rebuild-manifest` |
 | Tests fail with "no such fixture" | New fixture not created | Run `pytest --collect-only` to see test IDs; check `tests/fixtures/` |

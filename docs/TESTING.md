@@ -30,7 +30,7 @@ For a pitch-quality cut, automated tests serve four purposes:
 | **Schema validation** | **jsonschema** | Validates `catalog.json`, `summary.json`, `preprocess_manifest.json` against committed JSON Schemas |
 | **Lint / format** | **ruff** | Single tool for both lint and format check; fast; opinionated |
 | **CI** | **GitHub Actions** | Lint + tests run on every push (Section 6.3) |
-| **Frontend tests** | **Deferred** (Vitest + Playwright) | Added when map app v2 rebuild begins (ADR-043) |
+| **Frontend tests** | **Vitest** (unit) + **Playwright** (E2E) | Live in `app/tests/`; run with `npm run test:unit` / `test:e2e` (ADR-043) |
 
 ---
 
@@ -215,8 +215,10 @@ code that's hard to exercise from synthetic fixtures.
   Integration tests against real endpoints are flaky; we rely on
   manual verification via the puller.
 - **`app_puller/`** — Qt UI; manual click-through verification only.
-- **`app/`** — frontend deferred to map app v2 (Vitest + Playwright
-  added then per ADR-043).
+- **`app/` from the pytest suite** — the map app has its own test
+  stack: Vitest unit tests + Playwright E2E in `app/tests/` (run from
+  `app/`, not via pytest). `pytest` covers only the Python backend +
+  the app-asset preprocess scripts.
 - **Performance** — separate benchmark scripts; not part of CI gate.
 
 ---

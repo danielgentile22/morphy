@@ -244,8 +244,8 @@ Implication:
   the repo.
 - **Demo screenshots** that show real owner names may need redaction
   depending on audience (a friendly co-founder vs. a stage demo).
-- **Future Map app rehaul** must include access controls before any
-  hosted deployment (deferred — see [SECURITY.md](./SECURITY.md)).
+- **The map app has no access controls** — do not host it publicly
+  without authentication (see [SECURITY.md](./SECURITY.md)).
 
 How to mitigate:
 
@@ -404,31 +404,18 @@ Permanent — see ADR-041.
 
 ---
 
-## ⚠ Map app cannot load an all-parcels layer
+## ✓ Map app rendering all parcels — RESOLVED (2026-05-21)
 
-**Added 2026-05-19. Updated 2026-05-21 — composer no longer emits the
-huge GeoJSON (ADR-052).**
+**Resolved by the map app rehaul (ADR-030).**
 
-The Composer used to write a per-state `parcels.geojson` (AR's was
-3.9 GB simplified geometry, MT's 1.8 GB) — large enough to crash any
-browser the Leaflet app loaded it in. As of ADR-052 the Composer
-writes **Parquet only** for layers at/above 250K rows, so
-`parcels.geojson` is no longer produced at all.
-
-Implication:
-
-- The "browser crashes on the all-parcels layer" failure mode is gone
-  at the source — there is no all-parcels GeoJSON to load.
-- The map app must render parcels through the per-state Views
-  (`interestingness_top_1000`, `llc_owned_parcels_with_infra`, etc.),
-  which are all 2–9 MB and browser-safe.
-- A full all-parcels interactive map still needs the vector-tile rehaul.
-
-How to mitigate:
-
-- Map app renders parcels via the View GeoJSONs (already browser-safe).
-- Full all-parcels fix in [MAP_APP_REHAUL.md](./MAP_APP_REHAUL.md) —
-  MapLibre + PMTiles vector tiles handle 3.7M+ parcels at 60fps. Deferred.
+Originally the all-parcels layer could not be shown: the Composer's
+per-state `parcels.geojson` (AR's ~3.9 GB) crashed any browser, and
+ADR-052 stopped emitting it. The rebuilt app renders **every** parcel
+(2.1 M AR / 920 K MT) as PMTiles vector tiles — built by
+`scripts/preprocess/tiles.py`, read over HTTP Range — with a DuckDB-WASM
+engine for filtering across all parcels. No all-parcels GeoJSON is
+produced; the composite still emits the lighter per-state View GeoJSONs
+for the overlay layers.
 
 ---
 

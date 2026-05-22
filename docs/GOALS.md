@@ -78,10 +78,6 @@ If they can't get all five from the docs alone, the docs are not done.
 These are areas where we explicitly accept lower quality during this
 cut, to avoid scope creep:
 
-- **Map UX.** The current Leaflet app is functional but has known gaps
-  (no useful filters for v3 fields, can't load huge parcel layers).
-  We apply only minimal patches; the full rebuild is in
-  [MAP_APP_REHAUL.md](./MAP_APP_REHAUL.md) and deferred.
 - **Production deployment.** Local-only is fine. No Docker, no cloud,
   no hosted instance.
 - **Real-time data.** All ingest is batch + manual-trigger. No
@@ -99,7 +95,6 @@ cut, to avoid scope creep:
 
 Documented here only so they don't accidentally creep into this cut:
 
-- Full map app rehaul (MapLibre + PMTiles + DuckDB-WASM)
 - FCC ULS normalizers + carrier/tenant analytics
 - Billboards as a second asset class
 - LLC-cluster enrichment (Secretary of State, UCC-1 filings)

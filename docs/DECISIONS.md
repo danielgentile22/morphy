@@ -50,9 +50,9 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
   `<layer>.parquet` (canonical) and `<layer>.geojson` (for the map).
   For layers ≥ `HUGE_GEOJSON_THRESHOLD` (100K rows) only the
   simplified-geometry GeoJSON is written.
-- **Consequences:** Doubles disk usage for small layers, but lets
-  the map keep working while DuckDB-style analytics use Parquet.
-  Future map app rehaul (ADR-030) will drop the redundant GeoJSON.
+- **Consequences:** Doubles disk usage for small layers. The shipped
+  map app (ADR-030) reads the GeoJSON for its catalog layers; the
+  parcel layer uses PMTiles built from the Parquet.
 
 ### ADR-004 — Current-only data versioning, no history
 
@@ -82,11 +82,11 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
 - **Date:** 2026-05
 - **Context:** A backend would simplify large-data queries but
   triples the deployment surface for a feasibility tool.
-- **Decision:** The map app is a static HTML/JS bundle. All filtering
-  / search runs in the browser (today: in-memory JS; v2: DuckDB-WASM).
-- **Consequences:** PMTiles + Parquet + GeoJSON via HTTP range
-  requests scale to the v2 design. Puts a lower bound on map app
-  complexity (DuckDB-WASM bundle is ~6 MB).
+- **Decision:** The map app is a static JS bundle. All filtering /
+  search runs in the browser (DuckDB-WASM over Parquet).
+- **Consequences:** PMTiles + Parquet + GeoJSON over HTTP range
+  requests need no backend. Puts a lower bound on map app complexity
+  (the DuckDB-WASM bundle is ~6 MB).
 
 ### ADR-007 — PySide6 pinned at 6.7.3
 
@@ -271,6 +271,8 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
 
 ### ADR-030 — Map app v2 stack: MapLibre + PMTiles + DuckDB-WASM + Svelte
 
+- **Status:** ✅ Realized — shipped 2026-05-21. See
+  [../app/ARCHITECTURE.md](../app/ARCHITECTURE.md).
 - **Date:** 2026-05-19
 - **Context:** The current Leaflet app can't handle multi-million-
   parcel states; filter surface lags v3 schema fields.
@@ -283,6 +285,8 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
 
 ### ADR-031 — Map app rehaul deferred to post-pitch
 
+- **Status:** ⊘ Superseded — the rehaul was executed within this cut
+  as Section 8 (2026-05-21), not deferred to post-pitch. See ADR-030.
 - **Date:** 2026-05-19
 - **Context:** Audit found bigger gaps (broken endpoints, missing
   normalizers, no tests, doc drift) than the map app itself.
@@ -333,6 +337,8 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
 
 ### ADR-043 — Tests: pytest for backend; Vitest + Playwright deferred to map app v2
 
+- **Status:** ✅ Realized — the map app ships with Vitest unit +
+  Playwright E2E tests in `app/tests/` (2026-05-21).
 - **Date:** 2026-05-19
 - **Context:** Backend is Python; frontend rebuild is deferred.
 - **Decision:** Add pytest now for `scripts/preprocess/` + fixtures.
@@ -539,10 +545,9 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
 - **Decision:** Add a hard ceiling `NO_GEOJSON_THRESHOLD` (250,000 rows).
   At or above it, `dual_write_spatial` writes **Parquet only** — no full
   and no simplified GeoJSON. `catalog.json` advertises a `geojson_path`
-  only when the file actually exists on disk. The v1 Leaflet app never
-  loads an all-parcels layer (correct — that is the deferred PMTiles
-  rehaul's job); it renders parcels through the per-state Views, which
-  are all browser-safe (2–9 MB).
+  only when the file actually exists on disk. The map app needs no
+  all-parcels GeoJSON — it renders every parcel from PMTiles vector
+  tiles (built from the Parquet), and the per-state Views as GeoJSON.
 - **Consequences:** AR/MT composites no longer carry a multi-GB
   `parcels.geojson` (~5.7 GB disk reclaimed). Parquet stays the
   canonical analytical format. Towers, solar, distress overlays and
