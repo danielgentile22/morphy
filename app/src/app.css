@@ -1,0 +1,77 @@
+/* Global design tokens + reset. Component-specific styles are scoped
+   inside their .svelte files. Data-encoding colors (distress tiers,
+   layer hues) live in src/lib/palette.ts — they are consumed by
+   MapLibre paint expressions, not CSS. */
+
+:root {
+  /* UI chrome */
+  --bg: #fafafa;
+  --panel: #ffffff;
+  --panel-2: #f4f5f7;
+  --border: #e3e3e6;
+  --border-strong: #c9cbd1;
+  --text: #1f2328;
+  --text-2: #424752;
+  --muted: #6b7280;
+  --accent: #0072b2; /* Wong CB-safe blue */
+  --accent-soft: #d4e6f4;
+  --danger: #d55e00; /* Wong vermillion */
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 4px 24px rgba(0, 0, 0, 0.14);
+
+  --font:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  --sidebar-w: 380px;
+  --radius: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  height: 100%;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+a {
+  color: var(--accent);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

@@ -20,6 +20,29 @@ with **zero warnings**. FL/NC compose remains blocked pending a
 chunked-compose refactor (ADR-051). See [STATUS.md](./STATUS.md) for
 the current snapshot.
 
+### Added (Section 8 — map app rehaul · 2026-05-21)
+
+- **New map app at `app/`** — Svelte 5 + Vite 8 + TypeScript + MapLibre
+  GL JS 5, replacing the v1 Leaflet prototype (retired to
+  `app_legacy_v1/`). Catalog-driven: it binds to `composite/index.json`
+  + per-state `catalog.json`, so any state that composes appears with
+  zero app changes. See [app/ARCHITECTURE.md](../app/ARCHITECTURE.md).
+- **PMTiles parcel base layer** — all 2.1 M AR / 920 K MT parcels render
+  as vector tiles, read over HTTP Range. County choropleth (ARC distress
+  tier) at low zoom; parcels take over at z ≥ 10.
+- **DuckDB-WASM filter & search engine** — filter 2 M+ parcels by owner,
+  distress, infrastructure, value, etc. (3-filter query < 500 ms);
+  owner-name + APN search; full-row detail panel. URL deep-linking.
+- **Preprocess app-asset scripts** — `tiles.py` (parcels.pmtiles),
+  `facets.py` (slim `parcels_attr.parquet` + `facets.json`),
+  `county_boundaries.py`, and the `composite/index.json` writer;
+  `--app-assets` / `--tiles` flags on `scripts/preprocess.py`.
+- **`scripts/serve.py`** — a range-capable static server. The app's
+  PMTiles + DuckDB-WASM range reads need HTTP 206; `python -m
+  http.server` does not send it.
+- Test suites: pytest for the app-asset scripts; Vitest (unit) +
+  Playwright (E2E, Chromium + WebKit) for the app.
+
 ### Fixed (AR + MT data-quality remediation — 2026-05-21)
 
 - **Tower geometry: ~25% → 100%.** The composite `towers` layer merges

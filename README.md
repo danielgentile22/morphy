@@ -17,7 +17,7 @@ pitch-quality cut.
 |---|---|---|
 | **Data Puller** | `app_puller/` | PySide6 desktop UI; fetches raw data into `data/raw/<source_id>/current/`. |
 | **Preprocess pipeline** | `scripts/preprocess/` | Registry-driven Normalizer + Join + View framework; per-state Composer. |
-| **Map app** | `app/` | Leaflet static SPA reading per-state `catalog.json`. (v2 rebuild deferred — see [docs/MAP_APP_REHAUL.md](docs/MAP_APP_REHAUL.md).) |
+| **Map app** | `app/` | Svelte 5 + MapLibre analytical SPA — PMTiles parcels + DuckDB-WASM filtering. See [app/ARCHITECTURE.md](app/ARCHITECTURE.md). |
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the full system diagram
 + data flow.
@@ -59,20 +59,29 @@ Outputs:
 - `data/processed/composite/<state_fips>/` — joined per-state outputs +
   views + `catalog.json` + `summary.json`.
 
-### 3. View the map
+### 3. Generate the app's data assets
 
 ```bash
-python -m http.server 8765     # from repo root
-# Open http://localhost:8765/app/  (optionally  ?state=05  to deep-link)
+python scripts/preprocess.py --app-assets   # index.json + per-state facets / slim parquet / county boundaries
+python scripts/preprocess.py --tiles        # per-state parcels.pmtiles (needs tippecanoe)
 ```
 
-The state selector auto-populates from `data/processed/composite/*/catalog.json`.
-
-### 4. Tests *(after Section 6 of the production-readiness plan lands)*
+### 4. Run the map app
 
 ```bash
-pytest
+python scripts/serve.py 8765                # range-capable data server, from the repo root
+cd app && npm install && npm run dev        # http://localhost:5173  (?state=05 to deep-link)
+```
+
+`npm run build` produces `app/dist/`. The state selector auto-populates
+from `data/processed/composite/`. See [app/ARCHITECTURE.md](app/ARCHITECTURE.md).
+
+### 5. Tests
+
+```bash
+pytest                                      # preprocess pipeline (incl. the app-asset scripts)
 ruff check . && ruff format --check .
+cd app && npm run check && npm run test:unit && npm run test:e2e
 ```
 
 ---
@@ -98,7 +107,7 @@ ruff check . && ruff format --check .
 
 - [docs/ROADMAP.md](docs/ROADMAP.md) — past / present / future
 - [docs/DECISIONS.md](docs/DECISIONS.md) — locked-in design choices
-- [docs/MAP_APP_REHAUL.md](docs/MAP_APP_REHAUL.md) — full map app v2 plan (DEFERRED)
+- [docs/MAP_APP_REHAUL.md](docs/MAP_APP_REHAUL.md) — map app v2 plan (realized — now live at `app/`)
 - [docs/CHANGELOG.md](docs/CHANGELOG.md) — version history
 
 **Working with AI coding agents:**
@@ -129,7 +138,8 @@ pilot/
 ├── CLAUDE.md                 AI-agent orientation
 ├── PROJECT_BRIEF.md          Business case
 ├── requirements.txt
-├── app/                      Leaflet map (v1)
+├── app/                      Svelte 5 + MapLibre map app
+├── app_legacy_v1/            Leaflet map (v1, retired)
 ├── app_puller/               PySide6 desktop puller
 ├── scripts/
 │   ├── preprocess.py         CLI wrapper

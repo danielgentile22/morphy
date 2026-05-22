@@ -1,20 +1,24 @@
 # Map App Rehaul — Architecture & Phased Plan
 
-> **Status: DEFERRED — revisit post-pitch.**
-> **Last updated:** 2026-05-20.
+> **Status: REALIZED — shipped 2026-05-21.**
+> **Last updated:** 2026-05-21.
 >
-> Per [DECISIONS.md ADR-031](./DECISIONS.md), the audit that
-> preceded the production-readiness push surfaced bigger gaps
-> (broken endpoints, missing normalizers, no tests, doc drift) than
-> the map app itself. Sequencing those first gives the rebuild a
-> solid foundation.
+> The rehaul was executed (Phases A–D). The Svelte 5 + MapLibre +
+> PMTiles + DuckDB-WASM app is live at `app/`; the v1 Leaflet app was
+> retired to `app_legacy_v1/`. The realized architecture and run
+> instructions are in **[app/ARCHITECTURE.md](../app/ARCHITECTURE.md)** —
+> read that for current state.
 >
-> The current Leaflet app at `app/` gets minimal patches only during
-> Section 8 of the production-readiness work plan. This rebuild plan
-> stays here as the canonical roadmap for the next push.
+> Notable deltas from the original plan below:
+> - The keyless basemap is Carto Positron raster (no vector-tile key).
+> - `python -m http.server` cannot serve the app — PMTiles + DuckDB-WASM
+>   need HTTP Range; a range-capable `scripts/serve.py` was added.
+> - MapLibre's worker is loaded via `setWorkerUrl` + a `?url` asset —
+>   Vite 8's Rolldown bundler mis-compiles an inline-bundled worker.
+> - The plan's Decisions 4/8/9 (open questions) were resolved during
+>   execution; this realized state supersedes them.
 >
-> When work resumes: open this doc, answer the blockers in Part 4,
-> and proceed with Phase 0.
+> The phased plan below is kept for historical reference.
 
 ---
 

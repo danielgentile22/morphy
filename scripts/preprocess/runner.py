@@ -37,7 +37,7 @@ ProgressCallback = Callable[[str, str, dict], None]
 # phase ∈ {'normalize_start', 'normalize_ok', 'normalize_fail',
 #          'normalize_skip', 'normalize_unavailable',
 #          'compose_start', 'compose_ok', 'compose_fail', 'compose_skip',
-#          'all_done'}
+#          'app_assets', 'all_done'}
 
 
 @dataclass
@@ -218,6 +218,7 @@ def run_all(
     *,
     state_fips: str | None = None,
     force_rebuild: bool = False,
+    skip_tiles: bool = False,
     progress_callback: ProgressCallback | None = None,
 ) -> RunOutcome:
     """Normalize all sources, then compose either one state or all that have data."""
@@ -258,6 +259,35 @@ def run_all(
             outcome.composed_failed.append(fips)
         else:
             outcome.composed_ok.append(fips)
+
+    # App-support assets (composite/index.json) — refresh the global
+    # state index so the map app never reads a stale state list after a
+    # normal run. Auxiliary: a failure here is logged, not fatal — the
+    # compose outputs are already on disk and `--app-assets` re-runs it.
+    try:
+        from .app_assets import run_app_assets
+
+        run_app_assets(progress_callback=progress_callback)
+    except Exception as exc:  # noqa: BLE001 — auxiliary step must not abort the run
+        log.warning("app-assets step failed; composite/index.json not refreshed: %s", exc)
+
+    # Parcel vector tiles (composite/<fips>/parcels.pmtiles) for every
+    # state just composed. Auxiliary + heavy: a missing tippecanoe or a
+    # per-state failure is logged, never fatal. Skipped by --skip-tiles.
+    if not skip_tiles and outcome.composed_ok:
+        from .tiles import build_state_tiles, tippecanoe_available
+
+        if not tippecanoe_available():
+            log.warning(
+                "tippecanoe not installed — skipping parcels.pmtiles "
+                "(brew install tippecanoe; or pass --skip-tiles)"
+            )
+        else:
+            for fips in sorted(set(outcome.composed_ok)):
+                try:
+                    build_state_tiles(fips)
+                except Exception as exc:  # noqa: BLE001 — auxiliary, per-state
+                    log.warning("tile generation failed for state %s: %s", fips, exc)
 
     outcome.duration_seconds = time.monotonic() - t0
     _emit(

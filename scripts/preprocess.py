@@ -8,6 +8,9 @@ Usage:
   python scripts/preprocess.py --compose-only --state 12   # compose FL (must already be normalized)
   python scripts/preprocess.py --force-rebuild       # ignore manifest, re-normalize everything
   python scripts/preprocess.py --rebuild-manifest    # rewrite preprocess_manifest.json from on-disk files
+  python scripts/preprocess.py --app-assets          # write composite/index.json (no recompose)
+  python scripts/preprocess.py --tiles               # build parcels.pmtiles for all composed states
+  python scripts/preprocess.py --tiles --state 05    # build parcels.pmtiles for one state
   python scripts/preprocess.py --list-views          # show registered Views
   python scripts/preprocess.py --list-joins          # show registered Joins
   python scripts/preprocess.py --list-states         # show states with normalized parcel data
@@ -91,6 +94,8 @@ def _stream_progress(phase: str, key: str, info: dict) -> None:
         )
     elif phase == "compose_fail":
         print(f"    ✗ state {key}: {info.get('error', '')}")
+    elif phase == "app_assets":
+        print(f"\n  → app assets: wrote {key}.json ({info.get('states', 0)} states)")
 
 
 def main() -> int:
@@ -123,6 +128,28 @@ def main() -> int:
             "Rewrite data/processed/preprocess_manifest.json from on-disk "
             "files. Use after out-of-band fixes to clear stale 'failed' entries."
         ),
+    )
+    parser.add_argument(
+        "--app-assets",
+        action="store_true",
+        help=(
+            "Write app-support assets (composite/index.json) without "
+            "re-composing, then exit. Also run automatically at the end "
+            "of a normal run so the map app never reads a stale index."
+        ),
+    )
+    parser.add_argument(
+        "--tiles",
+        action="store_true",
+        help=(
+            "Build parcels.pmtiles for all composed states (or just --state), "
+            "then exit. Streams parcels.parquet through tippecanoe."
+        ),
+    )
+    parser.add_argument(
+        "--skip-tiles",
+        action="store_true",
+        help="In a normal run, skip the tile-generation step that follows compose.",
     )
     parser.add_argument("--list-views", action="store_true", help="List registered Views and exit")
     parser.add_argument("--list-joins", action="store_true", help="List registered Joins and exit")
@@ -167,6 +194,34 @@ def main() -> int:
         )
         return 0
 
+    if args.app_assets:
+        from preprocess.app_assets import run_app_assets
+
+        result = run_app_assets()
+        print(f"Wrote {result['index_path']}: {result['states']} state(s) indexed.")
+        print(
+            f"County boundaries: {len(result['county_boundaries_ok'])} built"
+            f"{', ' + str(len(result['county_boundaries_failed'])) + ' failed' if result['county_boundaries_failed'] else ''}."
+        )
+        print(
+            f"Facets + slim parquet: {len(result['facets_ok'])} built"
+            f"{', ' + str(len(result['facets_failed'])) + ' failed' if result['facets_failed'] else ''}."
+        )
+        return 0
+
+    if args.tiles:
+        from preprocess.tiles import run_tiles
+
+        result = run_tiles(args.state)
+        if result["skipped"]:
+            print(result["message"])
+            return 1
+        print(
+            f"Tiles: {len(result['ok'])} built ({', '.join(result['ok']) or '—'}), "
+            f"{len(result['failed'])} failed."
+        )
+        return 0 if not result["failed"] else 1
+
     manifest = PreprocessManifest.load()
 
     if args.source:
@@ -210,6 +265,7 @@ def main() -> int:
     outcome = run_all(
         state_fips=args.state,
         force_rebuild=args.force_rebuild,
+        skip_tiles=args.skip_tiles,
         progress_callback=_stream_progress,
     )
     _print_summary(outcome)

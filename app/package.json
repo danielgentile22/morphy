@@ -1,0 +1,35 @@
+{
+  "name": "pilot-map-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Catalog-driven multi-state map app for the ground-lease pilot.",
+  "scripts": {
+    "dev": "vite",
+    "build": "svelte-check --tsconfig ./tsconfig.json && vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test": "vitest run && playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@tsconfig/svelte": "^5.0.8",
+    "@types/node": "^25.9.1",
+    "@vitest/coverage-v8": "^4.1.7",
+    "jsdom": "^29.1.1",
+    "svelte": "^5.55.9",
+    "svelte-check": "^4.4.8",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.14",
+    "vitest": "^4.1.7"
+  },
+  "dependencies": {
+    "@duckdb/duckdb-wasm": "^1.33.1-dev45.0",
+    "maplibre-gl": "^5.24.0",
+    "pmtiles": "^4.4.1"
+  }
+}

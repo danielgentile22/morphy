@@ -17,8 +17,8 @@ All four surfaces run locally on a developer's machine:
 |---|---|---|
 | **Puller** | `python -m app_puller` | Desktop window |
 | **Preprocess CLI** | `python scripts/preprocess.py [flags]` | Terminal |
-| **Map app** | `python -m http.server 8765` then open `http://localhost:8765/app/` | localhost:8765 |
-| **Tests** | `pytest` (after Section 6 lands) | Terminal |
+| **Map app** | `python scripts/serve.py 8765` + `cd app && npm run dev` | localhost:5173 |
+| **Tests** | `pytest` · `cd app && npm run test:unit && npm run test:e2e` | Terminal |
 
 There is **no production / hosted instance.** Hosted deployment is a
 post-pitch concern (see [ROADMAP.md](./ROADMAP.md) → "Hosted deployment").
@@ -31,16 +31,11 @@ post-pitch concern (see [ROADMAP.md](./ROADMAP.md) → "Hosted deployment").
 |---|---|---|
 | Python | 3.11 | Tested baseline; pyogrio + PySide6 known good |
 | macOS arm64 / Linux x86_64 | Any recent | macOS arm64 is the primary dev environment |
-| Homebrew (macOS) | — | For optional `gh` CLI, future `tippecanoe` in map app v2 |
+| Homebrew (macOS) | — | For `gh` CLI and `tippecanoe` |
 | Disk space | ≥ 50 GB free | Raw data + composites; AR alone is ~3 GB raw, ~5 GB normalized |
 | RAM | ≥ 16 GB recommended | Preprocess on AR (2.1M rows) peaks at ~6 GB RSS |
-
-After map app v2 lands (deferred):
-
-| Component | Version | Why |
-|---|---|---|
-| Node.js | ≥ 20 | Vite + Svelte build for map app v2 |
-| Tippecanoe | ≥ 2.45 | PMTiles vector tile generation |
+| Node.js | ≥ 20 | Vite + Svelte build for the map app |
+| Tippecanoe | ≥ 2.45 | `parcels.pmtiles` generation (`preprocess.py --tiles`) |
 
 ---
 
@@ -97,22 +92,28 @@ python scripts/preprocess.py --rebuild-manifest  # sync manifest from disk
 Outputs land at `data/processed/normalized/<source>/` and
 `data/processed/composite/<state_fips>/`.
 
-### 4.3 View the map
+### 4.3 Build the app's data assets + view the map
 
 ```bash
-python -m http.server 8765
-# Open http://localhost:8765/app/
-# Or http://localhost:8765/app/?state=05 to deep-link a state
+python scripts/preprocess.py --app-assets   # index.json + per-state facets / slim parquet / county boundaries
+python scripts/preprocess.py --tiles        # per-state parcels.pmtiles (needs tippecanoe)
+
+python scripts/serve.py 8765                # range-capable data server, from the repo root
+cd app && npm install && npm run dev        # http://localhost:5173  (?state=05 to deep-link)
 ```
 
-The map app auto-discovers composed states via `catalog.json` probes.
+`python -m http.server` does **not** work for the app — PMTiles and
+DuckDB-WASM need HTTP Range / 206, which it does not send; `serve.py`
+does. The app auto-discovers composed states via `composite/index.json`.
+See [app/ARCHITECTURE.md](../app/ARCHITECTURE.md).
 
-### 4.4 Run tests (after Section 6)
+### 4.4 Run tests
 
 ```bash
-pytest                                     # full suite
+pytest                                     # preprocess pipeline + app-asset scripts
 pytest --cov=scripts.preprocess            # with coverage
 ruff check . && ruff format --check .      # lint + format
+cd app && npm run check && npm run test:unit && npm run test:e2e
 ```
 
 ---

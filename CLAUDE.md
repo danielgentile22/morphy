@@ -92,14 +92,16 @@ pilot/
 ├── PROJECT_BRIEF.md          Business case
 ├── docs/                     All deep-dive documentation
 │   └── archive/              Historical (preprocess v1, original v3 plan)
-├── app/                      Leaflet map (v1)
+├── app/                      Svelte 5 + MapLibre map app (see app/ARCHITECTURE.md)
+├── app_legacy_v1/            Leaflet map (v1, retired)
 ├── app_puller/               PySide6 desktop puller
 ├── scripts/
 │   ├── fetch/                Headless puller library
 │   ├── preprocess/           Normalizer/Join/View framework + Composer
+│   ├── serve.py              Range-capable static server (for the map app)
 │   └── *.py                  Top-level CLI scripts
 ├── data/                     Git-ignored (~15 GB raw + composites)
-└── tests/                    (added in Section 6 of work plan)
+└── tests/                    Pytest — preprocess pipeline + app-asset scripts
 ```
 
 The full repository layout + system diagram is in
@@ -118,7 +120,7 @@ Eight sections in sequence — documentation first, then code:
 5. Preprocess code hygiene — ⚠️ code complete; AR/MT audited clean 2026-05-21; FL/NC need chunked compose (ADR-051) before re-normalizing + composing
 6. Testing — ⬜ not started
 7. Pitch readiness — ⬜ not started
-8. Map app (deferred + minimal patches) — ⬜ not started
+8. Map app rehaul — ✅ done (Svelte 5 + MapLibre + PMTiles + DuckDB-WASM; now at `app/`, see [app/ARCHITECTURE.md](app/ARCHITECTURE.md))
 
 Note: the plan file `.claude/plans/cached-wobbling-token.md` is
 currently **missing from disk** — [docs/STATUS.md](docs/STATUS.md) §6
@@ -140,10 +142,13 @@ source .venv/bin/activate
 python -m app_puller                            # raw data fetcher (desktop UI)
 python scripts/preprocess.py                    # all sources + all states
 python scripts/preprocess.py --state 05         # one state
+python scripts/preprocess.py --app-assets       # index.json + per-state facets / slim parquet / county boundaries
+python scripts/preprocess.py --tiles            # per-state parcels.pmtiles (needs tippecanoe)
 python scripts/preprocess.py --rebuild-manifest # resync manifest with disk
 python scripts/verify_raw.py                    # contents check
-python -m http.server 8765                      # then open http://localhost:8765/app/
-pytest                                          # (after Section 6 lands)
+python scripts/serve.py 8765                    # range-capable data server (repo root)
+cd app && npm run dev                           # map app — http://localhost:5173
+pytest                                          # preprocess + app-asset script tests
 ```
 
 ---
@@ -162,7 +167,7 @@ these. Highlights:
 - Free-only budget for v1 pitch; Regrid out of scope.
 - FCC ULS normalizers + billboards deferred to post-pitch.
 - HIFLD retired; LBNL TTS dropped; current FL FGDL replaced by `fdor_nal`.
-- Map app v2 (MapLibre + PMTiles + DuckDB-WASM + Svelte) deferred.
+- Map app v2 (MapLibre + PMTiles + DuckDB-WASM + Svelte) — realized, now at `app/`.
 - Parcel-owner data is PII; no public hosting without access controls.
 - Docs live in `docs/`; root keeps only README / CLAUDE / PROJECT_BRIEF.
 
@@ -269,7 +274,8 @@ Key state FIPS used throughout: `05` (AR), `12` (FL), `30` (MT),
 | How to deploy / share outputs | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | Testing strategy | [docs/TESTING.md](docs/TESTING.md) |
 | Puller UX design | [docs/PULLER_UX.md](docs/PULLER_UX.md) |
-| Map app rebuild plan (deferred) | [docs/MAP_APP_REHAUL.md](docs/MAP_APP_REHAUL.md) |
+| Map app — architecture + how to run | [app/ARCHITECTURE.md](app/ARCHITECTURE.md) |
+| Map app rebuild plan (realized) | [docs/MAP_APP_REHAUL.md](docs/MAP_APP_REHAUL.md) |
 | Version history | [docs/CHANGELOG.md](docs/CHANGELOG.md) |
 | Active work plan | `.claude/plans/cached-wobbling-token.md` |
 | What's on disk + last fetch time | `data/manifest.json` |

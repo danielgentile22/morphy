@@ -156,7 +156,7 @@ compose). `data/` is git-ignored — never commit raw or composite data.
 | 5 — Preprocess code hygiene | ⚠️ Code complete; AR/MT audited clean 2026-05-21; FL/NC need chunked compose before re-running |
 | 6 — Testing | ⬜ Not started |
 | 7 — Pitch readiness | ⬜ Not started |
-| 8 — Map app (minimal patches) | ⬜ Not started |
+| 8 — Map app rehaul | ✅ Complete — Svelte 5 + MapLibre + PMTiles + DuckDB-WASM, now at `app/` (v1 retired to `app_legacy_v1/`). See [app/ARCHITECTURE.md](../app/ARCHITECTURE.md). |
 
 NB: CLAUDE.md and this doc reference a work-plan file at
 `.claude/plans/cached-wobbling-token.md` — that file is **not on disk**.
