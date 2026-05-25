@@ -1,0 +1,67 @@
+{
+  "schema_version": 3,
+  "state_fips": "05",
+  "state_name": "Arkansas",
+  "state_abbr": "AR",
+  "generated_at": "2026-05-18T22:25:00Z",
+  "sources_used_versions": {
+    "ar_parcels": "manual",
+    "fcc_asr": "2026-05-18",
+    "faa_oeaaa": "2026-05-15"
+  },
+  "layers": {
+    "parcels": {
+      "canonical_type": "parcel",
+      "rows": 2116976,
+      "parquet_path": "parcels.parquet",
+      "simplified_geojson_path": "parcels.simplified.geojson",
+      "geometry_type": "Polygon",
+      "schema": {
+        "parcel_id": "object",
+        "owner_name": "object",
+        "acreage": "float64",
+        "assessed_value": "float64"
+      }
+    },
+    "towers": {
+      "canonical_type": "tower",
+      "rows": 1873,
+      "parquet_path": "towers.parquet",
+      "geojson_path": "towers.geojson",
+      "geometry_type": "Point",
+      "schema": {
+        "asr_id": "object",
+        "structure_type": "object",
+        "height_m": "float64"
+      }
+    },
+    "county_scores": {
+      "canonical_type": "county_score",
+      "rows": 75,
+      "parquet_path": "county_scores.parquet",
+      "schema": {
+        "county_fips": "object",
+        "state_fips": "object",
+        "tier": "object",
+        "persistent_poverty": "bool"
+      }
+    }
+  },
+  "views": {
+    "llc_owned_parcels_with_infra": {
+      "rows": 1164,
+      "geometry_type": "Polygon",
+      "description": "LLC-owned parcels hosting at least one tower or solar facility",
+      "parquet_path": "views/llc_owned_parcels_with_infra.parquet",
+      "geojson_path": "views/llc_owned_parcels_with_infra.geojson",
+      "inputs": ["parcel"]
+    },
+    "owner_clusters": {
+      "rows": 412,
+      "geometry_type": null,
+      "description": "Owner-name clusters above the cluster-size threshold",
+      "parquet_path": "views/owner_clusters.parquet",
+      "inputs": ["parcel"]
+    }
+  }
+}

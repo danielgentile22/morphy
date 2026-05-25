@@ -67,22 +67,61 @@ export interface Catalog {
 }
 
 // ── guards ───────────────────────────────────────────────────────────────
+//
+// The Python writer validates its output against `catalog.schema.json`
+// before write (see scripts/preprocess/catalog_schema.py). The parsers
+// below mirror that contract on the read side: missing required fields
+// THROW, not coerce — silent coercion masks bugs that surface as
+// "missing layers" in production. Optional fields are explicitly typed
+// as such and tolerated when absent.
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
-function asString(v: unknown): string {
-  return typeof v === 'string' ? v : '';
+
+function requireString(v: unknown, path: string): string {
+  // Accept empty strings — the schema allows them where there's no
+  // explicit minLength, and the Python side enforces minLength when set.
+  // The TS parser only enforces the type, not the length.
+  if (typeof v !== 'string') {
+    throw new Error(`catalog: missing or non-string required field "${path}"`);
+  }
+  return v;
 }
-function asNumber(v: unknown): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+
+function requireInteger(v: unknown, path: string): number {
+  if (typeof v !== 'number' || !Number.isFinite(v) || !Number.isInteger(v) || v < 0) {
+    throw new Error(`catalog: missing or non-integer required field "${path}"`);
+  }
+  return v;
 }
-function optString(v: unknown): string | undefined {
-  return typeof v === 'string' && v !== '' ? v : undefined;
+
+function requireStringArray(v: unknown, path: string): string[] {
+  if (!Array.isArray(v) || !v.every((x) => typeof x === 'string')) {
+    throw new Error(`catalog: missing or non-string-array required field "${path}"`);
+  }
+  return v as string[];
 }
-function stringMap(v: unknown): Record<string, string> {
+
+function optionalString(v: unknown, path: string): string | undefined {
+  if (v === undefined) return undefined;
+  if (typeof v !== 'string') {
+    throw new Error(`catalog: optional field "${path}" is present but not a string`);
+  }
+  return v.length === 0 ? undefined : v;
+}
+
+function requireStringMap(v: unknown, path: string): Record<string, string> {
+  if (!isRecord(v)) {
+    throw new Error(`catalog: missing or non-object required field "${path}"`);
+  }
   const out: Record<string, string> = {};
-  if (isRecord(v)) for (const [k, val] of Object.entries(v)) out[k] = asString(val);
+  for (const [k, val] of Object.entries(v)) {
+    if (typeof val !== 'string') {
+      throw new Error(`catalog: "${path}.${k}" is not a string`);
+    }
+    out[k] = val;
+  }
   return out;
 }
 
@@ -90,8 +129,7 @@ function stringMap(v: unknown): Record<string, string> {
 
 function parseStateEntry(raw: unknown, i: number): StateEntry {
   if (!isRecord(raw)) throw new Error(`index.json: states[${i}] is not an object`);
-  const fips = asString(raw.fips);
-  if (!fips) throw new Error(`index.json: states[${i}] is missing "fips"`);
+  const fips = requireString(raw.fips, `states[${i}].fips`);
   if (!isValidBBox(raw.bbox)) {
     throw new Error(`index.json: state ${fips} has an invalid "bbox"`);
   }
@@ -103,8 +141,8 @@ function parseStateEntry(raw: unknown, i: number): StateEntry {
   }
   return {
     fips,
-    abbr: asString(raw.abbr) || fips,
-    name: asString(raw.name) || fips,
+    abbr: typeof raw.abbr === 'string' && raw.abbr.length > 0 ? raw.abbr : fips,
+    name: typeof raw.name === 'string' && raw.name.length > 0 ? raw.name : fips,
     bbox: raw.bbox,
     counts,
   };
@@ -116,8 +154,8 @@ export function parseCompositeIndex(raw: unknown): CompositeIndex {
     throw new Error('index.json: missing "states" array');
   }
   return {
-    schemaVersion: asNumber(raw.schema_version),
-    generatedAt: asString(raw.generated_at),
+    schemaVersion: typeof raw.schema_version === 'number' ? raw.schema_version : 0,
+    generatedAt: typeof raw.generated_at === 'string' ? raw.generated_at : '',
     states: raw.states.map(parseStateEntry),
   };
 }
@@ -125,54 +163,62 @@ export function parseCompositeIndex(raw: unknown): CompositeIndex {
 // ── catalog.json parser ──────────────────────────────────────────────────
 
 function parseLayer(name: string, raw: unknown): CatalogLayer {
-  if (!isRecord(raw)) throw new Error(`catalog.json: layer "${name}" is not an object`);
+  if (!isRecord(raw)) throw new Error(`catalog: layer "${name}" is not an object`);
   return {
     name,
-    canonicalType: asString(raw.canonical_type),
-    rows: asNumber(raw.rows),
-    parquetPath: asString(raw.parquet_path),
-    geojsonPath: optString(raw.geojson_path),
-    simplifiedGeojsonPath: optString(raw.simplified_geojson_path),
-    geometryType: optString(raw.geometry_type),
-    schema: stringMap(raw.schema),
+    canonicalType: requireString(raw.canonical_type, `layers.${name}.canonical_type`),
+    rows: requireInteger(raw.rows, `layers.${name}.rows`),
+    parquetPath: requireString(raw.parquet_path, `layers.${name}.parquet_path`),
+    geojsonPath: optionalString(raw.geojson_path, `layers.${name}.geojson_path`),
+    simplifiedGeojsonPath: optionalString(
+      raw.simplified_geojson_path,
+      `layers.${name}.simplified_geojson_path`,
+    ),
+    // geometry_type is optional, and empty-string is meaningful ("no
+    // detectable type"). We keep it as undefined when missing/empty
+    // so consumers don't have to special-case "".
+    geometryType: optionalString(raw.geometry_type, `layers.${name}.geometry_type`),
+    schema: requireStringMap(raw.schema, `layers.${name}.schema`),
   };
 }
 
 function parseView(name: string, raw: unknown): CatalogView {
-  if (!isRecord(raw)) throw new Error(`catalog.json: view "${name}" is not an object`);
+  if (!isRecord(raw)) throw new Error(`catalog: view "${name}" is not an object`);
+  // geometry_type on a view is required (per the schema) but is nullable
+  // — null distinguishes a tabular view from a spatial one.
+  if (raw.geometry_type !== null && typeof raw.geometry_type !== 'string') {
+    throw new Error(`catalog: views.${name}.geometry_type must be a string or null`);
+  }
   return {
     name,
-    description: asString(raw.description),
-    geometryType: typeof raw.geometry_type === 'string' ? raw.geometry_type : null,
-    inputs: Array.isArray(raw.inputs) ? raw.inputs.map(asString) : [],
-    parquetPath: asString(raw.parquet_path),
-    geojsonPath: optString(raw.geojson_path),
-    rows: asNumber(raw.rows),
+    description: requireString(raw.description, `views.${name}.description`),
+    geometryType: raw.geometry_type as string | null,
+    inputs: requireStringArray(raw.inputs, `views.${name}.inputs`),
+    parquetPath: requireString(raw.parquet_path, `views.${name}.parquet_path`),
+    geojsonPath: optionalString(raw.geojson_path, `views.${name}.geojson_path`),
+    rows: requireInteger(raw.rows, `views.${name}.rows`),
   };
 }
 
 export function parseCatalog(raw: unknown): Catalog {
-  if (!isRecord(raw)) throw new Error('catalog.json: root is not an object');
-  const stateFips = asString(raw.state_fips);
-  if (!stateFips) throw new Error('catalog.json: missing "state_fips"');
+  if (!isRecord(raw)) throw new Error('catalog: root is not an object');
+  if (!isRecord(raw.layers)) throw new Error('catalog: missing required field "layers"');
+  if (!isRecord(raw.views)) throw new Error('catalog: missing required field "views"');
 
   const layers: CatalogLayer[] = [];
-  if (isRecord(raw.layers)) {
-    for (const [name, v] of Object.entries(raw.layers)) layers.push(parseLayer(name, v));
-  }
+  for (const [name, v] of Object.entries(raw.layers)) layers.push(parseLayer(name, v));
   const views: CatalogView[] = [];
-  if (isRecord(raw.views)) {
-    for (const [name, v] of Object.entries(raw.views)) views.push(parseView(name, v));
-  }
+  for (const [name, v] of Object.entries(raw.views)) views.push(parseView(name, v));
+
   return {
-    schemaVersion: asNumber(raw.schema_version),
-    stateFips,
-    stateName: asString(raw.state_name),
-    stateAbbr: asString(raw.state_abbr),
-    generatedAt: asString(raw.generated_at),
+    schemaVersion: requireInteger(raw.schema_version, 'schema_version'),
+    stateFips: requireString(raw.state_fips, 'state_fips'),
+    stateName: requireString(raw.state_name, 'state_name'),
+    stateAbbr: requireString(raw.state_abbr, 'state_abbr'),
+    generatedAt: requireString(raw.generated_at, 'generated_at'),
     layers,
     views,
-    sourcesUsedVersions: stringMap(raw.sources_used_versions),
+    sourcesUsedVersions: requireStringMap(raw.sources_used_versions, 'sources_used_versions'),
   };
 }
 

@@ -29,6 +29,7 @@ from .base import (
     ordered_joins,
     utcnow_iso,
 )
+from .catalog_schema import validate_catalog
 from .geographies import StateGeography
 from .io import (
     dual_write_spatial,
@@ -169,6 +170,10 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
 
     # ── catalog.json (self-documenting layer manifest) ─────────────────
     catalog = _build_catalog(state, ctx, view_meta, out_dir, sources_used)
+    # Enforce the Python ↔ TS contract at write time. The map app's
+    # parseCatalog assumes this shape; drift would surface as silent
+    # missing layers in production. See catalog_schema.py.
+    validate_catalog(catalog)
     catalog_path = out_dir / "catalog.json"
     write_json(catalog, catalog_path)
     output_files.append(catalog_path)

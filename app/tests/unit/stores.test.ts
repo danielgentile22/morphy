@@ -12,6 +12,8 @@ const RAW_CATALOG = {
   state_fips: '05',
   state_name: 'Arkansas',
   state_abbr: 'AR',
+  generated_at: '2026-05-21T05:08:00+00:00',
+  sources_used_versions: {},
   layers: {
     county_scores: { canonical_type: 'county_score', parquet_path: 'c.parquet', rows: 75, schema: {} },
     towers: {

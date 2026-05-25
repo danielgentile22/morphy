@@ -125,11 +125,21 @@ describe('parseCatalog', () => {
   });
 
   it('throws when state_fips is missing', () => {
-    expect(() => parseCatalog({ layers: {}, views: {} })).toThrow(/state_fips/);
+    expect(() =>
+      parseCatalog({
+        schema_version: 3,
+        state_name: 'Arkansas',
+        state_abbr: 'AR',
+        generated_at: '',
+        layers: {},
+        views: {},
+        sources_used_versions: {},
+      }),
+    ).toThrow(/state_fips/);
   });
 
   it('throws on a non-object root', () => {
-    expect(() => parseCatalog(null)).toThrow(/catalog\.json/);
+    expect(() => parseCatalog(null)).toThrow(/catalog/);
   });
 });
 
