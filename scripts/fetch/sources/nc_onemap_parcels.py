@@ -22,9 +22,9 @@ the next run skips already-completed pages.
 
 The MapServer returns lowercase field names (``ownname``,
 ``mailadd``, ``cntyfips`` etc.) whereas the old shapefile bulk used
-uppercase (``OWNNAME``, ``MAILADD``, ``STCNTYFIPS``). The normalizer's
-field map (``scripts/preprocess/normalizers/state_parcels.py``) lists
-both casings so old data on disk still normalizes correctly.
+uppercase (``OWNNAME``, ``MAILADD``, ``STCNTYFIPS``). The NC adapter's
+field map (``scripts/preprocess/normalizers/state_parcels/adapters/nc.py``)
+lists both casings so old data on disk still normalizes correctly.
 """
 
 from __future__ import annotations
@@ -62,9 +62,9 @@ PAGE_SIZE = 5000
 # server during the ~1k-request loop. Negligible vs per-request time.
 PAGE_DELAY_SEC = 0.1
 
-# Explicit field list — must include every column the normalizer's
-# nc_onemap_parcels field map references (see
-# scripts/preprocess/normalizers/state_parcels.py PARCEL_FIELD_MAPS).
+# Explicit field list — must include every column the NC adapter's
+# field map references (see
+# scripts/preprocess/normalizers/state_parcels/adapters/nc.py).
 # Using outFields=* would inflate each page ~36% with unused metadata.
 # objectid is required for stable orderByFields pagination.
 OUT_FIELDS = ",".join([

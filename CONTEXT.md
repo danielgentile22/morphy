@@ -19,3 +19,12 @@ This file is intentionally a stub — the `/grill-with-docs` skill fills it in l
 - **Normalizer / Join / View** — the three-stage preprocess framework (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
 
 Expand this file when a real conversation surfaces a term that wasn't obvious.
+
+## Language
+
+Terms added as design conversations crystallize them. Follow the format
+`**Term**: one-or-two-sentence definition. _Avoid_: aliases.`
+
+**ParcelAdapter**:
+The per-source description that lets the shared parcel driver normalize one upstream parcel feed into canonical `parcel` rows. A dataclass holding the source's `field_map`, a `state_fips` hint, and optional `county_resolver` / `post_map` callables. One `ParcelAdapter` per `source_id`, so FL has two (`fl_fgdl_parcels`, `fdor_nal`).
+_Avoid_: ParcelMapping, ParcelProfile, ParcelSchema, ParcelSource (the last collides with the fetch-side `DataSource`).

@@ -107,20 +107,31 @@ _NORMALIZER_REGISTRY: OrderedDict[str, Normalizer] = OrderedDict()
 
 def register_normalizer(cls: type[Normalizer]) -> type[Normalizer]:
     """Class decorator: instantiate and register a Normalizer."""
-    inst = cls()
+    register_normalizer_instance(cls())
+    return cls
+
+
+def register_normalizer_instance(inst: Normalizer) -> Normalizer:
+    """Register an already-constructed Normalizer.
+
+    Sibling of @register_normalizer for normalizers whose construction
+    needs arguments (e.g. ParcelNormalizer, which takes a ParcelAdapter)
+    and so can't fit the zero-arg-decorator pattern.
+    """
+    cls_name = type(inst).__name__
     if not inst.source_id:
-        raise ValueError(f"{cls.__name__}: source_id is required")
+        raise ValueError(f"{cls_name}: source_id is required")
     if not inst.canonical_types:
-        raise ValueError(f"{cls.__name__}: canonical_types is required")
+        raise ValueError(f"{cls_name}: canonical_types is required")
     for ct in inst.canonical_types:
         if ct not in CURRENT_SCHEMA_VERSIONS:
             raise ValueError(
-                f"{cls.__name__}: unknown canonical_type {ct!r} — add it to CURRENT_SCHEMA_VERSIONS"
+                f"{cls_name}: unknown canonical_type {ct!r} — add it to CURRENT_SCHEMA_VERSIONS"
             )
     if inst.source_id in _NORMALIZER_REGISTRY:
         raise ValueError(f"duplicate normalizer for source_id {inst.source_id!r}")
     _NORMALIZER_REGISTRY[inst.source_id] = inst
-    return cls
+    return inst
 
 
 def all_normalizers() -> list[Normalizer]:
