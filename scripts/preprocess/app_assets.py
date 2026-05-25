@@ -22,6 +22,7 @@ from pathlib import Path
 
 from . import COMPOSITE_ROOT
 from .geographies import get_state
+from .index_schema import validate_index
 
 # index.json shape version — bump when the structure changes so the app
 # can detect a mismatch instead of silently mis-reading an old file.
@@ -116,6 +117,10 @@ def write_composite_index(
     if index_path is None:
         index_path = root / INDEX_FILENAME
     index = build_index(root)
+    # Enforce the Python ↔ TS contract at write time. The map app's
+    # parseCompositeIndex assumes this shape; drift would surface as
+    # silent missing states in production. See index_schema.py.
+    validate_index(index)
     index_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_fd, tmp_path = tempfile.mkstemp(
         dir=index_path.parent, prefix=".index.", suffix=".tmp"

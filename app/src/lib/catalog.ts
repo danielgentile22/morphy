@@ -128,34 +128,37 @@ function requireStringMap(v: unknown, path: string): Record<string, string> {
 // ── index.json parser ────────────────────────────────────────────────────
 
 function parseStateEntry(raw: unknown, i: number): StateEntry {
-  if (!isRecord(raw)) throw new Error(`index.json: states[${i}] is not an object`);
+  if (!isRecord(raw)) throw new Error(`index: states[${i}] is not an object`);
   const fips = requireString(raw.fips, `states[${i}].fips`);
   if (!isValidBBox(raw.bbox)) {
-    throw new Error(`index.json: state ${fips} has an invalid "bbox"`);
+    throw new Error(`index: state ${fips} has an invalid "bbox"`);
   }
+  // counts: integer-valued per the schema. Non-integer entries are
+  // dropped (defensive — old data on disk pre-dates the schema, and
+  // the per-state UI doesn't break on a missing count badge).
   const counts: Record<string, number> = {};
   if (isRecord(raw.counts)) {
     for (const [k, v] of Object.entries(raw.counts)) {
-      if (typeof v === 'number') counts[k] = v;
+      if (typeof v === 'number' && Number.isInteger(v)) counts[k] = v;
     }
   }
   return {
     fips,
-    abbr: typeof raw.abbr === 'string' && raw.abbr.length > 0 ? raw.abbr : fips,
-    name: typeof raw.name === 'string' && raw.name.length > 0 ? raw.name : fips,
+    abbr: requireString(raw.abbr, `states[${i}].abbr`),
+    name: requireString(raw.name, `states[${i}].name`),
     bbox: raw.bbox,
     counts,
   };
 }
 
 export function parseCompositeIndex(raw: unknown): CompositeIndex {
-  if (!isRecord(raw)) throw new Error('index.json: root is not an object');
+  if (!isRecord(raw)) throw new Error('index: root is not an object');
   if (!Array.isArray(raw.states)) {
-    throw new Error('index.json: missing "states" array');
+    throw new Error('index: missing required field "states"');
   }
   return {
-    schemaVersion: typeof raw.schema_version === 'number' ? raw.schema_version : 0,
-    generatedAt: typeof raw.generated_at === 'string' ? raw.generated_at : '',
+    schemaVersion: requireInteger(raw.schema_version, 'schema_version'),
+    generatedAt: requireString(raw.generated_at, 'generated_at'),
     states: raw.states.map(parseStateEntry),
   };
 }

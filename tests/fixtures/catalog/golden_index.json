@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-18T22:25:00Z",
+  "states": [
+    {
+      "fips": "05",
+      "abbr": "AR",
+      "name": "Arkansas",
+      "bbox": [-94.62, 33.0, -89.64, 36.5],
+      "counts": {
+        "parcel": 2116976,
+        "tower": 1873,
+        "county_score": 75
+      }
+    },
+    {
+      "fips": "30",
+      "abbr": "MT",
+      "name": "Montana",
+      "bbox": [-116.06, 44.36, -104.04, 49.0],
+      "counts": {
+        "parcel": 920111,
+        "tower": 642
+      }
+    },
+    {
+      "fips": "12",
+      "abbr": "FL",
+      "name": "Florida",
+      "bbox": [-87.63, 24.39, -79.97, 31.0],
+      "counts": {}
+    }
+  ]
+}
