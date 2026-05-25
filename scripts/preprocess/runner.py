@@ -99,7 +99,7 @@ def run_normalize_one(
         _emit(progress_callback, "normalize_fail", source_id, {"error": str(e)})
         return "failed", None
 
-    states_covered = list(result.quality_report.get("states_covered") or [])
+    states_covered = list(result.quality_report.extras.get("states_covered") or [])
     if not states_covered:
         states_covered = _infer_states_covered(out_dir)
     manifest.record_normalize(

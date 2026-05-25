@@ -392,15 +392,16 @@ def normalize_state_parcels(
     # The QR tables were profiled from one representative layer (the full
     # set is too large to hold in memory) — correct the row counts to totals.
     for tbl, total in (("raw", raw_row_total), ("parcels", canon_row_total)):
-        if tbl in qr.get("tables", {}):
-            qr["tables"][tbl]["rows"] = total
-            qr["tables"][tbl]["note"] = (
+        if tbl in qr.tables:
+            qr.tables[tbl].rows = total
+            qr.tables[tbl].note = (
                 f"column stats sampled from 1 of {n_layers_mapped} layers; "
                 "rows is the true total across all layers"
             )
+    qr.extras["states_covered"] = sorted(states_covered)
     qr_path = write_quality_report(out_dir, qr)
 
-    res = NormalizeResult(
+    return NormalizeResult(
         raw_rows=raw_row_total,
         canonical_rows=canon_row_total,
         bytes=raw_bytes + canon_bytes,
@@ -408,5 +409,3 @@ def normalize_state_parcels(
         canonical_types_written=["parcel"],
         quality_report=qr,
     )
-    res.quality_report["states_covered"] = sorted(states_covered)
-    return res
