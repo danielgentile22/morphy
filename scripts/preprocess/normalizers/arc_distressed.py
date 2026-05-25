@@ -16,7 +16,8 @@ from ..base import (
     write_quality_report,
 )
 from ..io import write_parquet, write_raw_parquet
-from ._helpers import canon_county_fips, canon_state_fips, safe_str
+from .fips import canon_county_fips, canon_state_fips
+from .pandas_coerce import safe_str
 
 log = logging.getLogger("preprocess.arc_distressed")
 

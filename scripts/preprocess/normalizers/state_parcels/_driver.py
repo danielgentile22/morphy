@@ -31,11 +31,8 @@ from ...base import (
 from ...cluster import infer_owner_kind, normalize_address, normalize_owner_name
 from ...geom import add_polygon_derivatives
 from ...io import write_geoparquet, write_raw_parquet
-from .._helpers import (
-    canon_county_fips,
-    safe_str,
-    state_fips_from_county_fips,
-)
+from ..fips import canon_county_fips, state_fips_from_county_fips
+from ..pandas_coerce import safe_str
 from ._adapter import ParcelAdapter
 
 log = logging.getLogger("preprocess.state_parcels")
