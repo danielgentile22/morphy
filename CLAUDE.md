@@ -282,3 +282,31 @@ Key state FIPS used throughout: `05` (AR), `12` (FL), `30` (MT),
 | Last 200 puller events | `data/fetch.log` |
 | Per-source canonical-schema mapping | `scripts/preprocess/normalizers/<source>.py` |
 | Per-state field maps for parcel sources | `scripts/preprocess/normalizers/state_parcels.py` |
+
+---
+
+## Agent skills
+
+Configuration for Matt Pocock's engineering skills (`triage`, `to-issues`,
+`to-prd`, `diagnose`, `tdd`, `improve-codebase-architecture`,
+`grill-with-docs`, etc.). Each subsection points to a doc the skills
+consult; edit those docs directly to change behavior.
+
+### Issue tracker
+
+GitHub Issues at `danielgentile22/infra-lease-analytics`, managed via the
+`gh` CLI. See [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md).
+
+### Triage labels
+
+Five canonical labels using default names (`needs-triage`, `needs-info`,
+`ready-for-agent`, `ready-for-human`, `wontfix`). Not yet created on the
+repo — the `triage` skill will create them on first use. See
+[docs/agents/triage-labels.md](docs/agents/triage-labels.md).
+
+### Domain docs
+
+Single-context: [CONTEXT.md](CONTEXT.md) at the repo root, new ADRs under
+[docs/adr/](docs/adr/), legacy ADRs still inlined in
+[docs/DECISIONS.md](docs/DECISIONS.md). See
+[docs/agents/domain.md](docs/agents/domain.md).
