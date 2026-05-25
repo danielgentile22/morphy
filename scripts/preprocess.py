@@ -178,8 +178,8 @@ def main() -> int:
     if args.list_states:
         manifest = PreprocessManifest.load()
         states = {}
-        for sid, entry in (manifest.normalized or {}).items():
-            for f in (entry or {}).get("states_covered") or []:
+        for sid, entry in manifest.normalized.items():
+            for f in entry.states_covered:
                 states.setdefault(f, []).append(sid)
         for fips in sorted(states):
             print(f"  {fips}  ({', '.join(states[fips])})")

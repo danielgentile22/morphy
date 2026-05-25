@@ -307,19 +307,19 @@ def _states_with_normalized_parcel_data(manifest: PreprocessManifest) -> list[St
     """States for which at least one parcel Normalizer succeeded."""
     parcel_sources = {n.source_id for n in all_normalizers() if "parcel" in n.canonical_types}
     seen: set[str] = set()
-    for sid, entry in (manifest.normalized or {}).items():
+    for sid, entry in manifest.normalized.items():
         if sid not in parcel_sources:
             continue
-        if (entry or {}).get("status") != "ok":
+        if entry.status != "ok":
             continue
-        for f in entry.get("states_covered") or []:
+        for f in entry.states_covered:
             seen.add(f)
     if not seen:
         # Fallback: if no parcel data normalized yet, compose for every state
         # that's covered by tower / distress data so the user gets *something*.
         log.info("no normalized parcel data — composing for every state with any normalized data")
-        for _sid, entry in (manifest.normalized or {}).items():
-            for f in (entry or {}).get("states_covered") or []:
+        for _sid, entry in manifest.normalized.items():
+            for f in entry.states_covered:
                 seen.add(f)
     return [get_state(f) for f in sorted(seen) if f]
 
