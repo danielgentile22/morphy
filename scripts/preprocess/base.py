@@ -33,7 +33,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 log = logging.getLogger("preprocess")
 
 
-# ── Schema versions ───────────────────────────────────────────────────────────
+# ── Per-canonical-type metadata ──────────────────────────────────────────────
 
 CURRENT_SCHEMA_VERSIONS: dict[str, int] = {
     "tower": 1,
@@ -52,6 +52,42 @@ CURRENT_SCHEMA_VERSIONS: dict[str, int] = {
     "aggregation": 1,
     "model_prediction": 1,
     "address_point": 1,
+}
+
+# Spatial canonical types carry geometry; tabular ones don't. The default
+# loader uses this to decide whether to read parquets as GeoDataFrames.
+SPATIAL_TYPES: set[str] = {
+    "tower",
+    "parcel",
+    "distress_overlay",
+    "solar_facility",
+    "billboard",
+    "address_point",
+}
+TABULAR_TYPES: set[str] = {
+    "county_score",
+    "license",
+    "location",
+    "entity",
+    "transfer",
+    "lease",
+    "distributed_pv",
+    "aggregation",
+    "model_prediction",
+}
+
+# Per-canonical-type file/directory basename. The default loader reads from
+# ``normalized/<source_id>/<basename>/*.parquet`` (sharded) or
+# ``normalized/<source_id>/<basename>.parquet`` (single file); the Composer
+# uses the same basename when writing per-state composite outputs. Where a
+# canonical type isn't listed, the type name itself is the basename.
+OUTPUT_BASENAMES: dict[str, str] = {
+    "tower": "towers",
+    "parcel": "parcels",
+    "distress_overlay": "distress_overlays",
+    "solar_facility": "solar_facilities",
+    "billboard": "billboards",
+    "county_score": "county_scores",
 }
 
 
@@ -100,6 +136,93 @@ class Normalizer(ABC):
         if not raw_dir.exists():
             return False
         return any(p.is_file() for p in raw_dir.rglob("*"))
+
+    def load_state_data(
+        self, state_fips: str
+    ) -> dict[str, Any]:
+        """Read this source's normalized output, filtered to one state.
+
+        For each declared :attr:`canonical_types`, the default looks for
+        parquet output under
+        ``normalized/<source_id>/<basename>/*.parquet`` (sharded layout,
+        used by per-county parcel normalizers — ADR-050) or, failing
+        that, ``normalized/<source_id>/<basename>.parquet`` (single
+        file, used by the national sources). Spatial types are read as
+        GeoDataFrames; tabular types as DataFrames. Rows are filtered
+        by the ``state_fips`` column — which is a **hard contract** on
+        every canonical output. A canonical type with no rows for the
+        requested state is omitted from the returned dict.
+
+        Override only when the source's output layout or
+        state-identification scheme genuinely differs from this
+        contract (no source needs to today).
+        """
+        from . import NORMALIZED_ROOT  # local to avoid an import cycle
+
+        src_dir = NORMALIZED_ROOT / self.source_id
+        if not src_dir.exists():
+            return {}
+
+        out: dict[str, Any] = {}
+        for ct in self.canonical_types:
+            basename = OUTPUT_BASENAMES.get(ct, ct)
+            subdir = src_dir / basename
+            if subdir.is_dir():
+                paths = sorted(subdir.glob("*.parquet"))
+            else:
+                single = src_dir / f"{basename}.parquet"
+                paths = [single] if single.exists() else []
+            if not paths:
+                continue
+
+            frames: list[Any] = []
+            for p in paths:
+                try:
+                    df = _read_parquet_typed(p, ct)
+                except Exception as e:
+                    log.warning("load_state_data: failed to read %s: %s", p, e)
+                    continue
+                if "state_fips" not in df.columns:
+                    log.warning(
+                        "load_state_data: %s lacks the contractual `state_fips` "
+                        "column; skipping (override Normalizer.load_state_data "
+                        "to filter another way)",
+                        p,
+                    )
+                    continue
+                filtered = df[df["state_fips"] == state_fips]
+                if len(filtered) > 0:
+                    frames.append(filtered.copy())
+
+            if frames:
+                out[ct] = _concat_typed(frames, ct)
+        return out
+
+
+def _read_parquet_typed(path: Path, canonical_type: str):
+    """Read a parquet as the right frame type for its canonical_type."""
+    import pandas as pd
+
+    if canonical_type in SPATIAL_TYPES:
+        import geopandas as gpd
+
+        return gpd.read_parquet(path)
+    return pd.read_parquet(path)
+
+
+def _concat_typed(frames: list, canonical_type: str):
+    """Concat frames preserving GeoDataFrame-ness for spatial types."""
+    import pandas as pd
+
+    if canonical_type in SPATIAL_TYPES:
+        import geopandas as gpd
+
+        return gpd.GeoDataFrame(
+            pd.concat(frames, ignore_index=True),
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+    return pd.concat(frames, ignore_index=True)
 
 
 _NORMALIZER_REGISTRY: OrderedDict[str, Normalizer] = OrderedDict()

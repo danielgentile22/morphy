@@ -78,9 +78,11 @@ class UsdaPersistentPovertyNormalizer(Normalizer):
 
         rows = []
         for _, r in grouped.iterrows():
+            fips = r["fips_canon"]
             rows.append(
                 {
-                    "county_fips": r["fips_canon"],
+                    "county_fips": fips,
+                    "state_fips": fips[:2] if fips else None,
                     "tier": "",
                     "score": None,
                     "persistent_poverty": bool(r["val_bool"]),

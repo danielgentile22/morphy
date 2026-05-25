@@ -18,8 +18,10 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 
-from . import COMPOSITE_ROOT, NORMALIZED_ROOT
+from . import COMPOSITE_ROOT
 from .base import (
+    OUTPUT_BASENAMES,
+    SPATIAL_TYPES,
     ComposeContext,
     ComposeResult,
     all_normalizers,
@@ -27,7 +29,7 @@ from .base import (
     ordered_joins,
     utcnow_iso,
 )
-from .geographies import StateGeography, get_state
+from .geographies import StateGeography
 from .io import (
     dual_write_spatial,
     write_geojson,
@@ -49,38 +51,6 @@ class ComposeConfig:
     force_rebuild: bool = False
     skip_views: list[str] = field(default_factory=list)
     skip_joins: list[str] = field(default_factory=list)
-
-
-# Spatial vs tabular canonical types
-SPATIAL_TYPES = {
-    "tower",
-    "parcel",
-    "distress_overlay",
-    "solar_facility",
-    "billboard",
-    "address_point",
-}
-TABULAR_TYPES = {
-    "county_score",
-    "license",
-    "location",
-    "entity",
-    "transfer",
-    "lease",
-    "distributed_pv",
-    "aggregation",
-    "model_prediction",
-}
-
-# Output basename per canonical type (singular file per state)
-OUTPUT_BASENAMES = {
-    "tower": "towers",
-    "parcel": "parcels",
-    "distress_overlay": "distress_overlays",
-    "solar_facility": "solar_facilities",
-    "billboard": "billboards",
-    "county_score": "county_scores",
-}
 
 
 def compose(cfg: ComposeConfig) -> ComposeResult:
@@ -239,70 +209,33 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
 
 
 def _load_state_data(ctx: ComposeContext) -> list[str]:
-    """Read all normalized canonical layers, filter to the state, populate ctx.tables.
+    """Populate ``ctx.tables`` with every canonical type relevant to this state.
 
-    Returns the list of source_ids that contributed any rows for this state.
+    Delegates per-source loading to :meth:`Normalizer.load_state_data` —
+    the Composer no longer knows which sources shard their output, which
+    have state_fips columns, or how to filter them. Each Normalizer's
+    output is loaded behind its own interface; this function just
+    iterates and concats across sources that produce the same
+    canonical type.
+
+    Returns the list of source_ids that contributed any rows.
     """
     sources_used: list[str] = []
-    # By canonical type, concat all sources that produced that type.
     by_type: dict[str, list] = {}
+
     for n in all_normalizers():
-        src_dir = NORMALIZED_ROOT / n.source_id
-        if not src_dir.exists():
+        try:
+            per_source = n.load_state_data(ctx.state_fips)
+        except Exception as e:
+            log.warning("%s.load_state_data failed: %s", n.source_id, e)
             continue
-        for ct in n.canonical_types:
-            basename = OUTPUT_BASENAMES.get(ct, ct)
-            candidates: list[Path] = []
-            subdir = src_dir / basename
-            if subdir.is_dir():
-                # Multi-file dataset: the parcel normalizer writes one
-                # parquet per county under normalized/<id>/parcels/.
-                candidates = sorted(subdir.glob("*.parquet"))
-            else:
-                # Legacy single-file layout: <basename>.parquet at the
-                # source root. (raw/ and raw.parquet are deliberately
-                # excluded — the non-recursive glob never descends into
-                # the raw/ archive subdir.)
-                for p in sorted(src_dir.glob("*.parquet")):
-                    if p.name == "raw.parquet":
-                        continue
-                    if p.name == f"{basename}.parquet":
-                        candidates.append(p)
-            if not candidates:
-                continue
-            for p in candidates:
-                try:
-                    if ct in SPATIAL_TYPES:
-                        gdf = gpd.read_parquet(p)
-                    else:
-                        gdf = pd.read_parquet(p)
-                except Exception as e:
-                    log.warning("failed to read %s: %s", p, e)
-                    continue
-
-                # Filter to state.
-                if "state_fips" in gdf.columns:
-                    gdf = gdf[gdf["state_fips"] == ctx.state_fips].copy()
-                elif ct in SPATIAL_TYPES and isinstance(gdf, gpd.GeoDataFrame):
-                    # Geometric fallback: clip to state bbox
-                    state = get_state(ctx.state_fips)
-                    minx, miny, maxx, maxy = state.bbox
-                    gdf = gdf.cx[minx:maxx, miny:maxy].copy()
-                # county_score special case: filter by state prefix on FIPS
-                if ct == "county_score" and "county_fips" in gdf.columns:
-                    gdf = gdf[gdf["county_fips"].astype(str).str.startswith(ctx.state_fips)].copy()
-
-                if len(gdf) == 0:
-                    continue
-                by_type.setdefault(ct, []).append((n.source_id, gdf))
-                if n.source_id not in sources_used:
-                    sources_used.append(n.source_id)
-
-    # Concatenate per type into the context.
-    for ct, items in by_type.items():
-        frames = [g for _, g in items]
-        if not frames:
+        if not per_source:
             continue
+        for ct, df in per_source.items():
+            by_type.setdefault(ct, []).append(df)
+        sources_used.append(n.source_id)
+
+    for ct, frames in by_type.items():
         if ct in SPATIAL_TYPES:
             combined = gpd.GeoDataFrame(
                 pd.concat(frames, ignore_index=True),
@@ -312,12 +245,8 @@ def _load_state_data(ctx: ComposeContext) -> list[str]:
         else:
             combined = pd.concat(frames, ignore_index=True)
         ctx.set(ct, combined)
-        log.info(
-            "  %s: %d rows (%d sources)",
-            ct,
-            len(combined),
-            len(items),
-        )
+        log.info("  %s: %d rows (%d sources)", ct, len(combined), len(frames))
+
     return sources_used
 
 
