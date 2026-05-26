@@ -22,19 +22,17 @@ import {
 } from './data';
 import { duckDb } from './duckdb';
 import type { FacetData } from './facets';
+import {
+  FilterEngine,
+  type FilterResult,
+  type FilterStatus,
+} from './filter-engine';
 import { bboxCenter, parseGeomBbox } from './geo';
 import { emptyFilters, isAnyFilterActive, type FilterState } from './filters';
-import { composeWhere } from './query';
 import type { EntityKind, Props } from './schema';
 import { readUrlState } from './url';
 
-/** Cap on parcel ids fetched for the map fade — beyond this the count
- *  badge still shows the true total, but only the top-N by score are
- *  highlighted (fading millions of features would jank the map). */
-const FILTER_FADE_CAP = 20_000;
-const FILTER_DEBOUNCE_MS = 160;
-
-export type FilterStatus = 'idle' | 'querying' | 'error';
+export type { FilterStatus } from './filter-engine';
 
 /** Synthetic layer-visibility keys for the two base layers (not catalog
  *  entries — parcels come from PMTiles, the choropleth from an
@@ -171,8 +169,21 @@ export class AppStore {
 
   filtersActive = $derived(isAnyFilterActive(this.filters));
 
-  #filterTimer: ReturnType<typeof setTimeout> | null = null;
-  #filterToken = 0;
+  /** Execution mechanics (debounce, token, cap, DuckDB calls) live in
+   *  the engine; AppStore just mirrors the engine's result callback
+   *  into the three reactive fields above. */
+  #engine = new FilterEngine(
+    {
+      count: (where) => duckDb.count(where),
+      matchingIds: (where, limit) => duckDb.matchingIds(where, limit),
+      available: () => this.filtersAvailable,
+    },
+    (r: FilterResult) => {
+      this.filterCount = r.count;
+      this.filterMatchIds = r.matchIds;
+      this.filterStatus = r.status;
+    },
+  );
   #selectionToken = 0;
 
   // ── synchronous mutations ────────────────────────────────────────────
@@ -236,53 +247,25 @@ export class AppStore {
   /** Merge a patch into the filter state and re-query (debounced). */
   updateFilter(patch: Partial<FilterState>): void {
     this.filters = { ...this.filters, ...patch };
-    this.#scheduleFilterQuery();
+    this.#engine.schedule(this.filters);
   }
 
   /** Clear every filter. */
   resetFilters(): void {
     this.filters = emptyFilters();
-    this.#scheduleFilterQuery();
+    this.#engine.schedule(this.filters);
   }
 
-  #scheduleFilterQuery(): void {
-    if (this.#filterTimer) clearTimeout(this.#filterTimer);
-    this.#filterTimer = setTimeout(() => void this.applyFilters(), FILTER_DEBOUNCE_MS);
-  }
-
-  /** Run the active filter against DuckDB — live count + match ids for
-   *  the map fade. A token guards against a stale query overwriting a
-   *  newer one. */
+  /** Run the active filter immediately (bypassing the debounce). Kept
+   *  as a public method for boot's deep-link restore and for callers
+   *  that need a synchronous round-trip. */
   async applyFilters(): Promise<void> {
-    const token = ++this.#filterToken;
-    const where = composeWhere(this.filters);
-    if (!where || !this.filtersAvailable) {
-      this.filterCount = null;
-      this.filterMatchIds = [];
-      this.filterStatus = 'idle';
-      return;
-    }
-    this.filterStatus = 'querying';
-    try {
-      const [count, ids] = await Promise.all([
-        duckDb.count(where),
-        duckDb.matchingIds(where, FILTER_FADE_CAP),
-      ]);
-      if (token !== this.#filterToken) return; // superseded by a newer filter
-      this.filterCount = count;
-      this.filterMatchIds = ids;
-      this.filterStatus = 'idle';
-    } catch {
-      if (token === this.#filterToken) this.filterStatus = 'error';
-    }
+    await this.#engine.run(this.filters);
   }
 
   #resetFilterState(): void {
-    if (this.#filterTimer) clearTimeout(this.#filterTimer);
     this.filters = emptyFilters();
-    this.filterCount = null;
-    this.filterMatchIds = [];
-    this.filterStatus = 'idle';
+    this.#engine.reset();
   }
 
   // ── async boot / state switch ────────────────────────────────────────

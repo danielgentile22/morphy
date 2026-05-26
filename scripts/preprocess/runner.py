@@ -48,6 +48,9 @@ class RunOutcome:
     normalized_unavailable: list[str] = field(default_factory=list)
     composed_ok: list[str] = field(default_factory=list)
     composed_failed: list[str] = field(default_factory=list)
+    # Names of REQUIRED pipeline steps that raised. AUXILIARY-step failures
+    # are not recorded here — they're logged at WARNING.
+    failed_steps: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
 
 
@@ -221,75 +224,43 @@ def run_all(
     skip_tiles: bool = False,
     progress_callback: ProgressCallback | None = None,
 ) -> RunOutcome:
-    """Normalize all sources, then compose either one state or all that have data."""
-    import time
+    """Normalize all sources, then compose either one state or all that have data.
 
-    t0 = time.monotonic()
+    Orchestration is delegated to a ``Pipeline`` of named steps
+    (NormalizeAll → ComposeStates → AppAssets → Tiles). The pipeline
+    centralises severity policy (REQUIRED vs AUXILIARY) and progress
+    emission; ``skip_tiles=True`` translates to skipping the ``tiles``
+    step. Inner per-source events still flow through ``progress_callback``
+    unchanged.
+    """
+    from .pipeline import Pipeline
+    from .pipeline_steps import (
+        AppAssetsStep,
+        ComposeStatesStep,
+        NormalizeAllStep,
+        TilesStep,
+    )
+
     outcome = RunOutcome()
     manifest = PreprocessManifest.load()
+    states = [get_state(state_fips)] if state_fips else None
 
-    normalize_statuses = run_normalize_all(
-        manifest,
-        force_rebuild=force_rebuild,
-        progress_callback=progress_callback,
+    pipeline = Pipeline(
+        steps=[
+            NormalizeAllStep(force_rebuild=force_rebuild),
+            ComposeStatesStep(states=states, force_rebuild=force_rebuild),
+            AppAssetsStep(),
+            TilesStep(),
+        ]
     )
-    for sid, st in normalize_statuses.items():
-        if st == "ok":
-            outcome.normalized_ok.append(sid)
-        elif st == "failed":
-            outcome.normalized_failed.append(sid)
-        elif st == "skipped":
-            outcome.normalized_skipped.append(sid)
-        else:
-            outcome.normalized_unavailable.append(sid)
-
-    if state_fips:
-        states = [get_state(state_fips)]
-    else:
-        states = _states_with_normalized_parcel_data(manifest)
-
-    compose_results = run_compose_all(
-        manifest,
-        states=states,
-        force_rebuild=force_rebuild,
+    skip: set[str] = {"tiles"} if skip_tiles else set()
+    pipeline.run(
+        outcome=outcome,
+        manifest=manifest,
         progress_callback=progress_callback,
+        skip=skip,
     )
-    for fips, res in compose_results.items():
-        if res is None:
-            outcome.composed_failed.append(fips)
-        else:
-            outcome.composed_ok.append(fips)
 
-    # App-support assets (composite/index.json) — refresh the global
-    # state index so the map app never reads a stale state list after a
-    # normal run. Auxiliary: a failure here is logged, not fatal — the
-    # compose outputs are already on disk and `--app-assets` re-runs it.
-    try:
-        from .app_assets import run_app_assets
-
-        run_app_assets(progress_callback=progress_callback)
-    except Exception as exc:  # noqa: BLE001 — auxiliary step must not abort the run
-        log.warning("app-assets step failed; composite/index.json not refreshed: %s", exc)
-
-    # Parcel vector tiles (composite/<fips>/parcels.pmtiles) for every
-    # state just composed. Auxiliary + heavy: a missing tippecanoe or a
-    # per-state failure is logged, never fatal. Skipped by --skip-tiles.
-    if not skip_tiles and outcome.composed_ok:
-        from .tiles import build_state_tiles, tippecanoe_available
-
-        if not tippecanoe_available():
-            log.warning(
-                "tippecanoe not installed — skipping parcels.pmtiles "
-                "(brew install tippecanoe; or pass --skip-tiles)"
-            )
-        else:
-            for fips in sorted(set(outcome.composed_ok)):
-                try:
-                    build_state_tiles(fips)
-                except Exception as exc:  # noqa: BLE001 — auxiliary, per-state
-                    log.warning("tile generation failed for state %s: %s", fips, exc)
-
-    outcome.duration_seconds = time.monotonic() - t0
     _emit(
         progress_callback,
         "all_done",

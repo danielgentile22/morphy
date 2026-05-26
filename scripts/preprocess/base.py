@@ -440,14 +440,28 @@ _JOIN_REGISTRY: list[Join] = []
 
 def register_join(cls: type[Join]) -> type[Join]:
     inst = cls()
-    if not inst.name:
-        inst.name = cls.__name__
-    if not inst.inputs:
-        raise ValueError(f"{cls.__name__}: inputs required")
-    if not inst.annotates:
-        raise ValueError(f"{cls.__name__}: annotates required")
-    _JOIN_REGISTRY.append(inst)
+    register_join_instance(inst)
     return cls
+
+
+def register_join_instance(inst: Join) -> Join:
+    """Register an already-constructed Join.
+
+    Sibling of @register_join for joins built by a factory (e.g.
+    CountyScoreLookupJoin, SpatialAttributeJoin) whose construction takes
+    parameters and so can't fit the zero-arg-decorator pattern.
+    """
+    cls_name = type(inst).__name__
+    if not inst.name:
+        inst.name = cls_name
+    if not inst.inputs:
+        raise ValueError(f"{cls_name}: inputs required")
+    if not inst.annotates:
+        raise ValueError(f"{cls_name}: annotates required")
+    if any(j.name == inst.name for j in _JOIN_REGISTRY):
+        raise ValueError(f"duplicate join name {inst.name!r}")
+    _JOIN_REGISTRY.append(inst)
+    return inst
 
 
 def all_joins() -> list[Join]:
