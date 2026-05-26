@@ -127,17 +127,24 @@ def should_use_chunked(state_fips: str, *, threshold: int = 4_000_000) -> bool:
 
 
 def _build_owner_cluster_lookup(state_fips: str) -> pd.DataFrame:
-    """Scan every parcel shard for owner columns; emit per-parcel cluster info.
+    """Scan every parcel shard for owner columns; emit cluster-keyed totals.
 
-    Returns a DataFrame indexed by ``parcel_id_full`` with columns:
-    owner_cluster_id, owner_cluster_size, owner_cluster_value_total.
+    Returns a DataFrame indexed by ``owner_cluster_id`` with columns
+    ``owner_cluster_size`` and ``owner_cluster_value_total`` — one row
+    per distinct cluster (so the index is always unique, even when the
+    underlying parcel_id_full has duplicates across shards — FL FDOR NAL
+    has these because PARCEL_ID is county-unique, not state-unique).
+
+    Per-row ``owner_cluster_id`` is recomputed by `_attach_owner_cluster`
+    on the chunk itself (the same per-row formula `OwnerClusterJoin`
+    uses) — this lookup only supplies the global aggregates that need
+    a whole-state pass.
 
     Memory bounded to one shard's owner columns at any time (~tens of MB
     for an 11 M-parcel state, vs the full ~13 GB if loaded whole).
     """
     cluster_rows: list[pd.DataFrame] = []
     owner_cols = [
-        "parcel_id_full",
         "owner_name_norm",
         "mailing_addr_norm",
         "owner_name",
@@ -161,7 +168,6 @@ def _build_owner_cluster_lookup(state_fips: str) -> pd.DataFrame:
         cluster_rows.append(
             pd.DataFrame(
                 {
-                    "parcel_id_full": df.get("parcel_id_full", "").astype(str),
                     "owner_cluster_id": [
                         cluster_id(o, a) for o, a in zip(owner_norm, addr_norm)
                     ],
@@ -173,61 +179,65 @@ def _build_owner_cluster_lookup(state_fips: str) -> pd.DataFrame:
         )
     if not cluster_rows:
         return pd.DataFrame(
-            columns=[
-                "parcel_id_full",
-                "owner_cluster_id",
-                "owner_cluster_size",
-                "owner_cluster_value_total",
-            ]
+            columns=["owner_cluster_size", "owner_cluster_value_total"],
+            index=pd.Index([], name="owner_cluster_id"),
         )
     all_owners = pd.concat(cluster_rows, ignore_index=True)
-    # Cluster sizes / value totals over the global set.
+    # Cluster size / value totals across the whole state. Parcels with no
+    # clusterable owner/address (cluster_id == "") are excluded from the
+    # aggregate but still default to size=1, value=0 when attached.
     non_empty = all_owners[all_owners["owner_cluster_id"] != ""]
-    if len(non_empty) > 0:
-        agg = (
-            non_empty.groupby("owner_cluster_id")
-            .agg(
-                owner_cluster_size=("owner_cluster_id", "size"),
-                owner_cluster_value_total=("assessed_value", "sum"),
-            )
-            .reset_index()
+    if len(non_empty) == 0:
+        return pd.DataFrame(
+            columns=["owner_cluster_size", "owner_cluster_value_total"],
+            index=pd.Index([], name="owner_cluster_id"),
         )
-    else:
-        agg = pd.DataFrame(
-            columns=[
-                "owner_cluster_id",
-                "owner_cluster_size",
-                "owner_cluster_value_total",
-            ]
+    agg = (
+        non_empty.groupby("owner_cluster_id")
+        .agg(
+            owner_cluster_size=("owner_cluster_id", "size"),
+            owner_cluster_value_total=("assessed_value", "sum"),
         )
-    merged = all_owners.merge(agg, on="owner_cluster_id", how="left")
-    merged["owner_cluster_size"] = (
-        merged["owner_cluster_size"].fillna(1).astype(int)
     )
-    merged["owner_cluster_value_total"] = (
-        merged["owner_cluster_value_total"].fillna(0).astype(float)
-    )
-    # parcel_id_full → (cluster_id, size, value_total)
-    return merged.drop(columns=["assessed_value"]).set_index("parcel_id_full")
+    agg["owner_cluster_size"] = agg["owner_cluster_size"].astype(int)
+    agg["owner_cluster_value_total"] = agg["owner_cluster_value_total"].astype(float)
+    return agg  # index = owner_cluster_id (unique)
 
 
 def _attach_owner_cluster(
     chunk: gpd.GeoDataFrame, lookup: pd.DataFrame
 ) -> gpd.GeoDataFrame:
-    """Annotate a parcel chunk with owner_cluster_* columns from the lookup."""
+    """Annotate a parcel chunk with owner_cluster_* columns.
+
+    Matches `OwnerClusterJoin` semantics: per-row cluster_id computed from
+    the chunk's own (owner_name_norm, mailing_addr_norm); cluster_size +
+    cluster_value_total looked up from the global lookup keyed by
+    cluster_id (unique). Robust to duplicate parcel_id_full values
+    (which exist in FL FDOR NAL across counties).
+    """
     chunk = chunk.copy()
-    pids = chunk["parcel_id_full"].astype(str)
-    # Look up per-parcel cluster info; reindex on the chunk's index for the
-    # 1:1 attach. Missing rows (e.g. parcels with no owner info) default
-    # to empty / size=1 / value=0.
-    info = lookup.reindex(pids)
-    chunk["owner_cluster_id"] = info["owner_cluster_id"].fillna("").to_numpy()
-    chunk["owner_cluster_size"] = (
-        info["owner_cluster_size"].fillna(1).astype(int).to_numpy()
+    owner_norm = (
+        chunk["owner_name_norm"]
+        if "owner_name_norm" in chunk.columns
+        else chunk.get("owner_name", "").map(normalize_owner_name)
     )
-    chunk["owner_cluster_value_total"] = (
-        info["owner_cluster_value_total"].fillna(0).astype(float).to_numpy()
+    addr_norm = (
+        chunk["mailing_addr_norm"]
+        if "mailing_addr_norm" in chunk.columns
+        else chunk.get("mailing_addr", "").map(normalize_address)
     )
+    chunk["owner_cluster_id"] = [
+        cluster_id(o, a) for o, a in zip(owner_norm, addr_norm)
+    ]
+    # Map cluster_id → (size, value_total) via the unique-index lookup.
+    size_series = chunk["owner_cluster_id"].map(lookup["owner_cluster_size"]) if (
+        len(lookup) > 0
+    ) else pd.Series([pd.NA] * len(chunk), index=chunk.index)
+    value_series = chunk["owner_cluster_id"].map(lookup["owner_cluster_value_total"]) if (
+        len(lookup) > 0
+    ) else pd.Series([pd.NA] * len(chunk), index=chunk.index)
+    chunk["owner_cluster_size"] = size_series.fillna(1).astype(int)
+    chunk["owner_cluster_value_total"] = value_series.fillna(0).astype(float)
     return chunk
 
 
