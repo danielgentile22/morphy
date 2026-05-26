@@ -116,22 +116,64 @@ def _write_json_atomic(payload: dict, path: Path) -> None:
         raise
 
 
+def _resolve_parcels_source(state_dir: Path) -> tuple[Path, bool]:
+    """Locate the parcels parquet for a state.
+
+    Returns (path, is_sharded). When chunked compose ran (ADR-051) the
+    state has a `parcels/` directory of per-shard parquets; otherwise it
+    has a single `parcels.parquet` file. The reader transparently handles
+    either layout.
+    """
+    single = state_dir / "parcels.parquet"
+    sharded = state_dir / "parcels"
+    if single.exists():
+        return single, False
+    if sharded.is_dir() and any(sharded.glob("*.parquet")):
+        return sharded, True
+    raise FileNotFoundError(
+        f"no parcels.parquet (or parcels/ shard dir) for state at {state_dir}"
+    )
+
+
+def _read_parcels_table(source: Path, *, columns: list[str], is_sharded: bool) -> pa.Table:
+    """Column-projected read of the parcels source. Sharded reads stream
+    each file individually (bounded memory per shard) and concat at end."""
+    if not is_sharded:
+        return pq.read_table(source, columns=columns)
+    shards = sorted(source.glob("*.parquet"))
+    if not shards:
+        raise FileNotFoundError(f"shard dir {source} contains no .parquet files")
+    # Each shard's columns may overlap but the schema is consistent across
+    # shards (chunked compose writes them from one chunk-aware loop). We
+    # project at read time so the geometry payload is never materialised.
+    tables: list[pa.Table] = []
+    for shard in shards:
+        pf = pq.ParquetFile(shard)
+        present = [c for c in columns if c in pf.schema_arrow.names]
+        tables.append(pq.read_table(shard, columns=present))
+    return pa.concat_tables(tables, promote_options="default")
+
+
 def build_facets(state_fips: str, *, composite_root: Path | None = None) -> dict:
     """Write parcels_attr.parquet + facets.json for one state.
 
-    Raises FileNotFoundError if the state has no parcels.parquet.
+    Raises FileNotFoundError when the state has neither parcels.parquet
+    nor a parcels/ shard directory.
     """
     root = composite_root if composite_root is not None else COMPOSITE_ROOT
     state_dir = root / state_fips
-    parcels_path = state_dir / "parcels.parquet"
-    if not parcels_path.exists():
-        raise FileNotFoundError(f"no parcels.parquet for state {state_fips}: {parcels_path}")
+    parcels_source, is_sharded = _resolve_parcels_source(state_dir)
 
-    pf = pq.ParquetFile(parcels_path)
-    keep = attr_columns(pf.schema_arrow.names)
-    # One read — column-projected, so the large WKB geometry columns are
-    # never materialised.
-    table = pq.read_table(parcels_path, columns=keep)
+    # Discover available columns from the first source (single file OR
+    # first shard) so we can project consistently.
+    if is_sharded:
+        first_shard = next(iter(sorted(parcels_source.glob("*.parquet"))))
+        schema_names = pq.ParquetFile(first_shard).schema_arrow.names
+    else:
+        schema_names = pq.ParquetFile(parcels_source).schema_arrow.names
+    keep = attr_columns(schema_names)
+
+    table = _read_parcels_table(parcels_source, columns=keep, is_sharded=is_sharded)
     if SORT_COLUMN in table.column_names:
         table = table.sort_by([(SORT_COLUMN, "descending")])
 
@@ -143,20 +185,33 @@ def build_facets(state_fips: str, *, composite_root: Path | None = None) -> dict
     facets_path = state_dir / "facets.json"
     _write_json_atomic(facets, facets_path)
 
-    log.info("wrote %s (%d cols) + %s", attr_path, table.num_columns, facets_path)
+    log.info(
+        "wrote %s (%d cols, %s) + %s",
+        attr_path,
+        table.num_columns,
+        "sharded" if is_sharded else "single-file",
+        facets_path,
+    )
     return {"attr_path": str(attr_path), "facets_path": str(facets_path), "rows": table.num_rows}
 
 
 def _states_with_parcels(composite_root: Path) -> list[str]:
+    """States that have either a parcels.parquet or a parcels/ shard dir."""
     from .app_assets import EXCLUDED_FIPS
 
     if not composite_root.exists():
         return []
-    return sorted(
-        d.name
-        for d in composite_root.iterdir()
-        if d.is_dir() and d.name not in EXCLUDED_FIPS and (d / "parcels.parquet").exists()
-    )
+    out: list[str] = []
+    for d in composite_root.iterdir():
+        if not d.is_dir() or d.name in EXCLUDED_FIPS:
+            continue
+        if (d / "parcels.parquet").exists():
+            out.append(d.name)
+            continue
+        sharded = d / "parcels"
+        if sharded.is_dir() and any(sharded.glob("*.parquet")):
+            out.append(d.name)
+    return sorted(out)
 
 
 def run_facets(state_fips: str | None = None, *, composite_root: Path | None = None) -> dict:

@@ -151,6 +151,31 @@ def main() -> int:
         action="store_true",
         help="In a normal run, skip the tile-generation step that follows compose.",
     )
+    # ADR-051 chunked compose: per-state path selector.
+    chunk = parser.add_mutually_exclusive_group()
+    chunk.add_argument(
+        "--chunked",
+        dest="chunked",
+        action="store_const",
+        const=True,
+        default=None,
+        help=(
+            "Force chunked compose (ADR-051) for the chosen state(s). "
+            "Streams parcels per shard so peak memory stays bounded — needed "
+            "for FL / NC."
+        ),
+    )
+    chunk.add_argument(
+        "--no-chunked",
+        dest="chunked",
+        action="store_const",
+        const=False,
+        help=(
+            "Force the legacy single-shot compose for the chosen state(s). "
+            "Default is auto: chunked when the state has more than "
+            "~4M parcels, single-shot otherwise."
+        ),
+    )
     parser.add_argument("--list-views", action="store_true", help="List registered Views and exit")
     parser.add_argument("--list-joins", action="store_true", help="List registered Joins and exit")
     parser.add_argument(
@@ -241,6 +266,7 @@ def main() -> int:
                 get_state(args.state),
                 manifest,
                 force_rebuild=args.force_rebuild,
+                chunked=args.chunked,
                 progress_callback=_stream_progress,
             )
             return 0 if res else 1
@@ -248,6 +274,7 @@ def main() -> int:
             results = run_compose_all(
                 manifest,
                 force_rebuild=args.force_rebuild,
+                chunked=args.chunked,
                 progress_callback=_stream_progress,
             )
             manifest.save()
@@ -266,6 +293,7 @@ def main() -> int:
         state_fips=args.state,
         force_rebuild=args.force_rebuild,
         skip_tiles=args.skip_tiles,
+        chunked=args.chunked,
         progress_callback=_stream_progress,
     )
     _print_summary(outcome)

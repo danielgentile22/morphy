@@ -57,7 +57,11 @@
           "description": "One of the canonical-type keys: tower, parcel, distress_overlay, solar_facility, billboard, county_score, etc."
         },
         "rows": { "type": "integer", "minimum": 0 },
-        "parquet_path": { "type": "string", "minLength": 1 },
+        "parquet_path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Either a file path (e.g. 'towers.parquet') OR a directory name (e.g. 'parcels') when `sharded` is true. Relative to composite/<fips>/."
+        },
         "geojson_path": { "type": "string", "minLength": 1 },
         "simplified_geojson_path": { "type": "string", "minLength": 1 },
         "geometry_type": { "type": "string", "description": "Empty string when the layer has no rows or no detectable geometry type." },
@@ -65,6 +69,15 @@
           "type": "object",
           "description": "Column name -> pandas dtype string.",
           "additionalProperties": { "type": "string" }
+        },
+        "sharded": {
+          "type": "boolean",
+          "description": "True when parquet_path points to a directory of per-shard parquets (chunked compose, ADR-051). Absent or false for single-file layers."
+        },
+        "shard_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of per-shard parquets when sharded=true. Required when sharded=true; absent otherwise."
         }
       }
     },

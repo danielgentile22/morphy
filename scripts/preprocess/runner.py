@@ -153,12 +153,18 @@ def run_compose_one(
     manifest: PreprocessManifest,
     *,
     force_rebuild: bool = False,
+    chunked: bool | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> ComposeResult | None:
+    """Compose one state. `chunked` selects the compose path:
+      - None  → auto-detect (large states use chunked compose per ADR-051)
+      - True  → force the chunked path
+      - False → force the legacy single-shot path
+    """
     _emit(progress_callback, "compose_start", state.fips, {"name": state.name})
     try:
-        cfg = ComposeConfig(state=state, force_rebuild=force_rebuild)
-        result = compose(cfg)
+        cfg = ComposeConfig(state=state, force_rebuild=force_rebuild, chunked=chunked)
+        result = _dispatch_compose(cfg)
     except Exception as e:
         tb = traceback.format_exc(limit=3)
         log.error("compose %s failed: %s\n%s", state.fips, e, tb)
@@ -201,6 +207,7 @@ def run_compose_all(
     *,
     states: list[StateGeography] | None = None,
     force_rebuild: bool = False,
+    chunked: bool | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> dict[str, ComposeResult | None]:
     if states is None:
@@ -211,10 +218,32 @@ def run_compose_all(
             s,
             manifest,
             force_rebuild=force_rebuild,
+            chunked=chunked,
             progress_callback=progress_callback,
         )
     manifest.save()
     return results
+
+
+def _dispatch_compose(cfg: ComposeConfig) -> ComposeResult:
+    """Pick the single-shot or chunked compose path per cfg.chunked."""
+    use_chunked: bool
+    if cfg.chunked is True:
+        use_chunked = True
+    elif cfg.chunked is False:
+        use_chunked = False
+    else:
+        from .chunked_compose import should_use_chunked
+
+        use_chunked = should_use_chunked(
+            cfg.state.fips, threshold=cfg.chunk_threshold
+        )
+    if use_chunked:
+        from .chunked_compose import compose_chunked
+
+        log.info("dispatching state %s to chunked compose (ADR-051)", cfg.state.fips)
+        return compose_chunked(cfg)
+    return compose(cfg)
 
 
 def run_all(
@@ -222,6 +251,7 @@ def run_all(
     state_fips: str | None = None,
     force_rebuild: bool = False,
     skip_tiles: bool = False,
+    chunked: bool | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> RunOutcome:
     """Normalize all sources, then compose either one state or all that have data.
@@ -232,6 +262,8 @@ def run_all(
     emission; ``skip_tiles=True`` translates to skipping the ``tiles``
     step. Inner per-source events still flow through ``progress_callback``
     unchanged.
+
+    ``chunked`` selects the compose path per state (see ``run_compose_one``).
     """
     from .pipeline import Pipeline
     from .pipeline_steps import (
@@ -248,7 +280,9 @@ def run_all(
     pipeline = Pipeline(
         steps=[
             NormalizeAllStep(force_rebuild=force_rebuild),
-            ComposeStatesStep(states=states, force_rebuild=force_rebuild),
+            ComposeStatesStep(
+                states=states, force_rebuild=force_rebuild, chunked=chunked
+            ),
             AppAssetsStep(),
             TilesStep(),
         ]

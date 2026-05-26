@@ -78,6 +78,16 @@ class DataSource(abc.ABC):
     # See docs/DATA_FRESHNESS.md for the per-source rationale.
     update_cadence_days: int | None = field(init=False, default=None)
 
+    # ── resumability ────────────────────────────────────────────────────
+    # When True the puller preserves the previous run's ``.partial/``
+    # directory instead of wiping it at fetch start, so a stalled long-
+    # running paginated fetch (e.g. NC OneMap's 1,186 pages) can pick up
+    # where it left off. The source's ``fetch`` is responsible for
+    # idempotently skipping already-complete per-page files inside the
+    # preserved directory. Default False — single-file or small fetches
+    # don't benefit and want the cleanslate guarantee.
+    supports_resume: bool = field(init=False, default=False)
+
     # ── behaviour ───────────────────────────────────────────────────────
 
     @abc.abstractmethod

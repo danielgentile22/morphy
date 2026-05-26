@@ -22,6 +22,7 @@ from .storage import (
     current_dir,
     directory_bytes,
     prepare_fresh_partial,
+    prepare_partial_for_resume,
     promote_partial,
 )
 
@@ -114,7 +115,15 @@ def fetch_one(
             )
 
     try:
-        partial = prepare_fresh_partial(sid)
+        # Resumable sources (e.g. NC OneMap's 1,186-page fetch) preserve
+        # the previous run's .partial/ so a stall can pick up where it
+        # left off. Non-resumable sources start clean — every source's
+        # validate() expects to see only files this run produced.
+        if getattr(source, "supports_resume", False):
+            partial = prepare_partial_for_resume(sid)
+            log_event("fetch_resume_attempt", source=sid, bytes_carried=directory_bytes(partial))
+        else:
+            partial = prepare_fresh_partial(sid)
         # Source-supplied progress is forwarded as (done, total, label)
         result = source.fetch(partial, progress)
         source.validate(result.files)

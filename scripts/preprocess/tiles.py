@@ -61,13 +61,27 @@ def tippecanoe_available() -> bool:
     return shutil.which("tippecanoe") is not None
 
 
-def _stream_features(parquet_path: Path, stdin) -> int:
-    """Stream GeoJSON-seq features from a parcels parquet into a pipe.
+def _resolve_parcels_source(state_dir: Path) -> tuple[list[Path], bool]:
+    """Locate the parcel parquet(s) for tile building.
 
-    Decodes the primary `geometry` column (full-resolution WKB) directly
-    — never `geom_simplified`, since tippecanoe does its own per-zoom
-    simplification and double-simplifying degrades quality.
+    Returns (paths, is_sharded). Either a single-element list (legacy
+    layout) or a list of per-shard files (chunked compose, ADR-051).
     """
+    single = state_dir / "parcels.parquet"
+    sharded = state_dir / "parcels"
+    if single.exists():
+        return [single], False
+    if sharded.is_dir():
+        shards = sorted(sharded.glob("*.parquet"))
+        if shards:
+            return shards, True
+    raise FileNotFoundError(
+        f"no parcels.parquet (or parcels/ shard dir) under {state_dir}"
+    )
+
+
+def _stream_features_from_path(parquet_path: Path, stdin) -> int:
+    """Stream GeoJSON-seq features from one parquet file into a pipe."""
     pf = pq.ParquetFile(parquet_path)
     available = set(pf.schema_arrow.names)
     if GEOMETRY_COLUMN not in available:
@@ -97,6 +111,24 @@ def _stream_features(parquet_path: Path, stdin) -> int:
     return written
 
 
+def _stream_features(parquet_paths, stdin) -> int:
+    """Stream features from one or many parquet files into a pipe.
+
+    Accepts either a single `Path` (legacy single-file callers, including
+    the test suite) or a list of `Path` (chunked sharded layout).
+
+    Decodes the primary `geometry` column (full-resolution WKB) directly
+    — never `geom_simplified`, since tippecanoe does its own per-zoom
+    simplification and double-simplifying degrades quality.
+    """
+    if isinstance(parquet_paths, Path):
+        parquet_paths = [parquet_paths]
+    written = 0
+    for p in parquet_paths:
+        written += _stream_features_from_path(p, stdin)
+    return written
+
+
 def build_state_tiles(
     state_fips: str,
     *,
@@ -104,17 +136,17 @@ def build_state_tiles(
     min_zoom: int = MIN_ZOOM,
     max_zoom: int = MAX_ZOOM,
 ) -> Path:
-    """Build `composite/<fips>/parcels.pmtiles` from `parcels.parquet`.
+    """Build `composite/<fips>/parcels.pmtiles` from the parcel parquet(s).
 
-    Writes to a `.partial` file and renames on success (atomic). Raises
-    on a missing parquet, a missing tippecanoe, or a non-zero tippecanoe
-    exit — the caller decides whether that is fatal.
+    Reads from either `parcels.parquet` (legacy single-file) or a
+    `parcels/` shard directory (chunked compose, ADR-051). Writes to a
+    `.partial` file and renames on success (atomic). Raises on a missing
+    source, a missing tippecanoe, or a non-zero tippecanoe exit — the
+    caller decides whether that is fatal.
     """
     root = composite_root if composite_root is not None else COMPOSITE_ROOT
     state_dir = root / state_fips
-    parquet_path = state_dir / "parcels.parquet"
-    if not parquet_path.exists():
-        raise FileNotFoundError(f"no parcels.parquet for state {state_fips}: {parquet_path}")
+    parquet_paths, is_sharded = _resolve_parcels_source(state_dir)
     if not tippecanoe_available():
         raise RuntimeError("tippecanoe is not installed — run `brew install tippecanoe`")
 
@@ -134,11 +166,16 @@ def build_state_tiles(
         "--simplification=10",
         "--force",
     ]
-    log.info("tippecanoe → %s", out_path)
+    log.info(
+        "tippecanoe → %s (%d %s)",
+        out_path,
+        len(parquet_paths),
+        "shards" if is_sharded else "file",
+    )
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     try:
         assert proc.stdin is not None
-        written = _stream_features(parquet_path, proc.stdin)
+        written = _stream_features(parquet_paths, proc.stdin)
         proc.stdin.close()
     except Exception:
         proc.kill()
@@ -155,16 +192,26 @@ def build_state_tiles(
 
 
 def _composed_states(composite_root: Path) -> list[str]:
-    """FIPS of every directory that has a parcels.parquet, app-excluded ones dropped."""
+    """FIPS of every directory that has parcel parquet(s), app-excluded ones dropped.
+
+    Accepts either a single-file `parcels.parquet` (legacy layout) or a
+    `parcels/` shard directory (chunked compose, ADR-051).
+    """
     from .app_assets import EXCLUDED_FIPS
 
     if not composite_root.exists():
         return []
-    return sorted(
-        d.name
-        for d in composite_root.iterdir()
-        if d.is_dir() and d.name not in EXCLUDED_FIPS and (d / "parcels.parquet").exists()
-    )
+    out: list[str] = []
+    for d in composite_root.iterdir():
+        if not d.is_dir() or d.name in EXCLUDED_FIPS:
+            continue
+        if (d / "parcels.parquet").exists():
+            out.append(d.name)
+            continue
+        sharded = d / "parcels"
+        if sharded.is_dir() and any(sharded.glob("*.parquet")):
+            out.append(d.name)
+    return sorted(out)
 
 
 def run_tiles(state_fips: str | None = None, *, composite_root: Path | None = None) -> dict:

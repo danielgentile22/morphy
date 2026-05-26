@@ -92,6 +92,12 @@ class NcOnemapParcels(DataSource):
     cadence = "Monthly (per-county refresh schedule)"
     estimated_size_mb = 10000.0  # ~10 GB across ~1186 paginated GeoJSON files
     update_cadence_days = 90
+    # The 1,186-page fetch is the longest single operation in the puller;
+    # a server-side 504 at page 1,106 (real history, 2026-05) used to mean
+    # starting over from page 1. With resume support enabled, prepare_partial
+    # preserves the previous run's page_*.geojson files and the per-page
+    # `if page_path.exists()` guard in `fetch()` below skips them.
+    supports_resume = True
     description = (
         "NC OneMap publishes a statewide normalised parcel layer "
         "aggregating all 100 NC counties via the Integrated Cadastral "

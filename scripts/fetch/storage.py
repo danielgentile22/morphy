@@ -39,6 +39,22 @@ def prepare_fresh_partial(source_id: str) -> Path:
     return p
 
 
+def prepare_partial_for_resume(source_id: str) -> Path:
+    """Ensure the .partial directory exists *without wiping it*.
+
+    Used for sources that declare ``supports_resume = True`` (e.g. NC
+    OneMap's paginated fetch). The source's ``fetch`` is expected to
+    idempotently skip per-page files that already exist with sufficient
+    size — see ``nc_onemap_parcels.fetch``'s resume guard.
+
+    Distinct from ``prepare_fresh_partial`` so the caller's intent is
+    explicit and easy to grep for.
+    """
+    p = partial_dir(source_id)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def promote_partial(source_id: str) -> Path:
     """Atomically swap .partial → current. Old current is removed.
 

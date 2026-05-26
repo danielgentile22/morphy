@@ -72,6 +72,11 @@ class ComposeStatesStep(PipelineStep):
     # When None, the step picks every state with normalized parcel data.
     states: list["StateGeography"] | None = None
     force_rebuild: bool = False
+    # ADR-051 chunked-compose selector:
+    #   None  → auto-detect per state (chunked above the threshold)
+    #   True  → force chunked for every state
+    #   False → force single-shot for every state
+    chunked: bool | None = None
 
     def is_applicable(self, outcome: "RunOutcome") -> bool:
         return True
@@ -94,6 +99,7 @@ class ComposeStatesStep(PipelineStep):
             manifest,
             states=states,
             force_rebuild=self.force_rebuild,
+            chunked=self.chunked,
             progress_callback=progress_callback,
         )
         for fips, res in results.items():

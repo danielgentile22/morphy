@@ -37,11 +37,18 @@ export interface CatalogLayer {
   name: string;
   canonicalType: string;
   rows: number;
+  /** Either a single-file path ("towers.parquet") or — when `sharded` is
+   *  true (chunked compose, ADR-051) — a directory name ("parcels"). */
   parquetPath: string;
   geojsonPath?: string;
   simplifiedGeojsonPath?: string;
   geometryType?: string;
   schema: Record<string, string>;
+  /** Chunked compose writes this layer as multiple per-shard parquets
+   *  under `parquetPath/`. Absent or false for single-file layers. */
+  sharded?: boolean;
+  /** Number of shards when `sharded === true`. */
+  shardCount?: number;
 }
 
 /** A derived view (interestingness_top_1000, owner_clusters, …). */
@@ -167,6 +174,32 @@ export function parseCompositeIndex(raw: unknown): CompositeIndex {
 
 function parseLayer(name: string, raw: unknown): CatalogLayer {
   if (!isRecord(raw)) throw new Error(`catalog: layer "${name}" is not an object`);
+  // sharded + shard_count are optional fields introduced with ADR-051
+  // (chunked compose). When sharded === true, shard_count is required;
+  // we enforce that on the read side so a malformed catalog surfaces here
+  // rather than silently mis-rendering downstream.
+  const shardedRaw = raw.sharded;
+  let sharded: boolean | undefined;
+  if (shardedRaw !== undefined) {
+    if (typeof shardedRaw !== 'boolean') {
+      throw new Error(`catalog: layers.${name}.sharded must be boolean when present`);
+    }
+    sharded = shardedRaw;
+  }
+  let shardCount: number | undefined;
+  if (sharded === true) {
+    shardCount = requireInteger(raw.shard_count, `layers.${name}.shard_count`);
+  } else if (raw.shard_count !== undefined) {
+    // Tolerate shard_count without sharded=true only when it parses as
+    // a non-negative integer; ignore it otherwise.
+    if (
+      typeof raw.shard_count === 'number' &&
+      Number.isInteger(raw.shard_count) &&
+      raw.shard_count >= 0
+    ) {
+      shardCount = raw.shard_count;
+    }
+  }
   return {
     name,
     canonicalType: requireString(raw.canonical_type, `layers.${name}.canonical_type`),
@@ -182,6 +215,8 @@ function parseLayer(name: string, raw: unknown): CatalogLayer {
     // so consumers don't have to special-case "".
     geometryType: optionalString(raw.geometry_type, `layers.${name}.geometry_type`),
     schema: requireStringMap(raw.schema, `layers.${name}.schema`),
+    sharded,
+    shardCount,
   };
 }
 

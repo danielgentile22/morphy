@@ -1,0 +1,882 @@
+"""Chunked Composer (ADR-051).
+
+Streaming variant of `compose.compose()`. Same inputs, same canonical
+schema, same catalog contract — but parcels are processed one shard at
+a time so peak memory stays bounded to a single shard rather than the
+whole-state union. FL (~11 M parcels, ~19.5 GB peak in single-shot mode)
+and NC (~5.9 M parcels) fit on a 16 GB dev machine in chunked mode.
+
+Sharded output: parcels are written under
+``composite/<fips>/parcels/<label>.parquet`` rather than as a single
+``parcels.parquet``. The catalog advertises a new ``sharded: true``
+flag on the parcel layer plus a directory ``parquet_path``. Downstream
+readers (facets, tiles) handle either layout.
+
+Sequence:
+  1. Load ancillary tables (towers, solar, billboard, distress_overlay,
+     county_score). All small enough to stay in memory.
+  2. **Owner-cluster pre-pass** — scan every parcel shard, projecting
+     to owner-related columns only. Compute cluster_id + sizes +
+     value totals across the whole state. Store the parcel_id_full →
+     cluster lookup.
+  3. **Tower-to-parcel pre-pass** — iterate parcel shards, sjoin each
+     chunk against the (small) tower table, accumulate tower → parcel
+     matches. Apply to the tower table after the loop.
+  4. Same pre-pass for solar / billboard sjoins.
+  5. **Per-chunk loop** — for each parcel shard:
+        a. Run parcel-touching joins (ParcelHostsInfra,
+           CountyScoreToParcel, ParcelToDistress, OwnerCluster from
+           lookup, InterestingnessScore).
+        b. Feed the annotated chunk to every streaming view aggregator.
+        c. Write `composite/<fips>/parcels/<label>.parquet`.
+  6. Run non-parcel-touching joins on towers / solar / billboard.
+  7. Finalize view aggregators; write view outputs + catalog.
+
+Joins that don't fit the chunked pattern (e.g. arbitrary new joins
+declared by a future contributor) are skipped with a warning. The
+single-shot `compose.compose()` remains the default; chunked mode is
+opt-in via `ComposeConfig.chunked=True` (or auto-engaged for states
+past the row-count threshold — see `pipeline_steps.ComposeStatesStep`).
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import geopandas as gpd
+import pandas as pd
+
+from . import COMPOSITE_ROOT
+from .base import (
+    OUTPUT_BASENAMES,
+    SPATIAL_TYPES,
+    ComposeContext,
+    ComposeResult,
+    all_normalizers,
+    all_views,
+    ordered_joins,
+    utcnow_iso,
+)
+from .catalog_schema import validate_catalog
+from .chunked_compose_helpers import (
+    aggregator_for_view,
+    iter_state_parcel_shards,
+    iter_state_parcel_shards_columns,
+)
+from .cluster import cluster_id, normalize_address, normalize_owner_name
+from .geographies import StateGeography
+from .io import (
+    dual_write_spatial,
+    write_geojson,
+    write_geoparquet,
+    write_json,
+    write_parquet,
+)
+from .manifest import get_raw_local_version
+
+log = logging.getLogger("preprocess.chunked_compose")
+
+# catalog.json schema version. Documented in ARCHITECTURE.md §6.
+CATALOG_SCHEMA_VERSION = 3
+
+
+def estimate_state_parcel_rows(state_fips: str) -> int:
+    """Cheap estimate of how many parcels a state has across normalized shards.
+
+    Reads only the `state_fips` column from each shard (parquet metadata
+    + a column projection — no full-row scan). Used by the chunked-compose
+    auto-detect so the pipeline can pick the right path per state without
+    a full load.
+
+    Returns 0 when no shards are present.
+    """
+    import pyarrow.parquet as pq
+
+    from . import NORMALIZED_ROOT
+    from .base import OUTPUT_BASENAMES, all_normalizers
+
+    parcel_basename = OUTPUT_BASENAMES.get("parcel", "parcel")
+    n = 0
+    for normalizer in all_normalizers():
+        if "parcel" not in normalizer.canonical_types:
+            continue
+        src_dir = NORMALIZED_ROOT / normalizer.source_id / parcel_basename
+        if not src_dir.is_dir():
+            continue
+        for shard in src_dir.glob("*.parquet"):
+            try:
+                # Single column read — no geometry, no owner blobs.
+                table = pq.read_table(shard, columns=["state_fips"])
+            except Exception:
+                continue
+            try:
+                col = table.column("state_fips").to_pylist()
+            except Exception:
+                continue
+            n += sum(1 for v in col if v == state_fips)
+    return n
+
+
+def should_use_chunked(state_fips: str, *, threshold: int = 4_000_000) -> bool:
+    """True when this state should compose via the chunked path."""
+    return estimate_state_parcel_rows(state_fips) >= threshold
+
+
+# ── Owner-cluster pre-pass ────────────────────────────────────────────────
+
+
+def _build_owner_cluster_lookup(state_fips: str) -> pd.DataFrame:
+    """Scan every parcel shard for owner columns; emit per-parcel cluster info.
+
+    Returns a DataFrame indexed by ``parcel_id_full`` with columns:
+    owner_cluster_id, owner_cluster_size, owner_cluster_value_total.
+
+    Memory bounded to one shard's owner columns at any time (~tens of MB
+    for an 11 M-parcel state, vs the full ~13 GB if loaded whole).
+    """
+    cluster_rows: list[pd.DataFrame] = []
+    owner_cols = [
+        "parcel_id_full",
+        "owner_name_norm",
+        "mailing_addr_norm",
+        "owner_name",
+        "mailing_addr",
+        "assessed_value",
+    ]
+    for _label, df in iter_state_parcel_shards_columns(state_fips, owner_cols):
+        # Some shards may not carry the *_norm columns — fall back to
+        # normalising on the fly so we never crash a state because one
+        # source skipped normalisation.
+        owner_norm = (
+            df["owner_name_norm"]
+            if "owner_name_norm" in df.columns
+            else df.get("owner_name", "").map(normalize_owner_name)
+        )
+        addr_norm = (
+            df["mailing_addr_norm"]
+            if "mailing_addr_norm" in df.columns
+            else df.get("mailing_addr", "").map(normalize_address)
+        )
+        cluster_rows.append(
+            pd.DataFrame(
+                {
+                    "parcel_id_full": df.get("parcel_id_full", "").astype(str),
+                    "owner_cluster_id": [
+                        cluster_id(o, a) for o, a in zip(owner_norm, addr_norm)
+                    ],
+                    "assessed_value": pd.to_numeric(
+                        df.get("assessed_value", 0), errors="coerce"
+                    ).fillna(0.0),
+                }
+            )
+        )
+    if not cluster_rows:
+        return pd.DataFrame(
+            columns=[
+                "parcel_id_full",
+                "owner_cluster_id",
+                "owner_cluster_size",
+                "owner_cluster_value_total",
+            ]
+        )
+    all_owners = pd.concat(cluster_rows, ignore_index=True)
+    # Cluster sizes / value totals over the global set.
+    non_empty = all_owners[all_owners["owner_cluster_id"] != ""]
+    if len(non_empty) > 0:
+        agg = (
+            non_empty.groupby("owner_cluster_id")
+            .agg(
+                owner_cluster_size=("owner_cluster_id", "size"),
+                owner_cluster_value_total=("assessed_value", "sum"),
+            )
+            .reset_index()
+        )
+    else:
+        agg = pd.DataFrame(
+            columns=[
+                "owner_cluster_id",
+                "owner_cluster_size",
+                "owner_cluster_value_total",
+            ]
+        )
+    merged = all_owners.merge(agg, on="owner_cluster_id", how="left")
+    merged["owner_cluster_size"] = (
+        merged["owner_cluster_size"].fillna(1).astype(int)
+    )
+    merged["owner_cluster_value_total"] = (
+        merged["owner_cluster_value_total"].fillna(0).astype(float)
+    )
+    # parcel_id_full → (cluster_id, size, value_total)
+    return merged.drop(columns=["assessed_value"]).set_index("parcel_id_full")
+
+
+def _attach_owner_cluster(
+    chunk: gpd.GeoDataFrame, lookup: pd.DataFrame
+) -> gpd.GeoDataFrame:
+    """Annotate a parcel chunk with owner_cluster_* columns from the lookup."""
+    chunk = chunk.copy()
+    pids = chunk["parcel_id_full"].astype(str)
+    # Look up per-parcel cluster info; reindex on the chunk's index for the
+    # 1:1 attach. Missing rows (e.g. parcels with no owner info) default
+    # to empty / size=1 / value=0.
+    info = lookup.reindex(pids)
+    chunk["owner_cluster_id"] = info["owner_cluster_id"].fillna("").to_numpy()
+    chunk["owner_cluster_size"] = (
+        info["owner_cluster_size"].fillna(1).astype(int).to_numpy()
+    )
+    chunk["owner_cluster_value_total"] = (
+        info["owner_cluster_value_total"].fillna(0).astype(float).to_numpy()
+    )
+    return chunk
+
+
+# ── Tower / solar / billboard pre-pass (sjoin against parcel shards) ──────
+
+
+def _build_infra_to_parcel_lookup(
+    infra: gpd.GeoDataFrame,
+    state_fips: str,
+    *,
+    keep_cols: list[str],
+) -> dict[int, dict]:
+    """For each row of `infra`, find the parcel it intersects (any shard).
+
+    Returns a dict: infra row index → dict of parcel columns to attach
+    (parcel_id_full, parcel_owner, parcel_value, parcel_acreage,
+    parcel_use_code — whichever exist on parcels). Empty when infra has
+    no matches or no geometry.
+
+    The sjoin runs once per shard, so peak memory stays bounded to one
+    shard's parcel geometry plus the (small) infra geometry.
+    """
+    if infra is None or len(infra) == 0:
+        return {}
+    out: dict[int, dict] = {}
+    infra_geo = infra[["geometry"]].reset_index()
+    for _label, chunk in iter_state_parcel_shards(state_fips):
+        present = [c for c in keep_cols if c in chunk.columns]
+        if "geometry" not in chunk.columns:
+            continue
+        right = chunk[[*present, "geometry"]].rename(
+            columns={
+                "owner_name": "parcel_owner",
+                "assessed_value": "parcel_value",
+                "acreage": "parcel_acreage",
+                "land_use_code": "parcel_use_code",
+            }
+        )
+        try:
+            hit = gpd.sjoin(infra_geo, right, how="inner", predicate="within")
+        except Exception as e:  # noqa: BLE001 — bad shard mustn't kill the loop
+            log.warning("infra→parcel sjoin failed on a shard: %s", e)
+            continue
+        for row in hit.itertuples(index=False):
+            row_d = row._asdict() if hasattr(row, "_asdict") else dict(row)
+            idx = int(row_d.get("index", -1))
+            if idx < 0:
+                continue
+            # Skip the sjoin index_right + the geometry column
+            attach = {
+                k: v
+                for k, v in row_d.items()
+                if k
+                not in {"index", "index_right", "geometry"}
+            }
+            # First match wins — a tower in two overlapping parcels is rare
+            # and `compose` today doesn't disambiguate either.
+            out.setdefault(idx, attach)
+    return out
+
+
+def _apply_lookup(infra: gpd.GeoDataFrame, lookup: dict[int, dict]) -> gpd.GeoDataFrame:
+    """Add per-row columns from `lookup` (row index → cols dict) onto `infra`."""
+    if infra is None or len(infra) == 0 or not lookup:
+        return infra
+    infra = infra.copy()
+    # Collect every column that any lookup row provides.
+    cols: set[str] = set()
+    for d in lookup.values():
+        cols.update(d.keys())
+    for col in cols:
+        infra[col] = infra.index.map(lambda i: lookup.get(int(i), {}).get(col))
+    return infra
+
+
+# ── Top-level orchestrator ────────────────────────────────────────────────
+
+
+def compose_chunked(cfg) -> ComposeResult:  # cfg: ComposeConfig
+    """Streaming Composer. See module docstring."""
+    from .compose import ComposeConfig  # local to keep modules decoupled
+
+    if not isinstance(cfg, ComposeConfig):
+        raise TypeError("compose_chunked requires a ComposeConfig")
+
+    state: StateGeography = cfg.state
+    log.info("=== chunked compose state %s (%s) ===", state.fips, state.name)
+
+    ctx = ComposeContext(
+        state_fips=state.fips,
+        state_name=state.name,
+        state_abbr=state.abbr,
+    )
+
+    out_dir = COMPOSITE_ROOT / state.fips
+    out_dir.mkdir(parents=True, exist_ok=True)
+    parcels_shard_dir = out_dir / OUTPUT_BASENAMES.get("parcel", "parcel")
+    # Clean any pre-existing shards from a previous run so the new ones
+    # don't accidentally co-exist with stale ones.
+    if parcels_shard_dir.exists():
+        for old in parcels_shard_dir.glob("*.parquet"):
+            old.unlink()
+    parcels_shard_dir.mkdir(parents=True, exist_ok=True)
+    # Remove a legacy single-file parcels.parquet from a non-chunked run
+    # so downstream readers don't see both layouts at once.
+    legacy_single = out_dir / "parcels.parquet"
+    if legacy_single.exists():
+        legacy_single.unlink()
+    views_dir = out_dir / "views"
+    views_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Ancillary tables -----------------------------------------------------
+    sources_used = _load_non_parcel_state_data(ctx)
+    log.info(
+        "loaded %d non-parcel canonical types from %d sources",
+        len(ctx.tables),
+        len(sources_used),
+    )
+
+    # 2. Owner-cluster pre-pass ---------------------------------------------
+    log.info("owner-cluster pre-pass — scanning shards for owner columns…")
+    owner_lookup = _build_owner_cluster_lookup(state.fips)
+    log.info("owner-cluster pre-pass: %d parcels indexed", len(owner_lookup))
+
+    # 3-4. Infra→parcel pre-pass --------------------------------------------
+    log.info("infra→parcel sjoin pre-pass…")
+    tower_lookup = _build_infra_to_parcel_lookup(
+        ctx.get("tower"),
+        state.fips,
+        keep_cols=[
+            "parcel_id_full",
+            "owner_name",
+            "assessed_value",
+            "acreage",
+            "land_use_code",
+        ],
+    )
+    solar_lookup = _build_infra_to_parcel_lookup(
+        ctx.get("solar_facility"),
+        state.fips,
+        keep_cols=["parcel_id_full", "owner_name"],
+    )
+    billboard_lookup = _build_infra_to_parcel_lookup(
+        ctx.get("billboard"),
+        state.fips,
+        keep_cols=["parcel_id_full", "owner_name"],
+    )
+    log.info(
+        "infra→parcel lookups: towers=%d, solar=%d, billboards=%d",
+        len(tower_lookup),
+        len(solar_lookup),
+        len(billboard_lookup),
+    )
+
+    # 5. Build per-parcel reverse maps (parcel_id_full → infra counts +
+    #    summary list) from the lookups built above. This replaces the
+    #    iter-over-infra-rows logic of ParcelHostsInfraJoin without
+    #    needing a single in-memory parcel table.
+    tower_counts, tower_summary = _reverse_index(tower_lookup, kind="tower")
+    solar_counts, solar_summary = _reverse_index(solar_lookup, kind="solar")
+    billboard_counts, billboard_summary = _reverse_index(billboard_lookup, kind="billboard")
+
+    # 6. Per-chunk loop -----------------------------------------------------
+    view_aggregators = _build_view_aggregators()
+    skipped_views: list[str] = []
+    for v in all_views():
+        if v.name not in {a.name for a in view_aggregators}:
+            # Tower-only / non-parcel views still build at the end via
+            # the in-memory ctx (towers + solar + billboard fit easily).
+            if "parcel" in v.inputs:
+                skipped_views.append(v.name)
+
+    shard_count = 0
+    total_parcel_rows = 0
+    shard_files: list[Path] = []
+    schema_summary: dict[str, str] | None = None
+    geometry_type: str = ""
+
+    for label, chunk in iter_state_parcel_shards(state.fips):
+        # Parcel-touching joins, applied directly on the chunk.
+        chunk = _apply_parcel_hosts_infra(
+            chunk, tower_counts, solar_counts, billboard_counts, tower_summary, solar_summary, billboard_summary
+        )
+        chunk = _apply_county_score(chunk, ctx.get("county_score"))
+        chunk = _apply_parcel_to_distress(chunk, ctx.get("distress_overlay"))
+        chunk = _attach_owner_cluster(chunk, owner_lookup)
+        chunk = _apply_interestingness_score(chunk)
+
+        # Feed view aggregators.
+        for agg in view_aggregators:
+            try:
+                agg.consume(chunk)
+            except Exception as e:  # noqa: BLE001
+                log.warning("view aggregator %s consume raised: %s", agg.name, e)
+
+        # Write the shard.
+        shard_path = parcels_shard_dir / f"{label}.parquet"
+        write_geoparquet(chunk, shard_path)
+        shard_files.append(shard_path)
+        shard_count += 1
+        total_parcel_rows += len(chunk)
+        if schema_summary is None:
+            schema_summary = _schema_summary(chunk)
+            geometry_type = _geom_type(chunk)
+        log.info("  ✓ shard %s (%d rows) → %s", label, len(chunk), shard_path.name)
+
+    log.info(
+        "chunk loop done: %d shards, %d parcels", shard_count, total_parcel_rows
+    )
+
+    # 7. Apply infra→parcel lookups onto the in-memory infra tables, then
+    #    run non-parcel-touching joins (CountyScoreToTower etc.) via the
+    #    standard registry — they don't need parcels in ctx.
+    if ctx.has("tower"):
+        ctx.set("tower", _apply_lookup(ctx.get("tower"), tower_lookup))
+    if ctx.has("solar_facility"):
+        ctx.set("solar_facility", _apply_lookup(ctx.get("solar_facility"), solar_lookup))
+    if ctx.has("billboard"):
+        ctx.set("billboard", _apply_lookup(ctx.get("billboard"), billboard_lookup))
+
+    joins_applied = [
+        "ParcelHostsInfraJoin",
+        "CountyScoreToParcelJoin",
+        "ParcelToDistressJoin",
+        "OwnerClusterJoin",
+        "InterestingnessScoreJoin",
+        "TowerToParcelJoin",
+        "SolarToParcelJoin",
+        "BillboardToParcelJoin",
+    ]
+    joins_skipped: list[str] = list(cfg.skip_joins or [])
+    for j in ordered_joins():
+        # Skip parcel-touching joins (already done streaming above).
+        if j.annotates == "parcel" or j.name in joins_applied:
+            continue
+        if j.name in joins_skipped:
+            continue
+        if not j.is_applicable(ctx):
+            joins_skipped.append(j.name)
+            continue
+        try:
+            j.apply(ctx)
+            joins_applied.append(j.name)
+            log.info("✓ post-chunk join %s", j.name)
+        except Exception as e:  # noqa: BLE001
+            log.error("✗ post-chunk join %s failed: %s", j.name, e)
+            ctx.warnings.append(f"join {j.name} failed: {e}")
+
+    # 8. Write non-parcel canonical-type outputs (towers, solar, billboard,
+    #    distress_overlay, county_score, etc.) using the same logic as
+    #    `compose.compose()`.
+    output_files: list[Path] = []
+    counts: dict[str, int] = {"parcel": total_parcel_rows}
+    output_files.extend(shard_files)
+
+    for ct, table in ctx.tables.items():
+        if ct == "parcel":
+            continue
+        if table is None or len(table) == 0:
+            continue
+        basename = OUTPUT_BASENAMES.get(ct, ct)
+        if ct in SPATIAL_TYPES:
+            files, _ = dual_write_spatial(table, out_dir, basename)
+            output_files.extend(files)
+        else:
+            p = out_dir / f"{basename}.parquet"
+            write_parquet(table, p)
+            output_files.append(p)
+        counts[ct] = len(table)
+
+    # 9. Finalize streaming views + run non-streaming views in-memory.
+    views_built: list[str] = []
+    view_meta: dict[str, dict] = {}
+    aggregators_by_name = {a.name: a for a in view_aggregators}
+    for v in all_views():
+        if v.name in (cfg.skip_views or []):
+            continue
+        agg = aggregators_by_name.get(v.name)
+        result = None
+        try:
+            if agg is not None:
+                result = agg.finalize(ctx)
+            elif "parcel" not in v.inputs:
+                if not v.is_applicable(ctx):
+                    continue
+                result = v.build(ctx)
+            else:
+                ctx.warnings.append(
+                    f"view {v.name} has no streaming aggregator — skipped under chunked mode"
+                )
+                continue
+        except Exception as e:  # noqa: BLE001
+            log.error("✗ view %s failed: %s", v.name, e)
+            ctx.warnings.append(f"view {v.name} failed: {e}")
+            continue
+        if result is None or len(result) == 0:
+            continue
+        views_built.append(v.name)
+        p_parquet = views_dir / f"{v.name}.parquet"
+        if isinstance(result, gpd.GeoDataFrame) and getattr(result, "geometry", None) is not None:
+            write_geoparquet(result, p_parquet)
+            output_files.append(p_parquet)
+            view_meta[v.name] = {
+                "rows": len(result),
+                "geometry_type": _geom_type(result),
+                "parquet_path": f"views/{v.name}.parquet",
+                "description": v.description,
+                "inputs": v.inputs,
+            }
+            if v.write_geojson:
+                p_geo = views_dir / f"{v.name}.geojson"
+                write_geojson(result, p_geo)
+                output_files.append(p_geo)
+                view_meta[v.name]["geojson_path"] = f"views/{v.name}.geojson"
+        else:
+            write_parquet(
+                result if isinstance(result, pd.DataFrame) else pd.DataFrame(result),
+                p_parquet,
+            )
+            output_files.append(p_parquet)
+            view_meta[v.name] = {
+                "rows": len(result),
+                "geometry_type": None,
+                "parquet_path": f"views/{v.name}.parquet",
+                "description": v.description,
+                "inputs": v.inputs,
+            }
+        log.info("✓ view %s (%d rows)", v.name, len(result))
+
+    # 10. Catalog + summary (sharded layer descriptor for parcels).
+    catalog = _build_catalog(
+        state,
+        ctx,
+        view_meta,
+        out_dir,
+        sources_used,
+        sharded_parcels={
+            "shard_count": shard_count,
+            "shard_dir": OUTPUT_BASENAMES.get("parcel", "parcel"),
+            "rows": total_parcel_rows,
+            "schema": schema_summary or {},
+            "geometry_type": geometry_type,
+        },
+    )
+    validate_catalog(catalog)
+    catalog_path = out_dir / "catalog.json"
+    write_json(catalog, catalog_path)
+    output_files.append(catalog_path)
+
+    summary = {
+        "state_fips": state.fips,
+        "state_name": state.name,
+        "state_abbr": state.abbr,
+        "generated_at": utcnow_iso(),
+        "sources_used": sources_used,
+        "joins_applied": joins_applied,
+        "joins_skipped": joins_skipped,
+        "views_built": views_built,
+        "counts": counts,
+        "warnings": ctx.warnings,
+        "chunked": True,
+        "parcel_shards": shard_count,
+    }
+    summary_path = out_dir / "summary.json"
+    write_json(summary, summary_path)
+    output_files.append(summary_path)
+
+    log.info(
+        "chunked compose %s complete: %d sources, %d shards, %d joins, %d views",
+        state.fips,
+        len(sources_used),
+        shard_count,
+        len(joins_applied),
+        len(views_built),
+    )
+
+    return ComposeResult(
+        state_fips=state.fips,
+        sources_used=sources_used,
+        joins_applied=joins_applied,
+        views_built=views_built,
+        counts=counts,
+        output_files=output_files,
+    )
+
+
+# ── Per-chunk join implementations ─────────────────────────────────────────
+
+
+def _apply_parcel_hosts_infra(
+    chunk: gpd.GeoDataFrame,
+    tower_counts: dict[str, int],
+    solar_counts: dict[str, int],
+    billboard_counts: dict[str, int],
+    tower_summary: dict[str, list[dict]],
+    solar_summary: dict[str, list[dict]],
+    billboard_summary: dict[str, list[dict]],
+) -> gpd.GeoDataFrame:
+    """Per-chunk equivalent of ParcelHostsInfraJoin."""
+    pids = chunk["parcel_id_full"].astype(str)
+    tc = pids.map(lambda p: tower_counts.get(p, 0))
+    sc = pids.map(lambda p: solar_counts.get(p, 0))
+    bc = pids.map(lambda p: billboard_counts.get(p, 0))
+
+    summaries = []
+    for p in pids:
+        summaries.append(
+            (tower_summary.get(p, []) + solar_summary.get(p, []) + billboard_summary.get(p, []))
+        )
+
+    chunk = chunk.copy()
+    chunk["tower_count"] = tc.astype(int).to_numpy()
+    chunk["solar_count"] = sc.astype(int).to_numpy()
+    chunk["billboard_count"] = bc.astype(int).to_numpy()
+    chunk["has_tower"] = chunk["tower_count"] > 0
+    chunk["has_solar"] = chunk["solar_count"] > 0
+    chunk["has_billboard"] = chunk["billboard_count"] > 0
+    chunk["infrastructure_summary"] = summaries
+    return chunk
+
+
+def _apply_county_score(
+    chunk: gpd.GeoDataFrame, scores: pd.DataFrame | None
+) -> gpd.GeoDataFrame:
+    if scores is None or len(scores) == 0:
+        return chunk
+    agg = (
+        scores.groupby("county_fips")
+        .agg(
+            {
+                "tier": lambda x: next((v for v in x if v), ""),
+                "persistent_poverty": "any",
+            }
+        )
+        .reset_index()
+        .rename(columns={"tier": "distress_tier"})
+    )
+    merged = chunk.merge(agg, on="county_fips", how="left")
+    merged["distress_tier"] = merged["distress_tier"].fillna("")
+    merged["persistent_poverty"] = merged["persistent_poverty"].fillna(False)
+    return gpd.GeoDataFrame(merged, geometry="geometry", crs="EPSG:4326")
+
+
+def _apply_parcel_to_distress(
+    chunk: gpd.GeoDataFrame, overlays: gpd.GeoDataFrame | None
+) -> gpd.GeoDataFrame:
+    if overlays is None or len(overlays) == 0:
+        chunk = chunk.copy()
+        chunk["distress_overlays"] = [[] for _ in range(len(chunk))]
+        chunk["in_oz"] = False
+        chunk["in_qct"] = False
+        return chunk
+    overlays_by_idx: dict[int, set[str]] = {}
+    for ot in overlays["overlay_type"].dropna().unique():
+        sub = overlays[overlays["overlay_type"] == ot]
+        try:
+            hit = gpd.sjoin(
+                chunk[["geometry"]].reset_index(),
+                sub[["geometry"]],
+                how="inner",
+                predicate="intersects",
+            )
+        except Exception:
+            continue
+        for idx in hit["index"].unique():
+            overlays_by_idx.setdefault(int(idx), set()).add(ot)
+    chunk = chunk.copy()
+    chunk["distress_overlays"] = chunk.index.map(
+        lambda i: sorted(overlays_by_idx.get(int(i), set()))
+    )
+    chunk["in_oz"] = chunk["distress_overlays"].apply(
+        lambda lst: "opportunity_zone" in lst
+    )
+    chunk["in_qct"] = chunk["distress_overlays"].apply(lambda lst: "qct" in lst)
+    return chunk
+
+
+def _apply_interestingness_score(chunk: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    from .score_components import compute_components
+    from .score_weights import DEFAULT_PROFILE, apply_weights
+
+    components = chunk.apply(compute_components, axis=1)
+    scored = components.apply(lambda c: apply_weights(c, DEFAULT_PROFILE))
+    chunk = chunk.copy()
+    chunk["interestingness_score"] = scored.apply(lambda t: t[0])
+    chunk["interestingness_components"] = scored.apply(lambda t: t[1])
+    chunk["interestingness_components_raw"] = components.apply(lambda c: c.to_dict())
+    return chunk
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────
+
+
+def _reverse_index(
+    lookup: dict[int, dict], kind: str
+) -> tuple[dict[str, int], dict[str, list[dict]]]:
+    """Turn infra row idx → parcel info into parcel_id → (count, summary)."""
+    counts: dict[str, int] = {}
+    summary: dict[str, list[dict]] = {}
+    for row_idx, attach in lookup.items():
+        pid = attach.get("parcel_id_full")
+        if pid is None or str(pid).strip() == "":
+            continue
+        pid = str(pid)
+        counts[pid] = counts.get(pid, 0) + 1
+        summary.setdefault(pid, []).append(
+            {
+                "type": kind,
+                "id": str(attach.get("parcel_id_full") or ""),
+                "owner": str(attach.get("parcel_owner") or ""),
+                "row_index": int(row_idx),
+            }
+        )
+    return counts, summary
+
+
+def _build_view_aggregators():
+    """Build a list of streaming aggregators for the registered views."""
+    out = []
+    for v in all_views():
+        if "parcel" not in v.inputs:
+            continue
+        agg = aggregator_for_view(v)
+        if agg is not None:
+            out.append(agg)
+    return out
+
+
+def _load_non_parcel_state_data(ctx: ComposeContext) -> list[str]:
+    """Same as compose._load_state_data, but skips parcels."""
+    sources_used: list[str] = []
+    by_type: dict[str, list] = {}
+    for n in all_normalizers():
+        if "parcel" in n.canonical_types:
+            # Parcel data is read per-shard during the chunk loop.
+            continue
+        try:
+            per_source = n.load_state_data(ctx.state_fips)
+        except Exception as e:  # noqa: BLE001
+            log.warning("%s.load_state_data failed: %s", n.source_id, e)
+            continue
+        if not per_source:
+            continue
+        for ct, df in per_source.items():
+            by_type.setdefault(ct, []).append(df)
+        sources_used.append(n.source_id)
+    for ct, frames in by_type.items():
+        if ct in SPATIAL_TYPES:
+            combined = gpd.GeoDataFrame(
+                pd.concat(frames, ignore_index=True),
+                geometry="geometry",
+                crs="EPSG:4326",
+            )
+        else:
+            combined = pd.concat(frames, ignore_index=True)
+        ctx.set(ct, combined)
+        log.info("  %s: %d rows (%d sources)", ct, len(combined), len(frames))
+    # The parcel "source" itself: which parcel normalizers contributed
+    # any shards for this state? We can probe normalized dirs cheaply.
+    for n in all_normalizers():
+        if "parcel" not in n.canonical_types:
+            continue
+        from . import NORMALIZED_ROOT
+
+        src_dir = NORMALIZED_ROOT / n.source_id / OUTPUT_BASENAMES.get("parcel", "parcel")
+        if src_dir.is_dir() and any(src_dir.glob("*.parquet")):
+            sources_used.append(n.source_id)
+    return sources_used
+
+
+def _geom_type(gdf) -> str:
+    try:
+        types = set(gdf.geom_type.dropna().unique())
+        if not types:
+            return ""
+        return next(iter(types))
+    except Exception:
+        return ""
+
+
+def _schema_summary(table) -> dict:
+    out: dict[str, str] = {}
+    for col in getattr(table, "columns", []):
+        if col == getattr(table, "_geometry_column_name", "geometry"):
+            continue
+        try:
+            out[str(col)] = str(table[col].dtype)
+        except Exception:
+            out[str(col)] = "unknown"
+    return out
+
+
+def _build_catalog(
+    state: StateGeography,
+    ctx: ComposeContext,
+    view_meta: dict[str, dict],
+    out_dir: Path,
+    sources_used: list[str],
+    sharded_parcels: dict,
+) -> dict:
+    """Self-documenting layer manifest. Mirrors compose._build_catalog but
+    advertises the parcel layer as a sharded directory."""
+    layers: dict[str, dict] = {}
+    parcel_basename = OUTPUT_BASENAMES.get("parcel", "parcel")
+    layers[parcel_basename] = {
+        "canonical_type": "parcel",
+        "rows": sharded_parcels["rows"],
+        "parquet_path": parcel_basename,  # directory, not a file
+        "schema": sharded_parcels["schema"],
+        "geometry_type": sharded_parcels["geometry_type"],
+        "sharded": True,
+        "shard_count": sharded_parcels["shard_count"],
+    }
+    for ct, table in ctx.tables.items():
+        if ct == "parcel":
+            continue
+        if table is None or len(table) == 0:
+            continue
+        basename = OUTPUT_BASENAMES.get(ct, ct)
+        layer: dict = {
+            "canonical_type": ct,
+            "rows": len(table),
+            "parquet_path": f"{basename}.parquet",
+            "schema": _schema_summary(table),
+        }
+        if ct in SPATIAL_TYPES:
+            layer["geometry_type"] = _geom_type(table)
+            if (out_dir / f"{basename}.geojson").exists():
+                layer["geojson_path"] = f"{basename}.geojson"
+            if (out_dir / f"{basename}.simplified.geojson").exists():
+                layer["simplified_geojson_path"] = f"{basename}.simplified.geojson"
+        layers[basename] = layer
+
+    # The catalog schema requires every value in sources_used_versions to
+    # be a string. get_raw_local_version returns None when the source is
+    # not in the puller manifest (fixture sources in tests, or any source
+    # without recorded local_version yet) — coerce to "" so validation
+    # stays strict on shape but tolerant of missing-version provenance.
+    sources_used_versions = {
+        sid: (get_raw_local_version(sid) or "") for sid in sorted(set(sources_used))
+    }
+
+    return {
+        "schema_version": CATALOG_SCHEMA_VERSION,
+        "state_fips": state.fips,
+        "state_name": state.name,
+        "state_abbr": state.abbr,
+        "generated_at": utcnow_iso(),
+        "layers": layers,
+        "views": view_meta,
+        "sources_used_versions": sources_used_versions,
+    }

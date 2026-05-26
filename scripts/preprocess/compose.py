@@ -52,6 +52,14 @@ class ComposeConfig:
     force_rebuild: bool = False
     skip_views: list[str] = field(default_factory=list)
     skip_joins: list[str] = field(default_factory=list)
+    # ADR-051 chunked-compose selector.
+    #   None  → auto-detect (chunked if estimated parcels ≥ threshold).
+    #   True  → force chunked.
+    #   False → force single-shot (the historical compose()).
+    chunked: bool | None = None
+    # Above this estimated parcel count, auto-detect picks chunked mode.
+    # FL (~11 M) + NC (~6 M) → chunked; AR (~2.1 M) + MT (~0.9 M) → single-shot.
+    chunk_threshold: int = 4_000_000
 
 
 def compose(cfg: ComposeConfig) -> ComposeResult:
@@ -296,8 +304,11 @@ def _build_catalog(
 
     # Lineage: which raw version of each source fed this composite. Lets us
     # answer "what raw vintages produced this state?" without parsing logs.
+    # Coerce None → "" so the catalog-schema string-type contract stays
+    # strict on shape but tolerant of sources without a recorded version
+    # (fixture sources in tests, or a source pre-manifest-record).
     sources_used_versions = {
-        sid: get_raw_local_version(sid) for sid in sorted(sources_used)
+        sid: (get_raw_local_version(sid) or "") for sid in sorted(sources_used)
     }
 
     return {
