@@ -1,6 +1,6 @@
 # LIMITATIONS
 
-**Last updated:** 2026-05-20
+**Last updated:** 2026-05-25
 
 Open issues, data caveats, licensing constraints, and known gaps —
 things a reader must know before trusting any output of this system
@@ -16,6 +16,107 @@ Each entry is dated and tagged with a severity:
 Append new entries at the **top** (newest first). Don't delete entries
 when resolved — strike them through and add a "RESOLVED" note so the
 audit trail survives.
+
+---
+
+## 🚫 Rooftop installations + their context fields are Phase 2 only
+
+**Added 2026-05-25.**
+
+Phase 1 covers freestanding towers only ([ADR-054](./adr/0054-asset-universe-phase-1-2.md)). Co-founder wishlist items that only make sense for rooftop / in-building installations defer with the rooftop universe:
+
+- Tenant occupancy in the building
+- Building owner mortgage current / liquidity
+- Building tenant mix
+- Electric meter source (sub-meter vs part of building power)
+- Property manager + management team
+
+Implication: a co-founder lead in a dense-urban context (Miami, Charlotte, Tampa) will not see rooftop sites in Phase 1 — the lead-detail panel will be empty of building-context data. Pitch this as Phase 2 scope honestly; don't pretend the data is coming in Phase 1.
+
+How to mitigate: Phase 2 rooftop data is mostly paid (CoStar / LoopNet / mortgage feeds). [ADR-057](./adr/0057-budget-posture-reframed.md) reframes the budget posture to allow this.
+
+---
+
+## 🚫 Lease extraction accuracy is unproven until the gold-set is built
+
+**Added 2026-05-25.**
+
+Slice 4 (D + E) ships LLM-based structured extraction from uploaded lease PDFs ([ADR-059](./adr/0059-llm-lease-extraction.md)). The per-slice gate is **≥ 85% field accuracy on a 20-lease hand-labelled gold-set**. Until that gold-set is built and the eval runs, **field-level accuracy is unknown** and the co-founder must treat extracted values as drafts requiring verification.
+
+Implication:
+- Pre-gold-set: every extracted lease field gets a "needs verification" tag in the UI. Co-founder cross-checks against the source PDF every time.
+- Post-gold-set: confidence-tagged fields (verbatim citation vs inferred — per ADR-059) calibrate co-founder trust per-field.
+
+How to mitigate:
+1. Build the 20-lease gold-set as the **first deliverable in Slice 4**, before any extraction code is shipped to the co-founder.
+2. Re-run the gold-set eval on every prompt or model change. Gating PR check per [TESTING.md §11.3](./TESTING.md).
+
+---
+
+## ⚠ Contact-data path is mailing-only plus free SoS lookups
+
+**Added 2026-05-25.**
+
+Phase 1 surfaces landowner mailing address (from parcel data) plus one-click Secretary of State business-entity lookups + UCC-1 filings in the lead-detail panel ([ADR-057](./adr/0057-budget-posture-reframed.md) narrowing of ADR-041). **The co-founder still does any remaining research per lead** — phone, email, current address for individuals, beneficial owner behind shell entities.
+
+Implication:
+- For LLC-owned parcels (heavily weighted in AR — 222K LLCs): SoS surfaces *publicly disclosed* officers; cofounder calls them. For shells that file no officer info publicly, he's stuck with the registered-agent address.
+- For individual-owned parcels: mailing address only; phone/email via cofounder's own research.
+- Paid skip-trace (Whitepages Pro / Cole / IDI / Pipl) is a Phase 2+ unlock; integrating it brings FCRA-adjacent custody implications (see [SECURITY.md §7](./SECURITY.md)).
+
+How to mitigate:
+- Slice 4 lead-detail panel includes the SoS lookup links + a snail-mail letter template generator to compress per-lead research time.
+- Phase 2 evaluation: paid skip-trace integration vs cofounder-side research scaling.
+
+---
+
+## ⚠ Vendor inference is best-guess only (60% coverage bar)
+
+**Added 2026-05-25.**
+
+Slice B's `vendor_best_guess` populates for ≥ 60% of towers via ASR Registrant + portfolio roll-up heuristic (Crown / ATC / SBA / VB acquisition patterns). For **sold towers** where the current operator differs from the ASR Registrant, the heuristic falls through — confidence tag indicates this. No free dataset directly records current tower ownership.
+
+Implication:
+- The lead-detail panel shows the Registrant + a vendor guess with a confidence tag. Co-founder uses his own knowledge / web search for low-confidence cases.
+- Phase 2 recorded-lease automation (Memorandum of Lease lessee names) would push coverage higher for the highest-traded counties.
+
+How to mitigate:
+- Display the confidence tag prominently; never pitch a vendor name as fact when the tag is low.
+- Build a hand-maintained acquisition-rollup table for the top dozen tower-cos (Crown's Crown Castle USA + acquired Global Signal, Pinnacle, Optasite portfolios → "Crown Castle"; ATC's American Tower + Spectrasite legacy → "American Tower"; etc.).
+
+---
+
+## ⚠ Carrier identification has spatial-fallback false positives (70% coverage bar)
+
+**Added 2026-05-25.**
+
+Slice A's ULS↔ASR join is hybrid: ASR-number cross-reference where ULS has it (`verified` tag); spatial-proximity fallback elsewhere (`likely` ≤ 100m, `possible` 100–500m). ULS coordinates are unreliable per PROJECT_BRIEF §8A — the spatial-fallback bucket carries some wrong-tower matches.
+
+Implication:
+- The lead-detail panel shows each carrier with a confidence tag. Co-founder second-guesses `likely` / `possible` matches before pitching "we can help with your AT&T lease."
+- The 70% coverage bar is *at least one carrier identified*; a tower with only spatial-fallback carriers is still in the 70% count.
+
+How to mitigate:
+- Tighten spatial-proximity tolerance based on the Slice A kickoff data audit (sample 1000 Cellular `LO` records — see session memo).
+- Phase 2: recorded leases + carrier-contact verification would resolve ambiguous cases.
+
+---
+
+## ⚠ Comparables cold-start — first 12 months are county-average only
+
+**Added 2026-05-25.**
+
+The comparables feature ([session memo §Comparables (Q9)](./grill-2026-05-25-summary.md)) bootstraps from Steel-in-the-Air's free county-level lease-rent benchmarks (~3000 counties). Per-tower comparables grow from the co-founder's uploaded leases over time — slow.
+
+Implication:
+- **At Slice 4 launch:** "rent vs county average" works Day 1 for every county; "outliers within X-mile radius" is empty until ~20 leases land in any radius.
+- **After ~6 months of cofounder uploads:** smaller radii start populating.
+- **After ~12+ months:** the private comp DB starts dominating the public bootstrap.
+
+How to mitigate:
+- UI clearly labels comp values as `(county average, N=NN)` vs `(N tower-side leases in 10mi, N=NN)` so the co-founder knows the data quality.
+- Phase 2 paid Steel-in-the-Air tier adds finer-than-county granularity Day 1.
+- Phase 2 recorded-lease automation pulls Memorandum lessee-side rent data from the rare counties that record it.
 
 ---
 
@@ -334,31 +435,22 @@ How to mitigate:
 
 ---
 
-## ⚠ No incremental updates; single-machine deployment
+## ⚠ Data pipeline is batch-only; backend stands up in Slice 4
 
-**Added 2026-05-19.**
+**Added 2026-05-19. Updated 2026-05-25.**
 
-The pipeline is batch-only. Re-running `python scripts/preprocess.py`
-overwrites all outputs for any state it touches. There is no:
+The data pipeline is batch-only. Re-running `python scripts/preprocess.py` overwrites all outputs for any state it touches. There is no streaming ingest, no cron-driven refresh.
 
-- Streaming ingest of new ASR / FAA OEAAA records as they land.
-- Cron-driven scheduled refresh.
-- Multi-machine / cloud-hosted deployment.
-- Multi-user access controls.
+**Slice 4 stands up a hosted-private backend** ([ADR-055](./adr/0055-hosted-private-backend.md)) — magic-link auth, multi-user-ready (2-5 users Phase 1), single-tenant from Day 1 but tenant-shaped schema. Lead state, lease docs, activity log live there. The static-site model is preserved for read-only analytical layers (parquet, PMTiles, GeoJSON).
 
 Implication:
-
-- Solo-dev workflow only.
-- Data "as of" any pitch is the last manual refresh date.
-- Sharing outputs requires zipping `composite/<fips>/` and handing
-  it over — no shared URL.
+- The data pipeline still requires the dev to run the puller manually (Phase 1).
+- Slice 4 backend gives the co-founder a real workflow surface (auth, persistent lead state, lease uploads, CSV exports) rather than ad-hoc spreadsheets.
+- Self-serve refresh from the product is a Phase 2 candidate (wire the puller into the backend).
 
 How to mitigate:
-
-- Pitch context: explicitly say "this is a local prototype; production
-  deployment is post-funding."
-- For pre-pitch, run the freshness checklist in
-  [DATA_FRESHNESS.md §5](./DATA_FRESHNESS.md).
+- Phase 1: dev triggers refreshes; cofounder works in the backend-powered triage UI.
+- Phase 2: self-serve refresh; mass email; multi-tenant if Phase 3 sells the tool.
 
 ---
 
@@ -386,21 +478,19 @@ How to mitigate:
 
 ---
 
-## ⚠ No LLC unmasking (permanent non-goal)
+## ⚠ Paid LLC unmasking + identity resolution remain permanent non-goals (ADR-041 narrowed)
 
-**Added 2026-05-19. (Carried forward from PROJECT_BRIEF §7.)**
+**Added 2026-05-19. Updated 2026-05-25.**
 
-When an LLC, trust, or shell entity owns a parcel, we display the raw
-entity string. We do not attempt to resolve the human(s) behind it.
+When an LLC, trust, or shell entity owns a parcel, we display the raw entity string. **Paid skip-trace and shell-piercing remain permanent non-goals** per ADR-041 as narrowed by [ADR-057](./adr/0057-budget-posture-reframed.md).
+
+**What's now in scope for Phase 1** (the narrowing): free public-records officer disclosure. The Slice 4 lead-detail panel surfaces one-click Secretary of State business-entity lookups (LLC managers / officers are publicly disclosed by the entity itself) and UCC-1 filings. These are *not* shell-piercing — they show what the entity itself has publicly registered.
 
 Implication:
+- For LLCs that publicly disclose officers via SoS: the cofounder gets the officer names + can call them.
+- For shells filing no officer info publicly: the cofounder still hits the registered-agent address. Beneficial-owner resolution stays out of scope.
 
-- Outreach targeting an LLC reaches the registered agent, not
-  necessarily the beneficial owner.
-- For high-value parcels, the user would manually look up SoS records
-  → this is a future enrichment, not this codebase's job.
-
-Permanent — see ADR-041.
+See also the *"Contact-data path is mailing-only plus free SoS lookups"* limitation above.
 
 ---
 
@@ -467,18 +557,18 @@ verification (ADR-018).
 
 ---
 
-## ℹ No tests today
+## ℹ Test coverage is per-slice (Phase 1)
 
-**Added 2026-05-19.**
+**Added 2026-05-19. Updated 2026-05-25.**
 
-The repo currently has zero automated tests, zero CI, no pre-commit.
-Section 6 of the work plan adds pytest + GitHub Actions.
+Original Section 6 of the legacy work plan never shipped before the 2026-05-25 pivot. **Per-slice test-coverage bar** ([GOALS.md §3](./GOALS.md), [TESTING.md §11.5](./TESTING.md)): ≥ 70% line coverage of new code added in each Phase 1 slice. Plus:
 
-Implication:
+- Backend HTTP API tests via `testcontainers-postgres` (Slice 4).
+- Multi-tenancy isolation tests from Day 1 (Slice 4).
+- LLM extraction eval as a gating CI check on a 20-lease gold-set (Slice 4).
+- Data audits as CI (post-compose gate).
 
-- Any change has manual-only verification.
-- Section 6 adds ≥ 30 tests with ≥ 70 % coverage of
-  `scripts/preprocess/`.
+Implication: as of 2026-05-25, much of this is still pre-implementation. Pre-Slice-1 work has no tests; Slice F starts shipping them.
 
 ---
 

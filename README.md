@@ -1,26 +1,23 @@
 # pilot
 
-Feasibility prototype for **cell-tower ground-lease renegotiation
-analytics**. Joins tower locations to parcel records to economic-distress
-overlays, using only free public data. Currently focused on a 3–5 state
-pitch-quality cut.
+**Cell-tower ground-lease renegotiation analytics.** Joins tower locations to parcel records to economic-distress overlays, then layers carrier identification + lease document storage + LLM-based extraction + triage workflow into a co-founder-facing product. **Phase 1** covers four anchor states (AR + MT + FL + NC) with freestanding towers; **Phase 2** adds rooftop installations + operational scale.
 
-> Read [docs/SCOPE.md](docs/SCOPE.md) first if you want to know what we're
-> building right now. Read [PROJECT_BRIEF.md](PROJECT_BRIEF.md) for the
-> business case.
+> 🔀 **2026-05-25 phase shift:** previously a "v1 pitch-quality demo," this is now Phase 1 of a fleshed-out internal product the business co-founder uses daily for triage — see [docs/adr/0053-product-phase-shift.md](docs/adr/0053-product-phase-shift.md) and [docs/grill-2026-05-25-summary.md](docs/grill-2026-05-25-summary.md).
+
+> Read [docs/SCOPE.md](docs/SCOPE.md) first for what's being built right now. Read [PROJECT_BRIEF.md](PROJECT_BRIEF.md) for the business case.
 
 ---
 
-## Three subsystems
+## Four subsystems
 
 | Subsystem | Path | Purpose |
 |---|---|---|
 | **Data Puller** | `app_puller/` | PySide6 desktop UI; fetches raw data into `data/raw/<source_id>/current/`. |
 | **Preprocess pipeline** | `scripts/preprocess/` | Registry-driven Normalizer + Join + View framework; per-state Composer. |
-| **Map app** | `app/` | Svelte 5 + MapLibre analytical SPA — PMTiles parcels + DuckDB-WASM filtering. See [app/ARCHITECTURE.md](app/ARCHITECTURE.md). |
+| **Map app** | `app/` | Svelte 5 + MapLibre analytical SPA — PMTiles parcels + DuckDB-WASM filtering + tunable scoring (Slice 3). See [app/ARCHITECTURE.md](app/ARCHITECTURE.md). |
+| **Backend** *(Slice 4 — in design)* | `backend/` | FastAPI + Postgres + S3-compatible + magic-link auth + Claude API. Holds lead state, lease document PDFs, LLM-extracted lease fields, activity log, scoring profiles, owner-cluster overrides. Per [ADR-055](docs/adr/0055-hosted-private-backend.md). |
 
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the full system diagram
-+ data flow.
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the full system diagram + data flow.
 
 ---
 
@@ -116,17 +113,16 @@ cd app && npm run check && npm run test:unit && npm run test:e2e
 
 ---
 
-## Anchor states for v1
+## Anchor states for Phase 1
 
 | State | FIPS | Status |
 |---|---|---|
 | Arkansas | 05 | ✅ Working end-to-end |
 | Montana | 30 | ✅ Working end-to-end |
-| Florida | 12 | 🔴 Raw intact (all 67 counties); normalized + composite deleted 2026-05-20 — needs re-normalize + compose |
-| North Carolina | 37 | 🔴 All raw data deleted 2026-05-20 — needs full re-fetch, normalize, and compose |
+| Florida | 12 | 🔴 Raw intact (all 67 counties); normalized + composite deleted 2026-05-20 — needs re-normalize + compose (Slice F) |
+| North Carolina | 37 | 🔴 All raw data deleted 2026-05-20 — needs full re-fetch, normalize, and compose (Slice F) |
 
-See [docs/SCOPE.md §2](docs/SCOPE.md) for why these, and
-[docs/STATUS.md](docs/STATUS.md) for the live state.
+See [docs/SCOPE.md §2](docs/SCOPE.md) for why these, and [docs/STATUS.md](docs/STATUS.md) for the live state.
 
 ---
 
@@ -135,12 +131,14 @@ See [docs/SCOPE.md §2](docs/SCOPE.md) for why these, and
 ```
 pilot/
 ├── README.md                 (you are here)
+├── CONTEXT.md                Canonical product language (glossary)
 ├── CLAUDE.md                 AI-agent orientation
 ├── PROJECT_BRIEF.md          Business case
 ├── requirements.txt
 ├── app/                      Svelte 5 + MapLibre map app
 ├── app_legacy_v1/            Leaflet map (v1, retired)
 ├── app_puller/               PySide6 desktop puller
+├── backend/                  FastAPI + Postgres + S3 + Claude API  (Slice 4 — in design)
 ├── scripts/
 │   ├── preprocess.py         CLI wrapper
 │   ├── preprocess/           Normalizer/Join/View framework
@@ -151,21 +149,27 @@ pilot/
 │   ├── raw/<source>/current/
 │   └── processed/{normalized,composite}/
 ├── docs/                     All deep-dive documentation
+│   ├── adr/                  Architecture Decision Records (ADR-053+; legacy in docs/DECISIONS.md)
 │   ├── archive/              Historical docs (preprocess v1, etc.)
-│   └── pitch-assets/         Screenshots / GIFs for pitch deck
-└── tests/                    (added in Section 6 of work plan)
+│   ├── pitch-assets/         Screenshots / GIFs
+│   └── grill-2026-05-25-summary.md   Phase 1 pivot session memo
+└── tests/                    (preprocess tests; backend tests live under backend/tests/)
 ```
 
 ---
 
 ## License + status
 
-This is a **feasibility prototype**, not a released product. Outputs
-contain parcel-owner names + mailing addresses (PII when combined) —
-treat per [docs/SECURITY.md](docs/SECURITY.md). The repo itself is
-private until access controls land.
+This is a **Phase 1 internal product** for a 2-person team (dev + business co-founder); the co-founder is the daily user. Outputs contain parcel-owner names + mailing addresses (PII when combined) — treat per [docs/SECURITY.md](docs/SECURITY.md). The repo itself is private; backend (Slice 4) deploys hosted-private with magic-link auth per [ADR-055](docs/adr/0055-hosted-private-backend.md).
 
-In-flight production-readiness push: Sections 1–3 are done, Section 4
-complete for AR/MT (FL raw intact; NC raw deleted and needs re-fetch),
-Section 5 (preprocess code hygiene) in progress — see
-[docs/STATUS.md](docs/STATUS.md).
+**Phase 1 slice plan** (untimed, goal-driven):
+
+1. **F** — Finish FL + NC composes (chunked compose ADR-051 + NC re-fetch) — **next up**
+2. **A** — FCC ULS carrier identification (Cellular + PCS + AWS / 700 MHz)
+3. **C** — Asset enrichment (billboards + solar on parcel) + tunable scoring UI
+4. **D + E** — Lease doc upload + LLM extraction + triage state / write layer / CSV exports (**backend stands up here**)
+5. **B** — Vendor (tower-co) inference
+
+Per-slice "shipped" gates in [docs/GOALS.md §3](docs/GOALS.md). Overall outcome bar: co-founder uses the product as his primary daily triage tool for 4 consecutive weeks.
+
+See [docs/STATUS.md](docs/STATUS.md) for the live snapshot.

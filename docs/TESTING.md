@@ -1,23 +1,18 @@
 # TESTING — Strategy & Conventions
 
-**Last updated:** 2026-05-20
-**Status:** Pre-implementation — test suite is built in Section 6 of the
-work plan. This document is the design.
+**Last updated:** 2026-05-25
+**Status:** Pre-implementation for the preprocess test suite + Slice 4 backend / LLM / multi-tenancy surfaces. This document is the design.
 
 ---
 
 ## 1. Why we test
 
-For a pitch-quality cut, automated tests serve four purposes:
+For a co-founder-facing product, automated tests serve four purposes:
 
-1. **Regression protection** as the codebase evolves through Sections
-   3–7 of the work plan.
-2. **Schema contract enforcement** so the map app never has to wonder
-   whether a field exists.
-3. **Documentation by example** — fixtures + tests are the cheapest
-   way to show how a normalizer / join / view is supposed to behave.
-4. **Pitch defensibility** — "every shipped change passes 30+ tests
-   in CI" is the kind of thing a partner / investor expects.
+1. **Regression protection** as the codebase evolves slice by slice (F → A → C → D+E → B).
+2. **Schema + API contract enforcement** so the map app and backend never have to wonder whether a field / endpoint exists.
+3. **Documentation by example** — fixtures + tests are the cheapest way to show how a normalizer / join / view / API route is supposed to behave.
+4. **Co-founder trust** — when the co-founder is making real calls based on the product's output, "every shipped change passes the gating CI checks" is the difference between confident use and ad-hoc verification.
 
 ---
 
@@ -240,13 +235,79 @@ When you add:
 
 ## 10. Sentinel "the whole thing works" test
 
-`test_compose.py::test_full_pitch_smoke` (added at the end of Section
-6) runs a compose against fixture data approximating each anchor
-state and asserts:
+`test_compose.py::test_full_smoke` runs a compose against fixture data approximating each anchor state and asserts:
 
 - 0 warnings in summary.json
-- ≥ 8 joins applied
-- ≥ 6 views built
+- ≥ 9 joins applied
+- ≥ 8 views built
 - catalog.json validates against schema
 
-This is the canary that fires when any change breaks the pitch path.
+This is the canary that fires when any change breaks the data pipeline.
+
+---
+
+## 11. Slice 4 additions — backend + LLM + multi-tenancy
+
+Slice 4 (D + E) stands up a hosted-private backend ([ADR-055](./adr/0055-hosted-private-backend.md)) with LLM-based lease extraction ([ADR-059](./adr/0059-llm-lease-extraction.md)). The test surface grows substantially. See `docs/grill-2026-05-25-summary.md §Testing additions (Q14)` for the full rationale.
+
+### 11.1 Backend HTTP API
+
+- **Tool:** `pytest` + **`testcontainers-postgres`** (real Postgres in Docker per test session).
+- **Why real Postgres:** SQLite differs from Postgres on JSON ops, FTS, isolation levels — bugs that hide in SQLite bite in prod.
+- **Coverage:** all routes; auth flow (magic-link request → token → session); lead CRUD; lease CRUD; activity-log append; scoring-profile persistence.
+- **Layout:** `backend/tests/api/test_<resource>.py`. Conftest spins one Postgres per session; per-test transaction rolls back.
+
+### 11.2 Multi-tenancy isolation
+
+- **Tool:** pytest fixtures with 2 synthetic tenants seeded in the test DB.
+- **Coverage:** every API route gets a "tenant A user cannot read / write / list tenant B's data" test. Run with `pytest -k tenant_isolation`.
+- **Why now even though we're single-tenant:** the boundary needs to hold from Day 1 (ADR-055 tenant-shaped schema). Tests stay correct when a second tenant joins.
+
+### 11.3 LLM extraction eval
+
+- **Tool:** dedicated gold-set runner as a **separate CI job** (`pytest -m llm_eval`).
+- **Gold-set:** 20 hand-labelled leases. Each lease has a JSON of expected field values + page citations.
+- **Metrics:** per-field precision, recall, exact-match.
+- **Gating:** PR blocks if any field's accuracy drops below the 85% bar (per-slice gate in [GOALS.md §3](./GOALS.md)).
+- **Manual-override label:** `eval-override-acknowledged` on PRs that intentionally change the extraction schema and need the gold-set re-labelled.
+- **Build-time guidance:** use the `claude-api` skill — it handles prompt caching, Tool use schema, model selection ([ADR-059](./adr/0059-llm-lease-extraction.md)).
+
+### 11.4 Data audits as CI
+
+- **Tool:** bash + python checks run post-compose.
+- **Coverage:** zero `warnings` in `summary.json` per anchor state; expected join count (≥ 9); no missing canonical columns; no negative `interestingness_score`; per-state record counts within ±10% of prior compose.
+- **Gating:** PR blocks if a state's compose breaks. Catches the AR/MT-class data-quality regressions before they ship.
+
+### 11.5 Per-slice test-coverage bar
+
+Beyond §7's overall coverage targets: **each slice ships with ≥ 70% line coverage of the new code added in that slice.** Lifts overall coverage gradually rather than retrofitting at the end. Per [GOALS.md §3](./GOALS.md).
+
+### 11.6 Slice 4 layout
+
+```
+backend/
+├── app/
+│   ├── api/
+│   ├── auth/
+│   ├── leads/
+│   ├── leases/
+│   ├── extraction/
+│   └── tenants/
+└── tests/
+    ├── conftest.py                  # testcontainers-postgres + tenant fixtures
+    ├── api/
+    │   ├── test_auth.py
+    │   ├── test_leads.py
+    │   ├── test_leases.py
+    │   └── test_activity.py
+    ├── isolation/
+    │   └── test_tenant_isolation.py  # marker: tenant_isolation
+    ├── extraction/
+    │   ├── gold_set/                 # 20 hand-labelled leases (gitignored if PDFs; manifests checked in)
+    │   ├── test_extraction_eval.py   # marker: llm_eval
+    │   └── test_extraction_unit.py
+    └── data_audits/
+        └── test_state_composes.py    # post-compose audit gates
+
+frontend / app/  — Vitest unit + Playwright E2E continue per §2.
+```

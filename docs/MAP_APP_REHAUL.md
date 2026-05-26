@@ -1,13 +1,22 @@
 # Map App Rehaul — Architecture & Phased Plan
 
 > **Status: REALIZED — shipped 2026-05-21.**
-> **Last updated:** 2026-05-21.
+> **Last updated:** 2026-05-25.
 >
 > The rehaul was executed (Phases A–D). The Svelte 5 + MapLibre +
 > PMTiles + DuckDB-WASM app is live at `app/`; the v1 Leaflet app was
 > retired to `app_legacy_v1/`. The realized architecture and run
 > instructions are in **[app/ARCHITECTURE.md](../app/ARCHITECTURE.md)** —
 > read that for current state.
+>
+> **Phase 1 product evolution (2026-05-25):** the realized map app gains
+> tunable + transparent scoring UI in Phase 1 Slice C (see
+> [ADR-058](./adr/0058-tunable-transparent-scoring.md)) and the
+> lead-detail / lease-doc upload UI in Slice D+E (see
+> [ADR-055](./adr/0055-hosted-private-backend.md) for the new backend
+> that powers lead state + lease storage). The static-site architecture
+> is preserved for read-only analytical layers; write features hit the
+> Slice 4 backend.
 >
 > Notable deltas from the original plan below:
 > - The keyless basemap is Carto Positron raster (no vector-tile key).

@@ -4,9 +4,21 @@ Orientation for Claude Code sessions working in this repo. Read this
 first; then dip into the relevant doc under [docs/](docs/) when you
 need depth.
 
-**Last updated:** 2026-05-21 (full deep-dives live in `docs/`; read
+**Last updated:** 2026-05-25 (full deep-dives live in `docs/`; read
 [docs/STATUS.md](docs/STATUS.md) first — it is the current-state
 handoff snapshot).
+
+> **🔀 2026-05-25 phase shift:** The project pivoted from "v1 pitch
+> demo" to **Phase 1 of a co-founder-facing product** — see
+> [docs/adr/0053-product-phase-shift.md](docs/adr/0053-product-phase-shift.md).
+> Several previously-deferred feature areas (FCC ULS carriers, billboards/solar
+> enrichment, lease document upload + LLM extraction, triage write layer,
+> Secretary of State officer lookups) flipped to in-scope. Phase 1 is
+> freestanding towers across AR + MT + FL + NC; Phase 2 is rooftops
+> ([ADR-054](docs/adr/0054-asset-universe-phase-1-2.md)). Several legacy
+> ADRs were superseded or narrowed — see `docs/DECISIONS.md` for the
+> pointers + the full grill record in
+> `docs/grill-2026-05-25-summary.md`.
 
 ---
 
@@ -111,25 +123,19 @@ The full repository layout + system diagram is in
 
 ## 3. The current work plan
 
-Eight sections in sequence — documentation first, then code:
+**Phase 1 product cut** (since 2026-05-25, see [ADR-053](docs/adr/0053-product-phase-shift.md)). Five slices in sequence, untimed — goal-driven not calendar-driven. Each slice has a "shipped" gate (see [docs/GOALS.md §3](docs/GOALS.md)) before moving to the next:
 
-1. Documentation foundation — ✅ done
-2. Version control + GitHub setup — ✅ done
-3. Data puller overhaul — ✅ done
-4. Data hygiene (raw data refresh) — ⚠️ AR/MT solid (HUD OZ/QCT + USDA distress sources added 2026-05-21); FL raw intact, processed deleted 2026-05-20; NC all data deleted 2026-05-20 (needs re-fetch)
-5. Preprocess code hygiene — ⚠️ code complete; AR/MT audited clean 2026-05-21; FL/NC need chunked compose (ADR-051) before re-normalizing + composing
-6. Testing — ⬜ not started
-7. Pitch readiness — ⬜ not started
-8. Map app rehaul — ✅ done (Svelte 5 + MapLibre + PMTiles + DuckDB-WASM; now at `app/`, see [app/ARCHITECTURE.md](app/ARCHITECTURE.md))
+1. **F — Finish FL + NC composes** ⬜ Next up. Chunked compose (ADR-051) + NC re-fetch.
+2. **A — FCC ULS carrier identification** ⬜ Cellular + PCS + AWS / 700 MHz bands.
+3. **C — Asset enrichment + tunable scoring UI** ⬜ Billboards + solar on parcel; client-side tunable scoring (ADR-058).
+4. **D + E — Lease doc upload + LLM extraction + triage state / write layer / CSV exports** ⬜ Backend stands up here (ADR-055); LLM extraction per ADR-059.
+5. **B — Vendor (tower-co) inference** ⬜ ASR registrant + portfolio rollup.
 
-Note: the plan file `.claude/plans/cached-wobbling-token.md` is
-currently **missing from disk** — [docs/STATUS.md](docs/STATUS.md) §6
-is the authoritative section tracker until it is restored.
+After Slice B, the **4-week outcome-bar clock** starts (primary daily triage tool for 4 consecutive weeks).
 
-Always check the plan before starting a new task. Each section ends
-with explicit verification before the next starts. For the precise
-current state — including known bugs with their fixes and the
-uncommitted-work list — read [docs/STATUS.md](docs/STATUS.md).
+**Legacy pitch-cut plan** (v0–v3 May 2026): completed Sections 1–5 + 8 — preprocess framework, puller, Git + CI, map app rehaul (Svelte 5 + MapLibre + PMTiles + DuckDB-WASM at `app/`), AR/MT data-quality remediation. Sections 6 (testing) + 7 (pitch readiness) were superseded by the Phase 1 slice plan; testing is folded into the per-slice gates + the additions in `docs/grill-2026-05-25-summary.md §Testing`.
+
+Always check [docs/STATUS.md](docs/STATUS.md) for the precise current state before starting a new task.
 
 ---
 

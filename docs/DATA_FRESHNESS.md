@@ -1,9 +1,9 @@
 # DATA_FRESHNESS — Per-source cadence rules
 
-**Last updated:** 2026-05-20
+**Last updated:** 2026-05-25
 **Pairs with:** [DATA_SOURCES.md](./DATA_SOURCES.md) (per-source schema
-+ license) and [PULLER_UX.md](./PULLER_UX.md) (UX design for surfacing
-this in the puller).
++ license), [PULLER_UX.md](./PULLER_UX.md) (puller UX), and the
+Phase 1 product UX (§8 below).
 
 This document codifies, per source, the rules the puller uses to decide
 whether data is **fresh**, **due soon**, or **stale**. These map
@@ -142,3 +142,36 @@ This document drives concrete code changes in Section 3 of the work plan:
 - **3.3:** "What needs my attention" panel aggregating stale + missing.
 - **3.5:** Every active source populates `update_cadence_days` per
   this table.
+
+---
+
+## 8. Phase 1 product UX for freshness (Slice 3 + Slice 4)
+
+The puller surfaces freshness to the dev (the operator). The Phase 1
+product surfaces freshness to the **co-founder** (the user) so he can
+judge confidence on a specific lead. See session summary
+`docs/grill-2026-05-25-summary.md §Data freshness UX (Q16)`.
+
+### Surfaces
+
+| Surface | What's shown | Where it lands |
+|---|---|---|
+| Top of triage list | "Last full data refresh: AR 12d, MT 9d, FL 47d, NC 21d" | Slice 3 UI (map app) |
+| Per-lead detail panel | "Parcel data from {date}; tower data from {date}; lease comp data from {date}" | Slice 3 / Slice 4 lead-detail panel |
+| Per-source admin view (gated) | Per-source freshness table + refresh-trigger button | Slice 4 backend admin; refresh-trigger is Phase 2 |
+
+### Staleness policy
+
+- **Information-only for most sources** — show the age, let the co-founder judge; **don't block triage**.
+- **One hard banner** when a state's parcel source is **> 180 days old**: *"AR parcels last refreshed 192 days ago — schedule a re-pull before working AR leads."* Warns prominently; still doesn't block.
+- **Carrier (ULS) staleness** — soft warning only. Carriers don't churn off towers fast.
+- **Distress overlays** — soft warning. OZ annual; ARC tiers annual.
+
+### Refresh trigger model
+
+- **Phase 1 = dev-only refresh.** You run the puller; co-founder sees freshness state but does not trigger refreshes himself. Simpler; the puller is currently a Qt desktop app and not easily backend-driven.
+- **Phase 2 = self-serve refresh from product.** Wire the puller into the backend so the co-founder presses a button. Real work — out of Phase 1 scope.
+
+### MANUAL_ONLY pain (acknowledged)
+
+Sources flagged MANUAL_ONLY (notably **FDOR NAL** — 67 Florida counties, each requiring per-county selection + click-through) need *you* to walk through them at every refresh. **Phase 1 does not fix this.** Phase 2 candidates: guided checklist UI in the puller, or paid bulk-data unlocks (consistent with ADR-057's reframing of ADR-010).

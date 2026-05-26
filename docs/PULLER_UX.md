@@ -1,8 +1,18 @@
 # PULLER_UX — Design Spec for the Section 3 Overhaul
 
-**Last updated:** 2026-05-20
-**Status:** Implemented — Section 3 of the work plan is complete. This
+**Last updated:** 2026-05-25
+**Status:** Implemented — Section 3 of the legacy plan is complete. This
 document remains the design reference for the puller's behaviour.
+
+> **Phase 1 product (2026-05-25):** the puller stays a dev-side tool
+> in Phase 1 — the co-founder sees freshness state inside the product
+> (per [DATA_FRESHNESS.md §8](./DATA_FRESHNESS.md)) but does not trigger
+> refreshes himself. **Phase 2 candidate:** wire the puller into the
+> Slice 4 backend so the co-founder can self-serve a refresh from the
+> product. Real work — the puller is currently a Qt desktop app and not
+> easily backend-driven. A separate Phase 2 candidate: a guided
+> checklist UI for MANUAL_ONLY sources like FDOR NAL (67 Florida
+> counties, click-through each) to compress the per-refresh effort.
 
 This document is the design spec for the data puller upgrade. The
 puller is the **single tool the user interacts with most often** to

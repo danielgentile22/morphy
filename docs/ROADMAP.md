@@ -1,13 +1,9 @@
 # ROADMAP — Past, Present, Future
 
-**Last updated:** 2026-05-20
-**Pairs with:** [SCOPE.md](./SCOPE.md) (this cut), [STATUS.md](./STATUS.md)
-(today), [GOALS.md](./GOALS.md) (why), [DECISIONS.md](./DECISIONS.md)
-(locked-in choices).
+**Last updated:** 2026-05-25
+**Pairs with:** [SCOPE.md](./SCOPE.md), [STATUS.md](./STATUS.md), [GOALS.md](./GOALS.md), [DECISIONS.md](./DECISIONS.md) + new ADRs under `docs/adr/`.
 
-This document traces the arc of the project: what's been built, what's
-being built now, and what's planned next. It's the place to point
-someone who asks "how did we get here and where are we going?"
+This document traces the project arc: what's been built, what's being built now, what's planned next. Updated at the start of every new slice / phase and after every material strategic conversation.
 
 ---
 
@@ -15,209 +11,130 @@ someone who asks "how did we get here and where are we going?"
 
 ### v0 — Graham County one-shot (early prototype)
 
-A single `preprocess.py` script that ingested FCC ASR, NC OneMap
-parcels for Graham County NC, and HUD Opportunity Zones; spatial-
-joined them; and produced three GeoJSON files for a Leaflet web map.
-The original `PROJECT_BRIEF.md` describes this version.
+A single `preprocess.py` script that ingested FCC ASR + NC OneMap parcels for Graham County + HUD Opportunity Zones; spatial-joined them; produced three GeoJSON files for a Leaflet web map.
 
-- ✅ Proved the tower → parcel → distress linkage was technically
-  achievable.
+- ✅ Proved tower → parcel → distress linkage was technically achievable.
 - ✅ Produced a working map demo for Graham County.
 - ❌ Hard-coded to one county; not generalizable.
-- 📁 Archive: `docs/archive/preprocess_v1.py.txt` (moved in Section
-  5.6 of the production-readiness plan).
+- 📁 Archive: `docs/archive/preprocess_v1.py.txt`.
 
-### v1 — The data puller
+### v1 — Data puller
 
-A standalone PySide6 desktop app at `app_puller/` for pulling 28 raw
-data sources into `data/raw/<source_id>/current/`:
-
-- Each source declares an `AutomationPolicy` (ALLOWED, TOLERATED,
-  MANUAL_ONLY, CREDENTIALED) — the puller enforces these.
-- Atomic `.partial` → `current/` promotion after `validate()` passes.
-- Single `data/manifest.json` as the source of truth for "what we
-  have on disk."
-- JSONL event log for fetch attempts.
+PySide6 desktop app at `app_puller/` for pulling 28 raw data sources into `data/raw/<source_id>/current/`. Per-source `AutomationPolicy`; atomic `.partial → current/` promotion; single `data/manifest.json`; JSONL fetch log.
 
 ### v2 — Preprocess framework
 
-A registry-driven preprocessing system replacing the one-shot script:
+Registry-driven preprocessing replacing the one-shot script:
 
 - `Normalizer` per source (raw → canonical schema)
 - `Join` per cross-source relationship
-- `View` per derived dataset (map filters, top-N lists, etc.)
-- Per-state `Composer` that loads canonical data, runs joins, runs
-  views, and writes a `catalog.json` for the map app to consume.
-- Dual GeoParquet + GeoJSON output (Parquet canonical for analytics;
-  GeoJSON for the legacy map app).
-- Canonical schemas for `parcel`, `tower`, `distress_overlay`,
-  `solar_facility`, `billboard`, `county_score`, plus 9 reserved
-  types for future use.
-- Owner clustering (normalized name + address → SHA1 cluster id).
-- Interestingness scoring (composite per-parcel score for outreach
-  prioritization).
+- `View` per derived dataset
+- Per-state `Composer`
+- Dual GeoParquet + GeoJSON output (modulo `NO_GEOJSON_THRESHOLD` per ADR-052)
+- Canonical schemas for `parcel`, `tower`, `distress_overlay`, `solar_facility`, `billboard`, `county_score`
+- Owner clustering (ADR-024 — gets strengthened in Phase 1 Slice 4 per [ADR-056](./adr/0056-lead-equals-owner-cluster.md))
+- Interestingness scoring (becomes tunable + transparent per [ADR-058](./adr/0058-tunable-transparent-scoring.md))
 
-### v3 — This cut (Production-readiness, May 2026)
+### v3 — Pitch-cut foundation (May 2026, partial)
 
-Active work plan in `/.claude/plans/cached-wobbling-token.md`. Eight
-sections in sequence:
-
-1. Documentation foundation — ✅ complete
-2. Version control + GitHub setup — ✅ complete
-3. Data puller overhaul — ✅ complete
-4. Data hygiene (raw data refresh) — ⚠️ AR/MT pulled and solid; FL raw intact, processed deleted; NC all data deleted (needs re-fetch)
-5. Preprocess code hygiene — ⚠️ in progress; FL/NC need chunked compose (ADR-051) before re-running
-6. Testing — ⬜ not started
-7. Pitch readiness — ⬜ not started
-8. Map app rehaul — ✅ complete (Svelte 5 + MapLibre + PMTiles + DuckDB-WASM)
-
-Goal: a pitch-quality demo cut across 4 anchor states with
-defensible numbers, tests, CI, and coherent docs. See
-[SCOPE.md](./SCOPE.md) for the full definition and
-[STATUS.md](./STATUS.md) for today's exact state.
+Eight-section production-readiness plan oriented to a pitch-quality demo across 4 anchor states. The framework, the puller, Git + CI, the map app rehaul (Svelte 5 + MapLibre + PMTiles + DuckDB-WASM at `app/`), and the AR/MT data-quality remediation all shipped. Sections 6 (testing) and 7 (pitch readiness) didn't ship before the pivot to product-phase work on 2026-05-25.
 
 ---
 
-## Present — what's being built right now
+## Present — Phase 1 (the product cut)
 
-Per [SCOPE.md](./SCOPE.md):
+On **2026-05-25** the project pivoted from "pitch-quality demo" to "fleshed-out co-founder-facing product" — see [ADR-053](./adr/0053-product-phase-shift.md). The 4 anchor states remain (AR + MT + FL + NC); the audience changed; several previously-deferred feature areas flipped to in-scope.
 
-- **Anchor states:** AR + NC + MT + FL (all four; UT dropped — no
-  owner data, ADR-049). AR and MT compose cleanly today. FL raw data
-  is intact (all 67 counties) but normalized + composite were deleted
-  2026-05-20 to free disk; needs re-normalize + compose once the
-  chunked compose is built (ADR-051). NC all raw data deleted
-  2026-05-20; needs full re-fetch, normalize, and compose. See
-  [STATUS.md](./STATUS.md).
-- **Sources:** working set is FCC ASR, FAA OEAAA, state parcels for
-  anchor states, HUD OZ + QCT, ARC distressed, USDA persistent
-  poverty, EIA 860/860M, USPVDB.
-- **Output:** per-state `data/processed/composite/<fips>/` with
-  Parquet + GeoJSON + catalog.json + summary.json + views/.
-- **Map app:** rebuilt — Svelte 5 + MapLibre + PMTiles + DuckDB-WASM,
-  live at `app/` (see [../app/ARCHITECTURE.md](../app/ARCHITECTURE.md));
-  the v1 Leaflet app is retired to `app_legacy_v1/`.
-- **Tests + CI:** pytest scaffold + GitHub Actions in Section 6.
+Slice plan (untimed, goal-driven):
+
+1. **F** — Finish FL + NC composes (chunked compose ADR-051 + NC re-fetch)
+2. **A** — FCC ULS carrier identification (Cellular + PCS + AWS / 700)
+3. **C** — Asset enrichment (billboards + solar on parcel) + tunable scoring UI
+4. **D + E** — Lease doc upload + LLM extraction + triage state / write layer / CSV exports (backend stands up here per [ADR-055](./adr/0055-hosted-private-backend.md))
+5. **B** — Vendor (tower-co) inference
+
+Per-slice gates in [GOALS.md §3](./GOALS.md). Outcome bar: co-founder uses the product as his primary daily triage tool for 4 consecutive weeks.
 
 See [STATUS.md](./STATUS.md) for today's exact state.
 
 ---
 
-## Near future — immediately after this cut
+## Near future — Phase 2 (after Phase 1 outcome bar)
 
-These are the things we deliberately deferred *within this cut* and
-will pick up as the next push. None of them are speculative — they
-have known scope and known need.
+Phase 2 is asset-universe expansion to rooftop / in-building installations + operational scale. Not started until Phase 1 outcome bar passes — the co-founder's 4 weeks of usage will surface the actual highest-pain Phase 2 item.
 
-### FCC ULS normalizers
+### Asset universe — rooftops
 
-~5 GB of raw ULS data on disk for 6 bands (cellular, market-based,
-microwave, ownership, transfers, leasing) plus metadata. None of it
-is yet processed. Unlocks:
+- Different data foundation (CoStar / LoopNet / mortgage feeds — mostly paid).
+- Different anchor-state fit (dense-urban; AR / MT have little rooftop volume).
+- Co-founder asks that defer with rooftops: tenant occupancy in the building, building owner mortgage status, building tenant mix, electric meter source, property manager team.
 
-- **Carrier presence** per tower (AT&T / Verizon / T-Mobile / etc.) —
-  single biggest driver of lease value.
-- **Leasing data** — which licenses sub-lease their spectrum to
-  whom; secondary lease economics.
-- **Transfers** — license sales over time; market-velocity signal.
+See [ADR-054](./adr/0054-asset-universe-phase-1-2.md).
 
-Estimated effort: a normalizer per band; complex but each is bounded.
+### Operational scale
 
-### FDOR NAL for Florida (if not in this cut)
+- **Mass email + response tracking** — third-party email infra (Postmark / SES) + webhook handling + deliverability hygiene + CAN-SPAM compliance.
+- **Self-serve refresh from the product** — wire the puller into the backend so the co-founder can trigger a re-pull without the dev.
+- **Recorded-lease automation** — scrape Memorandum of Lease recordings from county clerk sites for top counties (per-county effort; rare-rent-disclosing jurisdictions get smoking-gun comps).
+- **Paid Steel-in-the-Air tier** — granular per-tower comp data, augmenting the free county-averages bootstrap (ADR-057 reframes ADR-010).
+- **Paid skip-trace for contact enrichment** — Whitepages Pro / Cole Information / IDI for owner phone + email beyond the SoS officer-disclosure baseline. Stays explicitly within ADR-057's narrowed posture.
+- **Comparables maturation** — as uploaded leases accumulate (ADR-059 extraction loop), the private comp DB starts dominating the public-data bootstrap; "outliers in X-mile radius" becomes a real feature.
 
-If we don't reach FL during Section 4 of this cut, it's the first
-post-pitch state to add.
+### Stretch — mortgage / financial distress signal
 
-### Refresh cadence + alerting
-
-The puller will track `next_recommended_check_at` per source after
-Section 3. Post-pitch, add desktop notifications or weekly email
-summary of stale sources.
+Paid CoStar / ATTOM / mortgage feeds. Surfaces "owner mortgage current?" "owner liquidity?" — co-founder's explicit asks deferred from Phase 1.
 
 ---
 
-## Mid-future — post-pitch quarters
+## Mid-future — Phase 3 and beyond
 
-### Second asset class: billboards
+Quarter-scale, contingent on Phase 2 traction:
 
-State DOT outdoor-advertising permit datasets (FL, NC, TX have raw
-data on disk; normalizers deferred). Same parcel-join workflow as
-towers; adds a second renegotiation-target asset class.
+### Geographic expansion
 
-### Distress signal layering
+- **Free-data state additions** (IA, post-IN/UT if/when owner data unlocks).
+- **Paid nationwide via Regrid** — instant ~150M parcels with consistent schema. Budget unlock conversation.
 
-Tax-delinquency lists, foreclosure pre-filings, sheriff-sale notices,
-CDFI Investment Areas, Census ACS poverty/income at tract level. Each
-adds an axis to the `interestingness_score` composite.
+### Multi-tenant sale
 
-### LLC enrichment (not unmasking)
+The tenant-shaped schema baked Day 1 (ADR-055) anticipates selling the tool to other land-side consultants. Each new tenant = a row in `tenant`; no rewrite.
 
-Secretary of State business-entity records → infer entity type,
-formation date, registered agent. **Not** human-identity resolution.
-UCC-1 filings to confirm third-party-owned assets.
+### Second asset class — billboards as primary
+
+Billboard pipeline runs in Phase 1 as enrichment (parcels host billboards). Phase 3 makes billboards a primary triage axis equal to towers.
+
+### LLC enrichment, not unmasking
+
+Secretary of State business-entity records → infer entity type, formation date, registered agent. **Not** human-identity resolution (still permanent non-goal per ADR-041 narrowed via [ADR-057](./adr/0057-budget-posture-reframed.md)).
 
 ### Solar third-party-ownership detection
 
-LBNL "Tracking the Sun" rooftop data + state PUC interconnection
-reports + UCC-1 filings → flag leased / PPA-owned solar systems
-where the contract is potentially renegotiable.
-
-### Hosted deployment
-
-Single-user hosted instance (likely a small EC2 or Fly.io VM) so a
-partner or co-founder can access the map without local install. Adds
-basic auth.
+LBNL "Tracking the Sun" rooftop data + state PUC interconnection reports + UCC-1 filings → flag leased / PPA-owned solar systems where the contract is renegotiable.
 
 ---
 
 ## Long-term — the business
 
-The data work documented in this repo is the foundation of a business
-that:
+The data + tool work in this repo is the foundation of a business that:
 
-1. **Identifies** undervalued ground-lease and buyout-target
-   opportunities at scale.
-2. **Prioritizes** them by economic-distress signal (most material
-   help, highest probability of engagement).
-3. **Equips** the landowner with the analytical basis to renegotiate
-   or evaluate offers — independent of the tower/lease-buyout
-   companies' counter-incentive.
+1. **Identifies** undervalued ground-lease and buyout-target opportunities at scale.
+2. **Prioritizes** them by economic-distress + lease-economics signal.
+3. **Equips** the landowner with the analytical basis to renegotiate or evaluate offers.
 
 What this repo does **not** include and **will not** include:
 
-- **Outreach / CRM.** That's a separate product layer.
-- **Contact-data resolution.** Partners or providers handle that.
-- **LLC unmasking.** Sensitive, expensive, separate product.
-- **Lease-buyout transaction infrastructure.** Different stack
-  entirely.
-
-The data layer is "the input." Everything else lives elsewhere.
-
-### Geographic expansion ladder (long-term)
-
-1. **Anchor states** (this cut): AR + NC + MT (+ FL).
-2. **Free-data multi-state expansion:** add IA, AR-already-done,
-   any other states with clean free statewide parcel feeds.
-3. **Paid nationwide via Regrid:** instant ~150M parcels with
-   consistent schema. Requires budget unlock (~$1k+/mo).
-4. **Selective enrichment:** add tax-delinquency, foreclosure,
-   recorder filings for priority counties.
-
-Each step gates on actual business signal (are pilots converting?
-Is there partner appetite?) — not on data-side ambition.
+- **Outreach automation** beyond what fits in Phase 2 (mass email + tracking)
+- **Contact-data resolution beyond paid skip-trace** — partner data
+- **LLC unmasking** in the sensitive sense (still permanent non-goal per ADR-041 narrowed)
+- **Lease-buyout transaction infrastructure** — different stack entirely
 
 ---
 
 ## How this roadmap evolves
 
-- **Past** is append-only — each completed cut moves into "Past."
-- **Present** is what the active work plan says; it changes whenever
-  the plan file changes.
-- **Near future** is the next 1–2 pushes; concrete enough that
-  effort estimates exist.
-- **Mid + long future** are intentionally soft — directionally right
-  but expected to shift as we learn more from the pitch.
+- **Past** is append-only.
+- **Present** changes whenever the Phase 1 slice plan changes.
+- **Near future = Phase 2** sharpens after the Phase 1 outcome bar — the co-founder's 4 weeks of usage will surface the actual highest-pain Phase 2 item.
+- **Mid + long** intentionally soft; directionally right but expected to shift.
 
-Update this doc at the start of every new section in the work plan,
-and after every pitch / partner conversation that materially changes
-priorities.
+Update at the start of every new slice / phase, and after every material strategic conversation.

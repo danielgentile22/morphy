@@ -1,15 +1,13 @@
 # DEPLOYMENT — How this runs
 
-**Last updated:** 2026-05-20
-**Status:** Local-only for v1 pitch. No cloud / hosted deployment.
+**Last updated:** 2026-05-25
+**Status:** Phase 1 = local data pipeline + map app today; **hosted-private backend stands up in Slice 4** (lease docs + lead state + auth) per [ADR-055](./adr/0055-hosted-private-backend.md).
 
-This doc describes how to stand up the project locally — what to install,
-how to run each subsystem, and how to ship outputs to a partner without
-hosting anything.
+This doc describes how to stand up the project — what to install, how to run each subsystem, how to ship outputs to a partner, and what Slice 4 adds when the backend lands.
 
 ---
 
-## 1. Where this runs today
+## 1. Where this runs today (pre-Slice 4)
 
 All four surfaces run locally on a developer's machine:
 
@@ -20,8 +18,7 @@ All four surfaces run locally on a developer's machine:
 | **Map app** | `python scripts/serve.py 8765` + `cd app && npm run dev` | localhost:5173 |
 | **Tests** | `pytest` · `cd app && npm run test:unit && npm run test:e2e` | Terminal |
 
-There is **no production / hosted instance.** Hosted deployment is a
-post-pitch concern (see [ROADMAP.md](./ROADMAP.md) → "Hosted deployment").
+**Slice 4 (D + E) adds a hosted-private backend** — small VM + Postgres + S3-compatible object store + FastAPI + magic-link auth + Claude API for lease extraction. The map app remains static; it talks to the backend over a thin API for the write-layer features (lead state, lease upload, activity log, scoring profiles per user). See §8 for the deployment shape.
 
 ---
 
@@ -191,21 +188,77 @@ bucket; encrypted at rest.
 
 ---
 
-## 8. Production deployment (future, not in scope)
+## 8. Hosted-private backend (Slice 4 — D + E)
 
-Locked architectural decisions for when we get there
-([DECISIONS.md](./DECISIONS.md) ADR-030, ADR-031, ADR-040):
+Locked in [ADR-055](./adr/0055-hosted-private-backend.md). Supersedes ADR-006 (static-site, no backend) for write-layer features only — read-only analytical layers (parquet, PMTiles, GeoJSON) stay static.
 
-- Map app: static-site hosted bundle (S3 + CloudFront or
-  equivalent) — no backend server.
+### Stack
+
+| Component | Choice (Slice 4 default) | Notes |
+|---|---|---|
+| Hosting | Small VM — **Fly.io / Render / Hetzner** class | Any will do; pick at Slice 4 implementation time |
+| App | **FastAPI** (Python) | Same language as preprocess; thin CRUD + auth + extraction-orchestration surface |
+| Database | **Postgres** (managed in prod; testcontainers in CI) | Tenant-shaped schema from Day 1 — every table has `tenant_id` |
+| Object store | **S3-compatible** — Backblaze B2 / Cloudflare R2 / AWS S3 | Lease PDFs; encrypted at rest; signed download URLs only |
+| Auth | **Magic-link over email** | Lowest friction for 2–5 users; short-lived JWTs |
+| LLM | **Anthropic Claude API** | Sonnet 4.6 default + Opus 4.7 retry for lease extraction ([ADR-059](./adr/0059-llm-lease-extraction.md)); prompt caching on |
+| Address normalization | **libpostal** (preferred) or **`usaddress`** (fallback) | For owner-cluster strengthening — pick at build time per dep-management friction |
+| Transport | **HTTPS only** (HSTS) | TLS terminated at the host platform's edge |
+| Cost (Phase 1) | ~$30–100 / month | Within ADR-057 reframed budget |
+
+### Env vars (Slice 4)
+
+| Variable | Used by | Purpose |
+|---|---|---|
+| `DATABASE_URL` | FastAPI app | Managed Postgres connection string |
+| `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | FastAPI app | Lease PDF object store |
+| `ANTHROPIC_API_KEY` | Lease-extraction worker | Claude API |
+| `MAGIC_LINK_FROM_EMAIL`, `SMTP_*` *(or Postmark / SES token)* | Auth surface | Sending magic-link emails |
+| `JWT_SECRET` | Auth surface | Signing user-session JWTs |
+| `BACKEND_BASE_URL` | Map app + magic-link emails | Where the API is reachable |
+
+Stored in the host platform's secret store (Fly secrets / Render env vars / Hetzner vault). Never in repo.
+
+### Run commands (Slice 4 — placeholders until build)
+
+```bash
+# Local backend (after Slice 4 lands)
+cd backend
+poetry install
+DATABASE_URL=postgres://... S3_BUCKET=... ANTHROPIC_API_KEY=... \
+  uvicorn app.main:app --reload --port 8000
+
+# Migrations
+cd backend && alembic upgrade head
+
+# Tests
+cd backend && pytest                       # spins testcontainers-postgres
+cd backend && pytest -k tenant_isolation   # multi-tenancy isolation specifically
+cd backend && pytest -m llm_eval           # gold-set LLM extraction eval (gating CI check)
+
+# Production deploy (vendor-specific; example for Fly)
+fly deploy --app pilot-backend
+```
+
+### PII custody (see [SECURITY.md](./SECURITY.md))
+
+- HTTPS everywhere; HSTS.
+- Postgres TLS in transit, encryption at rest, daily backups.
+- S3 bucket private; SSE-S3 or KMS encryption; signed download URLs only.
+- Magic-link tokens short-lived (15 min).
+- Multi-tenancy isolation tests gate every PR.
+
+## 9. Map-app static deployment (Phase 2+)
+
+For when the project sells to a third user or you want a hosted demo (Phase 3 path):
+
+- Map app: static-site hosted bundle (S3 + CloudFront / Cloudflare Pages / Vercel) — no backend changes from Slice 4.
 - Per-state PMTiles served via HTTP range requests.
-- DuckDB-WASM queries parquet files directly from object storage.
-- Access controls via Cloudflare Access or AWS IAM (single-user
-  initially; multi-user later).
+- DuckDB-WASM queries parquet directly from object storage.
+- Access controls via Cloudflare Access or magic-link gate on the static bundle.
 - Parcel data PII never publicly cached / indexed.
 
-None of this is built. Tracked in
-[MAP_APP_REHAUL.md](./MAP_APP_REHAUL.md).
+Not built. Tracked in [ROADMAP.md](./ROADMAP.md) → Phase 3.
 
 ---
 

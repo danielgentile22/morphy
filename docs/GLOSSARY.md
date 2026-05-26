@@ -1,271 +1,165 @@
 # GLOSSARY — Domain Terms
 
-**Last updated:** 2026-05-20
+**Last updated:** 2026-05-25
 
-Alphabetical reference for every domain-specific term used across the
-docs and code. If a doc uses a term not defined here, file a fix.
+Alphabetical reference for every domain-specific term used across the docs and code. If a doc uses a term not defined here, file a fix.
+
+For the canonical product-language slice (Vendor / Carrier / Registrant / Freestanding / Rooftop / Triage), `CONTEXT.md` at the repo root is the authority — this glossary mirrors it.
 
 ---
 
 ## A
 
-- **ACS** — American Community Survey. The Census Bureau's rolling
-  demographic + socio-economic survey; 5-year aggregates are the
-  workhorse for tract-level poverty / income data.
-- **ADR** — Architecture Decision Record. The single-decision entries
-  in [DECISIONS.md](./DECISIONS.md).
-- **APN** — Assessor's Parcel Number. The county-assigned identifier
-  for a parcel. Synonyms: PIN (Parcel Identification Number),
-  parcel_id (our canonical name).
-- **ARC** — Appalachian Regional Commission. Federal agency that
-  classifies counties in the Appalachian region by economic-status
-  tier (Distressed, At-Risk, Transitional, Competitive, Attainment).
-- **ArcGIS** — Esri's GIS product family. Many federal / state
-  publishers expose datasets via ArcGIS REST services or hosted
-  ArcGIS Online portals.
-- **ASR** — Antenna Structure Registration. The FCC's registry of
-  antenna structures ≥ 200 ft or near airports. Each entry has an
-  ASR registration number, structure coordinates, height, type,
-  status, and registrant entity. Our primary tower-locations source.
-- **AutomationPolicy** — Per-source enum on every `DataSource`
-  declaring how the puller may fetch it: `ALLOWED`, `TOLERATED`,
-  `MANUAL_ONLY`, `CREDENTIALED`. See [DATA_SOURCES.md](./DATA_SOURCES.md).
+- **ACS** — American Community Survey. The Census Bureau's rolling demographic + socio-economic survey; 5-year aggregates are the workhorse for tract-level poverty / income data.
+- **ADR** — Architecture Decision Record. Single-decision entries in `docs/DECISIONS.md` (legacy: ADR-001–052) or `docs/adr/` (new: ADR-053+).
+- **APN** — Assessor's Parcel Number. The county-assigned identifier for a parcel. Synonyms: PIN (Parcel Identification Number), `parcel_id` (our canonical name).
+- **ARC** — Appalachian Regional Commission. Federal agency that classifies counties in the Appalachian region by economic-status tier (Distressed, At-Risk, Transitional, Competitive, Attainment).
+- **ArcGIS** — Esri's GIS product family. Many federal / state publishers expose datasets via ArcGIS REST services or hosted ArcGIS Online portals.
+- **ASR** — Antenna Structure Registration. The FCC's registry of antenna structures ≥ 200 ft or near airports. Each entry has an ASR registration number, structure coordinates, height, type, status, and registrant entity. Our primary tower-locations source.
+- **AutomationPolicy** — Per-source enum on every `DataSource` declaring how the puller may fetch it: `ALLOWED`, `TOLERATED`, `MANUAL_ONLY`, `CREDENTIALED`. See [DATA_SOURCES.md](./DATA_SOURCES.md).
 
 ## B
 
-- **BLM / BIA** — Bureau of Land Management / Bureau of Indian
-  Affairs. Federal landholders whose parcels may not appear in
-  county-level tax rolls.
+- **Backend** — the Slice 4 FastAPI service that stands up alongside the static map app. Holds lead state, lease document references, activity log, scoring profiles. Postgres + S3-compatible object store + magic-link auth + Claude API for lease extraction. See [ADR-055](./adr/0055-hosted-private-backend.md).
+- **BLM / BIA** — Bureau of Land Management / Bureau of Indian Affairs. Federal landholders whose parcels may not appear in county-level tax rolls.
 
 ## C
 
-- **Cadastral** — relating to legal land boundaries / parcels.
-  "MT Cadastral" = Montana's statewide parcel layer.
-- **CAMA** — Computer Assisted Mass Appraisal. The county tax-
-  assessor's parcel-attribute database; the upstream of NC OneMap
-  and similar state-aggregated parcel feeds.
-- **Canonical type** — a project-internal schema (e.g., `parcel`,
-  `tower`, `distress_overlay`) that every Normalizer maps its raw
-  data into. See `scripts/preprocess/base.py`.
-- **Catalog** — the per-state `catalog.json` written by the Composer
-  describing every layer + view available for that state. The map
-  app reads this to populate the UI.
-- **CDFI** — Community Development Financial Institution. Treasury
-  designation; CDFI Investment Areas are a distress overlay.
-- **Composer** — `scripts/preprocess/compose.py`. For one state
-  FIPS: loads canonical data, runs Joins in dependency order, runs
-  Views, writes per-state outputs + catalog.json + summary.json.
-- **Composite** — the per-state output produced by the Composer.
-  Lives at `data/processed/composite/<fips>/`.
+- **Cadastral** — relating to legal land boundaries / parcels. "MT Cadastral" = Montana's statewide parcel layer.
+- **CAMA** — Computer Assisted Mass Appraisal. The county tax-assessor's parcel-attribute database; the upstream of NC OneMap and similar state-aggregated parcel feeds.
+- **Canonical type** — a project-internal schema (e.g., `parcel`, `tower`, `distress_overlay`, `lead`, `lease`) that every Normalizer maps its raw data into. See `scripts/preprocess/base.py`.
+- **Carrier** — the wireless service (AT&T, Verizon, T-Mobile, Dish) that leases antenna space *from the Vendor*. Sourced from FCC ULS by joining licenses to ASR locations. Not the tower owner — see **Vendor**.
+- **Catalog** — the per-state `catalog.json` written by the Composer describing every layer + view available for that state. The map app reads this to populate the UI.
+- **CDFI** — Community Development Financial Institution. Treasury designation; CDFI Investment Areas are a distress overlay.
+- **Composer** — `scripts/preprocess/compose.py`. For one state FIPS: loads canonical data, runs Joins in dependency order, runs Views, writes per-state outputs + `catalog.json` + `summary.json`.
+- **Composite** — the per-state output produced by the Composer. Lives at `data/processed/composite/<fips>/`.
 
 ## D
 
-- **Distress overlay** — canonical type for spatial-polygon distress
-  designations (HUD OZ, HUD QCT, ARC counties, USDA persistent
-  poverty). Used to tag parcels with `in_oz`, `in_qct`,
-  `distress_tier`, `persistent_poverty`.
-- **DMS** — Degrees / Minutes / Seconds. The coordinate format FCC
-  ASR uses; we convert to decimal degrees during normalize.
-- **DSL** — Department of State Lands (Florida). Publishes a parcel
-  layer of *state-owned* land — **not** the FDOR NAL tax-roll layer
-  we actually want. See ADR-019.
+- **Distress overlay** — canonical type for spatial-polygon distress designations (HUD OZ, HUD QCT, ARC counties, USDA persistent poverty). Used to tag parcels with `in_oz`, `in_qct`, `distress_tier`, `persistent_poverty`.
+- **DMS** — Degrees / Minutes / Seconds. The coordinate format FCC ASR uses; we convert to decimal degrees during normalize.
+- **DSL** — Department of State Lands (Florida). Publishes a parcel layer of *state-owned* land — **not** the FDOR NAL tax-roll layer we actually want. See ADR-019.
 
 ## E
 
-- **EIA** — U.S. Energy Information Administration. Publishes Form
-  860 (annual) + 860M (monthly) — utility-scale power-plant
-  inventories with plant location, owner, capacity.
-- **Entity (FCC ASR)** — the registrant / owner of an antenna
-  structure as recorded in `EN.dat` of the ASR bulk data. Not the
-  *landowner* under the tower; that's a separate join.
-- **EPSG** — coordinate reference system codes from the European
-  Petroleum Survey Group. EPSG:4326 = WGS84 lat/lon (web standard).
-  EPSG:2264 = NC State Plane (ftUS).
+- **EIA** — U.S. Energy Information Administration. Publishes Form 860 (annual) + 860M (monthly) — utility-scale power-plant inventories with plant location, owner, capacity.
+- **Entity (FCC ASR)** — the registrant / owner of an antenna structure as recorded in `EN.dat` of the ASR bulk data. Not the *landowner* under the tower; that's a separate join. See **Registrant**.
+- **EPSG** — coordinate reference system codes from the European Petroleum Survey Group. EPSG:4326 = WGS84 lat/lon (web standard). EPSG:2264 = NC State Plane (ftUS).
 
 ## F
 
-- **FAA OEAAA** — FAA Obstruction Evaluation / Airport Airspace
-  Analysis. Pre- and recently-built tall-structure records;
-  forward-looking pipeline of towers.
-- **FCC** — Federal Communications Commission. Publishes ASR (tower
-  registrations) and ULS (radio-service licenses).
-- **FDOR** — Florida Department of Revenue. Publishes the NAL tax-
-  roll dataset per county.
-- **FDOT** — Florida Department of Transportation. Publishes outdoor
-  advertising (billboard) permits.
-- **FGDL** — Florida Geographic Data Library. Aggregates various FL
-  state datasets; published DSL (state-land) parcels, **not** FDOR
-  NAL.
-- **FIPS** — Federal Information Processing Standards. We use the
-  state FIPS (e.g., `37` = NC, `05` = AR) and county FIPS (e.g.,
-  `075` for Graham in NC, full GEOID `37075`).
+- **FAA OEAAA** — FAA Obstruction Evaluation / Airport Airspace Analysis. Pre- and recently-built tall-structure records; forward-looking pipeline of towers.
+- **FCC** — Federal Communications Commission. Publishes ASR (tower registrations) and ULS (radio-service licenses).
+- **FDOR** — Florida Department of Revenue. Publishes the NAL tax-roll dataset per county.
+- **FDOT** — Florida Department of Transportation. Publishes outdoor advertising (billboard) permits.
+- **FGDL** — Florida Geographic Data Library. Aggregates various FL state datasets; published DSL (state-land) parcels, **not** FDOR NAL.
+- **FIPS** — Federal Information Processing Standards. We use the state FIPS (e.g., `37` = NC, `05` = AR) and county FIPS (e.g., `075` for Graham in NC, full GEOID `37075`).
+- **Freestanding tower** — standalone antenna structure (monopole, lattice, guyed) ≥ 200 ft or near an airport, registered in FCC ASR. **Phase 1 primary asset.** Distinct from **Rooftop installation**. See `CONTEXT.md` + [ADR-054](./adr/0054-asset-universe-phase-1-2.md).
 
 ## G
 
-- **GeoJSON** — RFC 7946 JSON-based geometry format. What our map
-  app reads. Large-row layers are skipped in favor of Parquet (see
-  ADR-023).
-- **GeoParquet** — Apache Parquet with a standard geometry column
-  encoding. Our canonical analytical format. ~5–10× smaller than
-  GeoJSON, supports column projection.
+- **GeoJSON** — RFC 7946 JSON-based geometry format. What our map app reads for catalog + view layers. Large-row layers are skipped per ADR-052; parcels render from PMTiles.
+- **GeoParquet** — Apache Parquet with a standard geometry column encoding. Our canonical analytical format. ~5–10× smaller than GeoJSON, supports column projection.
 
 ## H
 
-- **HIFLD** — Homeland Infrastructure Foundation-Level Data. DHS-
-  curated infrastructure datasets. **Retired** the public cellular-
-  towers layer in 2024 (ADR-015).
-- **HUD** — U.S. Department of Housing and Urban Development.
-  Publishes OZ (Opportunity Zones), QCT (Qualified Census Tracts).
-  Many endpoints currently dead (Section 4.1 fixes).
+- **HIFLD** — Homeland Infrastructure Foundation-Level Data. DHS-curated infrastructure datasets. **Retired** the public cellular-towers layer in 2024 (ADR-015).
+- **HUD** — U.S. Department of Housing and Urban Development. Publishes OZ (Opportunity Zones), QCT (Qualified Census Tracts).
 
 ## I
 
-- **Interestingness score** — composite per-parcel score in [0, 1]
-  used for outreach prioritization. Components: infrastructure
-  presence, distress overlap, owner kind (LLCs / trusts weighted),
-  cluster size, value. Implementation in
-  `scripts/preprocess/score.py`. Surfaced in the
-  `interestingness_top_1000` view.
+- **Interestingness score** — composite per-parcel score in [0, 1] used for outreach prioritization. Components: infrastructure presence, distress overlap, owner kind (LLCs / trusts weighted), cluster size. Implementation: `scripts/preprocess/score.py`. **In Phase 1 Slice 3 this becomes tunable + transparent** ([ADR-058](./adr/0058-tunable-transparent-scoring.md)) — components stored in parquet, weights set client-side via UI sliders, scoring profiles persisted, lease-derived signals plug in after Slice 4.
 
 ## J
 
-- **Join** — `scripts/preprocess/joins/<name>.py`. Mutates one
-  canonical layer with attributes from another (e.g.,
-  `TowerToParcelJoin` adds `parcel_id` to towers). Runs in topo
-  order via `ordered_joins()`.
+- **Join** — `scripts/preprocess/joins/<name>.py`. Mutates one canonical layer with attributes from another (e.g., `TowerToParcelJoin` adds `parcel_id` to towers). Runs in topo order via `ordered_joins()`.
 
 ## L
 
-- **LBNL Tracking the Sun** — Lawrence Berkeley National Lab dataset
-  of US rooftop / distributed PV installations. Dropped from active
-  registry (ADR-016).
-- **LLC unmasking** — the (sensitive, expensive) process of resolving
-  the human(s) behind a legal entity. Permanent non-goal (ADR-041).
+- **LBNL Tracking the Sun** — Lawrence Berkeley National Lab dataset of US rooftop / distributed PV installations. Dropped from active registry (ADR-016).
+- **Lead** — the co-founder's outreach unit. **Keyed on `owner_cluster_id`** ([ADR-056](./adr/0056-lead-equals-owner-cluster.md)) — one cluster = one lead, regardless of how many parcels the cluster owns. Outreach state (new / flagged / contacted / talking / won / lost / passed / re_engage_later) lives on the lead.
+- **Lease** — the carrier-side ground-lease record. Keyed on `(parcel_id, tower_asr_id, carrier_callsign)`. State machine: unknown → pending_upload → uploaded → extracted → verified → superseded. Document storage + LLM-extracted structured fields land here in Slice 4 ([ADR-059](./adr/0059-llm-lease-extraction.md)).
+- **`lease_comp`** — per-area lease-rent benchmark table. Bootstrapped from Steel-in-the-Air free county-level data in Slice 4; augmented over time by extracted-lease rent from the cofounder's uploads. Powers the "comparables within X-mile radius" feature.
+- **libpostal** — native C library for international address normalization. Preferred for the address half of owner-cluster strengthening in Slice 4. Fall back to pure-Python `usaddress` if dep-management is painful.
+- **LLC unmasking** — the (sensitive, expensive) process of resolving the human(s) behind a legal entity. **Narrowed in [ADR-057](./adr/0057-budget-posture-reframed.md):** paid skip-trace + shell-piercing remain permanent non-goals; **free public-records officer disclosure** (Secretary of State business-entity lookups; UCC-1) is in scope for Phase 1 Slice 4 lead-detail panel.
 
 ## M
 
+- **Magic-link auth** — passwordless auth via email-delivered one-time links. Slice 4 default per [ADR-055](./adr/0055-hosted-private-backend.md) — lowest friction for the 2–5 user product.
 - **Manifest** — two distinct files in this project:
   - `data/manifest.json` — fetch manifest; what raw data is on disk.
-  - `data/processed/preprocess_manifest.json` — preprocess manifest;
-    what's been normalized / composed.
-- **MANUAL_ONLY** — AutomationPolicy meaning the puller will not
-  attempt to fetch; user must download manually. The puller (after
-  Section 3 overhaul) provides a step-by-step walkthrough modal.
-- **MapLibre GL JS** — open-source WebGL map renderer (fork of
-  Mapbox GL JS pre-license-change). Target rendering engine for
-  the v2 map app rehaul (ADR-030).
+  - `data/processed/preprocess_manifest.json` — preprocess manifest; what's been normalized / composed.
+- **MANUAL_ONLY** — AutomationPolicy meaning the puller will not attempt to fetch; user must download manually. The puller provides a step-by-step walkthrough modal.
+- **MapLibre GL JS** — open-source WebGL map renderer (fork of Mapbox GL JS pre-license-change). The map app's rendering engine; see `app/ARCHITECTURE.md`.
 
 ## N
 
-- **NAL** — Name, Address, Legal. FL DOR's per-county tax-roll
-  dataset; contains private-owner names + assessed values. The data
-  we actually want for FL (ADR-019).
-- **NC OneMap** — North Carolina's geospatial data portal. Publishes
-  standardized statewide parcel data sourced from county CAMA
-  exports. The original Graham County pilot used this source.
-- **Normalizer** — `scripts/preprocess/normalizers/<source>.py`.
-  Reads one raw source and emits one or more canonical-type Parquet
-  files plus a `quality_report.json`.
+- **NAL** — Name, Address, Legal. FL DOR's per-county tax-roll dataset; contains private-owner names + assessed values. The data we actually want for FL (ADR-019).
+- **NC OneMap** — North Carolina's geospatial data portal. Publishes standardized statewide parcel data sourced from county CAMA exports. The original Graham County pilot used this source.
+- **Normalizer** — `scripts/preprocess/normalizers/<source>.py`. Reads one raw source and emits one or more canonical-type Parquet files plus a `quality_report.json`.
 
 ## O
 
 - **OE/AAA** — see FAA OEAAA.
-- **Owner cluster** — group of parcels sharing the same
-  normalized-owner + normalized-address pair. ID is SHA1 of the
-  concatenation. Surfaced via the `owner_clusters` view and
-  `owner_cluster_size` column on parcels.
-- **owner_kind** — categorical inferred from owner-name patterns:
-  `llc`, `individual`, `trust`, `corporation`, `gov`, `church`,
-  `partnership`, `school`, `unknown`. Implementation in
-  `scripts/preprocess/cluster.py`.
-- **OZ** — Opportunity Zone. Census tract designated under the 2017
-  Tax Cuts and Jobs Act; the original "OZ 1.0" designations are in
-  effect through ~2028. "OZ 2.0" redesignations are being made by
-  governors during 2026 — the layer will change.
+- **Owner cluster** — group of parcels sharing the same normalized-owner + normalized-address pair. ID is SHA1 of the concatenation. Surfaced via the `owner_clusters` view and `owner_cluster_size` column on parcels. **Becomes the Lead key in Slice 4** ([ADR-056](./adr/0056-lead-equals-owner-cluster.md)); ADR-024's algorithm is strengthened then with conservative normalization layers + manual merge/split UI.
+- **`owner_cluster_override`** — Slice 4 backend table storing co-founder-issued manual cluster merges/splits: `(tenant_id, source_cluster_id, target_cluster_id)`. Raw cluster IDs stay in parquet; backend computes `display_cluster_id = coalesce(override_target, raw_cluster_id)`.
+- **owner_kind** — categorical inferred from owner-name patterns: `llc`, `individual`, `trust`, `corporation`, `gov`, `church`, `partnership`, `school`, `unknown`. Implementation in `scripts/preprocess/cluster.py`.
+- **OZ** — Opportunity Zone. Census tract designated under the 2017 Tax Cuts and Jobs Act; the original "OZ 1.0" designations are in effect through ~2028. "OZ 2.0" redesignations are being made by governors during 2026 — the layer will change.
 
 ## P
 
-- **Parcel** — single legally-defined unit of real estate with a
-  unique APN, polygon boundary, owner, mailing address, assessed
-  value. Atomic unit linking infrastructure to a human/entity.
-- **Persistent poverty** — USDA designation for counties with ≥ 20 %
-  poverty rate sustained over the past ~30 years.
-- **PII** — Personally Identifiable Information. Parcel-owner names
-  + mailing addresses meet most PII definitions even when
-  individually public-record. See ADR-040 + [SECURITY.md](./SECURITY.md).
-- **PMTiles** — single-file format for vector tiles. HTTP Range-
-  request friendly; no tile server needed. Target format for the
-  v2 map app rehaul (ADR-030).
-- **Puller** — `app_puller/`. PySide6 desktop app for fetching raw
-  data into `data/raw/`. Section 3 of the work plan overhauls its
-  UX significantly.
-- **Pyogrio** — fast geopandas-compatible reader/writer for
-  vector spatial files (shapefile, GDB, GeoJSON). Used in
-  preprocess.
+- **Parcel** — single legally-defined unit of real estate with a unique APN, polygon boundary, owner, mailing address, assessed value. Atomic geographic unit linking infrastructure to a human/entity. Not the same as a **Lead** (which is the owner-cluster).
+- **Persistent poverty** — USDA designation for counties with ≥ 20% poverty rate sustained over the past ~30 years.
+- **Phase 1** — the current cut. Co-founder-facing product across AR + MT + FL + NC, freestanding towers only. Slices F → A → C → D+E → B. See [SCOPE.md](./SCOPE.md), [ADR-053](./adr/0053-product-phase-shift.md).
+- **Phase 2** — post-Phase-1 expansion. Rooftop installations + mass email + paid Steel-in-the-Air tier + self-serve refresh + recorded-lease automation. See [ROADMAP.md](./ROADMAP.md).
+- **PII** — Personally Identifiable Information. Parcel-owner names + mailing addresses meet most PII definitions even when individually public-record. See ADR-040 + [SECURITY.md](./SECURITY.md).
+- **PMTiles** — single-file format for vector tiles. HTTP Range-request friendly; no tile server needed. Used for the parcel base layer in the map app.
+- **Puller** — `app_puller/`. PySide6 desktop app for fetching raw data into `data/raw/`. See [PULLER_UX.md](./PULLER_UX.md).
+- **Pyogrio** — fast geopandas-compatible reader/writer for vector spatial files (shapefile, GDB, GeoJSON). Used in preprocess.
 
 ## Q
 
-- **QCT** — Qualified Census Tract. HUD designation for
-  high-poverty / low-income tracts; one of our distress overlays.
+- **QCT** — Qualified Census Tract. HUD designation for high-poverty / low-income tracts; one of our distress overlays.
 
 ## R
 
-- **Regrid** — paid nationwide standardized parcel + owner data
-  service. Out of scope for v1 (ADR-012). Stub source preserved
-  for future use.
+- **Registrant** — the entity listed on FCC ASR `EN.dat` — the party that *registered* the structure with FCC. Often the original builder; frequently sold since. Distinct from the *current* tower owner — see **Vendor**.
+- **Regrid** — paid nationwide standardized parcel + owner data service. Phase 2+ unlock per [ADR-057](./adr/0057-budget-posture-reframed.md) (revises ADR-012's "out of scope" framing to "deferred"). Stub source preserved.
+- **Rooftop installation** — antenna or DAS installation on a commercial building. Usually under the 200 ft FCC ASR threshold so largely *absent* from ASR. Different data foundation (building cap rate, tenant mix, mortgage — mostly paid). Out of scope for Phase 1; deferred to Phase 2 ([ADR-054](./adr/0054-asset-universe-phase-1-2.md)).
 
 ## S
 
-- **safe_merge** — helper in `scripts/preprocess/base.py` that drops
-  pre-existing target columns before a pandas merge, preventing
-  `_x` / `_y` column collisions when a Join adds columns that
-  Normalizers initialize. See ADR-020.
-- **SCOPE** — see [SCOPE.md](./SCOPE.md). The locked definition of
-  what's in / out of the current cut.
-- **Schema version** — integer field stamped on every canonical
-  output (`_schema_version`). Bumps when the canonical-type schema
-  changes.
-- **Spatial join** — assigning attributes from one geographic
-  layer to another based on spatial relationship (typical case:
-  point-in-polygon, "which parcel contains this tower").
-- **SoS** — Secretary of State. Each state's SoS publishes
-  business-entity records (LLC formation, officers, registered
-  agent). Future enrichment, not v1.
+- **safe_merge** — helper in `scripts/preprocess/base.py` that drops pre-existing target columns before a pandas merge, preventing `_x` / `_y` column collisions when a Join adds columns that Normalizers initialize. See ADR-020.
+- **SCOPE** — see [SCOPE.md](./SCOPE.md). The locked definition of what's in / out of the current cut.
+- **Schema version** — integer field stamped on every canonical output (`_schema_version`). Bumps when the canonical-type schema changes.
+- **Skip-trace** — paid contact-data resolution (phone, email, current address) via third-party vendors (Whitepages Pro, Cole Information, IDI, Pipl). Permanent non-goal for Phase 1 per [ADR-057](./adr/0057-budget-posture-reframed.md) (narrowing ADR-041). Phase 2 unlock conversation.
+- **Slice** — one unit of Phase 1 work with its own "shipped" gate. Phase 1 slices in order: **F** (finish FL+NC), **A** (carriers via ULS), **C** (asset enrichment + tunable scoring UI), **D+E** (lease docs + backend + triage state), **B** (vendor inference). See [GOALS.md §3](./GOALS.md) for gates.
+- **SoS** — Secretary of State. Each state's SoS publishes business-entity records (LLC formation, officers, registered agent). **In scope for Phase 1 Slice 4** lead-detail panel as a one-click helper — see [ADR-057](./adr/0057-budget-posture-reframed.md).
+- **Spatial join** — assigning attributes from one geographic layer to another based on spatial relationship (typical case: point-in-polygon, "which parcel contains this tower").
+- **Steel-in-the-Air** — third-party publisher of cell-tower lease-rent benchmarks. Free tier publishes county-level rent averages (~3000 counties); paid tier has finer granularity. **Free tier bootstraps the `lease_comp` table in Slice 4** — see session summary §Comparables. Paid tier is a Phase 2 unlock.
 
 ## T
 
-- **TIGER** — Topologically Integrated Geographic Encoding and
-  Referencing. Census Bureau's geospatial reference files. Where
-  county polygons come from for the future map app rehaul.
-- **Tippecanoe** — Mapbox/Felt CLI tool for generating vector tiles
-  (MBTiles / PMTiles) from large GeoJSON / NDJSON inputs. Required
-  for the v2 map app rehaul (ADR-030).
-- **TPO** — Third-Party Ownership (of a solar system). Solar
-  installations under PPA / lease where the contract can
-  potentially be renegotiated. Renewable-energy analogue of
-  ground leases.
+- **Tenant** — in the backend (Slice 4), a tenant is a logical isolation unit; every table has a `tenant_id` column. Phase 1 has one tenant (`tenant_id = 1`); the schema is shaped Day 1 so a second tenant (intern / advisor / second cofounder / paid Phase-3 customer) is a row-add, not a refactor. See [ADR-055](./adr/0055-hosted-private-backend.md). Not to be confused with **building tenants** in the rooftop context (deferred to Phase 2).
+- **testcontainers-postgres** — the testing harness for Slice 4 backend — spins a real Postgres in Docker for the test session instead of stubbing with SQLite. Catches Postgres-specific bugs (JSON ops, FTS, isolation levels). See [TESTING.md](./TESTING.md).
+- **TIGER** — Topologically Integrated Geographic Encoding and Referencing. Census Bureau's geospatial reference files.
+- **Tippecanoe** — Mapbox/Felt CLI tool for generating vector tiles (MBTiles / PMTiles) from large GeoJSON / NDJSON inputs. Required for the map app's parcel base layer.
+- **TPO** — Third-Party Ownership (of a solar system). Solar installations under PPA / lease where the contract can potentially be renegotiated. Solar-side concept; renewable-energy analogue of ground leases.
+- **Triage** — the co-founder's working session inside the product — filter parcels/towers across anchor states, rank by interestingness, drill into a candidate, mark as "working" / "passed" / "called", export or persist lead state. Primary user-flow once Phase 1 ships. Distinct from **Outreach** (Phase 2 — actual email / call layer).
 
 ## U
 
-- **ULS** — Universal Licensing System (FCC). Six bulk data bands +
-  meta; cellular, market-based, microwave, ownership, transfers,
-  leasing. Raw data on disk but not normalized this cut (ADR-013).
-- **USDA ERS** — USDA Economic Research Service. Publishes
-  persistent-poverty + county typology data.
-- **USPVDB** — US Photovoltaic Database. USGS / Berkeley dataset of
-  utility-scale solar facility polygons.
-- **UCC-1** — Uniform Commercial Code financing statement; secured
-  parties file these. Useful (future) for confirming third-party-
-  owned solar systems.
+- **UCC-1** — Uniform Commercial Code financing statement; secured parties file these. Surfaced in the Slice 4 lead-detail panel as third-party-ownership clues for parcel-attached assets.
+- **ULS** — Universal Licensing System (FCC). Six bulk data bands + meta. **Cellular (Part 22) + PCS (Part 24) + AWS / 700 MHz (Part 27) are in Phase 1 Slice A** for carrier identification ([ADR-053](./adr/0053-product-phase-shift.md) partially reverses ADR-013). Microwave, Ownership, Transfers, Leasing remain deferred.
+- **USDA ERS** — USDA Economic Research Service. Publishes persistent-poverty + county typology data.
+- **USPVDB** — US Photovoltaic Database. USGS / Berkeley dataset of utility-scale solar facility polygons.
+- **usaddress** — pure-Python US-only address parser. Fallback if libpostal install is painful in Slice 4. Narrower coverage, no native dependencies.
 
 ## V
 
-- **View** — `scripts/preprocess/views/<name>.py`. Derived dataset
-  built on top of composed canonical data (e.g.,
-  `llc_owned_parcels_with_infra`, `interestingness_top_1000`).
-  Surfaced in the catalog and as map filter toggles.
+- **Vendor** — the tower-co that *currently* owns the antenna structure and collects rent from carriers (Crown Castle, American Tower / ATC, SBA, Vertical Bridge). Not directly recorded in any free dataset; inferred from FCC ASR Registrant for un-sold towers (Slice B) or from recorded-lease lessee names for sold towers (Phase 2). Not the wireless service — see **Carrier**.
+- **View** — `scripts/preprocess/views/<name>.py`. Derived dataset built on top of composed canonical data (e.g., `llc_owned_parcels_with_infra`, `interestingness_top_1000`). Surfaced in the catalog and as map filter toggles.
 
 ## W
 
-- **WGS84** — the lat/lon coordinate system used by GPS and web
-  mapping. EPSG:4326. All our output is in this CRS.
+- **WGS84** — the lat/lon coordinate system used by GPS and web mapping. EPSG:4326. All our output is in this CRS.

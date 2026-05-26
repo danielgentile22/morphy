@@ -1,15 +1,32 @@
 # DECISIONS — Architecture Decision Records (ADRs)
 
-**Last updated:** 2026-05-20
+**Last updated:** 2026-05-25
 
 Compact ADRs for every locked-in choice. New decisions append; old
-decisions never disappear (struck through `~~like this~~` if reversed).
+decisions never disappear (struck through `~~like this~~` if reversed
+or **annotated with a Status line** if superseded / revised by a newer ADR).
 Each entry: Context (1 sentence), Decision, Consequences. Keep under
 30 lines per ADR.
 
 > When in doubt about a design call, check this file before
 > reopening the debate. If the entry is here, the decision is locked
 > unless the *context* materially changes.
+
+---
+
+## 📋 ADR-053 and onwards live in `docs/adr/`
+
+This file is the legacy ADR home (ADR-001 through ADR-052). New ADRs
+go in `docs/adr/` per `CLAUDE.md §9`. Current new ADRs (all from the
+2026-05-25 phase-shift grill — see `docs/grill-2026-05-25-summary.md`):
+
+- [ADR-053 — Product phase shift (pitch → product)](./adr/0053-product-phase-shift.md)
+- [ADR-054 — Phase 1 freestanding / Phase 2 rooftops](./adr/0054-asset-universe-phase-1-2.md)
+- [ADR-055 — Hosted-private backend (supersedes ADR-006)](./adr/0055-hosted-private-backend.md)
+- [ADR-056 — Lead = owner-cluster (follow-up to ADR-024)](./adr/0056-lead-equals-owner-cluster.md)
+- [ADR-057 — Budget posture reframed (revises ADR-010 + ADR-041)](./adr/0057-budget-posture-reframed.md)
+- [ADR-058 — Tunable + transparent scoring](./adr/0058-tunable-transparent-scoring.md)
+- [ADR-059 — LLM extraction approach for leases](./adr/0059-llm-lease-extraction.md)
 
 ---
 
@@ -79,6 +96,7 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
 
 ### ADR-006 — Static-site map app, no backend server
 
+- **Status:** ⊘ Superseded by [ADR-055](./adr/0055-hosted-private-backend.md) for write-layer features (lead state, lease docs, auth). Read-only analytical layers (parquet, PMTiles, GeoJSON) stay static.
 - **Date:** 2026-05
 - **Context:** A backend would simplify large-data queries but
   triples the deployment surface for a feasibility tool.
@@ -103,6 +121,7 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
 
 ### ADR-010 — Strict free-only data budget
 
+- **Status:** ↻ Revised by [ADR-057](./adr/0057-budget-posture-reframed.md) — reframed from "permanent stance" to "current budget posture for Phase 1." Paid unlocks expected Phase 2+.
 - **Date:** 2026-05-19
 - **Context:** User confirmed budget posture is "strict free only" for
   the pitch cut.
@@ -133,6 +152,7 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
 
 ### ADR-013 — FCC ULS normalizers deferred to post-pitch
 
+- **Status:** ↻ Partially reversed by [ADR-053](./adr/0053-product-phase-shift.md) Slice A — Cellular (Part 22) + PCS (Part 24) + AWS / 700 MHz (Part 27) bands are in Phase 1 for carrier identification. Microwave, Ownership, Transfers, Leasing remain deferred to Slice B / Phase 2.
 - **Date:** 2026-05-19
 - **Context:** ~5 GB of raw ULS data on disk across 6 bands + meta;
   complex per-band schema; landowner-side pitch doesn't depend on
@@ -144,6 +164,7 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
 
 ### ADR-014 — Billboards deferred
 
+- **Status:** ↻ Partially reversed by [ADR-053](./adr/0053-product-phase-shift.md) Slice C — billboards run as **parcel enrichment** (`has_billboard`, `billboard_count`) in Phase 1, not as a primary triage axis. Billboards-as-primary asset class still deferred to Phase 3.
 - **Date:** 2026-05-19
 - **Context:** Three state DOT billboard sources are in the registry;
   not core to the cell-tower thesis.
@@ -255,6 +276,7 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
 
 ### ADR-024 — Owner clustering = SHA1(normalized name + address)
 
+- **Status:** ↻ Follow-up locked in [ADR-056](./adr/0056-lead-equals-owner-cluster.md) — Slice 4 layers stronger conservative normalization (suffix stripping, name-token sort, trust/estate normalization, USPS address standardization) + a manual merge/split UI before the SHA1 hashing. Phonetic name match explicitly excluded (biases toward false merges).
 - **Date:** 2026-05
 - **Context:** Detecting "this owner owns 12 parcels" requires
   canonicalizing names and addresses (case, punctuation, suffixes).
@@ -317,6 +339,7 @@ Each entry: Context (1 sentence), Decision, Consequences. Keep under
 
 ### ADR-041 — No LLC unmasking (permanent non-goal)
 
+- **Status:** ↻ Narrowed by [ADR-057](./adr/0057-budget-posture-reframed.md) — paid skip-trace + shell-piercing remain permanent non-goals. Free public-records officer disclosure (Secretary of State business-entity lookups, UCC-1) is in scope for Phase 1 (Slice 4 D+E lead-detail panel).
 - **Date:** Carried forward from PROJECT_BRIEF
 - **Context:** Resolving the human(s) behind an LLC is sensitive,
   expensive, and a separate product.

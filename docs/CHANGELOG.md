@@ -1,6 +1,6 @@
 # CHANGELOG
 
-**Last updated:** 2026-05-21
+**Last updated:** 2026-05-25
 
 History of meaningful changes to the project. Newest at the top.
 Format follows [Keep a Changelog](https://keepachangelog.com/)
@@ -11,7 +11,47 @@ Changes are grouped under section headers (`Added` / `Changed` /
 
 ---
 
-## Unreleased — production-readiness push (in progress)
+## 2026-05-25 — Phase 1 product pivot
+
+The project reframed from "v1 pitch-quality demo" to "Phase 1 of a co-founder-facing product." The audience changed (investor walkthrough → co-founder daily user); several previously-deferred feature areas flipped to in-scope; five legacy ADRs were superseded, revised, or narrowed. Result of a `/grill-with-docs` session (16 substantive grills + wrap-up). Full record: `docs/grill-2026-05-25-summary.md`.
+
+### Documented
+
+- **7 new ADRs in `docs/adr/`:**
+  - ADR-053 — Product phase shift (pitch → product)
+  - ADR-054 — Phase 1 freestanding / Phase 2 rooftops
+  - ADR-055 — Hosted-private backend (supersedes ADR-006)
+  - ADR-056 — Lead = owner-cluster (drives ADR-024 follow-up)
+  - ADR-057 — Budget posture reframed (revises ADR-010 + ADR-041)
+  - ADR-058 — Tunable + transparent scoring
+  - ADR-059 — LLM extraction approach for leases
+- **6 doc rewrites:** SCOPE.md, GOALS.md, ROADMAP.md, STATUS.md (Phase 1 framing); DECISIONS.md (pointer block + status lines on superseded/revised ADRs); CLAUDE.md (orientation header + slice plan in §3).
+- **`docs/grill-2026-05-25-summary.md`** — comprehensive session memo: ADR map, slice plan, below-the-ADR-bar decisions (comparables data model, lead/lease state machines, ULS join strategy, testing additions, owner-cluster strengthening, freshness UX), Q&A trail, open items.
+- **`CONTEXT.md`** (repo root) updated with canonical glossary: Vendor / Carrier / Registrant / Freestanding tower / Rooftop installation / Triage.
+- **GLOSSARY.md, LIMITATIONS.md, SECURITY.md, DEPLOYMENT.md, DATA_SOURCES.md, TESTING.md, ARCHITECTURE.md, DATA_FRESHNESS.md, MAP_APP_REHAUL.md, PULLER_UX.md** all updated to reflect Phase 1 framing.
+
+### Changed
+
+- **ADR-006** (static-site, no backend) — superseded by ADR-055 for write-layer features. Read-only analytical layers stay static.
+- **ADR-010** (free-only budget) — reframed by ADR-057 from "permanent stance" to "current budget posture." Paid unlocks expected Phase 2+.
+- **ADR-013** (FCC ULS deferred) — partially reversed. Cellular (Part 22) + PCS (Part 24) + AWS / 700 MHz (Part 27) flip to in-scope for Phase 1 Slice A. Microwave, Ownership, Transfers, Leasing still deferred.
+- **ADR-014** (Billboards deferred) — partially reversed. Billboards run as **parcel enrichment** (`has_billboard`, `billboard_count`) in Phase 1 Slice C. Billboards-as-primary asset class still deferred to Phase 3.
+- **ADR-024** (Owner clustering = SHA1) — follow-up locked in ADR-056. Slice 4 layers stronger conservative normalization (suffix stripping, name-token sort, trust/estate normalization, USPS address standardization) + a manual merge/split UI before the SHA1 hashing. Phonetic match excluded.
+- **ADR-041** (No LLC unmasking) — narrowed by ADR-057 to paid skip-trace + shell-piercing only. Free public-records officer disclosure (SoS, UCC-1) is in scope for Slice 4 lead-detail panel.
+
+### Added — Phase 1 slice plan (locked, untimed)
+
+1. **F** — Finish FL + NC composes (chunked compose ADR-051 + NC re-fetch)
+2. **A** — FCC ULS carrier identification (Cellular + PCS + AWS / 700 MHz)
+3. **C** — Asset enrichment (billboards + solar on parcel) + tunable scoring UI
+4. **D + E** — Lease doc upload + LLM extraction + triage state / write layer / CSV exports (**backend stands up here**)
+5. **B** — Vendor (tower-co) inference
+
+Per-slice quantitative "shipped" gates in GOALS.md §3. Overall outcome bar: co-founder uses the product as his primary daily triage tool for 4 consecutive weeks.
+
+---
+
+## Unreleased — production-readiness push (legacy framing — superseded 2026-05-25)
 
 As of 2026-05-21, Sections 1–3 are done, Section 4 complete for AR/MT,
 and Section 5 (preprocess code hygiene) is complete. A full AR + MT

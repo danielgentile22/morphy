@@ -1,48 +1,43 @@
 # ARCHITECTURE — How the system fits together
 
-**Last updated:** 2026-05-20
-**Audience:** engineers (human or AI) who need to understand or extend
-the code without reading every file.
+**Last updated:** 2026-05-25
+**Audience:** engineers (human or AI) who need to understand or extend the code without reading every file.
 
-This doc describes what's *implemented today*. Future-state designs live
-in [ROADMAP.md](./ROADMAP.md) and [MAP_APP_REHAUL.md](./MAP_APP_REHAUL.md).
-Design decisions are locked in [DECISIONS.md](./DECISIONS.md).
+This doc describes what's *implemented today* plus the Phase 1 Slice 4 backend in design. Future-state designs live in [ROADMAP.md](./ROADMAP.md). Design decisions are locked in [DECISIONS.md](./DECISIONS.md) (legacy ADR-001–052) and `docs/adr/` (new ADR-053+).
 
 ---
 
 ## 1. System overview
 
-Three loosely-coupled subsystems plus a shared on-disk data layout:
+**Three loosely-coupled subsystems today, plus a Slice 4 backend in design** for write-layer features (lead state, lease docs, auth):
 
 ```
 ┌──────────────────────┐    raw/   ┌──────────────────────┐  normalized/  ┌──────────────────────┐
 │  app_puller/         │──────────▶│  scripts/preprocess/ │──────────────▶│  app/  (map browser) │
 │   PySide6 desktop UI │           │   Normalize → Join → │  composite/   │   Svelte + MapLibre  │
 │   data fetcher       │           │   View → Compose     │               │   PMTiles + DuckDB   │
-└──────────────────────┘           └──────────────────────┘               └──────────────────────┘
-        │                                    │                                    │
-        ▼                                    ▼                                    ▼
-   data/raw/<src>/current/            data/processed/                       browser only
-   data/manifest.json                  ├── normalized/<src>/
-                                       │   ├── <type>.parquet      (simple sources)
-                                       │   ├── <type>/*.parquet    (per-county, large sources)
-                                       │   ├── raw.parquet | raw/  (full-fidelity copy)
-                                       │   └── quality_report.json
-                                       ├── composite/<fips>/
-                                       │   ├── catalog.json
-                                       │   ├── summary.json
-                                       │   ├── parcels.parquet (+ geojson)
-                                       │   ├── towers.parquet (+ geojson)
-                                       │   ├── solar_facilities.parquet (…)
-                                       │   ├── distress_overlays.parquet (…)
-                                       │   ├── county_scores.parquet
+└──────────────────────┘           └──────────────────────┘               └─────────┬────────────┘
+        │                                    │                                      │ thin API
+        ▼                                    ▼                                      ▼
+   data/raw/<src>/current/            data/processed/                  ┌──────────────────────────┐
+   data/manifest.json                  ├── normalized/<src>/           │  backend/  (Slice 4)     │
+                                       │   ├── <type>.parquet          │   FastAPI + Postgres +   │
+                                       │   ├── <type>/*.parquet        │   S3 + Claude API        │
+                                       │   ├── raw.parquet | raw/      │   magic-link auth        │
+                                       │   └── quality_report.json     │   tenant-shaped Day 1    │
+                                       ├── composite/<fips>/           └──────────┬───────────────┘
+                                       │   ├── catalog.json                       │
+                                       │   ├── summary.json                       ▼
+                                       │   ├── parcels.parquet (+ geojson)   Postgres + S3
+                                       │   ├── towers.parquet (+ geojson)    (uploaded lease PDFs,
+                                       │   ├── solar_facilities.parquet …   lead state, activity log,
+                                       │   ├── distress_overlays.parquet …  scoring profiles, lease
+                                       │   ├── county_scores.parquet        comps, owner_cluster_override)
                                        │   └── views/<name>.parquet (+ geojson)
                                        └── preprocess_manifest.json
 ```
 
-Each subsystem is independently runnable: the puller doesn't need
-preprocess installed; preprocess doesn't need the map app; the map
-app reads static files written by preprocess.
+Each subsystem is independently runnable: the puller doesn't need preprocess installed; preprocess doesn't need the map app; the map app reads static files written by preprocess and (in Slice 4) hits the backend over a thin API for write-layer state.
 
 ---
 
@@ -151,15 +146,17 @@ no glue code per addition.
 
 Defined in `scripts/preprocess/base.py` (`CURRENT_SCHEMA_VERSIONS`):
 
-**Spatial:** `tower`, `parcel`, `distress_overlay`, `solar_facility`,
-`billboard`, `address_point`.
+**Spatial (data pipeline):** `tower`, `parcel`, `distress_overlay`, `solar_facility`, `billboard`, `address_point`.
 
-**Tabular:** `county_score`, `license`, `location`, `entity`,
-`transfer`, `lease`, `distributed_pv`, `aggregation`, `model_prediction`.
+**Tabular (data pipeline):** `county_score`, `license`, `location`, `entity`, `transfer`, `lease`, `distributed_pv`, `aggregation`, `model_prediction`.
 
-Every record gets system columns: `_source`, `_processed_at`,
-`_schema_version`, `_tenant_id`, `_quality_score`, `valid_from`,
-`valid_to`.
+**Backend tables (Slice 4 — new):** `lead`, `lease` (product-side, with PDFs + extracted fields), `activity`, `owner_cluster_override`, `lease_comp`, `scoring_profile`, `tenant`, `user`, `user_tenant`. Schema details in `docs/grill-2026-05-25-summary.md §Lead + lease state models`.
+
+> NB: there are **two** entities called `lease` in the codebase — the *data-pipeline* tabular canonical type (placeholder for normalized recorded-lease data, deferred to Phase 2) and the *backend* `lease` table (Slice 4, holds uploaded PDF references + LLM-extracted fields per (tower × carrier)). They will reconcile in Phase 2 when recorded-lease automation lands.
+
+Every record (data-pipeline side) gets system columns: `_source`, `_processed_at`, `_schema_version`, `_tenant_id`, `_quality_score`, `valid_from`, `valid_to`.
+
+Every backend row has `tenant_id` (Day 1 = `1`; multi-tenant from row-add — [ADR-055](./adr/0055-hosted-private-backend.md)).
 
 ### 3.3 Full-fidelity raw preservation
 
@@ -306,7 +303,104 @@ design folded back from the rehaul plan
 
 ---
 
-## 5. Shared on-disk layout
+## 5. Subsystem 4 — The backend (Slice 4 — in design, `backend/`)
+
+A small FastAPI + Postgres + S3-compatible + Claude-API service that stands up in Phase 1 Slice 4 (D + E). Holds the **write-layer features** the static map app can't: lead state, uploaded lease PDFs, LLM-extracted lease fields, activity log, per-user scoring profiles, manual owner-cluster merge/split overrides. Lives **alongside** the static map app — the map app reads parquet + PMTiles via HTTP range requests for analytical layers, and hits the backend over a thin API for the write-layer state.
+
+Locked architectural decisions:
+- **Hosted-private** — single small VM (Fly.io / Render / Hetzner class); ~$30-100/mo Phase 1 ([ADR-055](./adr/0055-hosted-private-backend.md), supersedes ADR-006 for write features).
+- **Tenant-shaped schema from Day 1** — every table has a `tenant_id` column, always `1` for now. Adding a second tenant (intern / advisor / second cofounder / paid Phase-3 customer) is a row-add not a refactor.
+- **Magic-link auth** over email — lowest friction for 2–5 users; short-lived JWTs.
+- **S3-compatible** object store for lease PDFs (Backblaze B2 / Cloudflare R2 / AWS S3) — encrypted at rest, signed download URLs only.
+- **Postgres** — managed in prod; `testcontainers-postgres` in CI for real-Postgres testing (no SQLite-stub drift).
+- **Claude API** — Sonnet 4.6 default + Opus 4.7 retry for lease extraction; prompt caching on ([ADR-059](./adr/0059-llm-lease-extraction.md)).
+
+### 5.1 Tables (Slice 4 baseline)
+
+```
+tenant(id, name, created_at)
+user(id, email, magic_link_token_hash, …)
+user_tenant(user_id, tenant_id, role)
+
+lead(tenant_id, owner_cluster_id, state, priority_score,
+     latest_note, owner_user_id, updated_at)
+        # state ∈ {new, flagged, contacted, talking,
+        #          won, lost, passed, re_engage_later}
+
+lease(tenant_id, parcel_id, tower_asr_id, carrier_callsign,
+      state, pdf_object_key, extracted_fields_json,
+      extraction_confidence_json, verified_at,
+      monthly_rent_cents, escalation_pct, expiry_date,
+      amendment_count, parties_text)
+        # state ∈ {unknown, pending_upload, uploaded,
+        #          extracted, verified, superseded}
+
+activity(tenant_id, entity_type, entity_id, timestamp,
+         user_id, action, content_md)
+
+owner_cluster_override(tenant_id, source_cluster_id, target_cluster_id)
+  # raw cluster IDs stay in parquet; backend computes
+  # display_cluster_id = coalesce(override_target, raw_cluster_id)
+
+lease_comp(state, county, asset_type, source, year,
+           rent_mean, rent_p25, rent_p75, sample_size)
+  # bootstrap rows from Steel-in-the-Air free tier;
+  # augment rows from extracted-lease rent over time
+
+scoring_profile(tenant_id, user_id, name, weights_json, …)
+```
+
+### 5.2 Two state machines
+
+**Lead state** (on `owner_cluster_id`, tracks outreach lifecycle):
+
+```
+new → flagged → contacted → talking → {won | lost | passed}
+                                  ↓
+                          re_engage_later (timed; auto-returns to flagged)
+```
+
+**Lease state** (on `(parcel_id, tower_asr_id, carrier_callsign)`):
+
+```
+unknown → pending_upload → uploaded → extracted → verified
+                                              ↓
+                                          superseded (when amendment lands)
+```
+
+### 5.3 Where the backend touches the data pipeline
+
+The backend **reads** static composite outputs over HTTP (it doesn't import the preprocess package directly). Specifically:
+- `composite/<fips>/parcels.parquet` — for resolving `owner_cluster_id → parcel_id` list during lead-detail render.
+- `composite/<fips>/views/<name>.parquet` — for view-driven triage queries.
+- `composite/index.json` + per-state `catalog.json` — for what's available.
+
+The backend **writes nothing** to `data/processed/` — it owns its own Postgres + S3 universe. The boundary stays clean: re-running the pipeline never collides with backend state.
+
+### 5.4 LLM extraction loop
+
+Per [ADR-059](./adr/0059-llm-lease-extraction.md):
+
+1. Co-founder uploads a lease PDF → backend stores in S3, marks `lease.state = uploaded`.
+2. Extraction worker reads PDF → calls Claude (Sonnet 4.6 first; Opus 4.7 retry if eval-flagged) with the lease's expected-fields schema.
+3. Model returns `(value, page_number, verbatim_quote_from_source)` per field + self-rated confidence for inferred fields → backend stores in `extracted_fields_json` + denormalises common fields onto `lease` row, marks `lease.state = extracted`.
+4. Co-founder reviews in lead-detail panel, optionally flips per-field confidence to `verified` → backend marks `lease.state = verified`, appends to `activity`.
+5. Eval harness (gold-set runner, [TESTING.md §11.3](./TESTING.md)) re-runs accuracy whenever extraction code or prompts change. PR blocks if any field accuracy drops below 85%.
+
+### 5.5 Auth + multi-tenancy
+
+- Magic-link request → backend sends email with short-lived token → user clicks → backend exchanges for session JWT.
+- Every API route filters by `tenant_id` derived from the session. Multi-tenancy isolation tests gate every PR (see [TESTING.md §11.2](./TESTING.md)).
+
+### 5.6 What's not in Slice 4
+
+- **Self-serve refresh from the product** — Phase 2. The puller stays a dev-side desktop app for Phase 1.
+- **Mass email + response tracking** — Phase 2. Requires email infra (Postmark / SES), webhook handling, CAN-SPAM compliance.
+- **Multi-tenant traffic** — schema-ready, but only 1 tenant in Phase 1. Hosted-multi-tenant deployment is Phase 3.
+
+---
+
+## 6. Shared on-disk layout
 
 ```
 data/
@@ -336,7 +430,7 @@ anchor states.
 
 ---
 
-## 6. Catalog format (the map-app contract)
+## 7. Catalog format (the map-app contract)
 
 Each state's `composite/<fips>/catalog.json`:
 
@@ -386,7 +480,7 @@ at preprocess time produces a new toggle in the UI with zero JS changes.
 
 ---
 
-## 7. Code conventions
+## 8. Code conventions
 
 - **Headless `fetch/`.** No PySide6 imports inside `scripts/fetch/`.
   Qt lives only in `app_puller/`.
@@ -396,13 +490,13 @@ at preprocess time produces a new toggle in the UI with zero JS changes.
   to WGS84 lat/lon.
 - **Sparse comments.** Comments where the *why* is non-obvious; not
   where the code self-documents.
-- **No new normalize-time filtering.** Per ADR (full-fidelity raw
-  preservation): keep all rows; add status / validity columns; let
-  Joins and Views filter.
+- **No new normalize-time filtering.** Per ADR (full-fidelity raw preservation): keep all rows; add status / validity columns; let Joins and Views filter.
+- **Backend (Slice 4) — `tenant_id` everywhere.** Every table has it; every route filters by it; multi-tenancy isolation tests gate PRs.
+- **Backend — no direct writes to `data/processed/`.** Backend owns Postgres + S3; pipeline owns `data/processed/`. Boundary stays clean.
 
 ---
 
-## 8. Where to look
+## 9. Where to look
 
 | Question | File |
 |---|---|
