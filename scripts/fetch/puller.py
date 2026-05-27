@@ -18,7 +18,6 @@ from typing import Any
 
 from . import LOG_PATH
 from .base import DataSource, ProgressCallback
-from .http import HttpError
 from .legal import AutomationPolicy
 from .manifest import Manifest
 from .storage import (
@@ -80,7 +79,7 @@ def check_one(source: DataSource, manifest: Manifest) -> CheckOutcome:
 
     try:
         rv = source.remote_version()
-    except (HttpError, Exception) as e:  # broad: source may raise anything
+    except Exception as e:  # noqa: BLE001 — sources can raise anything
         msg = f"{type(e).__name__}: {e}"
         manifest.mark_check_failed(source.id, msg)
         log_event("check_failed", source=source.id, error=msg)

@@ -106,7 +106,7 @@ def directory_bytes(path: Path) -> int:
     return total
 
 
-def human_bytes(n: int) -> str:
+def human_bytes(n: int | None) -> str:
     """Format bytes as a short human string (e.g. '1.2 GB', '347 MB')."""
     if n is None:
         return "—"
