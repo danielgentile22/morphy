@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -37,6 +38,59 @@ INDEX_FILENAME = "index.json"
 # pre-ADR-052 catalog.json — without this skip it would appear as a
 # third, broken state.
 EXCLUDED_FIPS: frozenset[str] = frozenset({"18"})
+
+
+def iter_composed_states(
+    composite_root: Path,
+    predicate: Callable[[Path], bool] | None = None,
+) -> list[str]:
+    """Sorted FIPS list for every composed state matching ``predicate``.
+
+    ``EXCLUDED_FIPS`` directories are always dropped. ``predicate``
+    receives the state directory and decides whether to include it
+    (defaults to "directory exists and is non-empty").
+    """
+    if not composite_root.exists():
+        return []
+    out: list[str] = []
+    for d in composite_root.iterdir():
+        if not d.is_dir() or d.name in EXCLUDED_FIPS:
+            continue
+        if predicate is None or predicate(d):
+            out.append(d.name)
+    return sorted(out)
+
+
+def state_has_parcels(state_dir: Path) -> bool:
+    """True when the state dir has a parcels.parquet or a non-empty
+    ``parcels/`` shard directory."""
+    if (state_dir / "parcels.parquet").exists():
+        return True
+    sharded = state_dir / "parcels"
+    return sharded.is_dir() and any(sharded.glob("*.parquet"))
+
+
+def resolve_parcel_paths(state_dir: Path) -> tuple[list[Path], bool]:
+    """Locate the parcel parquet(s) for a state.
+
+    Returns ``(paths, is_sharded)``. ``paths`` is always a list:
+    single-element for the legacy ``parcels.parquet`` layout, one
+    element per shard for chunked compose (ADR-051). Callers that want
+    a single ``Path`` can use ``paths[0]`` when ``not is_sharded``.
+
+    Raises ``FileNotFoundError`` when neither layout is present.
+    """
+    single = state_dir / "parcels.parquet"
+    sharded = state_dir / "parcels"
+    if single.exists():
+        return [single], False
+    if sharded.is_dir():
+        shards = sorted(sharded.glob("*.parquet"))
+        if shards:
+            return shards, True
+    raise FileNotFoundError(
+        f"no parcels.parquet (or parcels/ shard dir) under {state_dir}"
+    )
 
 
 def _utcnow_iso() -> str:

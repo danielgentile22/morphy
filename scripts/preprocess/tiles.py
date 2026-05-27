@@ -67,17 +67,9 @@ def _resolve_parcels_source(state_dir: Path) -> tuple[list[Path], bool]:
     Returns (paths, is_sharded). Either a single-element list (legacy
     layout) or a list of per-shard files (chunked compose, ADR-051).
     """
-    single = state_dir / "parcels.parquet"
-    sharded = state_dir / "parcels"
-    if single.exists():
-        return [single], False
-    if sharded.is_dir():
-        shards = sorted(sharded.glob("*.parquet"))
-        if shards:
-            return shards, True
-    raise FileNotFoundError(
-        f"no parcels.parquet (or parcels/ shard dir) under {state_dir}"
-    )
+    from .app_assets import resolve_parcel_paths
+
+    return resolve_parcel_paths(state_dir)
 
 
 def _stream_features_from_path(parquet_path: Path, stdin) -> int:
@@ -192,26 +184,10 @@ def build_state_tiles(
 
 
 def _composed_states(composite_root: Path) -> list[str]:
-    """FIPS of every directory that has parcel parquet(s), app-excluded ones dropped.
+    """FIPS of every directory that has parcel parquet(s), app-excluded ones dropped."""
+    from .app_assets import iter_composed_states, state_has_parcels
 
-    Accepts either a single-file `parcels.parquet` (legacy layout) or a
-    `parcels/` shard directory (chunked compose, ADR-051).
-    """
-    from .app_assets import EXCLUDED_FIPS
-
-    if not composite_root.exists():
-        return []
-    out: list[str] = []
-    for d in composite_root.iterdir():
-        if not d.is_dir() or d.name in EXCLUDED_FIPS:
-            continue
-        if (d / "parcels.parquet").exists():
-            out.append(d.name)
-            continue
-        sharded = d / "parcels"
-        if sharded.is_dir() and any(sharded.glob("*.parquet")):
-            out.append(d.name)
-    return sorted(out)
+    return iter_composed_states(composite_root, predicate=state_has_parcels)
 
 
 def run_tiles(state_fips: str | None = None, *, composite_root: Path | None = None) -> dict:

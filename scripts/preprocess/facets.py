@@ -117,22 +117,15 @@ def _write_json_atomic(payload: dict, path: Path) -> None:
 
 
 def _resolve_parcels_source(state_dir: Path) -> tuple[Path, bool]:
-    """Locate the parcels parquet for a state.
-
-    Returns (path, is_sharded). When chunked compose ran (ADR-051) the
-    state has a `parcels/` directory of per-shard parquets; otherwise it
-    has a single `parcels.parquet` file. The reader transparently handles
-    either layout.
+    """Locate the parcels source for a state — either a single
+    ``parcels.parquet`` (returned as that file's path) or a ``parcels/``
+    shard directory (returned as the dir path). Use ``is_sharded`` to
+    decide how to read.
     """
-    single = state_dir / "parcels.parquet"
-    sharded = state_dir / "parcels"
-    if single.exists():
-        return single, False
-    if sharded.is_dir() and any(sharded.glob("*.parquet")):
-        return sharded, True
-    raise FileNotFoundError(
-        f"no parcels.parquet (or parcels/ shard dir) for state at {state_dir}"
-    )
+    from .app_assets import resolve_parcel_paths
+
+    paths, is_sharded = resolve_parcel_paths(state_dir)
+    return (state_dir / "parcels", True) if is_sharded else (paths[0], False)
 
 
 def _read_parcels_table(source: Path, *, columns: list[str], is_sharded: bool) -> pa.Table:
@@ -197,21 +190,9 @@ def build_facets(state_fips: str, *, composite_root: Path | None = None) -> dict
 
 def _states_with_parcels(composite_root: Path) -> list[str]:
     """States that have either a parcels.parquet or a parcels/ shard dir."""
-    from .app_assets import EXCLUDED_FIPS
+    from .app_assets import iter_composed_states, state_has_parcels
 
-    if not composite_root.exists():
-        return []
-    out: list[str] = []
-    for d in composite_root.iterdir():
-        if not d.is_dir() or d.name in EXCLUDED_FIPS:
-            continue
-        if (d / "parcels.parquet").exists():
-            out.append(d.name)
-            continue
-        sharded = d / "parcels"
-        if sharded.is_dir() and any(sharded.glob("*.parquet")):
-            out.append(d.name)
-    return sorted(out)
+    return iter_composed_states(composite_root, predicate=state_has_parcels)
 
 
 def run_facets(state_fips: str | None = None, *, composite_root: Path | None = None) -> dict:
