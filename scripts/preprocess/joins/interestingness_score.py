@@ -1,7 +1,7 @@
 """Compute interestingness_score per parcel.
 
-Sits at the seam between the weight-free `ScoreComponents` extractor
-(`score_components`) and the weight applier (`score_weights`). Bakes the
+Sits at the seam between the weight-free ``ScoreComponents`` extractor
+and the weight applier (both in ``preprocess.scoring``). Bakes the
 default-profile score into parquet; also persists the raw components so
 the map app can re-score live under a different profile (ADR-058).
 """
@@ -9,8 +9,7 @@ the map app can re-score live under a different profile (ADR-058).
 from __future__ import annotations
 
 from ..base import ComposeContext, Join, register_join
-from ..score_components import compute_components
-from ..score_weights import DEFAULT_PROFILE, apply_weights
+from ..scoring import DEFAULT_PROFILE, apply_weights, compute_components
 
 
 @register_join

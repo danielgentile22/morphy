@@ -726,8 +726,7 @@ def _apply_parcel_to_distress(
 
 
 def _apply_interestingness_score(chunk: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    from .score_components import compute_components
-    from .score_weights import DEFAULT_PROFILE, apply_weights
+    from .scoring import DEFAULT_PROFILE, apply_weights, compute_components
 
     components = chunk.apply(compute_components, axis=1)
     scored = components.apply(lambda c: apply_weights(c, DEFAULT_PROFILE))

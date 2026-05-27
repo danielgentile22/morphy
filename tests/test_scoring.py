@@ -1,29 +1,23 @@
-"""Tests for the score_components / score_weights split (ADR-058 seam).
+"""Tests for ``preprocess.scoring`` — the ADR-058 components/weights seam.
 
 Verifies that:
   - compute_components is pure (no weights leak into the dict).
   - apply_weights with DEFAULT_PROFILE reproduces the legacy hardcoded
-    numbers byte-for-byte — the parquet score must not drift after the
-    refactor.
+    numbers byte-for-byte — the parquet score must not drift.
   - A custom profile changes the score predictably (the live-tuning use
     case from ADR-058).
-  - score_parcel_row remains a working backwards-compat shim.
 """
 
 from __future__ import annotations
 
 import pandas as pd
 import pytest
-
-from scripts.preprocess.score import score_parcel_row
-from scripts.preprocess.score_components import (
-    ScoreComponents,
-    compute_components,
-)
-from scripts.preprocess.score_weights import (
+from preprocess.scoring import (
     DEFAULT_PROFILE,
+    ScoreComponents,
     ScoringProfile,
     apply_weights,
+    compute_components,
 )
 
 
@@ -140,16 +134,6 @@ def test_custom_profile_changes_score():
     boosted, breakdown = apply_weights(compute_components(row), distress_heavy)
     assert boosted > default_score
     assert breakdown["county_tier"] == pytest.approx(0.30)
-
-
-def test_score_parcel_row_shim_matches_split():
-    row = _row(has_tower=True, in_qct=True, distress_tier="at-risk")
-    shim_score, shim_breakdown = score_parcel_row(row)
-    direct_score, direct_breakdown = apply_weights(
-        compute_components(row), DEFAULT_PROFILE
-    )
-    assert shim_score == direct_score
-    assert shim_breakdown == direct_breakdown
 
 
 def test_components_handle_missing_columns():
