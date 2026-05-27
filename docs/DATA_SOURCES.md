@@ -793,7 +793,8 @@ consuming, (b) fail fast if a required source is missing.
 
 1. Add `scripts/fetch/sources/<your_source>.py` defining a subclass of
    `DataSource` exported as `SOURCE` (or `SOURCES` for a list).
-2. Import it in `scripts/fetch/registry.py` and append to `_ALL`.
+2. Import it in `scripts/fetch/registry.py` and append to `_ACTIVE`
+   (or `_DEFERRED` if not part of the v1 pitch scope — see ADR-045).
 3. Document it here with the same headings (Cadence / Size / Source /
    Direct URL / License / Automation / Commercial / Structure / Joins).
 4. Restart the Puller — the new source appears in its category group.

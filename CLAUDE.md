@@ -155,6 +155,9 @@ pytest                                          # preprocess + app-asset script 
 
 1. Create `scripts/fetch/sources/<your_source>.py` with one subclass
    of `DataSource`, exported as `SOURCE` (or `SOURCES = [...]`).
+   Prefer the matching mixin from `fetch.base` when one fits:
+   `ManualOnlySource` (click-through downloads) supplies the canonical
+   `remote_version() → "manual"` + `fetch() → RuntimeError` pair.
 2. Set `AutomationPolicy` correctly — default to `MANUAL_ONLY` if
    unsure. Never err on the side of unauthorized scraping.
 3. Set `update_cadence_days` (see
@@ -174,7 +177,9 @@ pytest                                          # preprocess + app-asset script 
 Things to get right:
 
 - `remote_version()` must be **cheap** (one HEAD, one small JSON GET).
-  Slow probes block the parallel "Check for updates" sweep.
+  Slow probes block the parallel "Check for updates" sweep. The
+  `_helpers.version_from_head(url)` helper covers the canonical
+  Last-Modified → ETag → Content-Length fallback chain.
 - `fetch()` must call the `progress` callback during streaming so the
   UI bar advances.
 - Use `_helpers.safe_extract_zip` for any zip extraction
