@@ -9,18 +9,15 @@ MANUAL_ONLY in the UI.
 
 from __future__ import annotations
 
-from pathlib import Path
 
 from ..base import (
     CATEGORY_BILLBOARDS,
-    DataSource,
-    FetchResult,
-    ProgressCallback,
+    ManualOnlySource,
 )
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 
 
-class NcdotBillboards(DataSource):
+class NcdotBillboards(ManualOnlySource):
     id = "ncdot_billboards"
     name = "NCDOT Outdoor Advertising permits"
     category = CATEGORY_BILLBOARDS
@@ -70,13 +67,7 @@ class NcdotBillboards(DataSource):
         ),
     )
 
-    def remote_version(self) -> str:
-        # MANUAL_ONLY sources are never auto-checked by the puller, but the
-        # method must exist. Return a sentinel.
-        return "manual"
 
-    def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        raise RuntimeError("ncdot_billboards is MANUAL_ONLY — use the manual download URL.")
 
 
 SOURCE = NcdotBillboards()

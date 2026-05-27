@@ -13,18 +13,15 @@ filename; if/when we automate it, the fetch path would scrape the
 
 from __future__ import annotations
 
-from pathlib import Path
 
 from ..base import (
     CATEGORY_PARCELS,
-    DataSource,
-    FetchResult,
-    ProgressCallback,
+    ManualOnlySource,
 )
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 
 
-class FlFgdlParcels(DataSource):
+class FlFgdlParcels(ManualOnlySource):
     id = "fl_fgdl_parcels"
     name = "Florida statewide parcels (FGDL DSL composite)"
     category = CATEGORY_PARCELS
@@ -68,11 +65,7 @@ class FlFgdlParcels(DataSource):
         ),
     )
 
-    def remote_version(self) -> str:
-        return "manual"
 
-    def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        raise RuntimeError("fl_fgdl_parcels is MANUAL_ONLY — accept terms on FGDL site.")
 
 
 SOURCE = FlFgdlParcels()

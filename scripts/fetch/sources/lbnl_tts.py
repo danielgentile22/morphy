@@ -12,20 +12,17 @@ download link, and follow it.
 
 from __future__ import annotations
 
-from pathlib import Path
 
 from ..base import (
     CATEGORY_SOLAR,
-    DataSource,
-    FetchResult,
-    ProgressCallback,
+    ManualOnlySource,
 )
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 
 LANDING_URL = "https://emp.lbl.gov/tracking-the-sun"
 
 
-class LbnlTts(DataSource):
+class LbnlTts(ManualOnlySource):
     id = "lbnl_tts"
     name = "LBNL U.S. Distributed Solar & Storage Data (formerly Tracking the Sun)"
     category = CATEGORY_SOLAR
@@ -72,14 +69,7 @@ class LbnlTts(DataSource):
         ),
     )
 
-    def remote_version(self) -> str:
-        return "manual"
 
-    def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        raise RuntimeError(
-            "lbnl_tts is MANUAL_ONLY — Cloudflare blocks scripted fetches. "
-            "Download from the landing page."
-        )
 
 
 SOURCE = LbnlTts()

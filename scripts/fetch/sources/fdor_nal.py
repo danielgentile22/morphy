@@ -34,13 +34,10 @@ those condo extras alongside the main per-county PAR ZIPs.
 
 from __future__ import annotations
 
-from pathlib import Path
 
 from ..base import (
     CATEGORY_PARCELS,
-    DataSource,
-    FetchResult,
-    ProgressCallback,
+    ManualOnlySource,
 )
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ..walkthroughs import ManualStep, ManualWalkthrough
@@ -74,7 +71,7 @@ MAP_DATA_README = (
 )
 
 
-class FdorNal(DataSource):
+class FdorNal(ManualOnlySource):
     id = "fdor_nal"
     name = "FL FDOR — Name/Address/Legal (per-county tax roll)"
     category = CATEGORY_PARCELS
@@ -117,13 +114,7 @@ class FdorNal(DataSource):
         ),
     )
 
-    def remote_version(self) -> str:
-        # MANUAL_ONLY — version is whatever the user pulled. The puller
-        # marks local_version='manual' on walkthrough completion.
-        return "manual"
 
-    def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        raise RuntimeError(f"{self.id} is MANUAL_ONLY — see walkthrough.")
 
     def manual_walkthrough(self) -> ManualWalkthrough:
         # Format as a 3-column checklist so 67 names don't dominate the modal.
