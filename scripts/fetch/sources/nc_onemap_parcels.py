@@ -23,7 +23,7 @@ the next run skips already-completed pages.
 The MapServer returns lowercase field names (``ownname``,
 ``mailadd``, ``cntyfips`` etc.) whereas the old shapefile bulk used
 uppercase (``OWNNAME``, ``MAILADD``, ``STCNTYFIPS``). The NC adapter's
-field map (``scripts/preprocess/normalizers/state_parcels/adapters/nc.py``)
+field map (``scripts/preprocess/normalizers/state_parcel_adapters/nc.py``)
 lists both casings so old data on disk still normalizes correctly.
 """
 
@@ -64,7 +64,7 @@ PAGE_DELAY_SEC = 0.1
 
 # Explicit field list — must include every column the NC adapter's
 # field map references (see
-# scripts/preprocess/normalizers/state_parcels/adapters/nc.py).
+# scripts/preprocess/normalizers/state_parcel_adapters/nc.py).
 # Using outFields=* would inflate each page ~36% with unused metadata.
 # objectid is required for stable orderByFields pagination.
 OUT_FIELDS = ",".join([

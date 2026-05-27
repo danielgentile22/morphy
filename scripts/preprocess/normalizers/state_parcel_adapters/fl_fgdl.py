@@ -11,7 +11,7 @@ COUNTY_NAME only — no FIPS — so the driver falls back to ``state_fips``
 
 from __future__ import annotations
 
-from .._adapter import ParcelAdapter
+from ..state_parcels import ParcelAdapter
 
 FL_FGDL_PARCELS_ADAPTER = ParcelAdapter(
     source_id="fl_fgdl_parcels",

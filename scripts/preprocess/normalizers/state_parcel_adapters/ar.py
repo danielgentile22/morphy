@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .._adapter import ParcelAdapter
+from ..state_parcels import ParcelAdapter
 
 AR_PARCELS_ADAPTER = ParcelAdapter(
     source_id="ar_parcels",

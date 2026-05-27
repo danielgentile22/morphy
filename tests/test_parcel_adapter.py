@@ -22,11 +22,14 @@ import geopandas as gpd
 import pandas as pd
 import pytest
 from preprocess.base import all_normalizers
-from preprocess.normalizers.state_parcels import ParcelAdapter, ParcelNormalizer
-from preprocess.normalizers.state_parcels._driver import map_layer_to_canonical
-from preprocess.normalizers.state_parcels.adapters.ar import AR_PARCELS_ADAPTER
-from preprocess.normalizers.state_parcels.adapters.fdor_nal import FDOR_NAL_ADAPTER
-from preprocess.normalizers.state_parcels.adapters.mt import (
+from preprocess.normalizers.state_parcels import (
+    ParcelAdapter,
+    ParcelNormalizer,
+    map_layer_to_canonical,
+)
+from preprocess.normalizers.state_parcel_adapters.ar import AR_PARCELS_ADAPTER
+from preprocess.normalizers.state_parcel_adapters.fdor_nal import FDOR_NAL_ADAPTER
+from preprocess.normalizers.state_parcel_adapters.mt import (
     MT_CADASTRAL_PARCELS_ADAPTER,
     MT_COUNTY_NAME_TO_FIPS,
 )

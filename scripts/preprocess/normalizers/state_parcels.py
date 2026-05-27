@@ -1,6 +1,22 @@
-"""Shared driver for state-parcel normalizers.
+"""State-parcel normalizer + the shared streaming driver.
 
-One streaming per-layer pipeline reused by every :class:`.ParcelAdapter`:
+Every state's parcel feed maps to the same canonical schema; only the
+column names differ. Each upstream feed gets one ``ParcelAdapter``
+constant under :mod:`preprocess.normalizers.state_parcel_adapters`, and
+the shared driver :func:`normalize_state_parcels` does the actual work.
+
+Importing this module triggers ``register_normalizer_instance`` for
+every adapter, so the rest of the pipeline (Composer, CLI, UI) sees one
+Normalizer per ``source_id`` just as before.
+
+Adding a new parcel source:
+
+  1. Create ``state_parcel_adapters/<state>.py`` exporting one
+     ``ParcelAdapter`` constant. See ``state_parcel_adapters/ar.py`` for
+     the minimal shape and ``mt.py`` for the optional ``county_resolver``.
+  2. Import it below and pass it to ``_register``.
+
+Pipeline:
 
   raw layer  →  raw parquet                (full fidelity)
             →  map_layer_to_canonical()    (vectorized, adapter-driven)
@@ -17,25 +33,86 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import geopandas as gpd
 import pandas as pd
 
-from ...base import (
+from ..base import (
+    Normalizer,
     NormalizeResult,
     add_system_columns,
     quality_report,
+    register_normalizer_instance,
     write_quality_report,
 )
-from ...cluster import infer_owner_kind, normalize_address, normalize_owner_name
-from ...geom import add_polygon_derivatives
-from ...io import write_geoparquet, write_raw_parquet
-from ..fips import canon_county_fips, state_fips_from_county_fips
-from ..pandas_coerce import safe_str
-from ._adapter import ParcelAdapter
+from ..cluster import infer_owner_kind, normalize_address, normalize_owner_name
+from ..geom import add_polygon_derivatives
+from ..io import write_geoparquet, write_raw_parquet
+from .fips import canon_county_fips, state_fips_from_county_fips
+from .pandas_coerce import safe_str
+
+if TYPE_CHECKING:
+    pass
 
 log = logging.getLogger("preprocess.state_parcels")
+
+
+# ── Adapter dataclass + Normalizer ───────────────────────────────────────
+
+
+CountyResolver = Callable[[str], "str | None"]
+PostMap = Callable[["gpd.GeoDataFrame"], "gpd.GeoDataFrame"]
+
+
+@dataclass(frozen=True)
+class ParcelAdapter:
+    """Per-source description for the shared parcel-normalize driver.
+
+    Attributes:
+        source_id: The fetch-side ``DataSource.id`` this adapter describes.
+        state_fips: Two-digit state FIPS hint, used when the raw county
+            column doesn't carry the state prefix (e.g. MT has only county
+            names; AR has a 3-digit county code).
+        field_map: Canonical-name → list of candidate raw column names;
+            first match wins. See ``map_layer_to_canonical`` for the
+            canonical-field vocabulary.
+        county_resolver: Optional callable taking a raw county value and
+            returning a 5-digit county FIPS (or None if it can't resolve).
+            Used when the raw field is a county *name* rather than a FIPS
+            (e.g. MT Cadastral's ``CountyName``). When None, the driver
+            falls back to ``canon_county_fips``.
+        post_map: Optional escape hatch — runs after the default
+            canonical mapping. Receives the canonical GeoDataFrame and
+            returns the (possibly mutated) GeoDataFrame. Reserve for
+            quirks that can't be expressed via ``field_map`` alone.
+    """
+
+    source_id: str
+    state_fips: str
+    field_map: dict[str, list[str]]
+    county_resolver: CountyResolver | None = None
+    post_map: PostMap | None = None
+
+
+class ParcelNormalizer(Normalizer):
+    """Concrete Normalizer that delegates to the shared parcel driver.
+
+    One instance per ParcelAdapter — registered via
+    ``register_normalizer_instance(ParcelNormalizer(ADAPTER))``.
+    """
+
+    canonical_types = ["parcel"]
+
+    def __init__(self, adapter: ParcelAdapter) -> None:
+        self.adapter = adapter
+        self.source_id = adapter.source_id
+
+    def normalize(self, raw_dir: Path, out_dir: Path) -> NormalizeResult:
+        return normalize_state_parcels(raw_dir, out_dir, self.adapter)
 
 
 # ── Column helpers (vectorized) ──────────────────────────────────────────
@@ -409,3 +486,27 @@ def normalize_state_parcels(
         canonical_types_written=["parcel"],
         quality_report=qr,
     )
+
+
+# ── Registrations ────────────────────────────────────────────────────────
+
+
+def _register(adapter: ParcelAdapter) -> ParcelNormalizer:
+    return register_normalizer_instance(ParcelNormalizer(adapter))
+
+
+# Imports kept at the bottom so the dataclass + driver are defined
+# before the adapters try to reference ``ParcelAdapter``.
+from .state_parcel_adapters.ar import AR_PARCELS_ADAPTER  # noqa: E402
+from .state_parcel_adapters.fdor_nal import FDOR_NAL_ADAPTER  # noqa: E402
+from .state_parcel_adapters.fl_fgdl import FL_FGDL_PARCELS_ADAPTER  # noqa: E402
+from .state_parcel_adapters.mn import MN_PARCELS_ADAPTER  # noqa: E402
+from .state_parcel_adapters.mt import MT_CADASTRAL_PARCELS_ADAPTER  # noqa: E402
+from .state_parcel_adapters.nc import NC_ONEMAP_PARCELS_ADAPTER  # noqa: E402
+
+_register(AR_PARCELS_ADAPTER)
+_register(NC_ONEMAP_PARCELS_ADAPTER)
+_register(MT_CADASTRAL_PARCELS_ADAPTER)
+_register(FL_FGDL_PARCELS_ADAPTER)
+_register(FDOR_NAL_ADAPTER)
+_register(MN_PARCELS_ADAPTER)

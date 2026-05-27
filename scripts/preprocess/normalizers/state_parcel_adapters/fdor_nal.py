@@ -8,7 +8,7 @@ so ``STATE_PARCEL_ID`` → ``STATE_PAR_`` etc.
 
 from __future__ import annotations
 
-from .._adapter import ParcelAdapter
+from ..state_parcels import ParcelAdapter
 
 FDOR_NAL_ADAPTER = ParcelAdapter(
     source_id="fdor_nal",

@@ -11,7 +11,7 @@ FIPS column. ``county_resolver`` maps the uppercased name to its
 
 from __future__ import annotations
 
-from .._adapter import ParcelAdapter
+from ..state_parcels import ParcelAdapter
 
 # County name → 5-digit FIPS. MT FIPS are alphabetical, odd codes 30001–30111.
 MT_COUNTY_NAME_TO_FIPS: dict[str, str] = {

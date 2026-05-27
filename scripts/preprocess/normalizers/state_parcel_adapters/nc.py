@@ -7,7 +7,7 @@ auto-fetch produces (see ``scripts/fetch/sources/nc_onemap_parcels.py``).
 
 from __future__ import annotations
 
-from .._adapter import ParcelAdapter
+from ..state_parcels import ParcelAdapter
 
 NC_ONEMAP_PARCELS_ADAPTER = ParcelAdapter(
     source_id="nc_onemap_parcels",

@@ -9,7 +9,7 @@ despite the "Plan Parcels Open" name — flag before any commercial use.
 
 from __future__ import annotations
 
-from .._adapter import ParcelAdapter
+from ..state_parcels import ParcelAdapter
 
 MN_PARCELS_ADAPTER = ParcelAdapter(
     source_id="mn_parcels",
