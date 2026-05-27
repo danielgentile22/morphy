@@ -539,6 +539,35 @@ def test_reverse_index_carries_infra_side_identity():
         assert item["owner"] != "BOB JONES"
 
 
+def test_apply_lookup_assigns_per_column_independently():
+    """The for-col loop runs `.map(lambda i: lookup[i][col])` once per column.
+    Each lambda captures `col` by reference, but `.map` runs synchronously
+    inside the loop body so the captured `col` is current — never the
+    last-iteration value. This test guards against a future change that
+    might defer the map (e.g. lazy GeoDataFrame ops)."""
+    from preprocess.compose import _apply_lookup
+
+    infra = gpd.GeoDataFrame(
+        {
+            "asr_number": ["A", "B", "C"],
+            "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
+        },
+        crs="EPSG:4326",
+    )
+    lookup = {
+        0: {"parcel_id_full": "P-A", "parcel_owner": "Alice"},
+        1: {"parcel_id_full": "P-B", "parcel_owner": "Bob"},
+        # idx 2 absent → both columns should be None for row "C"
+    }
+    out = _apply_lookup(infra, lookup)
+    assert list(out["parcel_id_full"][:2]) == ["P-A", "P-B"]
+    assert list(out["parcel_owner"][:2]) == ["Alice", "Bob"]
+    # Row 2 has no lookup entry — both columns are NaN (pandas Series.map
+    # default-fills with NaN for missing keys, not None).
+    assert pd.isna(out["parcel_id_full"].iloc[2])
+    assert pd.isna(out["parcel_owner"].iloc[2])
+
+
 def test_reverse_index_handles_empty_inputs():
     from preprocess.compose import _reverse_index
 
