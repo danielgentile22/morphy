@@ -11,7 +11,29 @@ import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
-from ..http import HttpError, fetch_text
+from ..http import HttpError, fetch_text, head
+
+
+def version_from_head(url: str, *, label: str = "") -> str:
+    """HEAD ``url`` and derive a stable version string.
+
+    Tries Last-Modified → ETag → Content-Length in that order. Raises
+    ``RuntimeError`` when none of those are present (a misconfigured
+    publisher; better to surface than silently version with timestamps).
+    """
+    h = head(url)
+    lm = parse_http_date(h.get("last_modified"))
+    if lm:
+        return lm
+    etag = h.get("etag")
+    if etag:
+        return etag.strip('"')
+    cl = h.get("content_length")
+    if cl:
+        return f"len-{cl}"
+    raise RuntimeError(
+        f"could not derive remote version{' for ' + label if label else ''}"
+    )
 
 
 def safe_extract_zip(zip_path: Path, dest: Path) -> list[Path]:

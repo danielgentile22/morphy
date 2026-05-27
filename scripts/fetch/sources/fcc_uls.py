@@ -31,7 +31,7 @@ from ..base import (
 )
 from ..http import download, head
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
-from ._helpers import parse_http_date, safe_extract_zip
+from ._helpers import parse_http_date, safe_extract_zip, version_from_head
 
 BASE_URL = "https://data.fcc.gov/download/pub/uls/complete"
 
@@ -214,19 +214,10 @@ class FccUlsBulk(DataSource):
         return f"{BASE_URL}/{self.file.zip_name}"
 
     def remote_version(self) -> str:
-        h = head(self.url)
-        lm = parse_http_date(h.get("last_modified"))
-        if lm:
-            return lm
-        etag = h.get("etag")
-        if etag:
-            return etag.strip('"')
-        cl = h.get("content_length")
-        if cl:
-            return f"len-{cl}"
-        raise RuntimeError(f"could not derive remote version for {self.id}")
+        return version_from_head(self.url, label=self.id)
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
+        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
         zip_path = dest_dir / self.file.zip_name
         n = download(
             self.url,
@@ -243,7 +234,7 @@ class FccUlsBulk(DataSource):
         zip_path.unlink()
         return FetchResult(
             files=extracted,
-            remote_version=self.remote_version(),
+            remote_version=rv,
             total_bytes=n,
         )
 

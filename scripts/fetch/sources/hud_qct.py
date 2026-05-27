@@ -88,6 +88,7 @@ class HudQct(DataSource):
         return f"n-{meta.get('name', '?')}"
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
+        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
         out = dest_dir / "qct.geojson"
         n = arcgis_query_all(
             LAYER_URL,
@@ -98,7 +99,7 @@ class HudQct(DataSource):
             raise HttpError(f"HUD QCT download only {n} bytes — incomplete")
         return FetchResult(
             files=[out],
-            remote_version=self.remote_version(),
+            remote_version=rv,
             total_bytes=n,
         )
 

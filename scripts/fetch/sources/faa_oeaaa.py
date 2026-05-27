@@ -25,7 +25,7 @@ from ..base import (
 )
 from ..http import download, head
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
-from ._helpers import parse_http_date, safe_extract_zip
+from ._helpers import parse_http_date, safe_extract_zip, version_from_head
 
 DOF_URL = "https://aeronav.faa.gov/Obst_Data/DAILY_DOF_DAT.ZIP"
 
@@ -71,19 +71,10 @@ class FaaOeaaa(DataSource):
     )
 
     def remote_version(self) -> str:
-        h = head(DOF_URL)
-        lm = parse_http_date(h.get("last_modified"))
-        if lm:
-            return lm
-        etag = h.get("etag")
-        if etag:
-            return etag.strip('"')
-        cl = h.get("content_length")
-        if cl:
-            return f"len-{cl}"
-        raise RuntimeError("could not derive remote version for FAA DOF")
+        return version_from_head(DOF_URL, label=self.id)
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
+        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
         zip_path = dest_dir / "DAILY_DOF_DAT.ZIP"
         n = download(
             DOF_URL,
@@ -95,7 +86,7 @@ class FaaOeaaa(DataSource):
         zip_path.unlink()
         return FetchResult(
             files=extracted,
-            remote_version=self.remote_version(),
+            remote_version=rv,
             total_bytes=n,
         )
 
