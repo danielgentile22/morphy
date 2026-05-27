@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from scripts.preprocess.pipeline import Pipeline, Severity
-from scripts.preprocess.runner import RunOutcome
+from preprocess.pipeline import Pipeline, Severity
+from preprocess.runner import RunOutcome
 
 
 @dataclass
@@ -151,7 +151,7 @@ def test_progress_callback_exceptions_do_not_abort_pipeline():
 
 
 def test_default_pipeline_steps_have_expected_names_and_severities():
-    from scripts.preprocess.pipeline_steps import (
+    from preprocess.pipeline import (
         AppAssetsStep,
         ComposeStatesStep,
         NormalizeAllStep,
@@ -171,7 +171,7 @@ def test_default_pipeline_steps_have_expected_names_and_severities():
 
 
 def test_tiles_step_inapplicable_when_no_composed_states():
-    from scripts.preprocess.pipeline_steps import TilesStep
+    from preprocess.pipeline import TilesStep
 
     outcome = RunOutcome()  # composed_ok empty
     assert TilesStep().is_applicable(outcome) is False

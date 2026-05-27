@@ -232,11 +232,11 @@ def run_all(
     step. Inner per-source events still flow through ``progress_callback``
     unchanged.
     """
-    from .pipeline import Pipeline
-    from .pipeline_steps import (
+    from .pipeline import (
         AppAssetsStep,
         ComposeStatesStep,
         NormalizeAllStep,
+        Pipeline,
         TilesStep,
     )
 
