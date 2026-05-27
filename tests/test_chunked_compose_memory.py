@@ -51,7 +51,7 @@ def test_chunk_loop_releases_each_chunk_after_processing(
 
     cfg = cc.ComposeConfig = __import__(
         "preprocess.compose", fromlist=["ComposeConfig"]
-    ).ComposeConfig(state=STATE, force_rebuild=True, chunked=True)
+    ).ComposeConfig(state=STATE, chunked=True)
     cc.compose_chunked(cfg)
 
     gc.collect()
@@ -104,7 +104,7 @@ def test_chunks_dont_outlive_two_iterations(
 
     cfg = __import__(
         "preprocess.compose", fromlist=["ComposeConfig"]
-    ).ComposeConfig(state=STATE, force_rebuild=True, chunked=True)
+    ).ComposeConfig(state=STATE, chunked=True)
     cc.compose_chunked(cfg)
 
     assert violations == [], f"chunked compose retained chunks too long: {violations}"

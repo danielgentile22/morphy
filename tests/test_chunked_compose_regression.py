@@ -348,8 +348,8 @@ def test_chunked_compose_matches_single_shot_per_parcel(
     import shutil
 
     comp_root: Path = fixture_dirs["composite"]
-    cfg_single = ComposeConfig(state=STATE, force_rebuild=True, chunked=False)
-    cfg_chunked = ComposeConfig(state=STATE, force_rebuild=True, chunked=True)
+    cfg_single = ComposeConfig(state=STATE, chunked=False)
+    cfg_chunked = ComposeConfig(state=STATE, chunked=True)
 
     # 1) Single-shot run → snapshot, then wipe state dir.
     res_single = compose(cfg_single)
@@ -370,7 +370,7 @@ def test_chunked_compose_matches_single_shot_per_parcel(
 
 def test_chunked_compose_writes_sharded_layout(fixture_dirs, registered_normalizers):
     comp_root: Path = fixture_dirs["composite"]
-    cfg = ComposeConfig(state=STATE, force_rebuild=True, chunked=True)
+    cfg = ComposeConfig(state=STATE, chunked=True)
     compose_chunked(cfg)
     # No single parcels.parquet
     assert not (comp_root / "05" / "parcels.parquet").exists()
@@ -392,7 +392,7 @@ def test_chunked_compose_writes_sharded_layout(fixture_dirs, registered_normaliz
 def test_chunked_compose_owner_clusters_size_2(fixture_dirs, registered_normalizers):
     """Two parcels share owner+address → cluster size 2 for both."""
     comp_root: Path = fixture_dirs["composite"]
-    compose_chunked(ComposeConfig(state=STATE, force_rebuild=True, chunked=True))
+    compose_chunked(ComposeConfig(state=STATE, chunked=True))
     parcels = _load_chunked_parcels(comp_root).set_index("parcel_id_full")
     # A001 and B001 share owner+address.
     assert parcels.loc["A001", "owner_cluster_size"] == 2
@@ -404,7 +404,7 @@ def test_chunked_compose_owner_clusters_size_2(fixture_dirs, registered_normaliz
 
 def test_chunked_compose_tower_to_parcel_attaches(fixture_dirs, registered_normalizers):
     comp_root: Path = fixture_dirs["composite"]
-    compose_chunked(ComposeConfig(state=STATE, force_rebuild=True, chunked=True))
+    compose_chunked(ComposeConfig(state=STATE, chunked=True))
     parcels = _load_chunked_parcels(comp_root).set_index("parcel_id_full")
     # Tower T001 lives on parcel A001's polygon.
     assert bool(parcels.loc["A001", "has_tower"]) is True
@@ -417,7 +417,7 @@ def test_chunked_compose_tower_to_parcel_attaches(fixture_dirs, registered_norma
 
 def test_chunked_compose_distress_overlay_membership(fixture_dirs, registered_normalizers):
     comp_root: Path = fixture_dirs["composite"]
-    compose_chunked(ComposeConfig(state=STATE, force_rebuild=True, chunked=True))
+    compose_chunked(ComposeConfig(state=STATE, chunked=True))
     parcels = _load_chunked_parcels(comp_root).set_index("parcel_id_full")
     # The OZ overlay spans the western corner — A001/A002/B001 are inside.
     assert bool(parcels.loc["A001", "in_oz"]) is True
@@ -509,7 +509,7 @@ def test_chunked_compose_tolerates_duplicate_parcel_id_full(
     fl_state = StateGeography(fips="12", abbr="FL", name="Florida", bbox=(-87, 24, -80, 31))
     # The bug: this call raised "cannot reindex on an axis with duplicate labels".
     res = compose_chunked(
-        ComposeConfig(state=fl_state, force_rebuild=True, chunked=True)
+        ComposeConfig(state=fl_state, chunked=True)
     )
     assert res.counts.get("parcel", 0) == 4  # 2 shards × 2 parcels
     # Each shard should have been written.

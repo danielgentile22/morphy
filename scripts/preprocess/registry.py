@@ -29,7 +29,6 @@ from .normalizers import (  # noqa: F401
 from .joins import (  # noqa: F401
     billboard_to_parcel,
     county_score_lookup,
-    geometry_derivatives,
     interestingness_score,
     owner_cluster,
     parcel_hosts_infra,

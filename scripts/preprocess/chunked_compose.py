@@ -618,6 +618,7 @@ def compose_chunked(cfg) -> ComposeResult:  # cfg: ComposeConfig
         state_fips=state.fips,
         sources_used=sources_used,
         joins_applied=joins_applied,
+        joins_skipped=joins_skipped,
         views_built=views_built,
         counts=counts,
         output_files=output_files,

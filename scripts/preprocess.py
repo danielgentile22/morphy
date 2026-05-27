@@ -265,7 +265,6 @@ def main() -> int:
             res = run_compose_one(
                 get_state(args.state),
                 manifest,
-                force_rebuild=args.force_rebuild,
                 chunked=args.chunked,
                 progress_callback=_stream_progress,
             )
@@ -273,7 +272,6 @@ def main() -> int:
         else:
             results = run_compose_all(
                 manifest,
-                force_rebuild=args.force_rebuild,
                 chunked=args.chunked,
                 progress_callback=_stream_progress,
             )

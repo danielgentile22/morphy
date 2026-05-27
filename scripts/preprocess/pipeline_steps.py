@@ -71,7 +71,6 @@ class ComposeStatesStep(PipelineStep):
     severity: Severity = Severity.REQUIRED
     # When None, the step picks every state with normalized parcel data.
     states: list["StateGeography"] | None = None
-    force_rebuild: bool = False
     # ADR-051 chunked-compose selector:
     #   None  → auto-detect per state (chunked above the threshold)
     #   True  → force chunked for every state
@@ -98,7 +97,6 @@ class ComposeStatesStep(PipelineStep):
         results = run_compose_all(
             manifest,
             states=states,
-            force_rebuild=self.force_rebuild,
             chunked=self.chunked,
             progress_callback=progress_callback,
         )

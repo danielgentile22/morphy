@@ -49,7 +49,6 @@ CATALOG_SCHEMA_VERSION = 3
 @dataclass
 class ComposeConfig:
     state: StateGeography
-    force_rebuild: bool = False
     skip_views: list[str] = field(default_factory=list)
     skip_joins: list[str] = field(default_factory=list)
     # ADR-051 chunked-compose selector.
@@ -215,6 +214,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
         state_fips=state.fips,
         sources_used=sources_used,
         joins_applied=joins_applied,
+        joins_skipped=joins_skipped,
         views_built=views_built,
         counts=counts,
         output_files=output_files,

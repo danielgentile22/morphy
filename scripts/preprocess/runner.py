@@ -152,7 +152,6 @@ def run_compose_one(
     state: StateGeography,
     manifest: PreprocessManifest,
     *,
-    force_rebuild: bool = False,
     chunked: bool | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> ComposeResult | None:
@@ -163,7 +162,7 @@ def run_compose_one(
     """
     _emit(progress_callback, "compose_start", state.fips, {"name": state.name})
     try:
-        cfg = ComposeConfig(state=state, force_rebuild=force_rebuild, chunked=chunked)
+        cfg = ComposeConfig(state=state, chunked=chunked)
         result = _dispatch_compose(cfg)
     except Exception as e:
         tb = traceback.format_exc(limit=3)
@@ -184,6 +183,7 @@ def run_compose_one(
         state.fips,
         sources_used=result.sources_used,
         joins_applied=result.joins_applied,
+        joins_skipped=result.joins_skipped,
         views_built=result.views_built,
         counts=result.counts,
         status="ok",
@@ -206,7 +206,6 @@ def run_compose_all(
     manifest: PreprocessManifest,
     *,
     states: list[StateGeography] | None = None,
-    force_rebuild: bool = False,
     chunked: bool | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> dict[str, ComposeResult | None]:
@@ -217,7 +216,6 @@ def run_compose_all(
         results[s.fips] = run_compose_one(
             s,
             manifest,
-            force_rebuild=force_rebuild,
             chunked=chunked,
             progress_callback=progress_callback,
         )
@@ -280,9 +278,7 @@ def run_all(
     pipeline = Pipeline(
         steps=[
             NormalizeAllStep(force_rebuild=force_rebuild),
-            ComposeStatesStep(
-                states=states, force_rebuild=force_rebuild, chunked=chunked
-            ),
+            ComposeStatesStep(states=states, chunked=chunked),
             AppAssetsStep(),
             TilesStep(),
         ]

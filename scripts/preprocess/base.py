@@ -221,6 +221,7 @@ class ComposeResult:
     views_built: list[str]
     counts: dict[str, int]
     output_files: list[Path]
+    joins_skipped: list[str] = field(default_factory=list)
 
 
 # ── Normalizer ABC + registry ────────────────────────────────────────────────
