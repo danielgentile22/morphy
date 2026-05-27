@@ -27,14 +27,12 @@ from .normalizers import (  # noqa: F401
 
 # ── Joins ─────────────────────────────────────────────────────────────
 from .joins import (  # noqa: F401
-    billboard_to_parcel,
     county_score_lookup,
+    infra_to_parcel,
     interestingness_score,
     owner_cluster,
     parcel_hosts_infra,
-    solar_to_parcel,
     spatial_attribute,
-    tower_to_parcel,
 )
 
 # ── Views ─────────────────────────────────────────────────────────────
