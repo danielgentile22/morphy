@@ -137,15 +137,6 @@ def all_sources() -> list[DataSource]:
     return ordered
 
 
-def deferred_sources() -> list[DataSource]:
-    """Return every deferred source — for documentation / tooling only.
-
-    Not surfaced in the puller UI. Reactivate by moving from `_DEFERRED`
-    to `_ACTIVE`.
-    """
-    return list(_DEFERRED)
-
-
 def get_source(source_id: str) -> DataSource:
     """Look up by ID across both active AND deferred blocks.
 

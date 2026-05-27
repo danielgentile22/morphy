@@ -8,15 +8,18 @@ is staged + promoted atomically, errors are logged, and legal policy
 
 from __future__ import annotations
 
+import json
 import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
+from . import LOG_PATH
 from .base import DataSource, ProgressCallback
 from .http import HttpError
 from .legal import AutomationPolicy
-from .log import log_event
 from .manifest import Manifest
 from .storage import (
     current_dir,
@@ -25,6 +28,18 @@ from .storage import (
     prepare_partial_for_resume,
     promote_partial,
 )
+
+
+def log_event(event: str, **fields: Any) -> None:
+    """Append a single JSON object to fetch.log."""
+    payload: dict[str, Any] = {
+        "ts": datetime.now(UTC).isoformat(timespec="seconds"),
+        "event": event,
+    }
+    payload.update(fields)
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
 
 
 @dataclass
