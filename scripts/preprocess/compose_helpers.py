@@ -1,9 +1,9 @@
-"""Helpers for chunked compose: shard iteration + streaming view aggregators.
+"""Helpers for streaming compose: shard iteration + view aggregators.
 
-The chunked composer (`chunked_compose.py`) processes parcels one shard
-at a time so peak memory stays bounded to a single shard rather than the
-whole-state union. Views need a matching streaming interface so they
-don't re-load every shard into memory at the end of the run.
+The composer (`compose.py`) processes parcels one shard at a time so
+peak memory stays bounded to a single shard rather than the whole-state
+union. Views need a matching streaming interface so they don't re-load
+every shard into memory at the end of the run.
 
 This module supplies:
   - `iter_state_parcel_shards`  — yields `(label, GeoDataFrame)` per
@@ -26,7 +26,7 @@ import pandas as pd
 
 from .base import OUTPUT_BASENAMES, View, all_normalizers
 
-log = logging.getLogger("preprocess.chunked_compose")
+log = logging.getLogger("preprocess.compose")
 
 
 # ── Shard iteration ────────────────────────────────────────────────────────

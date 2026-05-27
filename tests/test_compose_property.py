@@ -1,19 +1,13 @@
-"""Regression: chunked_compose output equals single-shot compose output.
+"""Property tests for the streaming Composer (ADR-051).
 
-This is the ADR-051 ship gate: the chunked path must produce the same
-data as the legacy single-shot path on the same input. If they differ
-on a non-trivial fixture the chunked path is unsafe to use on FL/NC.
+These exercise the per-shard / per-state invariants the Composer must
+hold (owner-cluster sizes, sharded layout, tower attach, OZ membership,
+duplicate parcel_id tolerance). Synthetic fixture under tmp_path with
+two parcel sources × two shards each, plus
+tower/solar/billboard/distress_overlay/county_score companion tables.
 
-Strategy:
-  - Build a synthetic normalized layout (two parcel sources × two
-    shards each), plus tower/solar/billboard/distress_overlay/county_score
-    tables, all under a tmp_path.
-  - Point NORMALIZED_ROOT and COMPOSITE_ROOT at tmp_path subdirs.
-  - Register a small set of fixture normalizers + the real Joins/Views.
-  - Run compose() to produce composite/<fips>/parcels.parquet.
-  - Wipe + run compose_chunked() to produce composite/<fips>/parcels/*.parquet.
-  - Compare per-parcel attributes (joined on parcel_id_full) for equality.
-  - Compare each common view's output for equality.
+Plus focused unit tests for `_reverse_index` (infra-side identity in
+the per-parcel summary) and the chunked-vs-aggregator equivalence.
 """
 
 from __future__ import annotations
@@ -32,7 +26,6 @@ from preprocess.base import (
     register_normalizer_instance,
 )
 from preprocess.compose import ComposeConfig, compose
-from preprocess.chunked_compose import compose_chunked
 from preprocess.geographies import StateGeography
 from preprocess.io import write_geoparquet, write_parquet
 from shapely.geometry import Point, Polygon
@@ -98,13 +91,11 @@ def fixture_dirs(tmp_path, monkeypatch):
     comp_root.mkdir()
     monkeypatch.setattr(preprocess, "NORMALIZED_ROOT", norm_root)
     monkeypatch.setattr(preprocess, "COMPOSITE_ROOT", comp_root)
-    # The compose modules captured COMPOSITE_ROOT at import time — patch
-    # those bindings too.
+    # The compose module captured COMPOSITE_ROOT at import time — patch
+    # that binding too.
     import preprocess.compose as compose_mod
-    import preprocess.chunked_compose as chunked_mod
 
     monkeypatch.setattr(compose_mod, "COMPOSITE_ROOT", comp_root)
-    monkeypatch.setattr(chunked_mod, "COMPOSITE_ROOT", comp_root)
 
     # ── Parcels: two sources × two shards each ──
     src_a = norm_root / "fixture_src_a" / "parcels"
@@ -270,7 +261,7 @@ class _FixtureScores(Normalizer):
 @pytest.fixture
 def registered_normalizers(monkeypatch):
     """Replace the global normalizer registry with the fixture set so
-    compose / compose_chunked see only our test sources."""
+    compose / compose see only our test sources."""
     fixture_normalizers = [
         _FixtureParcelSrcA(),
         _FixtureParcelSrcB(),
@@ -281,12 +272,10 @@ def registered_normalizers(monkeypatch):
     # `all_normalizers` is imported by many modules — patch in each.
     import preprocess.base as base_mod
     import preprocess.compose as compose_mod
-    import preprocess.chunked_compose as chunked_mod
-    import preprocess.chunked_compose_helpers as helpers_mod
+    import preprocess.compose_helpers as helpers_mod
 
     monkeypatch.setattr(base_mod, "all_normalizers", lambda: fixture_normalizers)
     monkeypatch.setattr(compose_mod, "all_normalizers", lambda: fixture_normalizers)
-    monkeypatch.setattr(chunked_mod, "all_normalizers", lambda: fixture_normalizers)
     monkeypatch.setattr(helpers_mod, "all_normalizers", lambda: fixture_normalizers)
     return fixture_normalizers
 
@@ -323,14 +312,9 @@ PARCEL_COLS_TO_COMPARE = [
 ]
 
 
-def _load_single_shot_parcels(comp_root: Path, fips: str = "05") -> pd.DataFrame:
-    df = gpd.read_parquet(comp_root / fips / "parcels.parquet")
-    return pd.DataFrame(df.drop(columns=["geometry"]))
-
-
-def _load_chunked_parcels(comp_root: Path, fips: str = "05") -> pd.DataFrame:
+def _load_parcels(comp_root: Path, fips: str = "05") -> pd.DataFrame:
     shards = sorted((comp_root / fips / "parcels").glob("*.parquet"))
-    assert shards, f"chunked compose produced no parcel shards for state {fips}"
+    assert shards, f"compose produced no parcel shards for state {fips}"
     frames = [gpd.read_parquet(p) for p in shards]
     return pd.concat(
         [pd.DataFrame(f.drop(columns=["geometry"])) for f in frames], ignore_index=True
@@ -354,36 +338,10 @@ def _normalize_for_compare(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def test_chunked_compose_matches_single_shot_per_parcel(
-    fixture_dirs, registered_normalizers
-):
-    import shutil
-
+def test_compose_writes_sharded_layout(fixture_dirs, registered_normalizers):
     comp_root: Path = fixture_dirs["composite"]
-    cfg_single = ComposeConfig(state=STATE, chunked=False)
-    cfg_chunked = ComposeConfig(state=STATE, chunked=True)
-
-    # 1) Single-shot run → snapshot, then wipe state dir.
-    res_single = compose(cfg_single)
-    assert res_single.state_fips == "05"
-    assert res_single.counts.get("parcel", 0) == 8
-    a = _normalize_for_compare(_load_single_shot_parcels(comp_root))
-    shutil.rmtree(comp_root / "05")
-
-    # 2) Chunked run → snapshot.
-    res_chunked = compose_chunked(cfg_chunked)
-    assert res_chunked.state_fips == "05"
-    assert res_chunked.counts.get("parcel", 0) == 8
-    b = _normalize_for_compare(_load_chunked_parcels(comp_root))
-
-    # 3) Per-parcel equality.
-    pd.testing.assert_frame_equal(a, b, check_dtype=False, check_like=True)
-
-
-def test_chunked_compose_writes_sharded_layout(fixture_dirs, registered_normalizers):
-    comp_root: Path = fixture_dirs["composite"]
-    cfg = ComposeConfig(state=STATE, chunked=True)
-    compose_chunked(cfg)
+    cfg = ComposeConfig(state=STATE)
+    compose(cfg)
     # No single parcels.parquet
     assert not (comp_root / "05" / "parcels.parquet").exists()
     # A parcels/ dir of shards instead
@@ -401,11 +359,11 @@ def test_chunked_compose_writes_sharded_layout(fixture_dirs, registered_normaliz
     assert parcel_layer["parquet_path"] == "parcels"
 
 
-def test_chunked_compose_owner_clusters_size_2(fixture_dirs, registered_normalizers):
+def test_compose_owner_clusters_size_2(fixture_dirs, registered_normalizers):
     """Two parcels share owner+address → cluster size 2 for both."""
     comp_root: Path = fixture_dirs["composite"]
-    compose_chunked(ComposeConfig(state=STATE, chunked=True))
-    parcels = _load_chunked_parcels(comp_root).set_index("parcel_id_full")
+    compose(ComposeConfig(state=STATE))
+    parcels = _load_parcels(comp_root).set_index("parcel_id_full")
     # A001 and B001 share owner+address.
     assert parcels.loc["A001", "owner_cluster_size"] == 2
     assert parcels.loc["B001", "owner_cluster_size"] == 2
@@ -414,10 +372,10 @@ def test_chunked_compose_owner_clusters_size_2(fixture_dirs, registered_normaliz
     assert parcels.loc["A002", "owner_cluster_size"] == 1
 
 
-def test_chunked_compose_tower_to_parcel_attaches(fixture_dirs, registered_normalizers):
+def test_compose_tower_to_parcel_attaches(fixture_dirs, registered_normalizers):
     comp_root: Path = fixture_dirs["composite"]
-    compose_chunked(ComposeConfig(state=STATE, chunked=True))
-    parcels = _load_chunked_parcels(comp_root).set_index("parcel_id_full")
+    compose(ComposeConfig(state=STATE))
+    parcels = _load_parcels(comp_root).set_index("parcel_id_full")
     # Tower T001 lives on parcel A001's polygon.
     assert bool(parcels.loc["A001", "has_tower"]) is True
     assert int(parcels.loc["A001", "tower_count"]) == 1
@@ -427,23 +385,23 @@ def test_chunked_compose_tower_to_parcel_attaches(fixture_dirs, registered_norma
     assert bool(parcels.loc["A002", "has_tower"]) is False
 
 
-def test_chunked_compose_distress_overlay_membership(fixture_dirs, registered_normalizers):
+def test_compose_distress_overlay_membership(fixture_dirs, registered_normalizers):
     comp_root: Path = fixture_dirs["composite"]
-    compose_chunked(ComposeConfig(state=STATE, chunked=True))
-    parcels = _load_chunked_parcels(comp_root).set_index("parcel_id_full")
+    compose(ComposeConfig(state=STATE))
+    parcels = _load_parcels(comp_root).set_index("parcel_id_full")
     # The OZ overlay spans the western corner — A001/A002/B001 are inside.
     assert bool(parcels.loc["A001", "in_oz"]) is True
     # A004 sits outside the overlay polygon.
     assert bool(parcels.loc["A004", "in_oz"]) is False
 
 
-def test_chunked_compose_tolerates_duplicate_parcel_id_full(
+def test_compose_tolerates_duplicate_parcel_id_full(
     tmp_path, monkeypatch
 ):
     """FL FDOR NAL's PARCEL_ID is county-unique, not state-unique — so
     chunked compose must NOT key its owner-cluster lookup on
     parcel_id_full. This test seeds duplicate parcel_id_full across two
-    shards and verifies compose_chunked succeeds end-to-end (the bug
+    shards and verifies compose succeeds end-to-end (the bug
     raised `cannot reindex on an axis with duplicate labels`).
     """
     norm_root = tmp_path / "normalized"
@@ -453,10 +411,8 @@ def test_chunked_compose_tolerates_duplicate_parcel_id_full(
     monkeypatch.setattr(preprocess, "NORMALIZED_ROOT", norm_root)
     monkeypatch.setattr(preprocess, "COMPOSITE_ROOT", comp_root)
     import preprocess.compose as compose_mod
-    import preprocess.chunked_compose as chunked_mod
 
     monkeypatch.setattr(compose_mod, "COMPOSITE_ROOT", comp_root)
-    monkeypatch.setattr(chunked_mod, "COMPOSITE_ROOT", comp_root)
 
     # Two shards each carrying a parcel with parcel_id_full="DUP-001"
     # but different counties — exactly the FL pattern.
@@ -513,16 +469,14 @@ def test_chunked_compose_tolerates_duplicate_parcel_id_full(
 
     fixture = [_DupParcels(), _DupScores()]
     import preprocess.base as base_mod
-    import preprocess.chunked_compose_helpers as helpers_mod
+    import preprocess.compose_helpers as helpers_mod
 
-    for mod in (base_mod, compose_mod, chunked_mod, helpers_mod):
+    for mod in (base_mod, compose_mod, helpers_mod):
         monkeypatch.setattr(mod, "all_normalizers", lambda: fixture)
 
     fl_state = StateGeography(fips="12", abbr="FL", name="Florida", bbox=(-87, 24, -80, 31))
     # The bug: this call raised "cannot reindex on an axis with duplicate labels".
-    res = compose_chunked(
-        ComposeConfig(state=fl_state, chunked=True)
-    )
+    res = compose(ComposeConfig(state=fl_state))
     assert res.counts.get("parcel", 0) == 4  # 2 shards × 2 parcels
     # Each shard should have been written.
     shards = sorted((comp_root / "12" / "parcels").glob("*.parquet"))
@@ -531,7 +485,7 @@ def test_chunked_compose_tolerates_duplicate_parcel_id_full(
     # The owner cluster computed per-row from owner_name + mailing_addr
     # — so the two DUP-001 rows belong to *different* clusters because
     # they have different owners. cluster_size for each should be 1.
-    parcels = _load_chunked_parcels(comp_root, fips="12")
+    parcels = _load_parcels(comp_root, fips="12")
     # Group by (county_fips, parcel_id_full) to disambiguate the dupes.
     by_key = parcels.set_index(["county_fips", "parcel_id_full"])
     assert int(by_key.loc[("12001", "DUP-001"), "owner_cluster_size"]) == 1
@@ -553,7 +507,7 @@ def test_reverse_index_carries_infra_side_identity():
     The Svelte ``DetailsPanel.svelte`` renders this list as "infrastructure
     on this parcel" — the user wants the infra's identity surfaced.
     """
-    from preprocess.chunked_compose import _reverse_index
+    from preprocess.compose import _reverse_index
 
     infra = gpd.GeoDataFrame(
         {
@@ -586,7 +540,7 @@ def test_reverse_index_carries_infra_side_identity():
 
 
 def test_reverse_index_handles_empty_inputs():
-    from preprocess.chunked_compose import _reverse_index
+    from preprocess.compose import _reverse_index
 
     counts, summary = _reverse_index(
         {}, infra=None, kind="tower", id_col="asr_number", owner_col="owner_name"
