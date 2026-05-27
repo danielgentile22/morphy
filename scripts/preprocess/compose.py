@@ -29,6 +29,7 @@ from .base import (
     ordered_joins,
     utcnow_iso,
 )
+from .catalog_builder import build_catalog, geom_type
 from .catalog_schema import validate_catalog
 from .geographies import StateGeography
 from .io import (
@@ -38,12 +39,8 @@ from .io import (
     write_json,
     write_parquet,
 )
-from .manifest import get_raw_local_version
 
 log = logging.getLogger("preprocess.compose")
-
-# catalog.json schema version. Documented in ARCHITECTURE.md §6.
-CATALOG_SCHEMA_VERSION = 3
 
 
 @dataclass
@@ -150,7 +147,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
             output_files.append(p_parquet)
             view_meta[v.name] = {
                 "rows": len(result),
-                "geometry_type": _geom_type(result),
+                "geometry_type": geom_type(result),
                 "parquet_path": f"views/{v.name}.parquet",
                 "description": v.description,
                 "inputs": v.inputs,
@@ -176,7 +173,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
         log.info("✓ view %s (%d rows)", v.name, len(result))
 
     # ── catalog.json (self-documenting layer manifest) ─────────────────
-    catalog = _build_catalog(state, ctx, view_meta, out_dir, sources_used)
+    catalog = build_catalog(state, ctx, view_meta, out_dir, sources_used)
     # Enforce the Python ↔ TS contract at write time. The map app's
     # parseCatalog assumes this shape; drift would surface as silent
     # missing layers in production. See catalog_schema.py.
@@ -263,74 +260,3 @@ def _load_state_data(ctx: ComposeContext) -> list[str]:
     return sources_used
 
 
-def _geom_type(gdf: gpd.GeoDataFrame) -> str:
-    try:
-        types = set(gdf.geom_type.dropna().unique())
-        if not types:
-            return ""
-        return next(iter(types))
-    except Exception:
-        return ""
-
-
-def _build_catalog(
-    state: StateGeography,
-    ctx: ComposeContext,
-    view_meta: dict[str, dict],
-    out_dir: Path,
-    sources_used: list[str],
-) -> dict:
-    """Self-documenting layer manifest for the map app to consume."""
-    layers: dict[str, dict] = {}
-    for ct, table in ctx.tables.items():
-        if table is None or len(table) == 0:
-            continue
-        basename = OUTPUT_BASENAMES.get(ct, ct)
-        layer: dict = {
-            "canonical_type": ct,
-            "rows": len(table),
-            "parquet_path": f"{basename}.parquet",
-            "schema": _schema_summary(table),
-        }
-        if ct in SPATIAL_TYPES:
-            layer["geometry_type"] = _geom_type(table)
-            # Advertise a GeoJSON path only when the file was actually
-            # written — huge layers (parcels) are Parquet-only.
-            if (out_dir / f"{basename}.geojson").exists():
-                layer["geojson_path"] = f"{basename}.geojson"
-            if (out_dir / f"{basename}.simplified.geojson").exists():
-                layer["simplified_geojson_path"] = f"{basename}.simplified.geojson"
-        layers[basename] = layer
-
-    # Lineage: which raw version of each source fed this composite. Lets us
-    # answer "what raw vintages produced this state?" without parsing logs.
-    # Coerce None → "" so the catalog-schema string-type contract stays
-    # strict on shape but tolerant of sources without a recorded version
-    # (fixture sources in tests, or a source pre-manifest-record).
-    sources_used_versions = {
-        sid: (get_raw_local_version(sid) or "") for sid in sorted(sources_used)
-    }
-
-    return {
-        "schema_version": CATALOG_SCHEMA_VERSION,
-        "state_fips": state.fips,
-        "state_name": state.name,
-        "state_abbr": state.abbr,
-        "generated_at": utcnow_iso(),
-        "layers": layers,
-        "views": view_meta,
-        "sources_used_versions": sources_used_versions,
-    }
-
-
-def _schema_summary(table) -> dict:
-    """Light schema summary — col name → dtype string."""
-    out: dict[str, str] = {}
-    for col in getattr(table, "columns", []):
-        if col == getattr(table, "_geometry_column_name", "geometry"):
-            continue
-        try:
-            out[str(col)] = str(table[col].dtype)
-        except Exception:
-            out[str(col)] = "unknown"
-    return out

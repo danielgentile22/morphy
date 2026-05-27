@@ -73,12 +73,9 @@ from .io import (
     write_json,
     write_parquet,
 )
-from .manifest import get_raw_local_version
+from .catalog_builder import build_catalog, geom_type, schema_summary
 
 log = logging.getLogger("preprocess.chunked_compose")
-
-# catalog.json schema version. Documented in ARCHITECTURE.md §6.
-CATALOG_SCHEMA_VERSION = 3
 
 
 def estimate_state_parcel_rows(state_fips: str) -> int:
@@ -422,8 +419,8 @@ def compose_chunked(cfg) -> ComposeResult:  # cfg: ComposeConfig
     shard_count = 0
     total_parcel_rows = 0
     shard_files: list[Path] = []
-    schema_summary: dict[str, str] | None = None
-    geometry_type: str = ""
+    parcel_schema: dict[str, str] | None = None
+    parcel_geom_type: str = ""
 
     for label, chunk in iter_state_parcel_shards(state.fips):
         # Parcel-touching joins, applied directly on the chunk.
@@ -448,9 +445,9 @@ def compose_chunked(cfg) -> ComposeResult:  # cfg: ComposeConfig
         shard_files.append(shard_path)
         shard_count += 1
         total_parcel_rows += len(chunk)
-        if schema_summary is None:
-            schema_summary = _schema_summary(chunk)
-            geometry_type = _geom_type(chunk)
+        if parcel_schema is None:
+            parcel_schema = schema_summary(chunk)
+            parcel_geom_type = geom_type(chunk)
         log.info("  ✓ shard %s (%d rows) → %s", label, len(chunk), shard_path.name)
 
     log.info(
@@ -551,7 +548,7 @@ def compose_chunked(cfg) -> ComposeResult:  # cfg: ComposeConfig
             output_files.append(p_parquet)
             view_meta[v.name] = {
                 "rows": len(result),
-                "geometry_type": _geom_type(result),
+                "geometry_type": geom_type(result),
                 "parquet_path": f"views/{v.name}.parquet",
                 "description": v.description,
                 "inputs": v.inputs,
@@ -577,7 +574,7 @@ def compose_chunked(cfg) -> ComposeResult:  # cfg: ComposeConfig
         log.info("✓ view %s (%d rows)", v.name, len(result))
 
     # 10. Catalog + summary (sharded layer descriptor for parcels).
-    catalog = _build_catalog(
+    catalog = build_catalog(
         state,
         ctx,
         view_meta,
@@ -587,8 +584,8 @@ def compose_chunked(cfg) -> ComposeResult:  # cfg: ComposeConfig
             "shard_count": shard_count,
             "shard_dir": OUTPUT_BASENAMES.get("parcel", "parcel"),
             "rows": total_parcel_rows,
-            "schema": schema_summary or {},
-            "geometry_type": geometry_type,
+            "schema": parcel_schema or {},
+            "geometry_type": parcel_geom_type,
         },
     )
     validate_catalog(catalog)
@@ -834,85 +831,3 @@ def _load_non_parcel_state_data(ctx: ComposeContext) -> list[str]:
     return sources_used
 
 
-def _geom_type(gdf) -> str:
-    try:
-        types = set(gdf.geom_type.dropna().unique())
-        if not types:
-            return ""
-        return next(iter(types))
-    except Exception:
-        return ""
-
-
-def _schema_summary(table) -> dict:
-    out: dict[str, str] = {}
-    for col in getattr(table, "columns", []):
-        if col == getattr(table, "_geometry_column_name", "geometry"):
-            continue
-        try:
-            out[str(col)] = str(table[col].dtype)
-        except Exception:
-            out[str(col)] = "unknown"
-    return out
-
-
-def _build_catalog(
-    state: StateGeography,
-    ctx: ComposeContext,
-    view_meta: dict[str, dict],
-    out_dir: Path,
-    sources_used: list[str],
-    sharded_parcels: dict,
-) -> dict:
-    """Self-documenting layer manifest. Mirrors compose._build_catalog but
-    advertises the parcel layer as a sharded directory."""
-    layers: dict[str, dict] = {}
-    parcel_basename = OUTPUT_BASENAMES.get("parcel", "parcel")
-    layers[parcel_basename] = {
-        "canonical_type": "parcel",
-        "rows": sharded_parcels["rows"],
-        "parquet_path": parcel_basename,  # directory, not a file
-        "schema": sharded_parcels["schema"],
-        "geometry_type": sharded_parcels["geometry_type"],
-        "sharded": True,
-        "shard_count": sharded_parcels["shard_count"],
-    }
-    for ct, table in ctx.tables.items():
-        if ct == "parcel":
-            continue
-        if table is None or len(table) == 0:
-            continue
-        basename = OUTPUT_BASENAMES.get(ct, ct)
-        layer: dict = {
-            "canonical_type": ct,
-            "rows": len(table),
-            "parquet_path": f"{basename}.parquet",
-            "schema": _schema_summary(table),
-        }
-        if ct in SPATIAL_TYPES:
-            layer["geometry_type"] = _geom_type(table)
-            if (out_dir / f"{basename}.geojson").exists():
-                layer["geojson_path"] = f"{basename}.geojson"
-            if (out_dir / f"{basename}.simplified.geojson").exists():
-                layer["simplified_geojson_path"] = f"{basename}.simplified.geojson"
-        layers[basename] = layer
-
-    # The catalog schema requires every value in sources_used_versions to
-    # be a string. get_raw_local_version returns None when the source is
-    # not in the puller manifest (fixture sources in tests, or any source
-    # without recorded local_version yet) — coerce to "" so validation
-    # stays strict on shape but tolerant of missing-version provenance.
-    sources_used_versions = {
-        sid: (get_raw_local_version(sid) or "") for sid in sorted(set(sources_used))
-    }
-
-    return {
-        "schema_version": CATALOG_SCHEMA_VERSION,
-        "state_fips": state.fips,
-        "state_name": state.name,
-        "state_abbr": state.abbr,
-        "generated_at": utcnow_iso(),
-        "layers": layers,
-        "views": view_meta,
-        "sources_used_versions": sources_used_versions,
-    }

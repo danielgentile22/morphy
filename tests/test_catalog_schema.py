@@ -128,9 +128,9 @@ def test_view_geometry_type_must_be_string_or_null(golden):
 
 def test_build_catalog_output_validates_against_schema(monkeypatch):
     """The Python writer's output must satisfy the contract — this is the
-    drift-detection mechanism. If _build_catalog adds/removes a field
+    drift-detection mechanism. If build_catalog adds/removes a field
     without updating the schema, this test fails."""
-    from preprocess import compose
+    from preprocess import catalog_builder
     from preprocess.geographies import get_state
 
     state = get_state("05")
@@ -141,12 +141,12 @@ def test_build_catalog_output_validates_against_schema(monkeypatch):
         [{"county_fips": "05001", "state_fips": "05", "tier": "distressed"}]
     )
 
-    # _build_catalog calls get_raw_local_version per source; with no real
+    # build_catalog calls get_raw_local_version per source; with no real
     # manifest present that returns None — patch to keep the test
     # hermetic and avoid touching data/.
-    monkeypatch.setattr(compose, "get_raw_local_version", lambda _sid: "test-vintage")
+    monkeypatch.setattr(catalog_builder, "get_raw_local_version", lambda _sid: "test-vintage")
 
-    catalog = compose._build_catalog(
+    catalog = catalog_builder.build_catalog(
         state=state,
         ctx=ctx,
         view_meta={},
