@@ -314,6 +314,7 @@ PARCEL_COLS_TO_COMPARE = [
     "solar_count",
     "has_billboard",
     "billboard_count",
+    "infrastructure_summary",
     "distress_tier",
     "persistent_poverty",
     "in_oz",
@@ -336,10 +337,21 @@ def _load_chunked_parcels(comp_root: Path, fips: str = "05") -> pd.DataFrame:
     )
 
 
+def _sort_infra_summary(v):
+    """Sort an infrastructure_summary list by id so order isn't load-bearing."""
+    if not isinstance(v, list):
+        return v
+    return sorted(v, key=lambda d: (d.get("type", ""), d.get("id", "")))
+
+
 def _normalize_for_compare(df: pd.DataFrame) -> pd.DataFrame:
     """Project to the comparison columns, sort by parcel_id_full, reset index."""
     present = [c for c in PARCEL_COLS_TO_COMPARE if c in df.columns]
-    return df[present].sort_values("parcel_id_full").reset_index(drop=True)
+    out = df[present].sort_values("parcel_id_full").reset_index(drop=True)
+    if "infrastructure_summary" in out.columns:
+        out = out.copy()
+        out["infrastructure_summary"] = out["infrastructure_summary"].map(_sort_infra_summary)
+    return out
 
 
 def test_chunked_compose_matches_single_shot_per_parcel(
@@ -529,3 +541,64 @@ def test_chunked_compose_tolerates_duplicate_parcel_id_full(
         by_key.loc[("12001", "DUP-001"), "owner_cluster_id"]
         != by_key.loc[("12003", "DUP-001"), "owner_cluster_id"]
     )
+
+
+# ── _reverse_index unit test ───────────────────────────────────────────────
+
+
+def test_reverse_index_carries_infra_side_identity():
+    """`_reverse_index` summary entries must record the infra row's own
+    id/owner (asr_number for towers, etc.), not the parcel's. Single-shot
+    ``ParcelHostsInfraJoin`` writes infra-side identity; chunked must match.
+    The Svelte ``DetailsPanel.svelte`` renders this list as "infrastructure
+    on this parcel" — the user wants the infra's identity surfaced.
+    """
+    from preprocess.chunked_compose import _reverse_index
+
+    infra = gpd.GeoDataFrame(
+        {
+            "asr_number": ["ASR-001", "ASR-002"],
+            "owner_name": ["AT&T Mobility", "Verizon"],
+            "geometry": [Point(-92.0, 35.0), Point(-92.1, 35.1)],
+        },
+        crs="EPSG:4326",
+    )
+    # Both towers attach to the same parcel (P001) — exercise the count+list path.
+    lookup = {
+        0: {"parcel_id_full": "P001", "parcel_owner": "BOB JONES"},
+        1: {"parcel_id_full": "P001", "parcel_owner": "BOB JONES"},
+    }
+
+    counts, summary = _reverse_index(
+        lookup, infra=infra, kind="tower", id_col="asr_number", owner_col="owner_name"
+    )
+
+    assert counts == {"P001": 2}
+    items = sorted(summary["P001"], key=lambda d: d["id"])
+    assert items == [
+        {"type": "tower", "id": "ASR-001", "owner": "AT&T Mobility"},
+        {"type": "tower", "id": "ASR-002", "owner": "Verizon"},
+    ]
+    # Critically: never the parcel's id or owner.
+    for item in items:
+        assert item["id"] != "P001"
+        assert item["owner"] != "BOB JONES"
+
+
+def test_reverse_index_handles_empty_inputs():
+    from preprocess.chunked_compose import _reverse_index
+
+    counts, summary = _reverse_index(
+        {}, infra=None, kind="tower", id_col="asr_number", owner_col="owner_name"
+    )
+    assert counts == {} and summary == {}
+
+    empty_infra = gpd.GeoDataFrame(
+        {"asr_number": [], "owner_name": [], "geometry": []},
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    counts, summary = _reverse_index(
+        {}, infra=empty_infra, kind="tower", id_col="asr_number", owner_col="owner_name"
+    )
+    assert counts == {} and summary == {}

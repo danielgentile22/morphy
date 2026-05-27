@@ -396,9 +396,18 @@ def compose_chunked(cfg) -> ComposeResult:  # cfg: ComposeConfig
     #    summary list) from the lookups built above. This replaces the
     #    iter-over-infra-rows logic of ParcelHostsInfraJoin without
     #    needing a single in-memory parcel table.
-    tower_counts, tower_summary = _reverse_index(tower_lookup, kind="tower")
-    solar_counts, solar_summary = _reverse_index(solar_lookup, kind="solar")
-    billboard_counts, billboard_summary = _reverse_index(billboard_lookup, kind="billboard")
+    tower_counts, tower_summary = _reverse_index(
+        tower_lookup, infra=ctx.get("tower"), kind="tower",
+        id_col="asr_number", owner_col="owner_name",
+    )
+    solar_counts, solar_summary = _reverse_index(
+        solar_lookup, infra=ctx.get("solar_facility"), kind="solar",
+        id_col="facility_id", owner_col="operator",
+    )
+    billboard_counts, billboard_summary = _reverse_index(
+        billboard_lookup, infra=ctx.get("billboard"), kind="billboard",
+        id_col="permit_no", owner_col="owner",
+    )
 
     # 6. Per-chunk loop -----------------------------------------------------
     view_aggregators = _build_view_aggregators()
@@ -733,23 +742,40 @@ def _apply_interestingness_score(chunk: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 
 def _reverse_index(
-    lookup: dict[int, dict], kind: str
+    lookup: dict[int, dict],
+    *,
+    infra: gpd.GeoDataFrame | None,
+    kind: str,
+    id_col: str,
+    owner_col: str,
 ) -> tuple[dict[str, int], dict[str, list[dict]]]:
-    """Turn infra row idx → parcel info into parcel_id → (count, summary)."""
+    """Turn infra-row-idx → parcel info into parcel_id → (count, summary).
+
+    Each summary entry carries the infra side's identity (id/owner from
+    the infra row, e.g. asr_number/owner_name for towers), matching what
+    the single-shot ``ParcelHostsInfraJoin`` writes. Downstream consumers
+    (e.g. ``DetailsPanel.svelte``) render the list of infrastructure on a
+    parcel; the user wants the infra's identity, not the parcel's.
+    """
     counts: dict[str, int] = {}
     summary: dict[str, list[dict]] = {}
+    if infra is None or len(infra) == 0:
+        return counts, summary
     for row_idx, attach in lookup.items():
         pid = attach.get("parcel_id_full")
         if pid is None or str(pid).strip() == "":
             continue
         pid = str(pid)
         counts[pid] = counts.get(pid, 0) + 1
+        try:
+            row = infra.loc[row_idx]
+        except KeyError:
+            continue
         summary.setdefault(pid, []).append(
             {
                 "type": kind,
-                "id": str(attach.get("parcel_id_full") or ""),
-                "owner": str(attach.get("parcel_owner") or ""),
-                "row_index": int(row_idx),
+                "id": str(row.get(id_col) or ""),
+                "owner": str(row.get(owner_col) or ""),
             }
         )
     return counts, summary
