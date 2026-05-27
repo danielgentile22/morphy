@@ -4,21 +4,15 @@ Orientation for Claude Code sessions working in this repo. Read this
 first; then dip into the relevant doc under [docs/](docs/) when you
 need depth.
 
-**Last updated:** 2026-05-25 (full deep-dives live in `docs/`; read
-[docs/STATUS.md](docs/STATUS.md) first — it is the current-state
-handoff snapshot).
+**Last updated:** 2026-05-27 (doc cleanup pass; legacy ADRs migrated to `docs/adr/`).
 
 > **🔀 2026-05-25 phase shift:** The project pivoted from "v1 pitch
 > demo" to **Phase 1 of a co-founder-facing product** — see
-> [docs/adr/0053-product-phase-shift.md](docs/adr/0053-product-phase-shift.md).
-> Several previously-deferred feature areas (FCC ULS carriers, billboards/solar
-> enrichment, lease document upload + LLM extraction, triage write layer,
-> Secretary of State officer lookups) flipped to in-scope. Phase 1 is
+> [ADR-053](docs/adr/0053-product-phase-shift.md). Phase 1 is
 > freestanding towers across AR + MT + FL + NC; Phase 2 is rooftops
 > ([ADR-054](docs/adr/0054-asset-universe-phase-1-2.md)). Several legacy
-> ADRs were superseded or narrowed — see `docs/DECISIONS.md` for the
-> pointers + the full grill record in
-> `docs/grill-2026-05-25-summary.md`.
+> ADRs were superseded, narrowed, or partially reversed — see
+> [docs/DECISIONS.md](docs/DECISIONS.md) for the full index.
 
 ---
 
@@ -77,21 +71,24 @@ instruction.
 
 ## 1. What this project is
 
-Feasibility prototype for a business that helps landowners renegotiate
+Phase 1 of a co-founder-facing product that helps landowners renegotiate
 ground leases for infrastructure on their property — primarily cell
 towers. The data problem: no single dataset links an asset to the
 landowner; we construct it by joining FCC ASR + state parcels + HUD /
-ARC / USDA distress overlays.
+ARC / USDA distress overlays, then layer carrier identification + lease
+document storage + LLM-based extraction + triage workflow on top.
 
 - **Business case:** [PROJECT_BRIEF.md](PROJECT_BRIEF.md)
 - **Current scope (what's in/out right now):** [docs/SCOPE.md](docs/SCOPE.md)
-- **Goals + KPIs:** [docs/GOALS.md](docs/GOALS.md)
+- **Goals + outcome bar:** [docs/GOALS.md](docs/GOALS.md)
 - **Today's state:** [docs/STATUS.md](docs/STATUS.md)
 
-Hard non-goals (do not scope-creep): no LLC unmasking
-([DECISIONS.md ADR-041](docs/DECISIONS.md)); no carrier/tenant
-economics modeling; no production deployment; no nationwide coverage
-without a paid parcel source (ADR-012).
+Hard non-goals (do not scope-creep): paid LLC unmasking / skip-trace
+([ADR-041](docs/adr/0041-no-llc-unmasking.md) as narrowed by
+[ADR-057](docs/adr/0057-budget-posture-reframed.md)); rooftop installations
+in Phase 1 ([ADR-054](docs/adr/0054-asset-universe-phase-1-2.md)); mass
+email / CRM automation; nationwide coverage without a paid parcel
+source ([ADR-012](docs/adr/0012-regrid-deferred.md)).
 
 ---
 
@@ -102,11 +99,16 @@ pilot/
 ├── README.md                 Quick start
 ├── CLAUDE.md                 This file
 ├── PROJECT_BRIEF.md          Business case
+├── CONTEXT.md                Canonical product language (glossary)
 ├── docs/                     All deep-dive documentation
+│   ├── adr/                  Architecture Decision Records (all ADRs)
+│   ├── agents/               Skill-system configuration
+│   ├── research/             Data-source legal/license research
 │   └── archive/              Historical (preprocess v1, original v3 plan)
 ├── app/                      Svelte 5 + MapLibre map app (see app/ARCHITECTURE.md)
 ├── app_legacy_v1/            Leaflet map (v1, retired)
 ├── app_puller/               PySide6 desktop puller
+├── backend/                  FastAPI + Postgres + S3 + Claude API (Slice 4 — in design)
 ├── scripts/
 │   ├── fetch/                Headless puller library
 │   ├── preprocess/           Normalizer/Join/View framework + Composer
@@ -123,19 +125,9 @@ The full repository layout + system diagram is in
 
 ## 3. The current work plan
 
-**Phase 1 product cut** (since 2026-05-25, see [ADR-053](docs/adr/0053-product-phase-shift.md)). Five slices in sequence, untimed — goal-driven not calendar-driven. Each slice has a "shipped" gate (see [docs/GOALS.md §3](docs/GOALS.md)) before moving to the next:
+Phase 1 slice plan (untimed, goal-driven): **F → A → C → D+E → B**. After Slice B, the **4-week outcome-bar clock** starts (cofounder uses the product as his primary daily triage tool for 4 consecutive weeks).
 
-1. **F — Finish FL + NC composes** ⬜ Next up. Chunked compose (ADR-051) + NC re-fetch.
-2. **A — FCC ULS carrier identification** ⬜ Cellular + PCS + AWS / 700 MHz bands.
-3. **C — Asset enrichment + tunable scoring UI** ⬜ Billboards + solar on parcel; client-side tunable scoring (ADR-058).
-4. **D + E — Lease doc upload + LLM extraction + triage state / write layer / CSV exports** ⬜ Backend stands up here (ADR-055); LLM extraction per ADR-059.
-5. **B — Vendor (tower-co) inference** ⬜ ASR registrant + portfolio rollup.
-
-After Slice B, the **4-week outcome-bar clock** starts (primary daily triage tool for 4 consecutive weeks).
-
-**Legacy pitch-cut plan** (v0–v3 May 2026): completed Sections 1–5 + 8 — preprocess framework, puller, Git + CI, map app rehaul (Svelte 5 + MapLibre + PMTiles + DuckDB-WASM at `app/`), AR/MT data-quality remediation. Sections 6 (testing) + 7 (pitch readiness) were superseded by the Phase 1 slice plan; testing is folded into the per-slice gates + the additions in `docs/grill-2026-05-25-summary.md §Testing`.
-
-Always check [docs/STATUS.md](docs/STATUS.md) for the precise current state before starting a new task.
+Per-slice "shipped" gates in [docs/GOALS.md §3](docs/GOALS.md). Current slice + blockers in [docs/STATUS.md](docs/STATUS.md) — always check it before starting a new task.
 
 ---
 
@@ -159,27 +151,7 @@ pytest                                          # preprocess + app-asset script 
 
 ---
 
-## 5. Locked design decisions
-
-Read [docs/DECISIONS.md](docs/DECISIONS.md) before reopening any of
-these. Highlights:
-
-- State-level (not county-level) preprocess scope.
-- Dual GeoParquet + GeoJSON output; huge layers skip the full GeoJSON.
-- Current-only versioning (no history retained).
-- On-demand pull only (no daemons / cron).
-- Static-site map app (no backend).
-- Anchor states: AR + NC + MT (+ FL stretch). UT dropped — no owner data (ADR-049).
-- Free-only budget for v1 pitch; Regrid out of scope.
-- FCC ULS normalizers + billboards deferred to post-pitch.
-- HIFLD retired; LBNL TTS dropped; current FL FGDL replaced by `fdor_nal`.
-- Map app v2 (MapLibre + PMTiles + DuckDB-WASM + Svelte) — realized, now at `app/`.
-- Parcel-owner data is PII; no public hosting without access controls.
-- Docs live in `docs/`; root keeps only README / CLAUDE / PROJECT_BRIEF.
-
----
-
-## 6. Adding a new data source
+## 5. Adding a new data source
 
 1. Create `scripts/fetch/sources/<your_source>.py` with one subclass
    of `DataSource`, exported as `SOURCE` (or `SOURCES = [...]`).
@@ -197,7 +169,7 @@ these. Highlights:
    `@register_normalizer`, declare which `canonical_types` it produces.
    Add to `scripts/preprocess/registry.py`.
 8. Add a test fixture under `tests/fixtures/<source>_raw/` + a test in
-   `tests/test_normalizers.py` (after Section 6 lands).
+   `tests/test_normalizers.py`.
 
 Things to get right:
 
@@ -212,7 +184,7 @@ Things to get right:
 
 ---
 
-## 7. Known fragile points
+## 6. Known fragile points
 
 Per-source upstream-failure tracking is in
 [docs/LIMITATIONS.md](docs/LIMITATIONS.md). Most fragile:
@@ -230,19 +202,13 @@ confirming the publisher's terms have changed.**
 
 ---
 
-## 8. Pilot geography reference
+## 7. Pilot geography reference
 
-Currently anchored at the **state** level (per ADR-001). See
-[docs/SCOPE.md §2](docs/SCOPE.md) for the live anchor-state set. Graham
-County NC (`37075`) is the original pilot context; expansion to multi-
-state is the current cut.
-
-Key state FIPS used throughout: `05` (AR), `12` (FL), `30` (MT),
-`37` (NC). Dropped (no owner data): `18` (IN), `49` (UT).
+State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). Phase 1 anchor states: `05` (AR), `12` (FL), `30` (MT), `37` (NC). Dropped (no owner data): `18` (IN — ADR-017), `49` (UT — ADR-049). Live anchor set + per-state status in [docs/SCOPE.md §2](docs/SCOPE.md) / [docs/STATUS.md](docs/STATUS.md).
 
 ---
 
-## 9. Conventions for code edits
+## 8. Conventions for code edits
 
 - **Headless `scripts/fetch/`.** No PySide6 imports inside it. Qt
   lives only in `app_puller/`.
@@ -257,11 +223,12 @@ Key state FIPS used throughout: `05` (AR), `12` (FL), `30` (MT),
   see [ARCHITECTURE.md §3.3](docs/ARCHITECTURE.md)). Keep all rows;
   add status / validity columns; let Joins and Views filter.
 - **Use `safe_merge`** when a Join adds columns that a Normalizer
-  initializes as placeholders ([DECISIONS.md ADR-020](docs/DECISIONS.md)).
+  initializes as placeholders ([ADR-020](docs/adr/0020-safe-merge-helper.md)).
+- **Backend (Slice 4) — `tenant_id` everywhere** ([ADR-055](docs/adr/0055-hosted-private-backend.md)). Every table has it; every route filters by it.
 
 ---
 
-## 10. Where to look for what
+## 9. Where to look for what
 
 | Question | File |
 |---|---|
@@ -274,15 +241,14 @@ Key state FIPS used throughout: `05` (AR), `12` (FL), `30` (MT),
 | When does each source need a refresh? | [docs/DATA_FRESHNESS.md](docs/DATA_FRESHNESS.md) |
 | Caveats + pre-commercial blockers | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) |
 | PII / data-handling | [docs/SECURITY.md](docs/SECURITY.md) |
-| Glossary of terms | [docs/GLOSSARY.md](docs/GLOSSARY.md) |
+| Glossary of terms | [docs/GLOSSARY.md](docs/GLOSSARY.md) + [CONTEXT.md](CONTEXT.md) |
 | Past / future of the project | [docs/ROADMAP.md](docs/ROADMAP.md) |
-| Locked design choices | [docs/DECISIONS.md](docs/DECISIONS.md) |
+| Locked design choices | [docs/DECISIONS.md](docs/DECISIONS.md) (index of all ADRs) + [docs/adr/](docs/adr/) (per-ADR files) |
 | How to deploy / share outputs | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | Testing strategy | [docs/TESTING.md](docs/TESTING.md) |
 | Puller UX design | [docs/PULLER_UX.md](docs/PULLER_UX.md) |
 | Map app — architecture + how to run | [app/ARCHITECTURE.md](app/ARCHITECTURE.md) |
-| Map app rebuild plan (realized) | [docs/MAP_APP_REHAUL.md](docs/MAP_APP_REHAUL.md) |
-| Version history | [docs/CHANGELOG.md](docs/CHANGELOG.md) |
+| Data-source legal/license research (2026-05-26) | [docs/research/](docs/research/) |
 | Active work plan | `.claude/plans/cached-wobbling-token.md` |
 | What's on disk + last fetch time | `data/manifest.json` |
 | Last 200 puller events | `data/fetch.log` |
@@ -312,7 +278,6 @@ repo — the `triage` skill will create them on first use. See
 
 ### Domain docs
 
-Single-context: [CONTEXT.md](CONTEXT.md) at the repo root, new ADRs under
-[docs/adr/](docs/adr/), legacy ADRs still inlined in
-[docs/DECISIONS.md](docs/DECISIONS.md). See
-[docs/agents/domain.md](docs/agents/domain.md).
+Single-context: [CONTEXT.md](CONTEXT.md) at the repo root. All ADRs under
+[docs/adr/](docs/adr/), indexed by [docs/DECISIONS.md](docs/DECISIONS.md).
+See [docs/agents/domain.md](docs/agents/domain.md).

@@ -1,7 +1,7 @@
 # STATUS — Where the project stands today
 
 **Last updated:** 2026-05-25
-**Updated by:** Phase 1 product pivot (`/grill-with-docs` session, see `docs/grill-2026-05-25-summary.md`)
+**Updated by:** Phase 1 product pivot (ADRs 053–059 locked the decisions)
 **Update cadence:** at the start of every slice and at every session handoff.
 
 A snapshot of reality. If this disagrees with the code or data, the code/data wins — fix the doc.
@@ -66,7 +66,7 @@ Dropped from this cut: IN (18) and UT (49) — no owner data; MN (27) — licens
 | Lease doc upload + LLM extraction | ⬜ Slice D+E | Per [ADR-059](./adr/0059-llm-lease-extraction.md). 20-lease gold-set built first. |
 | Tunable scoring UI | ⬜ Slice C | Per [ADR-058](./adr/0058-tunable-transparent-scoring.md). Client-side over DuckDB-WASM. |
 | Vendor inference | ⬜ Slice B | ASR registrant + portfolio rollup. Lowest Phase 1 priority. |
-| Tests (Slice 4 backend + LLM eval + multi-tenancy) | ⬜ | TESTING.md design extends — see grill-2026-05-25-summary.md §Testing. |
+| Tests (Slice 4 backend + LLM eval + multi-tenancy) | ⬜ | Per [TESTING.md §11](./TESTING.md). |
 
 ---
 
@@ -130,7 +130,7 @@ Outcome bar: co-founder uses the product as his primary daily triage tool for 4 
 | Item | Notes |
 |---|---|
 | Chunked compose | Approved (ADR-051); implementation is Slice F first task. |
-| Steel-in-the-Air free data ingestion | Phase 1 Slice D (per [ADR-057](./adr/0057-budget-posture-reframed.md) — paid tier is Phase 2). Need to confirm download URL / format. |
+| Steel-in-the-Air free dataset — **premise overturned 2026-05-26** | The free county-level lease-rate dataset doesn't exist (per data-source research, `docs/research/reports-2026-05-26/INDEX.md`). Slice D `lease_comp` source-of-truth needs replacement — next-best free path is REIT 10-K rent disclosures + ABS securitization filings. Paid Steel-in-the-Air tier remains the Phase 2 unlock per [ADR-057](./adr/0057-budget-posture-reframed.md). |
 | libpostal vs `usaddress` for owner-clustering address normalization | Slice 4 implementation detail. Lean libpostal; fall back to `usaddress` if dep-management is painful. |
 | Hosting choice (Fly.io vs Render vs Hetzner) | Slice 4 implementation detail; any small VM works per [ADR-055](./adr/0055-hosted-private-backend.md). |
 | First Slice F PR | Build the chunked compose. AR + MT regression-test (must produce identical output) before running on FL. |

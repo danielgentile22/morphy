@@ -3,7 +3,7 @@
 **Last updated:** 2026-05-25
 **Audience:** engineers (human or AI) who need to understand or extend the code without reading every file.
 
-This doc describes what's *implemented today* plus the Phase 1 Slice 4 backend in design. Future-state designs live in [ROADMAP.md](./ROADMAP.md). Design decisions are locked in [DECISIONS.md](./DECISIONS.md) (legacy ADR-001–052) and `docs/adr/` (new ADR-053+).
+This doc describes what's *implemented today* plus the Phase 1 Slice 4 backend in design. Future-state designs live in [ROADMAP.md](./ROADMAP.md). Design decisions are locked under [docs/adr/](./adr/) — [DECISIONS.md](./DECISIONS.md) is the cross-doc index.
 
 ---
 
@@ -150,7 +150,7 @@ Defined in `scripts/preprocess/base.py` (`CURRENT_SCHEMA_VERSIONS`):
 
 **Tabular (data pipeline):** `county_score`, `license`, `location`, `entity`, `transfer`, `lease`, `distributed_pv`, `aggregation`, `model_prediction`.
 
-**Backend tables (Slice 4 — new):** `lead`, `lease` (product-side, with PDFs + extracted fields), `activity`, `owner_cluster_override`, `lease_comp`, `scoring_profile`, `tenant`, `user`, `user_tenant`. Schema details in `docs/grill-2026-05-25-summary.md §Lead + lease state models`.
+**Backend tables (Slice 4 — new):** `lead`, `lease` (product-side, with PDFs + extracted fields), `activity`, `owner_cluster_override`, `lease_comp`, `scoring_profile`, `tenant`, `user`, `user_tenant`. Schema details in §5.1.
 
 > NB: there are **two** entities called `lease` in the codebase — the *data-pipeline* tabular canonical type (placeholder for normalized recorded-lease data, deferred to Phase 2) and the *backend* `lease` table (Slice 4, holds uploaded PDF references + LLM-extracted fields per (tower × carrier)). They will reconcile in Phase 2 when recorded-lease automation lands.
 
@@ -297,9 +297,7 @@ all behind `preprocess.py --app-assets` / `--tiles`. The app is served
 against the range-capable `scripts/serve.py`; `python -m http.server`
 cannot serve it (PMTiles + DuckDB-WASM need HTTP 206).
 
-The v1 Leaflet prototype is retired to `app_legacy_v1/`. The realized
-design folded back from the rehaul plan
-([MAP_APP_REHAUL.md](./MAP_APP_REHAUL.md), ADR-030).
+The v1 Leaflet prototype is retired to `app_legacy_v1/`. The realized design is locked in [ADR-030](./adr/0030-map-app-v2-stack.md).
 
 ---
 

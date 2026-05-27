@@ -1,9 +1,7 @@
 # DATA_FRESHNESS — Per-source cadence rules
 
 **Last updated:** 2026-05-25
-**Pairs with:** [DATA_SOURCES.md](./DATA_SOURCES.md) (per-source schema
-+ license), [PULLER_UX.md](./PULLER_UX.md) (puller UX), and the
-Phase 1 product UX (§8 below).
+**Pairs with:** [DATA_SOURCES.md](./DATA_SOURCES.md) (per-source schema + license + status), [PULLER_UX.md](./PULLER_UX.md) (puller UX), [SCOPE.md §6](./SCOPE.md) (Phase 1 product freshness UX).
 
 This document codifies, per source, the rules the puller uses to decide
 whether data is **fresh**, **due soon**, or **stale**. These map
@@ -58,21 +56,9 @@ Sources with `update_cadence_days = None` show no badge but display
 
 ---
 
-## 3. Deferred / retired sources (not surfaced as actionable)
+## 3. Deferred / retired sources
 
-These appear in the puller for visibility but are not subject to
-freshness alerting:
-
-| Source ID | State | Notes |
-|---|---|---|
-| `hifld_towers` | **Retired** | DHS retired in 2024; no further updates expected |
-| `regrid_parcels` | Out of scope (paid) | `update_cadence_days = None`; user opts in only if budget unlocks |
-| `lbnl_tts` | Deferred | Dropped from active registry; cadence ignored |
-| `fcc_uls_*` (6 bands) | Deferred | Cadence is weekly upstream; raw data refreshable manually if user wants, but no normalize path |
-| `state_billboards` (FDOT, NCDOT, TXDOT) | Deferred | Cadence varies; not pursued |
-| `fl_fgdl_parcels` | Replaced by `fdor_nal` | Hidden in registry |
-| `in_parcels` | Dropped from anchors | No owner data |
-| `mn_parcels` | Deferred (license) | Pending MnGeo confirmation |
+Deferred / retired sources appear in the puller for visibility but are not subject to freshness alerting. The canonical status list lives in [DATA_SOURCES.md §Status overrides](./DATA_SOURCES.md) (ADR-linked rationale per source).
 
 ---
 
@@ -97,19 +83,14 @@ Specifically:
 
 ## 5. Refresh discipline at pitch time
 
-Before any pitch / partner walkthrough, the user runs a **pre-pitch
-checklist** in the puller:
+Before any partner walkthrough or material co-founder triage session, the user runs a refresh discipline pass in the puller:
 
-1. Click **Check for updates** — surfaces every source past
-   `next_recommended_check_at`.
-2. Refresh stale sources (auto sources via puller; manual sources via
-   walkthrough modal).
+1. Click **Check for updates** — surfaces every source past `next_recommended_check_at`.
+2. Refresh stale sources (auto sources via puller; manual sources via walkthrough modal).
 3. Re-run preprocess on affected states.
-4. Verify `docs/STATUS.md` matches reality (or update it).
-5. Re-record `docs/NUMBERS.md` if any totals changed.
+4. Verify [STATUS.md](./STATUS.md) matches reality (or update it).
 
-This checklist is mirrored in [PULLER_UX.md](./PULLER_UX.md) §6 as a
-discrete UI flow (the "What needs my attention" panel).
+This checklist is mirrored in [PULLER_UX.md](./PULLER_UX.md) §6 as a discrete UI flow (the "What needs my attention" panel).
 
 ---
 
@@ -127,8 +108,7 @@ Manually trigger a refresh after:
 - **News-event-driven need** — a partner asks "what changed in
   X county between Q1 and Q2?" — force-refresh before answering.
 
-The puller's UI cannot detect these. Document in CHANGELOG.md when a
-manual off-cadence refresh happens.
+The puller's UI cannot detect these. Note any off-cadence refresh in the relevant commit message; git log is the canonical history.
 
 ---
 
@@ -147,10 +127,7 @@ This document drives concrete code changes in Section 3 of the work plan:
 
 ## 8. Phase 1 product UX for freshness (Slice 3 + Slice 4)
 
-The puller surfaces freshness to the dev (the operator). The Phase 1
-product surfaces freshness to the **co-founder** (the user) so he can
-judge confidence on a specific lead. See session summary
-`docs/grill-2026-05-25-summary.md §Data freshness UX (Q16)`.
+The puller surfaces freshness to the dev (the operator). The Phase 1 product surfaces freshness to the **co-founder** (the user) so he can judge confidence on a specific lead. See [SCOPE.md §6](./SCOPE.md) for the product-side policy.
 
 ### Surfaces
 

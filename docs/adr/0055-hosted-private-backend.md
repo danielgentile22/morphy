@@ -40,7 +40,7 @@ The map app stays a static site; it now talks to the backend over a thin API for
 - PII custody implications grow — backend handles owner names + uploaded lease PDFs (containing owner identity + rent terms). HTTPS, encrypted at rest, signed downloads required (per ADR-040).
 - ~$30–100/mo Phase 1 hosting cost — within ADR-010 reframed posture (see ADR-057).
 - Multi-tenant Phase-3 path feasible without rewrite.
-- Test surface grows substantially — see Slice 4 testing additions in `docs/grill-2026-05-25-summary.md`.
+- Test surface grows substantially — see [TESTING.md §11](../TESTING.md) for the Slice 4 additions.
 
 ## Alternatives considered
 

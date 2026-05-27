@@ -4,8 +4,7 @@ The analytical map app for the ground-lease pilot. Catalog-driven: it
 binds to the preprocess output, never to a hardcoded state, so any state
 that composes appears with zero app changes.
 
-> Replaces the v1 Leaflet prototype (kept at `app_legacy_v1/`). Built per
-> `docs/MAP_APP_REHAUL.md`.
+> Replaces the v1 Leaflet prototype (kept at `app_legacy_v1/`). Design locked in [ADR-030](../docs/adr/0030-map-app-v2-stack.md); shipped 2026-05-21.
 
 ## Stack
 

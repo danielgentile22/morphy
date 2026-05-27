@@ -97,7 +97,7 @@ Implication:
 - The 70% coverage bar is *at least one carrier identified*; a tower with only spatial-fallback carriers is still in the 70% count.
 
 How to mitigate:
-- Tighten spatial-proximity tolerance based on the Slice A kickoff data audit (sample 1000 Cellular `LO` records — see session memo).
+- Tighten spatial-proximity tolerance based on the Slice A kickoff data audit (sample 1000 Cellular `LO` records — if <30% have a populated `asr_number`, tighten the spatial-proximity tolerance).
 - Phase 2: recorded leases + carrier-contact verification would resolve ambiguous cases.
 
 ---
@@ -106,7 +106,7 @@ How to mitigate:
 
 **Added 2026-05-25.**
 
-The comparables feature ([session memo §Comparables (Q9)](./grill-2026-05-25-summary.md)) bootstraps from Steel-in-the-Air's free county-level lease-rent benchmarks (~3000 counties). Per-tower comparables grow from the co-founder's uploaded leases over time — slow.
+The comparables feature was originally planned to bootstrap from Steel-in-the-Air's free county-level lease-rent benchmarks. **2026-05-26 data-source research confirms that free dataset doesn't exist** — see [STATUS.md §7](./STATUS.md) for the open Slice D rescope. Per-tower comparables grow from the co-founder's uploaded leases over time — slow either way.
 
 Implication:
 - **At Slice 4 launch:** "rent vs county average" works Day 1 for every county; "outliers within X-mile radius" is empty until ~20 leases land in any radius.
@@ -474,7 +474,7 @@ How to mitigate:
 - Composite outputs carry `sources_used_versions` in
   `catalog.json` after Section 5.5 — we can at least answer "what
   raw versions did this composite come from?"
-- Major refreshes get a CHANGELOG entry.
+- Major refreshes get a commit with the source list + dates.
 
 ---
 
@@ -520,7 +520,7 @@ counties between tiers.
 Implication:
 
 - Pitch numbers cite the FY at fetch time; refresh annually.
-- If a county changes tier mid-pitch-cycle, document in CHANGELOG.
+- If a county changes tier mid-cycle, note in the relevant commit.
 
 ---
 

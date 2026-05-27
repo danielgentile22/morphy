@@ -248,7 +248,7 @@ This is the canary that fires when any change breaks the data pipeline.
 
 ## 11. Slice 4 additions — backend + LLM + multi-tenancy
 
-Slice 4 (D + E) stands up a hosted-private backend ([ADR-055](./adr/0055-hosted-private-backend.md)) with LLM-based lease extraction ([ADR-059](./adr/0059-llm-lease-extraction.md)). The test surface grows substantially. See `docs/grill-2026-05-25-summary.md §Testing additions (Q14)` for the full rationale.
+Slice 4 (D + E) stands up a hosted-private backend ([ADR-055](./adr/0055-hosted-private-backend.md)) with LLM-based lease extraction ([ADR-059](./adr/0059-llm-lease-extraction.md)). The test surface grows substantially.
 
 ### 11.1 Backend HTTP API
 

@@ -2,7 +2,7 @@
 
 **Cell-tower ground-lease renegotiation analytics.** Joins tower locations to parcel records to economic-distress overlays, then layers carrier identification + lease document storage + LLM-based extraction + triage workflow into a co-founder-facing product. **Phase 1** covers four anchor states (AR + MT + FL + NC) with freestanding towers; **Phase 2** adds rooftop installations + operational scale.
 
-> 🔀 **2026-05-25 phase shift:** previously a "v1 pitch-quality demo," this is now Phase 1 of a fleshed-out internal product the business co-founder uses daily for triage — see [docs/adr/0053-product-phase-shift.md](docs/adr/0053-product-phase-shift.md) and [docs/grill-2026-05-25-summary.md](docs/grill-2026-05-25-summary.md).
+> 🔀 **2026-05-25 phase shift:** previously a "v1 pitch-quality demo," this is now Phase 1 of a fleshed-out internal product the business co-founder uses daily for triage — see [docs/adr/0053-product-phase-shift.md](docs/adr/0053-product-phase-shift.md) for the reframe and ADRs 053–059 in [docs/adr/](docs/adr/) for the locked decisions.
 
 > Read [docs/SCOPE.md](docs/SCOPE.md) first for what's being built right now. Read [PROJECT_BRIEF.md](PROJECT_BRIEF.md) for the business case.
 
@@ -104,8 +104,7 @@ cd app && npm run check && npm run test:unit && npm run test:e2e
 
 - [docs/ROADMAP.md](docs/ROADMAP.md) — past / present / future
 - [docs/DECISIONS.md](docs/DECISIONS.md) — locked-in design choices
-- [docs/MAP_APP_REHAUL.md](docs/MAP_APP_REHAUL.md) — map app v2 plan (realized — now live at `app/`)
-- [docs/CHANGELOG.md](docs/CHANGELOG.md) — version history
+- [docs/adr/](docs/adr/) — per-ADR architecture decision records
 
 **Working with AI coding agents:**
 
@@ -152,7 +151,7 @@ pilot/
 │   ├── adr/                  Architecture Decision Records (ADR-053+; legacy in docs/DECISIONS.md)
 │   ├── archive/              Historical docs (preprocess v1, etc.)
 │   ├── pitch-assets/         Screenshots / GIFs
-│   └── grill-2026-05-25-summary.md   Phase 1 pivot session memo
+│   └── research/             Data-source legal/license research
 └── tests/                    (preprocess tests; backend tests live under backend/tests/)
 ```
 

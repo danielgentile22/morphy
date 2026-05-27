@@ -107,7 +107,7 @@ None of the above is in scope for Phase 1. All tracked in [ROADMAP.md](./ROADMAP
 If a sensitive output or backend session is exposed:
 
 1. **Stop the bleed** — remove the public URL, revoke shared link, kill the leaked session, rotate the leaked credential, etc.
-2. **Document** the exposure window in CHANGELOG.md (date, scope, audience, what was visible).
+2. **Document** the exposure window in the relevant commit message (date, scope, audience, what was visible) — git log is the canonical history.
 3. **Notify** affected partners if they received the exposed output.
 4. **Rotate** any credential that was exposed alongside (API keys, auth tokens, magic-link senders).
 5. **Post-mortem** — what failure mode allowed this; what control would have prevented it.

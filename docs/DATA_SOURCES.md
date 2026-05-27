@@ -688,7 +688,7 @@ FAA / HUD overlays via point-in-polygon spatial join.
 
 ### Purpose
 
-Bootstraps the `lease_comp` table in the Slice 4 backend (`docs/grill-2026-05-25-summary.md §Comparables (Q9)`). ~3000 US counties with rent-mean / rent-percentile estimates. UI surfaces *"this tower's rent is in the Nth percentile vs {county/region}."*
+Bootstraps the `lease_comp` table in the Slice 4 backend. ~3000 US counties with rent-mean / rent-percentile estimates. UI surfaces *"this tower's rent is in the Nth percentile vs {county/region}."* **Note (2026-05-26):** data-source research found that no free Steel-in-the-Air county-level lease-rate dataset exists — see [STATUS.md §7](./STATUS.md) for the Slice D rescope.
 
 ### Open at Slice D kickoff
 

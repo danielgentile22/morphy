@@ -7,7 +7,7 @@
 
 This document is the **single source of truth for "what we are building right now."** Anything not listed here is out of scope for Phase 1.
 
-For the strategic pivot from pitch demo → product, see [ADR-053](./adr/0053-product-phase-shift.md). Phase 2 lives in [ROADMAP.md](./ROADMAP.md). Full grill transcript: `docs/grill-2026-05-25-summary.md`.
+For the strategic pivot from pitch demo → product, see [ADR-053](./adr/0053-product-phase-shift.md). Phase 2 lives in [ROADMAP.md](./ROADMAP.md).
 
 ---
 
@@ -88,7 +88,27 @@ After Slice B, the **4-week outcome-bar clock** starts.
 
 ---
 
-## 6. Hard non-goals for Phase 1
+## 6. Data freshness UX policy
+
+How freshness surfaces to the co-founder inside the product:
+
+- **Top of triage list:** *"Last full data refresh: AR 12d, MT 9d, FL 47d, NC 21d"* — per-state last-refresh badge.
+- **Per-lead detail panel:** *"Parcel data from {date}; tower data from {date}; lease-comp data from {date}"* — per-source dates.
+- **Per-source admin view** (gated, Phase 2 self-serve): refresh-trigger button.
+
+**Staleness policy:**
+
+- **Hard banner** when a state's parcel source is > 180 days old — the parcel layer is the lead-discovery substrate, so stale parcels mean stale leads.
+- **Soft warning** for stale ULS (carriers) and distress overlays — supporting context, not lead-discovery.
+- Information-only for everything else.
+
+**Refresh trigger (Phase 1):** dev-only. The dev runs the puller; the cofounder sees the resulting dates. Self-serve refresh from inside the product is Phase 2.
+
+**Painful reality:** MANUAL_ONLY sources (FDOR NAL = 67 Florida counties, click-through each) need the dev at every refresh. Phase 1 does not fix this. Phase 2 candidates: guided checklist UI in the puller, or paid bulk-data unlocks.
+
+---
+
+## 7. Hard non-goals for Phase 1
 
 - **No rooftop installations** — Phase 2 only ([ADR-054](./adr/0054-asset-universe-phase-1-2.md)).
 - **No nationwide coverage** — 4 anchor states.
@@ -98,7 +118,7 @@ After Slice B, the **4-week outcome-bar clock** starts.
 
 ---
 
-## 7. Phase 1 architecture decisions (this cut)
+## 8. Phase 1 architecture decisions (this cut)
 
 | ADR | What it locks |
 |---|---|
@@ -110,19 +130,16 @@ After Slice B, the **4-week outcome-bar clock** starts.
 | [ADR-058](./adr/0058-tunable-transparent-scoring.md) | Client-side tunable scoring + profiles in Slice 3 |
 | [ADR-059](./adr/0059-llm-lease-extraction.md) | Sonnet + Opus retry, hybrid citation + self-rated confidence, direct-vision PDFs |
 
-See `docs/grill-2026-05-25-summary.md` for the full grill-with-docs session that produced these.
-
 ---
 
-## 8. Where to look next
+## 9. Where to look next
 
 - **Why we're doing this** → [GOALS.md](./GOALS.md)
 - **What state we're in today** → [STATUS.md](./STATUS.md)
 - **Past + future** → [ROADMAP.md](./ROADMAP.md)
-- **Locked-in design decisions** → [DECISIONS.md](./DECISIONS.md) (legacy ADRs 001-052); new ADRs → `docs/adr/`
-- **How the system is put together** → [ARCHITECTURE.md](./ARCHITECTURE.md) (data pipeline; backend section to be added with Slice 4)
+- **Locked-in design decisions** → [DECISIONS.md](./DECISIONS.md) (index) + `docs/adr/` (per-ADR files)
+- **How the system is put together** → [ARCHITECTURE.md](./ARCHITECTURE.md) (data pipeline + Slice 4 backend)
 - **Per-source detail** → [DATA_SOURCES.md](./DATA_SOURCES.md)
 - **Canonical language** → `CONTEXT.md` (root)
 - **Caveats and pre-commercial blockers** → [LIMITATIONS.md](./LIMITATIONS.md)
 - **PII / data-handling** → [SECURITY.md](./SECURITY.md)
-- **2026-05-25 grill session** → `docs/grill-2026-05-25-summary.md`
