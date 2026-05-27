@@ -148,3 +148,18 @@ class DataSource(abc.ABC):
     def credentials_available(self) -> bool:
         """Override for credentialed sources. Default: always True."""
         return True
+
+
+class ManualOnlySource(DataSource):
+    """Base for sources the publisher only exposes via click-through download.
+
+    Provides the canonical ``remote_version() → "manual"`` + ``fetch()
+    → RuntimeError`` pair so each MANUAL_ONLY subclass only needs to
+    declare its metadata + a ``manual_walkthrough()`` override.
+    """
+
+    def remote_version(self) -> str:
+        return "manual"
+
+    def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
+        raise RuntimeError(f"{self.id} is MANUAL_ONLY — see manual_url.")
