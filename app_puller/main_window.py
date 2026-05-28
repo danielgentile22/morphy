@@ -223,7 +223,6 @@ class MainWindow(QMainWindow):
 
         # progress accounting for rate calc
         self._dl_start_ts: float | None = None
-        self._dl_start_bytes: int = 0
 
         # Queue of manual sources to walk through after a bulk auto-fetch.
         self._pending_manual_queue: list[DataSource] = []
@@ -1247,7 +1246,6 @@ class MainWindow(QMainWindow):
 
     def _on_fetch_started(self, source_id: str, name: str) -> None:
         self._dl_start_ts = time.monotonic()
-        self._dl_start_bytes = 0
         self.pb_label.setText(f"Downloading: {name}")
         self.progress.setRange(0, 1)
         self.progress.setValue(0)

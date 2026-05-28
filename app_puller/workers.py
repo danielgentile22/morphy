@@ -216,12 +216,6 @@ class PreprocessWorker(QObject):
         super().__init__()
         self._state_fips = state_fips
         self._force_rebuild = force_rebuild
-        self._cancel = False
-
-    def cancel(self) -> None:
-        # The preprocess runner doesn't currently expose mid-run cancel; the
-        # flag here is reserved for a future "stop after current source" hook.
-        self._cancel = True
 
     def run(self) -> None:
         # Import here so PreprocessWorker can sit in workers.py without

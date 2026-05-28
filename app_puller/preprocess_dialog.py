@@ -95,17 +95,15 @@ class PreprocessDialog(QDialog):
         lv.addWidget(self.log)
         v.addWidget(log_frame)
 
-        # Action buttons
+        # Action buttons. There is no cancel: the preprocess runner doesn't
+        # expose mid-run interruption, so a "Cancel" button would only lie
+        # about what's happening.
         bb = QDialogButtonBox()
         self.btn_run = QPushButton("Run")
         self.btn_run.clicked.connect(self._on_run)  # type: ignore
-        self.btn_cancel = QPushButton("Cancel current")
-        self.btn_cancel.setEnabled(False)
-        self.btn_cancel.clicked.connect(self._on_cancel)  # type: ignore
         self.btn_close = QPushButton("Close")
         self.btn_close.clicked.connect(self.reject)  # type: ignore
         bb.addButton(self.btn_run, QDialogButtonBox.ActionRole)
-        bb.addButton(self.btn_cancel, QDialogButtonBox.ActionRole)
         bb.addButton(self.btn_close, QDialogButtonBox.RejectRole)
         v.addWidget(bb)
 
@@ -152,7 +150,6 @@ class PreprocessDialog(QDialog):
         state_fips = self.state_combo.currentData()
         force = self.force_check.isChecked()
         self.btn_run.setEnabled(False)
-        self.btn_cancel.setEnabled(True)
         self.state_combo.setEnabled(False)
         self.force_check.setEnabled(False)
         # Reset row statuses to pending.
@@ -171,11 +168,6 @@ class PreprocessDialog(QDialog):
         self._worker = worker
         self._thread = thread
         thread.start()
-
-    def _on_cancel(self) -> None:
-        if self._worker:
-            self._worker.cancel()
-            self._log_line("cancellation requested — will stop after current source")
 
     def _on_progress(self, phase: str, key: str, info: dict) -> None:
         if phase.startswith("normalize_"):
@@ -237,7 +229,6 @@ class PreprocessDialog(QDialog):
         self._thread = None
         self._worker = None
         self.btn_run.setEnabled(True)
-        self.btn_cancel.setEnabled(False)
         self.state_combo.setEnabled(True)
         self.force_check.setEnabled(True)
         if "error" in outcome and not outcome.get("normalized_ok"):
