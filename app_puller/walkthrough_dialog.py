@@ -16,8 +16,6 @@ from fetch.manifest import Manifest
 from fetch.storage import current_dir, directory_bytes
 from fetch.walkthroughs import ManualStep
 from PySide6.QtCore import Qt
-
-from .theme import Palette
 from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QDialog,
@@ -29,6 +27,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from .manual_install import mark_manual_install, pick_and_upload
+from .theme import Palette
 
 
 class WalkthroughDialog(QDialog):
@@ -219,8 +220,6 @@ class WalkthroughDialog(QDialog):
             self._open_url(step.deep_link)
 
     def _upload_files(self) -> None:
-        from .upload import pick_and_upload
-
         result = pick_and_upload(self._source, self)
         if result is None:
             return
@@ -284,8 +283,6 @@ class WalkthroughDialog(QDialog):
                 + (f"<br><br><i>{notes}</i>" if notes else "")
             )
             return
-
-        from .upload import mark_manual_install
 
         mark_manual_install(self._source, self._manifest)
         self._completed = True

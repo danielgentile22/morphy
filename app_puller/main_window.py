@@ -78,7 +78,7 @@ from .status import (
     status_for,
 )
 from .theme import Palette, is_dark
-from .upload import mark_manual_install, pick_and_upload
+from .manual_install import mark_manual_install, pick_and_upload
 from .walkthrough_dialog import WalkthroughDialog
 from .workers import (
     CheckWorker,

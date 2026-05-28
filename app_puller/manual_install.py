@@ -1,13 +1,17 @@
-"""Upload files from anywhere on disk into a source's ``current/`` dir.
+"""Manual-install support: pick-files-and-copy + manifest stamping.
 
-Used by the puller's details pane and the walkthrough modal so the user
-doesn't have to navigate to ``data/raw/<id>/current/`` by hand after a
-manual download. Files default to the user's Desktop in the file picker
-because that's the most common landing spot for manual downloads.
+Two related pieces of the same workflow:
 
-ZIP archives are auto-extractable (matching the puller's existing
-fetch-then-extract pattern). Overwrites are confirmed once at the top
-to keep the flow non-modal-heavy.
+* ``pick_and_upload(source, parent)`` opens a file picker and copies (or
+  extracts ZIPs) into ``data/raw/<id>/current/``. Used by both the
+  details-pane button and the walkthrough modal so the user doesn't
+  have to navigate to ``current/`` by hand after a manual download.
+* ``mark_manual_install(source, manifest)`` is the side effect: stamps
+  the manifest entry as a successful manual install and resets cadence
+  bookkeeping so the freshness timer starts now.
+
+ZIP archives are auto-extractable. Overwrites are confirmed once at the
+top to keep the flow non-modal-heavy.
 """
 
 from __future__ import annotations
