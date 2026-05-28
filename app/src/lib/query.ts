@@ -8,13 +8,9 @@
  * immediately. String literals are single-quote-escaped; numbers are
  * validated finite — no SQL injection even from the free-text owner
  * search.
- *
- * The `sql*` primitives live in `./query-sql` so the spec builders in
- * `./filters` can reuse them without an import cycle.
  */
 
-import { FILTER_SPECS, type FilterState } from './filters';
-import { sqlNumber, sqlString } from './query-sql';
+import { FILTER_SPECS, type FilterState, sqlNumber, sqlString } from './filters';
 
 /** The DuckDB view/table name the parcels_attr.parquet is registered as. */
 export const PARCELS_TABLE = 'parcels';

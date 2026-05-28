@@ -15,7 +15,20 @@
  *     natural floor); declared via the spec's `noOpAt`.
  */
 
-import { sqlNumber, sqlString } from './query-sql';
+// ── SQL-literal primitives ──────────────────────────────────────────────
+// Shared by the FilterSpec registry below and by the outer query
+// builders in `./query`. Lives here so callers have one import.
+
+/** Escape a string as a SQL literal — wraps in single quotes, doubles internal quotes. */
+export function sqlString(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/** Render a finite number as a SQL literal; throw on NaN/Infinity. */
+export function sqlNumber(n: number): string {
+  if (!Number.isFinite(n)) throw new Error(`non-finite number in a filter: ${n}`);
+  return String(n);
+}
 
 export interface FilterState {
   ownerKind: string[];
