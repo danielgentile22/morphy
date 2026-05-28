@@ -30,7 +30,6 @@ import time
 import webbrowser
 from datetime import UTC, datetime
 
-from diagnose import DiagnoseUnavailable, diagnose
 from fetch import RAW_ROOT
 from fetch.base import DataSource
 from fetch.legal import AutomationPolicy, CommercialUse
@@ -70,13 +69,13 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from verify_raw import verify_all, verify_one
+from verify_raw import verify_one
 
 from . import state as ui_state
 from .preprocess_dialog import PreprocessDialog
 from .upload import mark_manual_install, pick_and_upload
 from .walkthrough_dialog import WalkthroughDialog
-from .workers import CheckWorker, FetchWorker
+from .workers import CheckWorker, DiagnoseWorker, FetchWorker, VerifyWorker
 
 # ── status presentation ──────────────────────────────────────────────────────
 
@@ -207,8 +206,12 @@ class MainWindow(QMainWindow):
         # threads / workers held to keep alive
         self._check_thread: QThread | None = None
         self._fetch_thread: QThread | None = None
+        self._verify_thread: QThread | None = None
+        self._diagnose_thread: QThread | None = None
         self._check_worker: CheckWorker | None = None
         self._fetch_worker: FetchWorker | None = None
+        self._verify_worker: VerifyWorker | None = None
+        self._diagnose_worker: DiagnoseWorker | None = None
 
         # progress accounting for rate calc
         self._dl_start_ts: float | None = None
@@ -1035,10 +1038,30 @@ class MainWindow(QMainWindow):
         self._append_log("Preprocess dialog closed.")
 
     def _verify_contents(self) -> None:
+        if self._verify_thread is not None:
+            return  # already running
         self._append_log("Verifying contents of every source folder…")
-        QApplication.processEvents()
-        results = verify_all()
+        self.btn_verify.setEnabled(False)
+
+        worker = VerifyWorker()
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)  # type: ignore[attr-defined]
+        worker.done.connect(self._on_verify_done)
+        worker.failed.connect(self._on_verify_failed)
+        self._verify_worker = worker
+        self._verify_thread = thread
+        thread.start()
+
+    def _on_verify_done(self, results: list) -> None:
+        self._teardown_thread("verify")
+        self.btn_verify.setEnabled(True)
         self._show_verify_dialog(results, summary_to_log=True)
+
+    def _on_verify_failed(self, msg: str) -> None:
+        self._teardown_thread("verify")
+        self.btn_verify.setEnabled(True)
+        self._append_log(f"Verify failed: {msg}", error=True)
 
     def _show_verify_dialog(self, results, summary_to_log: bool = False) -> None:
         from fetch.storage import human_bytes as _hb
@@ -1169,9 +1192,6 @@ class MainWindow(QMainWindow):
         bb.accepted.connect(dlg.accept)
         v.addWidget(bb)
 
-        dlg.show()
-        QApplication.processEvents()
-
         buf: list[str] = []
 
         def on_chunk(text_chunk: str) -> None:
@@ -1181,14 +1201,25 @@ class MainWindow(QMainWindow):
             cursor = body.textCursor()
             cursor.movePosition(cursor.End)
             body.setTextCursor(cursor)
-            QApplication.processEvents()
 
-        try:
-            diagnose(result, on_chunk=on_chunk)
-        except DiagnoseUnavailable as e:
-            body.setHtml(f'<div style="color:{muted}">Diagnosis unavailable.<br><br>{e}</div>')
+        def on_failed(msg: str) -> None:
+            body.setHtml(f'<div style="color:{muted}">{msg.replace(chr(10), "<br>")}</div>')
+
+        worker = DiagnoseWorker(source_id)
+        thread = QThread(dlg)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)  # type: ignore[attr-defined]
+        worker.chunk.connect(on_chunk)
+        worker.failed.connect(on_failed)
+        # Closing the dialog must reap the thread; we don't expose a cancel
+        # hook on DiagnoseWorker (the Anthropic stream is short and cheap),
+        # but quit()+wait() ensures we don't leak the QThread.
+        self._diagnose_worker = worker
+        self._diagnose_thread = thread
+        thread.start()
 
         dlg.exec()
+        self._teardown_thread("diagnose")
 
     def _cancel_active(self) -> None:
         if self._fetch_worker:
@@ -1292,6 +1323,16 @@ class MainWindow(QMainWindow):
             self._fetch_thread.wait(2000)
             self._fetch_thread = None
             self._fetch_worker = None
+        elif kind == "verify" and self._verify_thread:
+            self._verify_thread.quit()
+            self._verify_thread.wait(2000)
+            self._verify_thread = None
+            self._verify_worker = None
+        elif kind == "diagnose" and self._diagnose_thread:
+            self._diagnose_thread.quit()
+            self._diagnose_thread.wait(2000)
+            self._diagnose_thread = None
+            self._diagnose_worker = None
 
     # ── utils ───────────────────────────────────────────────────────────
 
@@ -1656,6 +1697,12 @@ class MainWindow(QMainWindow):
             if self._check_worker:
                 self._check_worker.cancel()
                 self._check_thread.wait(2000)
+        if self._verify_thread is not None:
+            self._verify_thread.quit()
+            self._verify_thread.wait(2000)
+        if self._diagnose_thread is not None:
+            self._diagnose_thread.quit()
+            self._diagnose_thread.wait(2000)
         try:
             self._manifest.save()
         except Exception:

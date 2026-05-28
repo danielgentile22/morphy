@@ -52,7 +52,10 @@ class CheckWorker(QObject):
                         outcome.ok,
                         outcome.remote_version or outcome.error or "",
                     )
-            self._manifest.set_last_full_check()
+            # Only stamp "last full check" if we actually completed the sweep;
+            # cancelling mid-loop must not advance the freshness clock.
+            if not self._cancel:
+                self._manifest.set_last_full_check()
             self._manifest.save()
         finally:
             self.all_done.emit()
@@ -115,6 +118,59 @@ class FetchWorker(QObject):
                 self._manifest.save()
         finally:
             self.all_done.emit()
+
+
+class VerifyWorker(QObject):
+    """Run ``verify_all()`` off the UI thread.
+
+    ``verify_all()`` walks every ``data/raw/<source>/current/`` directory
+    and stats every file inside; on cold caches that can take several
+    seconds — long enough to freeze the puller UI if called from the
+    main thread.
+    """
+
+    done = Signal(list)  # list[VerifyResult]
+    failed = Signal(str)
+
+    def run(self) -> None:
+        try:
+            from verify_raw import verify_all
+
+            self.done.emit(verify_all())
+        except Exception as e:
+            self.failed.emit(f"{type(e).__name__}: {e}")
+
+
+class DiagnoseWorker(QObject):
+    """Stream ``diagnose(result)`` off the UI thread.
+
+    The Anthropic streaming call blocks on network I/O between tokens;
+    running it on the UI thread froze the dialog for the entire response
+    instead of streaming chunks as they arrived.
+    """
+
+    chunk = Signal(str)
+    done = Signal()
+    failed = Signal(str)
+
+    def __init__(self, source_id: str) -> None:
+        super().__init__()
+        self._source_id = source_id
+
+    def run(self) -> None:
+        try:
+            from diagnose import DiagnoseUnavailable, diagnose
+            from verify_raw import verify_one
+
+            result = verify_one(self._source_id)
+            try:
+                diagnose(result, on_chunk=lambda c: self.chunk.emit(c))
+            except DiagnoseUnavailable as e:
+                self.failed.emit(f"Diagnosis unavailable.\n\n{e}")
+                return
+            self.done.emit()
+        except Exception as e:
+            self.failed.emit(f"{type(e).__name__}: {e}")
 
 
 def make_thread(worker: QObject) -> QThread:
