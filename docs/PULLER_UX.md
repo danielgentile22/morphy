@@ -201,7 +201,7 @@ two places:
    the navigation row. Lets the user upload mid-walkthrough without
    having to leave the modal.
 
-Both call the same helper in `app_puller/upload.py`:
+Both call the same helper in `app_puller/manual_install.py`:
 
 - File picker opens at `~/Desktop`.
 - Multiple files selectable in one go (the typical shapefile set is
@@ -308,11 +308,10 @@ Today's log is monolithic. After Section 3:
 |---|---|---|
 | `update_cadence_days: int | None` on every source | `scripts/fetch/base.py` | 3.1 |
 | `manual_walkthrough() -> ManualWalkthrough` on MANUAL sources | `scripts/fetch/base.py`, each source file | 3.2 |
-| `ManualWalkthrough` dataclass | `app_puller/walkthroughs.py` | 3.2 |
+| `ManualWalkthrough` dataclass | `scripts/fetch/walkthroughs.py` | 3.2 |
 | `next_recommended_check_at` field on manifest | `scripts/fetch/manifest.py` | 3.1 |
 | Manifest `schema_version` bump to 2 | `scripts/fetch/manifest.py` | 3.1 |
-| `ManualWaitWorker` | `app_puller/workers.py` | 3.4 |
-| Walkthrough screenshots committed to repo | `app_puller/assets/walkthroughs/<id>/*.png` | 3.5 |
+| Walkthrough screenshot paths | `ManualStep.screenshot` (`Path | None`), resolved from repo root | 3.5 |
 
 ---
 
