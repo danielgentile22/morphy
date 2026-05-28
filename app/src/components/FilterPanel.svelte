@@ -96,6 +96,51 @@
   {/if}
 {/snippet}
 
+{#snippet rangeRow(
+  title: string,
+  column: 'assessed_value' | 'acreage',
+  current: [number, number] | null,
+  set: (next: [number, number] | null) => void,
+)}
+  {#if facets}
+    {@const r = facetRange(facets, column)}
+    {#if r}
+      <div class="group">
+        <span class="glabel">{title}</span>
+        <div class="range">
+          <input
+            type="number"
+            placeholder={String(Math.round(r.min))}
+            value={current?.[0] ?? ''}
+            onchange={(e) =>
+              set(
+                rangeOrNull(
+                  column,
+                  Number(e.currentTarget.value) || r.min,
+                  current?.[1] ?? r.max,
+                ),
+              )}
+          />
+          <span>to</span>
+          <input
+            type="number"
+            placeholder={String(Math.round(r.max))}
+            value={current?.[1] ?? ''}
+            onchange={(e) =>
+              set(
+                rangeOrNull(
+                  column,
+                  current?.[0] ?? r.min,
+                  Number(e.currentTarget.value) || r.max,
+                ),
+              )}
+          />
+        </div>
+      </div>
+    {/if}
+  {/if}
+{/snippet}
+
 {#if app.filtersAvailable && facets}
   <section class="panel" data-testid="filter-panel">
     <header class="fheader">
@@ -193,77 +238,19 @@
       </div>
     {/if}
 
-    {#if facetRange(facets, 'assessed_value')}
-      {@const ar = facetRange(facets, 'assessed_value')!}
-      <div class="group">
-        <span class="glabel">Assessed value ($)</span>
-        <div class="range">
-          <input
-            type="number"
-            placeholder={String(Math.round(ar.min))}
-            value={app.filters.assessedValue?.[0] ?? ''}
-            onchange={(e) =>
-              app.updateFilter({
-                assessedValue: rangeOrNull(
-                  'assessed_value',
-                  Number(e.currentTarget.value) || ar.min,
-                  app.filters.assessedValue?.[1] ?? ar.max,
-                ),
-              })}
-          />
-          <span>to</span>
-          <input
-            type="number"
-            placeholder={String(Math.round(ar.max))}
-            value={app.filters.assessedValue?.[1] ?? ''}
-            onchange={(e) =>
-              app.updateFilter({
-                assessedValue: rangeOrNull(
-                  'assessed_value',
-                  app.filters.assessedValue?.[0] ?? ar.min,
-                  Number(e.currentTarget.value) || ar.max,
-                ),
-              })}
-          />
-        </div>
-      </div>
-    {/if}
+    {@render rangeRow(
+      'Assessed value ($)',
+      'assessed_value',
+      app.filters.assessedValue,
+      (next) => app.updateFilter({ assessedValue: next }),
+    )}
 
-    {#if facetRange(facets, 'acreage')}
-      {@const acr = facetRange(facets, 'acreage')!}
-      <div class="group">
-        <span class="glabel">Acreage</span>
-        <div class="range">
-          <input
-            type="number"
-            placeholder={String(Math.round(acr.min))}
-            value={app.filters.acreage?.[0] ?? ''}
-            onchange={(e) =>
-              app.updateFilter({
-                acreage: rangeOrNull(
-                  'acreage',
-                  Number(e.currentTarget.value) || acr.min,
-                  app.filters.acreage?.[1] ?? acr.max,
-                ),
-              })}
-          />
-          <span>to</span>
-          <input
-            type="number"
-            placeholder={String(Math.round(acr.max))}
-            value={app.filters.acreage?.[1] ?? ''}
-            onchange={(e) =>
-              app.updateFilter({
-                acreage: rangeOrNull(
-                  'acreage',
-                  app.filters.acreage?.[0] ?? acr.min,
-                  Number(e.currentTarget.value) || acr.max,
-                ),
-              })}
-          />
-        </div>
-      </div>
-    {/if}
+    {@render rangeRow(
+      'Acreage',
+      'acreage',
+      app.filters.acreage,
+      (next) => app.updateFilter({ acreage: next }),
+    )}
 
     {@render checklist(
       'County',
