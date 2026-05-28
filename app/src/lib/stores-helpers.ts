@@ -73,10 +73,13 @@ export function pickInitialState(
   };
 }
 
-/** Reflect the active state in the URL so a reload reopens it. */
+/** Reflect the active state in the URL so a reload reopens it.
+ *  Idempotent — the post-boot `$effect` in App.svelte also keeps the
+ *  URL synced, so we no-op when the URL already matches. */
 export function syncStateParam(fips: string): void {
   if (typeof history === 'undefined') return;
   const url = new URL(location.href);
+  if (url.searchParams.get('state') === fips) return;
   url.searchParams.set('state', fips);
   history.replaceState(null, '', url);
 }

@@ -12,7 +12,8 @@ import {
 const STATE_FIELDS: Omit<StateEntry, 'fips'> = {
   abbr: '',
   name: '',
-  parcels: false,
+  bbox: [0, 0, 0, 0],
+  counts: {},
 };
 
 function fakeCatalog(overrides: Partial<Catalog> = {}): Catalog {

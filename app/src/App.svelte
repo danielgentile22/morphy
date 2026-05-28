@@ -27,7 +27,10 @@
     const el = e.target;
     if (
       el instanceof HTMLElement &&
-      (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.isContentEditable)
+      (el.tagName === 'INPUT' ||
+        el.tagName === 'SELECT' ||
+        el.tagName === 'TEXTAREA' ||
+        el.isContentEditable)
     ) {
       return;
     }
