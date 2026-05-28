@@ -173,13 +173,26 @@ class DiagnoseWorker(QObject):
             self.failed.emit(f"{type(e).__name__}: {e}")
 
 
-def make_thread(worker: QObject) -> QThread:
-    """Wrap a QObject worker in a QThread and return both as a pair."""
-    thread = QThread()
+def make_thread(worker: QObject, parent: QObject | None = None) -> QThread:
+    """Wrap a QObject worker in a QThread, wire ``started → run``, return the thread.
+
+    Pass ``parent`` so Qt's parent-child tree reaps the thread if the
+    owning window dies before teardown.
+
+    Caller is responsible for ``thread.start()`` and ``stop_thread()``.
+    """
+    thread = QThread(parent) if parent is not None else QThread()
     worker.moveToThread(thread)
     thread.started.connect(worker.run)  # type: ignore[attr-defined]
-    # Caller is responsible for calling thread.start() and managing teardown.
     return thread
+
+
+def stop_thread(thread: QThread | None, timeout_ms: int = 2000) -> None:
+    """Quit + wait a QThread, no-op if ``None`` or already gone."""
+    if thread is None:
+        return
+    thread.quit()
+    thread.wait(timeout_ms)
 
 
 class PreprocessWorker(QObject):

@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from .theme import Palette
-from .workers import PreprocessWorker, make_thread
+from .workers import PreprocessWorker, make_thread, stop_thread
 
 # Make scripts/ importable for accessing the preprocess registry.
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
@@ -233,10 +233,8 @@ class PreprocessDialog(QDialog):
             self._log_line(f"FATAL: {info.get('error', '')}", level="err")
 
     def _on_all_done(self, success: bool, outcome: dict) -> None:
-        if self._thread is not None:
-            self._thread.quit()
-            self._thread.wait(2000)
-            self._thread = None
+        stop_thread(self._thread)
+        self._thread = None
         self._worker = None
         self.btn_run.setEnabled(True)
         self.btn_cancel.setEnabled(False)

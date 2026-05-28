@@ -76,7 +76,14 @@ from .preprocess_dialog import PreprocessDialog
 from .theme import Palette, is_dark
 from .upload import mark_manual_install, pick_and_upload
 from .walkthrough_dialog import WalkthroughDialog
-from .workers import CheckWorker, DiagnoseWorker, FetchWorker, VerifyWorker
+from .workers import (
+    CheckWorker,
+    DiagnoseWorker,
+    FetchWorker,
+    VerifyWorker,
+    make_thread,
+    stop_thread,
+)
 
 # ── status presentation ──────────────────────────────────────────────────────
 
@@ -973,9 +980,7 @@ class MainWindow(QMainWindow):
         self._append_log(f"Checking remote versions for {len(self._sources)} sources…")
 
         worker = CheckWorker(self._sources, self._manifest)
-        thread = QThread(self)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)  # type: ignore
+        thread = make_thread(worker, parent=self)
         worker.progress.connect(self._on_check_progress)
         worker.one_done.connect(self._on_check_one_done)
         worker.all_done.connect(self._on_check_all_done)
@@ -1009,9 +1014,7 @@ class MainWindow(QMainWindow):
         self._append_log(f"Starting pull for {len(sources)} source(s).")
 
         worker = FetchWorker(sources, self._manifest)
-        thread = QThread(self)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)  # type: ignore
+        thread = make_thread(worker, parent=self)
         worker.started.connect(self._on_fetch_started)
         worker.progress.connect(self._on_fetch_progress)
         worker.one_done.connect(self._on_fetch_one_done)
@@ -1041,9 +1044,7 @@ class MainWindow(QMainWindow):
         self.btn_verify.setEnabled(False)
 
         worker = VerifyWorker()
-        thread = QThread(self)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)  # type: ignore[attr-defined]
+        thread = make_thread(worker, parent=self)
         worker.done.connect(self._on_verify_done)
         worker.failed.connect(self._on_verify_failed)
         self._verify_worker = worker
@@ -1198,9 +1199,7 @@ class MainWindow(QMainWindow):
             body.setHtml(f'<div style="color:{muted}">{msg.replace(chr(10), "<br>")}</div>')
 
         worker = DiagnoseWorker(source_id)
-        thread = QThread(dlg)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)  # type: ignore[attr-defined]
+        thread = make_thread(worker, parent=dlg)
         worker.chunk.connect(on_chunk)
         worker.failed.connect(on_failed)
         # Closing the dialog must reap the thread; we don't expose a cancel
@@ -1305,24 +1304,20 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self._process_pending_manuals)
 
     def _teardown_thread(self, kind: str) -> None:
-        if kind == "check" and self._check_thread:
-            self._check_thread.quit()
-            self._check_thread.wait(2000)
+        if kind == "check":
+            stop_thread(self._check_thread)
             self._check_thread = None
             self._check_worker = None
-        elif kind == "fetch" and self._fetch_thread:
-            self._fetch_thread.quit()
-            self._fetch_thread.wait(2000)
+        elif kind == "fetch":
+            stop_thread(self._fetch_thread)
             self._fetch_thread = None
             self._fetch_worker = None
-        elif kind == "verify" and self._verify_thread:
-            self._verify_thread.quit()
-            self._verify_thread.wait(2000)
+        elif kind == "verify":
+            stop_thread(self._verify_thread)
             self._verify_thread = None
             self._verify_worker = None
-        elif kind == "diagnose" and self._diagnose_thread:
-            self._diagnose_thread.quit()
-            self._diagnose_thread.wait(2000)
+        elif kind == "diagnose":
+            stop_thread(self._diagnose_thread)
             self._diagnose_thread = None
             self._diagnose_worker = None
 
@@ -1687,12 +1682,8 @@ class MainWindow(QMainWindow):
             if self._check_worker:
                 self._check_worker.cancel()
                 self._check_thread.wait(2000)
-        if self._verify_thread is not None:
-            self._verify_thread.quit()
-            self._verify_thread.wait(2000)
-        if self._diagnose_thread is not None:
-            self._diagnose_thread.quit()
-            self._diagnose_thread.wait(2000)
+        stop_thread(self._verify_thread)
+        stop_thread(self._diagnose_thread)
         try:
             self._manifest.save()
         except Exception:
