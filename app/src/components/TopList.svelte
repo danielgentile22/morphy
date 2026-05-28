@@ -122,13 +122,6 @@
 {/if}
 
 <style>
-  .toplist h2 {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
   .hint {
     margin: 4px 0 8px;
     font-size: 12px;

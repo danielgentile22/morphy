@@ -67,6 +67,19 @@ a {
   color: var(--muted);
 }
 
+/* Sidebar panel h2 — the "LAYERS" / "FILTERS" / "LEGEND" caps title that
+   appears at the top of every sidebar section. Centralised here so each
+   component doesn't need to repeat the same 6 declarations in its own
+   scoped <style> block. */
+.panel h2 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
