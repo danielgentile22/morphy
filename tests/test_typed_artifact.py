@@ -105,13 +105,11 @@ def test_typed_artifact_validate_is_no_op_without_schema():
 
 
 def test_legacy_validate_catalog_still_imports_and_runs():
-    # The catalog schema accepts the minimal shape — just prove the
-    # delegated validator path returns silently on a valid doc.
-    # Build a structurally valid catalog from the schema's required keys.
-    schema = load_schema_file("catalog.schema.json")
-    required = schema.get("required", [])
-    # Use placeholder values that match each required field's type when
-    # available; the goal is "passes shape validation," not realism.
+    # Prove the validate_catalog() shim still validates the canonical
+    # required-field set. If a new required field is added to the
+    # schema, jsonschema raises "missing" — fix the test then, with the
+    # correct type. (The old fallback that set every missing key to `{}`
+    # would have silently produced a wrong-type value for string fields.)
     doc = {
         "schema_version": 3,
         "state_fips": "05",
@@ -122,7 +120,4 @@ def test_legacy_validate_catalog_still_imports_and_runs():
         "views": {},
         "sources_used_versions": {},
     }
-    # Drop unknown required fields — let the test surface what's needed.
-    for k in required:
-        doc.setdefault(k, {})
     validate_catalog(doc)

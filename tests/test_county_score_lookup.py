@@ -127,7 +127,7 @@ def test_unmatched_county_gets_default_fillna():
     # parcel D has county_fips 99999 — no county_score row
     row = out[out["parcel_id_full"] == "D"].iloc[0]
     assert row["distress_tier"] == ""
-    assert row["persistent_poverty"] is False or row["persistent_poverty"] == False  # noqa: E712
+    assert bool(row["persistent_poverty"]) is False
 
 
 def test_three_targets_registered_at_import_time():

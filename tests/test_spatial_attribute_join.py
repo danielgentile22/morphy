@@ -76,8 +76,8 @@ def test_parcel_distress_annotation_uses_intersects():
     SpatialAttributeJoin(PARCEL_TO_DISTRESS_SPEC, "ParcelToDistressJoin").apply(ctx)
     out = ctx.get("parcel").set_index("parcel_id_full")
 
-    assert out.loc["A", "in_oz"] is True or out.loc["A", "in_oz"] == True  # noqa: E712
-    assert out.loc["A", "in_qct"] is False or out.loc["A", "in_qct"] == False  # noqa: E712
+    assert bool(out.loc["A", "in_oz"]) is True
+    assert bool(out.loc["A", "in_qct"]) is False
     assert out.loc["B", "in_oz"]
     assert out.loc["B", "in_qct"]
     assert not out.loc["C", "in_oz"]
