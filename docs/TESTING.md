@@ -1,7 +1,7 @@
 # TESTING — Strategy & Conventions
 
-**Last updated:** 2026-05-25
-**Status:** Pre-implementation for the preprocess test suite + Slice 4 backend / LLM / multi-tenancy surfaces. This document is the design.
+**Last updated:** 2026-05-27
+**Status:** Preprocess + fetch + app_puller + map-app test suites are live. Slice 4 backend / LLM / multi-tenancy sections (§11) are forward-looking.
 
 ---
 
@@ -31,29 +31,46 @@ For a co-founder-facing product, automated tests serve four purposes:
 
 ## 3. Test layout
 
+`conftest.py` (at the repo root) puts `scripts/` on `sys.path` so tests
+import as `from preprocess.X` / `from fetch.X`. Tests are organized
+by *feature*, not by stage — one file per major surface area.
+
 ```
 tests/
-├── __init__.py                  Marks the package
-├── conftest.py                  Shared pytest fixtures (paths, sample contexts)
-├── fixtures/
-│   ├── parcel.parquet           ~50 rows synthetic parcel
-│   ├── tower.parquet            ~30 rows synthetic FCC ASR shape
-│   ├── distress_overlay.parquet ~10 rows synthetic OZ + QCT
-│   ├── solar_facility.parquet   ~10 rows synthetic
-│   ├── county_score.parquet     ~20 rows synthetic
-│   ├── ar_parcels_raw_sample/   Tiny .gdb-like sample for state_parcels test
-│   └── catalog_baseline.json    Expected catalog after fixture compose
-├── test_normalizers.py          One test per active normalizer
-├── test_joins.py                One test per join
-├── test_views.py                One test per view
-├── test_compose.py              End-to-end synthetic compose
-├── test_manifest.py             Manifest rebuild + freshness checks
-├── test_schemas.py              JSON Schema validation
-└── test_io.py                   dual_write_spatial, huge-layer threshold
+├── fixtures/                       Tiny synthetic data committed to the repo
+│   ├── ar_state_parcels_raw/       ESRI .json sample (mirrors AR Open Data)
+│   ├── mt_cadastral_raw/           Same pattern for MT
+│   ├── nc_onemap_parcels_raw/      NC OneMap paginated geojson sample
+│   ├── arc_distressed_raw/         ARC + USDA + LBNL minimal fixtures
+│   └── …                           One subdir per source that has tests
+│
+├── test_app_assets.py              --app-assets pipeline (index.json + facets)
+├── test_catalog_schema.py          JSON Schema validation for catalog.json
+├── test_compose_loader.py          Per-state input loading
+├── test_compose_memory.py          ADR-051 chunked compose memory bound
+├── test_compose_property.py        Cluster sizes / tower attach / OZ membership
+├── test_county_boundaries.py       County-choropleth GeoJSON output
+├── test_county_score_lookup.py     CountyScoreLookupJoin parametric join
+├── test_facets.py                  Per-state facets.json shape + ranges
+├── test_fips.py                    State / county FIPS helpers
+├── test_index_schema.py            JSON Schema validation for index.json
+├── test_infra_to_parcel.py         Parametric InfraToParcelJoin
+├── test_pandas_coerce.py           Mixed-dtype coercion edge cases
+├── test_parcel_adapter.py          State-parcel adapter framework
+├── test_pipeline.py                Pipeline + Severity orchestrator
+├── test_preprocess_manifest.py     Manifest rebuild + freshness checks
+├── test_puller_resume.py           Storage helpers for resumable fetches
+├── test_puller_status.py           Puller status + attention decisions
+├── test_quality_report.py          ColumnStats / TableStats / QualityReport
+├── test_scoring.py                 ScoreComponents + ScoringProfile + weights
+├── test_serve.py                   scripts/serve.py byte-range parser
+├── test_spatial_attribute_join.py  SpatialAttribute join (OZ / QCT)
+├── test_tiles.py                   parcels.pmtiles construction
+└── test_typed_artifact.py          Generic typed-artifact validate helper
 ```
 
-Total target: **≥ 30 tests** at Section 6 exit; **≥ 70 % line coverage**
-of `scripts/preprocess/`.
+Total: **241 tests** at 2026-05-27. The map-app's separate suite (Vitest +
+Playwright under `app/tests/`) adds another ~212 unit tests on top.
 
 ---
 
@@ -74,84 +91,48 @@ they can be committed to the repo (data/ is git-ignored, but
 
 ---
 
-## 5. Test categories
+## 5. What's covered today
 
-### 5.1 Normalizer tests (`test_normalizers.py`)
+Reality reflects the cleanup-of-code pass through 2026-05-27. Each line is
+the test file → what it covers.
 
-One test per active normalizer:
+* **Compose** — `test_compose_loader.py` (per-state input loading),
+  `test_compose_property.py` (cluster sizes, tower attach, OZ
+  membership; this replaces the old single-shot-vs-chunked snapshot
+  comparison), `test_compose_memory.py` (ADR-051 chunked-compose
+  memory bound).
+* **Joins** — `test_infra_to_parcel.py` (the parametric
+  `InfraToParcelJoin` blueprint, tower / solar / billboard
+  instantiations), `test_county_score_lookup.py` (parcel ⨝
+  county_score), `test_spatial_attribute_join.py` (OZ / QCT overlay
+  attach).
+* **Scoring** — `test_scoring.py` (ScoreComponents, ScoringProfile,
+  apply_weights; per [ADR-058](./adr/0058-tunable-scoring-seam.md)).
+* **App-asset pipeline** — `test_app_assets.py` (`--app-assets` output
+  shape), `test_facets.py` (per-state facets.json), `test_county_boundaries.py`
+  (county GeoJSON), `test_tiles.py` (parcels.pmtiles construction).
+* **Schema validation** — `test_catalog_schema.py`,
+  `test_index_schema.py`, `test_typed_artifact.py` (generic helper).
+* **Quality + lineage** — `test_quality_report.py` (ColumnStats /
+  TableStats), `test_pipeline.py` (Pipeline + Severity orchestrator),
+  `test_preprocess_manifest.py` (manifest rebuild + freshness).
+* **Normalizer support code** — `test_parcel_adapter.py` (state-parcel
+  adapter framework), `test_pandas_coerce.py` (mixed-dtype coercion
+  edge cases), `test_fips.py` (FIPS helpers).
+* **Puller** — `test_puller_resume.py` (storage helpers for resumable
+  fetches), `test_puller_status.py` (status + attention decisions —
+  pure functions, no Qt).
+* **Range server** — `test_serve.py` (`_parse_byte_range`).
 
-```python
-def test_state_parcels_normalize_arkansas(fixture_ar_raw_dir, tmp_path):
-    """Given fixture raw AR data, produces canonical parcel parquet."""
-    result = AR_Normalizer().normalize(fixture_ar_raw_dir, tmp_path)
-    df = pd.read_parquet(tmp_path / "parcels.parquet")
-    assert result.canonical_rows == len(df)
-    assert "owner_name" in df.columns
-    assert "owner_kind" in df.columns
-    assert df["state_fips"].unique().tolist() == ["05"]
-```
+Notable gaps to fill (carried as future commits, not as "design"):
 
-Coverage targets:
-
-- Each normalizer: input fixture → expected row count + schema.
-- Each normalizer: handles NaN inputs without crashing.
-- Each normalizer: produces system columns (`_source`,
-  `_processed_at`, `_schema_version`).
-- Each parcel normalizer: produces non-empty `owner_kind` distribution.
-
-### 5.2 Join tests (`test_joins.py`)
-
-One test per join. Construct a fixture `ComposeContext`, apply the
-join, assert the resulting table has the expected columns.
-
-```python
-def test_tower_to_parcel_join_attaches_parcel_id(ctx_with_parcels_and_towers):
-    TowerToParcelJoin().apply(ctx_with_parcels_and_towers)
-    towers = ctx_with_parcels_and_towers.get("tower")
-    assert "parcel_id" in towers.columns
-    assert towers["parcel_id"].notna().sum() > 0
-```
-
-Critical join test: `safe_merge` helper drops pre-existing columns
-correctly (the bug pattern from ADR-020).
-
-### 5.3 View tests (`test_views.py`)
-
-One test per view. Given fixture context with the right canonical
-types loaded, view returns expected row count + columns.
-
-### 5.4 Compose end-to-end (`test_compose.py`)
-
-Build a fully-synthetic single-state compose:
-
-```python
-def test_compose_synthetic_state_produces_valid_catalog(tmp_path, monkeypatch):
-    """End-to-end: synthetic state compose produces a valid catalog.json."""
-    monkeypatch.setattr("scripts.preprocess.COMPOSITE_ROOT", tmp_path)
-    cfg = ComposeConfig(state=STATES["99"])  # synthetic state FIPS
-    result = compose(cfg)
-    catalog = json.loads((tmp_path / "99" / "catalog.json").read_text())
-    assert validate_catalog(catalog) is None
-    assert "parcels" in catalog["layers"]
-```
-
-### 5.5 Manifest tests (`test_manifest.py`)
-
-- `PreprocessManifest.rebuild_from_disk()` produces expected entries.
-- Freshness logic: `is_normalize_fresh()` returns True/False correctly.
-- Schema-version migration.
-
-### 5.6 Schema validation tests (`test_schemas.py`)
-
-- Each fixture catalog validates against `catalog.schema.json`.
-- Each fixture summary validates against `summary.schema.json`.
-- Invalid catalog raises a clear error.
-
-### 5.7 I/O tests (`test_io.py`)
-
-- `dual_write_spatial` writes both parquet + geojson for small layers.
-- `dual_write_spatial` skips full geojson for huge layers.
-- `_prep_complex_cols` JSON-encodes dict/list cells.
+* One-test-per-normalizer parity — only state-parcel + a few others
+  have direct tests today. Most are exercised transitively by the
+  compose-property tests.
+* One-test-per-view — the 9 views under `scripts/preprocess/views/`
+  have no direct row-count assertions yet.
+* `scripts/verify_raw.py` + `scripts/diagnose.py` pure-function pieces
+  have no tests.
 
 ---
 
@@ -166,7 +147,7 @@ pytest
 pytest --cov=scripts.preprocess --cov-report=term-missing
 
 # Subset
-pytest tests/test_normalizers.py -v
+pytest tests/test_compose_property.py -v
 
 # Watch mode (requires pytest-watch)
 ptw
@@ -223,26 +204,30 @@ code that's hard to exercise from synthetic fixtures.
 When you add:
 
 - A new **normalizer** → fixture in `tests/fixtures/<source>_raw/`,
-  test in `test_normalizers.py`.
-- A new **join** → fixture context fixture in `conftest.py`, test in
-  `test_joins.py`.
-- A new **view** → test in `test_views.py`; assert row count +
-  columns + at least one expected value.
+  test in `tests/test_<source>.py` (one file per source surface).
+- A new **join** → either add it to an existing `test_<join>.py`
+  module (if it instantiates one of the existing blueprints —
+  `InfraToParcelJoin`, `SpatialAttributeJoin`, `CountyScoreLookupJoin`)
+  or start a new `test_<your_join>.py` next to its siblings.
+- A new **view** → start `tests/test_<view_name>.py`; assert row count
+  + columns + at least one expected value. (View tests are sparse today.)
 - A new **canonical type** → add to `CURRENT_SCHEMA_VERSIONS`, add a
   fixture parquet, add a normalizer test that emits it.
+
+The convention is **one test file per major surface**. New surfaces get
+new files; we don't bucket into `test_normalizers.py` / `test_joins.py`
+catch-alls.
 
 ---
 
 ## 10. Sentinel "the whole thing works" test
 
-`test_compose.py::test_full_smoke` runs a compose against fixture data approximating each anchor state and asserts:
-
-- 0 warnings in summary.json
-- ≥ 9 joins applied
-- ≥ 8 views built
-- catalog.json validates against schema
-
-This is the canary that fires when any change breaks the data pipeline.
+The canary today is `test_compose_property.py` — it builds a fully-
+synthetic single-state compose against fixture data and asserts the
+key invariants (cluster sizes, infra↔parcel attach, OZ membership,
+infrastructure_summary content). A future commit may extend it to
+also assert ≥ 9 joins applied and ≥ 8 views built; for now those
+counts are guarded by the per-surface tests instead.
 
 ---
 

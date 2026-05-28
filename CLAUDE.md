@@ -170,8 +170,9 @@ pytest                                          # preprocess + app-asset script 
    `scripts/preprocess/normalizers/<source>.py`,
    `@register_normalizer`, declare which `canonical_types` it produces.
    Add to `scripts/preprocess/registry.py`.
-8. Add a test fixture under `tests/fixtures/<source>_raw/` + a test in
-   `tests/test_normalizers.py`.
+8. Add a test fixture under `tests/fixtures/<source>_raw/` + a test
+   file `tests/test_<source>.py` (one file per source surface;
+   see [docs/TESTING.md §9](docs/TESTING.md)).
 
 Things to get right:
 
