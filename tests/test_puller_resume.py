@@ -18,17 +18,17 @@ from pathlib import Path
 
 import pytest
 
-from scripts.fetch import storage as storage_mod
-from scripts.fetch.base import (
+from fetch import storage as storage_mod
+from fetch.base import (
     CATEGORY_PARCELS,
     DataSource,
     FetchResult,
 )
-from scripts.fetch.legal import AutomationPolicy, CommercialUse, LegalInfo
-from scripts.fetch.manifest import Manifest
-from scripts.fetch.puller import fetch_one
-from scripts.fetch.sources.nc_onemap_parcels import NcOnemapParcels
-from scripts.fetch.storage import (
+from fetch.legal import AutomationPolicy, CommercialUse, LegalInfo
+from fetch.manifest import Manifest
+from fetch.puller import fetch_one
+from fetch.sources.nc_onemap_parcels import NcOnemapParcels
+from fetch.storage import (
     prepare_fresh_partial,
     prepare_partial_for_resume,
 )
@@ -72,7 +72,7 @@ def test_nc_onemap_declares_supports_resume():
 
 def test_default_source_does_not_support_resume():
     """Resume is opt-in — single-file fetches must keep the wipe behaviour."""
-    from scripts.fetch.sources.uspvdb import SOURCE as USPVDB
+    from fetch.sources.uspvdb import SOURCE as USPVDB
 
     assert getattr(USPVDB, "supports_resume", False) is False
 

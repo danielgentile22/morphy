@@ -16,15 +16,15 @@ from dataclasses import dataclass
 
 import pytest
 
-from scripts.preprocess.catalog_schema import (
+from preprocess.catalog_schema import (
     CatalogSchemaViolation,
     validate_catalog,
 )
-from scripts.preprocess.index_schema import (
+from preprocess.index_schema import (
     IndexSchemaViolation,
     validate_index,
 )
-from scripts.preprocess.typed_artifact import (
+from preprocess.typed_artifact import (
     SchemaViolation,
     TypedArtifact,
     load_schema_file,

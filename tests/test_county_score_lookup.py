@@ -15,9 +15,9 @@ from shapely.geometry import Point, Polygon
 # Importing the registry ensures every Join is registered before the test
 # touches the registry. The county-score lookup module registers three
 # instances at import time.
-from scripts.preprocess import registry  # noqa: F401
-from scripts.preprocess.base import ComposeContext, all_joins
-from scripts.preprocess.joins.county_score_lookup import (
+from preprocess import registry  # noqa: F401
+from preprocess.base import ComposeContext, all_joins
+from preprocess.joins.county_score_lookup import (
     CountyScoreLookupJoin,
     _aggregate_county_score,
 )

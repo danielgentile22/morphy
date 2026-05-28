@@ -12,9 +12,9 @@ import pytest
 from shapely.geometry import Point, Polygon
 
 # Force registration of every Join.
-from scripts.preprocess import registry  # noqa: F401
-from scripts.preprocess.base import ComposeContext, all_joins
-from scripts.preprocess.joins.spatial_attribute import (
+from preprocess import registry  # noqa: F401
+from preprocess.base import ComposeContext, all_joins
+from preprocess.joins.spatial_attribute import (
     PARCEL_TO_DISTRESS_SPEC,
     TOWER_TO_DISTRESS_SPEC,
     SpatialAttributeJoin,
