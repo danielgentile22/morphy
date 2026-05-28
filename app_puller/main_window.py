@@ -34,17 +34,14 @@ from fetch import RAW_ROOT
 from fetch.base import DataSource
 from fetch.legal import AutomationPolicy, CommercialUse
 from fetch.manifest import (
-    FRESHNESS_DUE_SOON,
-    FRESHNESS_FRESH,
     FRESHNESS_STALE,
-    FRESHNESS_UNKNOWN,
     Manifest,
     SourceEntry,
 )
 from fetch.registry import all_sources, get_source, grouped
 from fetch.storage import current_dir, directory_bytes, human_bytes
 from PySide6.QtCore import Qt, QThread, QTimer
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -72,7 +69,14 @@ from PySide6.QtWidgets import (
 from verify_raw import verify_one
 
 from . import state as ui_state
+from .attention_panel import AttentionItem, attention_items
 from .preprocess_dialog import PreprocessDialog
+from .status import (
+    FRESHNESS_COLORS,
+    STATUS_LABELS,
+    freshness_label_for,
+    status_for,
+)
 from .theme import Palette, is_dark
 from .upload import mark_manual_install, pick_and_upload
 from .walkthrough_dialog import WalkthroughDialog
@@ -84,105 +88,6 @@ from .workers import (
     make_thread,
     stop_thread,
 )
-
-# ── status presentation ──────────────────────────────────────────────────────
-
-
-STATUS_LABELS = {
-    "ok": ("✓ Current", QColor("#2e7d32")),
-    "stale": ("⟳ Stale (new version available)", QColor("#ef6c00")),
-    "missing": ("✗ Not installed", QColor("#9e9e9e")),
-    "check_failed": ("⚠ Check failed", QColor("#c62828")),
-    "fetch_failed": ("⚠ Fetch failed", QColor("#c62828")),
-    "manual_only": ("⤓ Manual download required", QColor("#5e35b1")),
-    "needs_credentials": ("🔒 Credentials required", QColor("#5e35b1")),
-}
-
-
-# Colors for the freshness-aware status column. Matches docs/PULLER_UX.md §2.2.
-FRESHNESS_COLORS = {
-    FRESHNESS_FRESH: QColor("#2e7d32"),  # green
-    FRESHNESS_DUE_SOON: QColor("#ef6c00"),  # orange
-    FRESHNESS_STALE: QColor("#c62828"),  # red
-    FRESHNESS_UNKNOWN: QColor("#9e9e9e"),  # gray
-}
-
-
-def freshness_label_for(source: DataSource, entry: SourceEntry) -> tuple[str, QColor]:
-    """Display label + color combining install state + cadence freshness.
-
-    The status column shows whichever is more actionable: install /
-    policy state (missing, manual-only, needs-creds, endpoint failing,
-    new version available), or freshness (fresh/due-soon/stale based on
-    cadence).
-    """
-    # Policy / install state first — these always override freshness.
-    if source.legal.automation == AutomationPolicy.MANUAL_ONLY and not entry.is_installed():
-        return STATUS_LABELS["manual_only"]
-    if (
-        source.legal.automation == AutomationPolicy.CREDENTIALED
-        and not source.credentials_available()
-        and not entry.is_installed()
-    ):
-        return STATUS_LABELS["needs_credentials"]
-    if entry.status == "check_failed":
-        return ("⚠ Endpoint failing", QColor("#c62828"))
-    if entry.status == "fetch_failed":
-        return STATUS_LABELS["fetch_failed"]
-    if not entry.is_installed():
-        return STATUS_LABELS["missing"]
-    if entry.is_stale():
-        return STATUS_LABELS["stale"]
-
-    # Installed + remote-version matches → fall back to cadence freshness.
-    freshness = entry.freshness()
-    days = entry.days_since_fetch()
-    cadence = source.update_cadence_days
-
-    if freshness == FRESHNESS_FRESH:
-        label = f"✓ Fresh ({days}d)" if days is not None else "✓ Fresh"
-        return (label, FRESHNESS_COLORS[FRESHNESS_FRESH])
-    if freshness == FRESHNESS_DUE_SOON:
-        label = (
-            f"⏳ Due soon ({days}d / {cadence}d)" if days is not None and cadence else "⏳ Due soon"
-        )
-        return (label, FRESHNESS_COLORS[FRESHNESS_DUE_SOON])
-    if freshness == FRESHNESS_STALE:
-        label = (
-            f"↻ Stale ({days}d / {cadence}d)"
-            if days is not None and cadence
-            else "↻ Stale (past cadence)"
-        )
-        return (label, FRESHNESS_COLORS[FRESHNESS_STALE])
-    # FRESHNESS_UNKNOWN — installed but no cadence (one-shot reference data)
-    return STATUS_LABELS["ok"]
-
-
-def status_for(source: DataSource, entry: SourceEntry) -> str:
-    """Resolve the displayable status, combining manifest + source policy.
-
-    For MANUAL_ONLY / CREDENTIALED sources, files dropped into current/
-    by hand (detected by ``_detect_manual_installs``) should still show
-    as ✓ Current — show the install state when present, fall back to
-    the policy-restricted state otherwise.
-    """
-    if source.legal.automation == AutomationPolicy.MANUAL_ONLY:
-        if entry.is_installed():
-            return "ok"
-        return "manual_only"
-    if (
-        source.legal.automation == AutomationPolicy.CREDENTIALED
-        and not source.credentials_available()
-    ):
-        if entry.is_installed():
-            return "ok"
-        return "needs_credentials"
-    if entry.status in STATUS_LABELS:
-        if entry.status == "ok" and entry.is_stale():
-            return "stale"
-        return entry.status
-    return "missing"
-
 
 # ── columns ──────────────────────────────────────────────────────────────────
 
@@ -1346,67 +1251,8 @@ class MainWindow(QMainWindow):
 
     # ── attention panel ─────────────────────────────────────────────────
 
-    def _attention_items(self) -> list[tuple[DataSource, str, str]]:
-        """Return list of (source, reason, action_kind) needing attention.
-
-        action_kind ∈ {"walkthrough", "refresh", "open_manual"}.
-        """
-        items: list[tuple[DataSource, str, str]] = []
-        for s in self._sources:
-            e = self._manifest.entry(s.id)
-            has_walkthrough = s.manual_walkthrough() is not None
-            # Endpoint failing (auto sources we tried to check)
-            if e.status == "check_failed":
-                if s.legal.automation == AutomationPolicy.MANUAL_ONLY and has_walkthrough:
-                    items.append((s, "Endpoint failing — walkthrough available", "walkthrough"))
-                else:
-                    items.append((s, f"Endpoint failing: {e.error or '—'}", "open_manual"))
-                continue
-            if e.status == "fetch_failed":
-                items.append((s, f"Last fetch failed: {e.error or '—'}", "refresh"))
-                continue
-            # Manual sources that haven't been installed yet
-            if s.legal.automation == AutomationPolicy.MANUAL_ONLY and not e.is_installed():
-                reason = "Manual download required" + (
-                    " — walkthrough available" if has_walkthrough else ""
-                )
-                items.append(
-                    (
-                        s,
-                        reason,
-                        "walkthrough" if has_walkthrough else "open_manual",
-                    )
-                )
-                continue
-            # Auto sources that aren't installed (and aren't credentialed-no-creds)
-            if not e.is_installed():
-                if (
-                    s.legal.automation == AutomationPolicy.CREDENTIALED
-                    and not s.credentials_available()
-                ):
-                    # surfaced separately as informational; not actionable here
-                    continue
-                items.append((s, "Not installed", "refresh"))
-                continue
-            # Stale (remote version differs)
-            if e.is_stale():
-                items.append((s, "New version available", "refresh"))
-                continue
-            # Past cadence
-            freshness = e.freshness()
-            if freshness == FRESHNESS_STALE:
-                days = e.days_since_fetch()
-                cad = s.update_cadence_days
-                reason = (
-                    f"Past cadence ({days}d / {cad}d) — re-check publisher"
-                    if days is not None and cad
-                    else "Past recommended refresh date"
-                )
-                if s.legal.automation == AutomationPolicy.MANUAL_ONLY and has_walkthrough:
-                    items.append((s, reason, "walkthrough"))
-                else:
-                    items.append((s, reason, "refresh"))
-        return items
+    def _attention_items(self) -> list[AttentionItem]:
+        return attention_items(self._sources, self._manifest)
 
     def _refresh_attention_panel(self) -> None:
         # Clear existing rows (keep the trailing stretch).
@@ -1426,30 +1272,32 @@ class MainWindow(QMainWindow):
             f"⚠ What needs my attention ({len(items)} source{'s' if len(items) != 1 else ''})"
         )
         muted = self._palette().muted
-        for source, reason, action_kind in items:
+        for it in items:
             row = QWidget()
             h = QHBoxLayout(row)
             h.setContentsMargins(0, 0, 0, 0)
             h.setSpacing(8)
-            lbl = QLabel(f"<b>{source.id}</b> &nbsp; <span style='color:{muted}'>{reason}</span>")
+            lbl = QLabel(
+                f"<b>{it.source.id}</b> &nbsp; <span style='color:{muted}'>{it.reason}</span>"
+            )
             lbl.setTextFormat(Qt.RichText)
             lbl.setWordWrap(True)
             h.addWidget(lbl, stretch=1)
 
-            if action_kind == "walkthrough":
+            if it.action == "walkthrough":
                 btn = QPushButton("▶ Walk me through")
                 btn.clicked.connect(  # type: ignore
-                    lambda _checked=False, s=source: self._open_walkthrough_for(s)
+                    lambda _checked=False, s=it.source: self._open_walkthrough_for(s)
                 )
-            elif action_kind == "refresh":
+            elif it.action == "refresh":
                 btn = QPushButton("↻ Refresh")
                 btn.clicked.connect(  # type: ignore
-                    lambda _checked=False, s=source: self._start_fetch([s])
+                    lambda _checked=False, s=it.source: self._start_fetch([s])
                 )
             else:  # open_manual
                 btn = QPushButton("Open URL")
                 btn.clicked.connect(  # type: ignore
-                    lambda _checked=False, s=source: webbrowser.open(s.legal.manual_url)
+                    lambda _checked=False, s=it.source: webbrowser.open(s.legal.manual_url)
                 )
             btn.setMinimumHeight(26)
             h.addWidget(btn)
