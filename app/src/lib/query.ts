@@ -16,10 +16,6 @@
 import { FILTER_SPECS, type FilterState } from './filters';
 import { sqlNumber, sqlString } from './query-sql';
 
-// Re-export to preserve the existing public API surface (`sqlString` was
-// originally defined in this module; consumers expect to import from here).
-export { sqlString } from './query-sql';
-
 /** The DuckDB view/table name the parcels_attr.parquet is registered as. */
 export const PARCELS_TABLE = 'parcels';
 
