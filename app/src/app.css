@@ -80,6 +80,28 @@ a {
   margin-bottom: 6px;
 }
 
+/* Pill-shaped filter chip — used in FilterPanel + TopList for
+   single-select category filters. Per-component overrides handle small
+   variations (FilterPanel chips embed a count, TopList chips are
+   text-only). */
+.chip {
+  display: inline-flex;
+  gap: 5px;
+  align-items: baseline;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

@@ -330,22 +330,6 @@
     flex-wrap: wrap;
     gap: 4px;
   }
-  .chip {
-    display: inline-flex;
-    gap: 5px;
-    align-items: baseline;
-    padding: 3px 9px;
-    font-size: 11.5px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--panel);
-    color: var(--text-2);
-  }
-  .chip.on {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-  }
   .chip .ct {
     font-size: 10px;
     opacity: 0.7;

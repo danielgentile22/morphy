@@ -142,19 +142,6 @@
     gap: 4px;
     margin-top: 8px;
   }
-  .chip {
-    padding: 3px 9px;
-    font-size: 11px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--panel);
-    color: var(--text-2);
-  }
-  .chip.on {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-  }
   .count {
     margin: 8px 0 4px;
     font-size: 11px;
