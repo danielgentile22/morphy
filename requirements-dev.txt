@@ -8,7 +8,8 @@ ruff>=0.6
 pytest>=8.0
 pytest-cov>=5.0
 
-# JSON Schema validation (used by tests/test_schemas.py and the composer)
+# JSON Schema validation (used by tests/test_typed_artifact.py and
+# scripts/preprocess/typed_artifact.py at runtime)
 jsonschema>=4.21
 
 # PMTiles reader — verify parcels.pmtiles output (tests/test_tiles.py)

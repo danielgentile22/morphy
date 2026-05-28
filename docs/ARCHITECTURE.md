@@ -297,7 +297,7 @@ all behind `preprocess.py --app-assets` / `--tiles`. The app is served
 against the range-capable `scripts/serve.py`; `python -m http.server`
 cannot serve it (PMTiles + DuckDB-WASM need HTTP 206).
 
-The v1 Leaflet prototype is retired to `app_legacy_v1/`. The realized design is locked in [ADR-030](./adr/0030-map-app-v2-stack.md).
+The v1 Leaflet prototype is retired (preserved in git history). The realized design is locked in [ADR-030](./adr/0030-map-app-v2-stack.md).
 
 ---
 

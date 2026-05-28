@@ -135,7 +135,6 @@ pilot/
 ├── PROJECT_BRIEF.md          Business case
 ├── requirements.txt
 ├── app/                      Svelte 5 + MapLibre map app
-├── app_legacy_v1/            Leaflet map (v1, retired)
 ├── app_puller/               PySide6 desktop puller
 ├── backend/                  FastAPI + Postgres + S3 + Claude API  (Slice 4 — in design)
 ├── scripts/

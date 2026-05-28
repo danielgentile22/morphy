@@ -106,7 +106,6 @@ pilot/
 │   ├── research/             Data-source legal/license research
 │   └── archive/              Historical (preprocess v1, original v3 plan)
 ├── app/                      Svelte 5 + MapLibre map app (see app/ARCHITECTURE.md)
-├── app_legacy_v1/            Leaflet map (v1, retired)
 ├── app_puller/               PySide6 desktop puller
 ├── backend/                  FastAPI + Postgres + S3 + Claude API (Slice 4 — in design)
 ├── scripts/
