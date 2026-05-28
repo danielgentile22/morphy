@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .theme import Palette
 from .workers import PreprocessWorker, make_thread
 
 # Make scripts/ importable for accessing the preprocess registry.
@@ -50,16 +51,9 @@ class PreprocessDialog(QDialog):
         self._build_ui()
         self._populate_tree()
 
-    # ── theming helpers ───────────────────────────────────────────────────
-
-    def _muted_hex(self) -> str:
-        return "#bdbdbd" if self._dark else "#616161"
-
-    def _ok_hex(self) -> str:
-        return "#81c784" if self._dark else "#2e7d32"
-
-    def _fail_hex(self) -> str:
-        return "#e57373" if self._dark else "#c62828"
+    @property
+    def _p(self) -> Palette:
+        return Palette.for_dark(self._dark)
 
     # ── UI build ──────────────────────────────────────────────────────────
 
@@ -163,7 +157,7 @@ class PreprocessDialog(QDialog):
         self.force_check.setEnabled(False)
         # Reset row statuses to pending.
         for item in self._source_items.values():
-            self._set_status(item, "pending", "", color=self._muted_hex())
+            self._set_status(item, "pending", "", color=self._p.muted)
         for item in self._state_items.values():
             self.tree.invisibleRootItem().removeChild(item)
         self._state_items.clear()
@@ -189,7 +183,7 @@ class PreprocessDialog(QDialog):
             if item is None:
                 return
             if phase == "normalize_start":
-                self._set_status(item, "running…", "", color=self._muted_hex())
+                self._set_status(item, "running…", "", color=self._p.muted)
                 self._log_line(f"→ normalize {key}")
             elif phase == "normalize_ok":
                 rows = info.get("rows", 0)
@@ -198,18 +192,18 @@ class PreprocessDialog(QDialog):
                     item,
                     "✓ ok",
                     f"{rows:,} rows · {bytes_ / 1_000_000:.1f} MB",
-                    color=self._ok_hex(),
+                    color=self._p.ok,
                 )
                 self._log_line(f"✓ {key}: {rows:,} rows")
             elif phase == "normalize_fail":
                 err = info.get("error", "")
-                self._set_status(item, "✗ FAIL", str(err)[:80], color=self._fail_hex())
+                self._set_status(item, "✗ FAIL", str(err)[:80], color=self._p.fail)
                 self._log_line(f"✗ {key}: {err}", level="err")
             elif phase == "normalize_skip":
                 reason = info.get("reason", "")
-                self._set_status(item, "· skipped", reason, color=self._muted_hex())
+                self._set_status(item, "· skipped", reason, color=self._p.muted)
             elif phase == "normalize_unavailable":
-                self._set_status(item, "– unavailable", "no raw data", color=self._muted_hex())
+                self._set_status(item, "– unavailable", "no raw data", color=self._p.muted)
         elif phase.startswith("compose_"):
             item = self._state_items.get(key)
             if phase == "compose_start":
@@ -219,19 +213,19 @@ class PreprocessDialog(QDialog):
                     item = QTreeWidgetItem([label, "running…", ""])
                     comp_root.addChild(item)
                     self._state_items[key] = item
-                self._set_status(item, "running…", "", color=self._muted_hex())
+                self._set_status(item, "running…", "", color=self._p.muted)
                 self._log_line(f"→ compose state {key} ({info.get('name', '')})")
             elif phase == "compose_ok":
                 counts = info.get("counts", {})
                 summary = ", ".join(f"{k}={v:,}" for k, v in counts.items())
-                self._set_status(item, "✓ ok", summary, color=self._ok_hex())
+                self._set_status(item, "✓ ok", summary, color=self._p.ok)
                 self._log_line(
                     f"✓ state {key}: joins={info.get('joins', 0)}, "
                     f"views={info.get('views', 0)}, {summary}"
                 )
             elif phase == "compose_fail":
                 err = info.get("error", "")
-                self._set_status(item, "✗ FAIL", str(err)[:80], color=self._fail_hex())
+                self._set_status(item, "✗ FAIL", str(err)[:80], color=self._p.fail)
                 self._log_line(f"✗ state {key}: {err}", level="err")
         elif phase == "all_done":
             pass  # handled by all_done signal
@@ -269,7 +263,7 @@ class PreprocessDialog(QDialog):
 
     def _log_line(self, msg: str, *, level: str = "info") -> None:
         color = (
-            self._fail_hex() if level == "err" else (self._muted_hex() if level == "warn" else None)
+            self._p.fail if level == "err" else (self._p.muted if level == "warn" else None)
         )
         if color:
             self.log.append(f'<span style="color:{color}">{msg}</span>')

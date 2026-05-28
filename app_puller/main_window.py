@@ -44,7 +44,7 @@ from fetch.manifest import (
 from fetch.registry import all_sources, get_source, grouped
 from fetch.storage import current_dir, directory_bytes, human_bytes
 from PySide6.QtCore import Qt, QThread, QTimer
-from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -73,6 +73,7 @@ from verify_raw import verify_one
 
 from . import state as ui_state
 from .preprocess_dialog import PreprocessDialog
+from .theme import Palette, is_dark
 from .upload import mark_manual_install, pick_and_upload
 from .walkthrough_dialog import WalkthroughDialog
 from .workers import CheckWorker, DiagnoseWorker, FetchWorker, VerifyWorker
@@ -317,14 +318,10 @@ class MainWindow(QMainWindow):
             self._manifest.save()
 
     def _is_dark(self) -> bool:
-        bg = self.palette().color(QPalette.Window)
-        return bg.lightness() < 128
+        return is_dark(self)
 
-    def _muted_hex(self) -> str:
-        return "#bdbdbd" if self._is_dark() else "#616161"
-
-    def _text_hex(self) -> str:
-        return "#eeeeee" if self._is_dark() else "#212121"
+    def _palette(self) -> Palette:
+        return Palette.for_widget(self)
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -375,7 +372,7 @@ class MainWindow(QMainWindow):
         h.addWidget(title)
         h.addStretch(1)
 
-        muted = self._muted_hex()
+        muted = self._palette().muted
         self.lbl_storage = QLabel("…")
         self.lbl_storage.setStyleSheet(f"color: {muted};")
         h.addWidget(self.lbl_storage)
@@ -503,7 +500,7 @@ class MainWindow(QMainWindow):
         h.setContentsMargins(0, 0, 0, 0)
 
         lbl = QLabel("Search:")
-        lbl.setStyleSheet(f"color: {self._muted_hex()};")
+        lbl.setStyleSheet(f"color: {self._palette().muted};")
         h.addWidget(lbl)
 
         self.search_box = QLineEdit()
@@ -513,7 +510,7 @@ class MainWindow(QMainWindow):
         h.addWidget(self.search_box, stretch=1)
 
         self.lbl_match_count = QLabel("")
-        self.lbl_match_count.setStyleSheet(f"color: {self._muted_hex()}; font-size: 11px;")
+        self.lbl_match_count.setStyleSheet(f"color: {self._palette().muted}; font-size: 11px;")
         h.addWidget(self.lbl_match_count)
 
         return bar
@@ -554,7 +551,7 @@ class MainWindow(QMainWindow):
         v.addWidget(self.det_title)
 
         self.det_subtitle = QLabel("")
-        self.det_subtitle.setStyleSheet(f"color: {self._muted_hex()};")
+        self.det_subtitle.setStyleSheet(f"color: {self._palette().muted};")
         self.det_subtitle.setWordWrap(True)
         v.addWidget(self.det_subtitle)
 
@@ -600,7 +597,7 @@ class MainWindow(QMainWindow):
         v.setContentsMargins(12, 8, 12, 8)
 
         self.pb_label = QLabel("Idle. No pull in progress.")
-        self.pb_label.setStyleSheet(f"color: {self._muted_hex()};")
+        self.pb_label.setStyleSheet(f"color: {self._palette().muted};")
         v.addWidget(self.pb_label)
 
         self.progress = QProgressBar()
@@ -611,7 +608,7 @@ class MainWindow(QMainWindow):
         v.addWidget(self.progress)
 
         self.pb_substatus = QLabel("")
-        self.pb_substatus.setStyleSheet(f"color: {self._muted_hex()}; font-size: 11px;")
+        self.pb_substatus.setStyleSheet(f"color: {self._palette().muted}; font-size: 11px;")
         v.addWidget(self.pb_substatus)
 
         return wrap
@@ -799,8 +796,8 @@ class MainWindow(QMainWindow):
 
         notes = s.legal.notes or ""
 
-        muted = self._muted_hex()
-        text = self._text_hex()
+        muted = self._palette().muted
+        text = self._palette().text
         is_dark = self._is_dark()
         badge_bg = "#37474f" if is_dark else "#eceff1"
         badge_fg = "#eceff1" if is_dark else "#37474f"
@@ -1071,22 +1068,17 @@ class MainWindow(QMainWindow):
         n_unknown = sum(1 for r in results if r.verdict == "UNKNOWN")
         n_missing = sum(1 for r in results if r.verdict == "NOT_INSTALLED")
 
-        is_dark = self._is_dark()
-        muted = self._muted_hex()
-        text = self._text_hex()
-        ok_color = "#81c784" if is_dark else "#2e7d32"
-        fail_color = "#e57373" if is_dark else "#c62828"
-        unknown_color = "#ffd54f" if is_dark else "#f57c00"
-        link_color = "#64b5f6" if is_dark else "#1565c0"
+        p = self._palette()
+        muted, text = p.muted, p.text
 
         rows = []
         for r in results:
             if r.verdict == "OK":
-                color, mark = ok_color, "✓"
+                color, mark = p.ok, "✓"
             elif r.verdict in ("FAIL", "EMPTY"):
-                color, mark = fail_color, "✗"
+                color, mark = p.fail, "✗"
             elif r.verdict == "UNKNOWN":
-                color, mark = unknown_color, "?"
+                color, mark = p.warn, "?"
             else:  # NOT_INSTALLED
                 color, mark = muted, "·"
             size = _hb(r.nbytes) if r.nbytes else "—"
@@ -1098,7 +1090,7 @@ class MainWindow(QMainWindow):
             )
             diag_link = (
                 f' &nbsp;<a href="diagnose:{r.source_id}" '
-                f'style="color:{link_color};text-decoration:none">'
+                f'style="color:{p.link};text-decoration:none">'
                 f"[Diagnose with AI]</a>"
                 if r.verdict in ("FAIL", "EMPTY")
                 else ""
@@ -1114,11 +1106,11 @@ class MainWindow(QMainWindow):
 
         summary = (
             f'<div style="font-size:13px;margin-bottom:8px">'
-            f'<span style="color:{ok_color}"><b>{n_ok} OK</b></span> &nbsp;·&nbsp; '
-            f'<span style="color:{fail_color}"><b>{n_fail} failing</b></span> &nbsp;·&nbsp; '
+            f'<span style="color:{p.ok}"><b>{n_ok} OK</b></span> &nbsp;·&nbsp; '
+            f'<span style="color:{p.fail}"><b>{n_fail} failing</b></span> &nbsp;·&nbsp; '
             f'<span style="color:{muted}">{n_missing} not installed</span>'
             + (
-                f' &nbsp;·&nbsp; <span style="color:{unknown_color}">{n_unknown} unknown</span>'
+                f' &nbsp;·&nbsp; <span style="color:{p.warn}">{n_unknown} unknown</span>'
                 if n_unknown
                 else ""
             )
@@ -1164,8 +1156,8 @@ class MainWindow(QMainWindow):
 
     def _diagnose_one(self, source_id: str, parent) -> None:
         result = verify_one(source_id)
-        text = self._text_hex()
-        muted = self._muted_hex()
+        text = self._palette().text
+        muted = self._palette().muted
 
         dlg = QDialog(parent)
         dlg.setWindowTitle(f"Diagnose: {source_id}")
@@ -1440,7 +1432,7 @@ class MainWindow(QMainWindow):
         self.lbl_attention_title.setText(
             f"⚠ What needs my attention ({len(items)} source{'s' if len(items) != 1 else ''})"
         )
-        muted = self._muted_hex()
+        muted = self._palette().muted
         for source, reason, action_kind in items:
             row = QWidget()
             h = QHBoxLayout(row)
@@ -1599,12 +1591,10 @@ class MainWindow(QMainWindow):
             self.log.append(self._render_log_line(ts, msg, error))
 
     def _render_log_line(self, ts: str, msg: str, error: bool) -> str:
-        muted = self._muted_hex()
+        muted = self._palette().muted
         prefix = f"<span style='color:{muted}'>[{ts}]</span> "
-        if error:
-            color = "#e57373" if self._is_dark() else "#c62828"
-        else:
-            color = self._text_hex()
+        p = self._palette()
+        color = p.fail if error else p.text
         return f"{prefix}<span style='color:{color}'>{msg}</span>"
 
     def _log_filter_allows(self, error: bool) -> bool:
