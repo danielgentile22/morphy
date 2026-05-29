@@ -29,11 +29,9 @@ describe('FILTER_SPECS coverage', () => {
     const samples: Record<keyof FilterState, Partial<FilterState>> = {
       ownerKind: { ownerKind: ['llc'] },
       distressTier: { distressTier: ['distressed'] },
-      landUse: { landUse: ['Residential'] },
       countyFips: { countyFips: ['05001'] },
       hasTower: { hasTower: true },
       hasSolar: { hasSolar: true },
-      hasBillboard: { hasBillboard: true },
       inOz: { inOz: true },
       inQct: { inQct: true },
       persistentPoverty: { persistentPoverty: true },

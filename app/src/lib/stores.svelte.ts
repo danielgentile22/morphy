@@ -18,7 +18,7 @@ import {
   loadIndex,
   parcelsAttrUrl,
   pmtilesUrl,
-  resourceExists,
+  probeResource,
 } from './data';
 import { duckDb } from './duckdb';
 import type { FacetData } from './facets';
@@ -100,11 +100,18 @@ export class AppStore {
   /** Up to FILTER_FADE_CAP matching parcel ids — the map fades non-matches. */
   filterMatchIds = $state<string[]>([]);
   filterStatus = $state<FilterStatus>('idle');
+  /** Bumped once per *settled* engine result (idle/error — never the
+   *  intermediate querying emit) so the map fade coalesces to a single
+   *  clear+reapply per query instead of one per filterMatchIds change. */
+  filterResultEpoch = $state(0);
   /** False until boot has read the deep-link — guards the URL-sync effect
    *  from erasing the query string before it is restored. */
   urlSyncReady = $state(false);
 
   selection = $state<Selection | null>(null);
+  /** Status of the async full-row enrichment for a selected parcel — the
+   *  detail panel shows a hint while loading and a banner on failure. */
+  enrichmentStatus = $state<'idle' | 'loading' | 'error'>('idle');
 
   activeState = $derived<StateEntry | null>(
     this.index && this.activeFips
@@ -127,6 +134,9 @@ export class AppStore {
       this.filterCount = r.count;
       this.filterMatchIds = r.matchIds;
       this.filterStatus = r.status;
+      // A settled result drives the map's filter-fade exactly once; the
+      // transient querying emit (empty ids) must not clear the live fade.
+      if (r.status !== 'querying') this.filterResultEpoch++;
     },
   );
   #selectionToken = 0;
@@ -139,11 +149,12 @@ export class AppStore {
     // A parcel clicked on the map / top-list carries only a partial set
     // of attributes (PMTiles baked tiles, or a view's GeoJSON). Fetch the
     // full row from DuckDB so the detail panel shows everything.
-    if (sel?.kind === 'parcel' && this.filtersAvailable) {
-      const parcelId = sel.props.parcel_id;
-      if (typeof parcelId === 'string' && parcelId) {
-        void this.#enrichParcel(parcelId, token);
-      }
+    const parcelId = sel?.kind === 'parcel' ? sel.props.parcel_id : null;
+    if (sel?.kind === 'parcel' && this.filtersAvailable && typeof parcelId === 'string' && parcelId) {
+      this.enrichmentStatus = 'loading';
+      void this.#enrichParcel(parcelId, token);
+    } else {
+      this.enrichmentStatus = 'idle';
     }
   }
   clearSelection(): void {
@@ -152,10 +163,15 @@ export class AppStore {
 
   async #enrichParcel(parcelId: string, token: number): Promise<void> {
     const row = await duckDb.fetchParcel(parcelId).catch(() => null);
-    if (!row || token !== this.#selectionToken) return;
+    if (token !== this.#selectionToken) return; // superseded by a newer selection
+    if (!row) {
+      this.enrichmentStatus = 'error';
+      return;
+    }
     const sel = this.selection;
     if (sel?.kind !== 'parcel') return;
     this.selection = { ...sel, props: row };
+    this.enrichmentStatus = 'idle';
   }
 
   /** Look a parcel up by exact APN; select + fly to it. Returns false if
@@ -172,6 +188,7 @@ export class AppStore {
       props: row,
       at: bbox ? bboxCenter(bbox) : undefined,
     };
+    this.enrichmentStatus = 'idle'; // row is already the full record
     return true;
   }
   setLayerVisible(name: string, visible: boolean): void {
@@ -262,11 +279,12 @@ export class AppStore {
     this.status = 'loading';
     this.errorMessage = null;
     this.selection = null;
+    this.enrichmentStatus = 'idle';
     this.#resetFilterState();
     try {
       const catalog = await loadCatalog(fips);
       const assets = eagerAssets(catalog);
-      const [assetResults, countyData, hasParcelTiles, facets, hasAttrParquet] =
+      const [assetResults, countyData, parcelTilesProbe, facets, attrParquetProbe] =
         await Promise.all([
           Promise.allSettled(
             assets.map((a) => loadGeoJson(compositeAssetUrl(fips, a.geojsonPath))),
@@ -274,9 +292,9 @@ export class AppStore {
           // Base layers + filter inputs — tolerant: a missing choropleth /
           // pmtiles / facets / slim parquet is not fatal.
           loadGeoJson(countyBoundariesUrl(fips)).catch(() => null),
-          resourceExists(pmtilesUrl(fips)),
+          probeResource(pmtilesUrl(fips)),
           loadFacets(fips).catch(() => null),
-          resourceExists(parcelsAttrUrl(fips)),
+          probeResource(parcelsAttrUrl(fips)),
         ]);
       const data: Record<string, FeatureCollection> = {};
       const failed: string[] = [];
@@ -290,14 +308,27 @@ export class AppStore {
       this.layerData = data;
       this.failedLayers = failed;
       this.countyData = countyData;
-      this.parcelsUrl = hasParcelTiles ? pmtilesUrl(fips) : null;
+      this.parcelsUrl = parcelTilesProbe === 'present' ? pmtilesUrl(fips) : null;
       this.facets = facets;
-      this.filtersAvailable = hasAttrParquet;
+      this.filtersAvailable = attrParquetProbe === 'present';
+      // A genuine 404 (absent parquet) degrades silently; an unreachable
+      // probe means the server is down — say so rather than pretend the
+      // filter data simply doesn't exist for this state.
+      if (attrParquetProbe === 'unreachable') {
+        this.notice =
+          'Could not reach the parcel attribute data — filters and parcel search are ' +
+          'unavailable. Is the data server running?';
+      }
       // Point the DuckDB filter engine at this state (lazy WASM init),
       // then fire a warm-up count so the user's first filter is instant
       // instead of paying the cold parquet-read cost.
-      if (hasAttrParquet) {
-        void duckDb.loadState(fips, parcelsAttrUrl(fips));
+      if (this.filtersAvailable) {
+        void duckDb.loadState(fips, parcelsAttrUrl(fips)).catch(() => {
+          // Registration failed after a successful HEAD — disable filters
+          // and tell the user instead of leaving a silently broken panel.
+          this.filtersAvailable = false;
+          this.notice = 'Filters are unavailable — the parcel attribute data failed to load.';
+        });
         void duckDb.count('').catch(() => undefined);
       }
       const visibility = defaultVisibility(catalog);

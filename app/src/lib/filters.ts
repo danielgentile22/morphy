@@ -33,11 +33,9 @@ export function sqlNumber(n: number): string {
 export interface FilterState {
   ownerKind: string[];
   distressTier: string[];
-  landUse: string[];
   countyFips: string[];
   hasTower: boolean;
   hasSolar: boolean;
-  hasBillboard: boolean;
   inOz: boolean;
   inQct: boolean;
   persistentPoverty: boolean;
@@ -58,11 +56,9 @@ export function emptyFilters(): FilterState {
   return {
     ownerKind: [],
     distressTier: [],
-    landUse: [],
     countyFips: [],
     hasTower: false,
     hasSolar: false,
-    hasBillboard: false,
     inOz: false,
     inQct: false,
     persistentPoverty: false,
@@ -170,11 +166,9 @@ function exactSpec<K extends FieldsOfType<string | null>>(id: K, column: string)
 export const FILTER_SPECS: readonly FilterSpec[] = [
   inSetSpec('ownerKind', 'owner_kind'),
   inSetSpec('distressTier', 'distress_tier'),
-  inSetSpec('landUse', 'land_use_desc'),
   inSetSpec('countyFips', 'county_fips'),
   booleanSpec('hasTower', 'has_tower'),
   booleanSpec('hasSolar', 'has_solar'),
-  booleanSpec('hasBillboard', 'has_billboard'),
   booleanSpec('inOz', 'in_oz'),
   booleanSpec('inQct', 'in_qct'),
   booleanSpec('persistentPoverty', 'persistent_poverty'),

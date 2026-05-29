@@ -51,17 +51,23 @@ export function facetsUrl(fips: string): string {
   return compositeAssetUrl(fips, 'facets.json');
 }
 
+/** Outcome of a cheap HEAD probe. `unreachable` (the server is down /
+ *  CORS / DNS) is kept distinct from `absent` (a real 404) so the caller
+ *  can degrade silently on a genuine 404 but warn when the server is down
+ *  rather than pretending the resource simply doesn't exist. */
+export type ResourceProbe = 'present' | 'absent' | 'unreachable';
+
 /**
- * True if a resource exists, via a cheap HEAD request. Used to discover
- * `parcels.pmtiles` by convention — present → render tiles, absent →
- * choropleth only. A network failure counts as "absent".
+ * Probe a resource via a cheap HEAD request. Used to discover
+ * `parcels.pmtiles` / the slim parquet by convention — present → use it,
+ * absent → degrade (choropleth only / filters off).
  */
-export async function resourceExists(url: string): Promise<boolean> {
+export async function probeResource(url: string): Promise<ResourceProbe> {
   try {
     const res = await fetch(url, { method: 'HEAD' });
-    return res.ok;
+    return res.ok ? 'present' : 'absent';
   } catch {
-    return false;
+    return 'unreachable';
   }
 }
 
@@ -72,7 +78,7 @@ async function fetchJson(url: string): Promise<unknown> {
   } catch (e) {
     throw new Error(
       `Could not reach ${url}. Is the data server running ` +
-        `(python -m http.server 8765 at the repo root)? — ${String(e)}`,
+        `(python scripts/serve.py 8765 at the repo root)? — ${String(e)}`,
     );
   }
   if (!res.ok) {

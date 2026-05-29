@@ -7,9 +7,19 @@
   let ownerHits = $state<OwnerSearchHit[]>([]);
   let ownerSearching = $state(false);
   let ownerTimer: ReturnType<typeof setTimeout> | null = null;
+  // Monotonic request tokens — a slow response is discarded if a newer
+  // search of the same kind has since started, so stale results can't
+  // overwrite newer ones. Owner / APN searches are independent.
+  let ownerToken = 0;
+  let apnToken = 0;
 
   let apnTerm = $state('');
   let apnStatus = $state<'idle' | 'searching' | 'notfound'>('idle');
+
+  // Cancel a pending debounce so it can't fire after the component unmounts.
+  $effect(() => () => {
+    if (ownerTimer) clearTimeout(ownerTimer);
+  });
 
   function onOwnerInput(e: Event): void {
     ownerTerm = (e.currentTarget as HTMLInputElement).value;
@@ -17,27 +27,35 @@
     if (ownerTimer) clearTimeout(ownerTimer);
     if (ownerTerm.trim().length < 2) {
       ownerHits = [];
+      ownerSearching = false;
       return;
     }
     // Debounced 200 ms — a keystroke should not fire a query each press.
+    const token = ++ownerToken;
+    ownerSearching = true;
     ownerTimer = setTimeout(async () => {
-      ownerSearching = true;
-      ownerHits = await duckDb.searchOwners(ownerTerm).catch(() => []);
+      const hits = await duckDb.searchOwners(ownerTerm).catch(() => []);
+      if (token !== ownerToken) return; // superseded by a newer query
+      ownerHits = hits;
       ownerSearching = false;
     }, 200);
   }
 
   function pickOwner(hit: OwnerSearchHit): void {
     app.updateFilter({ ownerClusterId: hit.owner_cluster_id });
+    ++ownerToken; // invalidate any in-flight owner query
     ownerHits = [];
+    ownerSearching = false;
     ownerTerm = hit.owner_name;
   }
 
   async function onApnSubmit(e: SubmitEvent): Promise<void> {
     e.preventDefault();
     if (!apnTerm.trim()) return;
+    const token = ++apnToken;
     apnStatus = 'searching';
     const found = await app.selectParcelByApn(apnTerm);
+    if (token !== apnToken) return; // a newer APN search superseded this one
     apnStatus = found ? 'idle' : 'notfound';
   }
 </script>

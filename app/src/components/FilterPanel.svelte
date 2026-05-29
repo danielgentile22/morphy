@@ -184,19 +184,12 @@
       (v) => ({ distressTier: v }),
     )}
 
+    <!-- Tract-level federal overlays — distinct signals from the county
+         distress tier above (OZ/QCT are tract designations; persistent
+         poverty is a USDA county flag not folded into the ARC tier).
+         Grouped beside the tier so "Distress" reads as one section. -->
     <div class="group">
-      <span class="glabel">Hosts infrastructure</span>
-      <div class="checks">
-        {@render check('Tower', app.filters.hasTower, (v) => app.updateFilter({ hasTower: v }))}
-        {@render check('Solar', app.filters.hasSolar, (v) => app.updateFilter({ hasSolar: v }))}
-        {@render check('Billboard', app.filters.hasBillboard, (v) =>
-          app.updateFilter({ hasBillboard: v }),
-        )}
-      </div>
-    </div>
-
-    <div class="group">
-      <span class="glabel">Distress flags</span>
+      <span class="glabel">Federal overlays</span>
       <div class="checks">
         {@render check('Opportunity Zone', app.filters.inOz, (v) => app.updateFilter({ inOz: v }))}
         {@render check('Qualified Census Tract', app.filters.inQct, (v) =>
@@ -209,8 +202,21 @@
     </div>
 
     <div class="group">
+      <span class="glabel">Hosts infrastructure</span>
+      <div class="checks">
+        {@render check('Tower', app.filters.hasTower, (v) => app.updateFilter({ hasTower: v }))}
+        {@render check('Solar', app.filters.hasSolar, (v) => app.updateFilter({ hasSolar: v }))}
+      </div>
+    </div>
+
+    <div class="group">
       <span class="glabel">
-        Min. interestingness score: {app.filters.scoreMin.toFixed(2)}
+        Priority score: {app.filters.scoreMin.toFixed(2)}
+        <span
+          class="info"
+          title="Higher = more infrastructure + distress + owner portfolio. Currently a baked composite; per-signal weighting is Slice-3 work (ADR-058)."
+          >ⓘ</span
+        >
       </span>
       <input
         type="range"
@@ -226,7 +232,7 @@
     {#if facetRange(facets, 'owner_cluster_size')}
       {@const cr = facetRange(facets, 'owner_cluster_size')!}
       <div class="group">
-        <span class="glabel">Min. parcels owned: {app.filters.clusterSizeMin}</span>
+        <span class="glabel">Owner portfolio size: ≥ {app.filters.clusterSizeMin} parcels</span>
         <input
           type="range"
           min="1"
@@ -258,13 +264,6 @@
       app.filters.countyFips,
       (v) => countyNames.get(v) ?? v,
       (v) => ({ countyFips: v }),
-    )}
-    {@render checklist(
-      'Land use',
-      'land_use_desc',
-      app.filters.landUse,
-      (v) => v,
-      (v) => ({ landUse: v }),
     )}
   </section>
 {/if}
@@ -311,6 +310,11 @@
     font-size: 11px;
     color: var(--muted);
     margin-bottom: 5px;
+  }
+  .info {
+    cursor: help;
+    opacity: 0.65;
+    font-size: 11px;
   }
   .chips {
     display: flex;

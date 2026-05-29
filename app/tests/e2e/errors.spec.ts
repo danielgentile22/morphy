@@ -31,7 +31,7 @@ test('an unreachable index.json shows an actionable error screen', async ({ page
   await expect(err).toBeVisible();
   await expect(err).toContainText('Could not load the map data');
   // The message names the data server — an actionable hint, not a blank screen.
-  await expect(err).toContainText('http.server');
+  await expect(err).toContainText('serve.py');
 });
 
 test('a malformed catalog shows an error screen', async ({ page }) => {
@@ -42,5 +42,5 @@ test('a malformed catalog shows an error screen', async ({ page }) => {
 
   const err = page.getByTestId('boot-error');
   await expect(err).toBeVisible();
-  await expect(err).toContainText('catalog.json');
+  await expect(err).toContainText('catalog');
 });

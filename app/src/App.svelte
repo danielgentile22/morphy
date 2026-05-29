@@ -17,24 +17,27 @@
 
   let showHelp = $state(false);
 
-  function onKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') {
-      if (showHelp) showHelp = false;
-      else app.clearSelection();
-      return;
-    }
-    // Other shortcuts are inert while typing in a control.
+  /** True when the event originates from a text-entry control — keyboard
+   *  shortcuts (including Escape) stay inert so they don't hijack typing. */
+  function isTypingTarget(e: KeyboardEvent): boolean {
     const el = e.target;
-    if (
+    return (
       el instanceof HTMLElement &&
       (el.tagName === 'INPUT' ||
         el.tagName === 'SELECT' ||
         el.tagName === 'TEXTAREA' ||
         el.isContentEditable)
-    ) {
-      return;
-    }
-    if (e.key === 'f') {
+    );
+  }
+
+  function onKeydown(e: KeyboardEvent): void {
+    // Inert while typing — e.g. Escape in the owner-search box must clear
+    // the field, not the map selection.
+    if (isTypingTarget(e)) return;
+    if (e.key === 'Escape') {
+      if (showHelp) showHelp = false;
+      else app.clearSelection();
+    } else if (e.key === 'f') {
       e.preventDefault();
       document.querySelector<HTMLInputElement>('[data-testid="owner-search"]')?.focus();
     } else if (e.key === '?') {
