@@ -206,6 +206,10 @@ def _build_infra_to_parcel_lookup(
                 "land_use_code": "parcel_use_code",
             }
         )
+        # Exclude invalid/null-geom parcels from the spatial match — they can't
+        # host infrastructure and would corrupt the sjoin. They remain in the
+        # parcel output (geometry_valid=False); this just skips them here.
+        right = right[right.geometry.notna() & right.geometry.is_valid]
         try:
             hit = gpd.sjoin(infra_geo, right, how="inner", predicate="within")
         except Exception as e:  # noqa: BLE001 — bad shard mustn't kill the loop

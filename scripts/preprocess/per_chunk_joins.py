@@ -14,6 +14,7 @@ from __future__ import annotations
 import geopandas as gpd
 import pandas as pd
 
+from .base import safe_merge
 from .cluster import cluster_id, normalize_address, normalize_owner_name
 
 
@@ -103,10 +104,16 @@ def apply_county_score(
         .reset_index()
         .rename(columns={"tier": "distress_tier"})
     )
-    merged = chunk.merge(agg, on="county_fips", how="left")
+    # The normalizer initialises distress_tier / persistent_poverty as
+    # placeholders, so a raw merge collides into distress_tier_x/_y and the
+    # fillna below KeyErrors. safe_merge drops the placeholders first (ADR-020),
+    # mirroring CountyScoreLookupJoin, and restores GeoDataFrame typing.
+    merged = safe_merge(
+        chunk, agg, on="county_fips", columns_added=["distress_tier", "persistent_poverty"]
+    )
     merged["distress_tier"] = merged["distress_tier"].fillna("")
     merged["persistent_poverty"] = merged["persistent_poverty"].fillna(False)
-    return gpd.GeoDataFrame(merged, geometry="geometry", crs="EPSG:4326")
+    return merged
 
 
 def apply_parcel_to_distress(
@@ -120,15 +127,15 @@ def apply_parcel_to_distress(
         chunk["in_qct"] = False
         return chunk
     overlays_by_idx: dict[int, set[str]] = {}
+    # Only valid geometry can intersect an overlay. Invalid/null-geom parcels
+    # stay in the chunk (geometry_valid=False) but are excluded from the sjoin
+    # and fall through to in_oz/in_qct=False via the index.map below.
+    geo = chunk[["geometry"]].reset_index()
+    geo = geo[geo.geometry.notna() & geo.geometry.is_valid]
     for ot in overlays["overlay_type"].dropna().unique():
         sub = overlays[overlays["overlay_type"] == ot]
         try:
-            hit = gpd.sjoin(
-                chunk[["geometry"]].reset_index(),
-                sub[["geometry"]],
-                how="inner",
-                predicate="intersects",
-            )
+            hit = gpd.sjoin(geo, sub[["geometry"]], how="inner", predicate="intersects")
         except Exception:
             continue
         for idx in hit["index"].unique():

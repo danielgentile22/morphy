@@ -164,11 +164,37 @@ def _map_unique(series: pd.Series, fn) -> pd.Series:
 # ── Layer readers (multi-format, streaming) ──────────────────────────────
 
 
+def _looks_like_lonlat(g: gpd.GeoDataFrame) -> bool:
+    """True when a layer's coordinate bounds fall inside the valid lon/lat
+    envelope. The only case where assuming an *unlabeled* CRS is EPSG:4326 is
+    safe — otherwise ``set_crs`` would silently mislabel a projected layer
+    (e.g. State Plane feet, where coordinates run into the millions) as WGS84
+    and corrupt every downstream spatial join."""
+    try:
+        minx, miny, maxx, maxy = g.total_bounds
+    except Exception:
+        return False
+    if any(pd.isna(v) for v in (minx, miny, maxx, maxy)):
+        return False
+    return -180.0 <= minx and maxx <= 180.0 and -90.0 <= miny and maxy <= 90.0
+
+
 def _to_4326(g: gpd.GeoDataFrame) -> gpd.GeoDataFrame | None:
-    """Reproject one layer to EPSG:4326. Returns None if reprojection fails."""
+    """Reproject one layer to EPSG:4326. Returns None if reprojection fails
+    or an unlabeled layer cannot be safely assumed to already be lon/lat."""
     if g.crs is None:
-        log.warning("  layer has no CRS — assuming EPSG:4326")
-        return g.set_crs("EPSG:4326")
+        # No CRS — only assume 4326 when the coordinates actually look like
+        # lon/lat. Mislabeling projected data as WGS84 corrupts joins silently
+        # and irreversibly, so a layer that fails the check is skipped (loud
+        # log) rather than mislabeled. The CRS must be declared upstream.
+        if _looks_like_lonlat(g):
+            log.warning("  layer has no CRS — coordinates look like lon/lat, assuming EPSG:4326")
+            return g.set_crs("EPSG:4326")
+        log.error(
+            "  layer has no CRS and coordinates are outside the lon/lat range — "
+            "skipping (cannot assume EPSG:4326 without mislabeling projected data)"
+        )
+        return None
     if g.crs.to_epsg() != 4326:
         try:
             return g.to_crs("EPSG:4326")
@@ -349,6 +375,10 @@ def map_layer_to_canonical(
     out["owner_cluster_value_total"] = 0.0
     out["_source_row_id"] = parcel_id_full
     out["geometry"] = g.geometry.values
+    # Geometry-validity status column. Full-fidelity preservation (CLAUDE §8 /
+    # ARCHITECTURE §3.3) means we never drop rows at normalize time — invalid /
+    # null geometry is flagged here, and compose's spatial joins filter on it.
+    out["geometry_valid"] = (g.geometry.notna() & g.geometry.is_valid).values
 
     return gpd.GeoDataFrame(out, geometry="geometry", crs="EPSG:4326")
 
@@ -387,7 +417,7 @@ def normalize_state_parcels(
     canon_bytes = 0
     raw_row_total = 0
     canon_row_total = 0
-    dropped_total = 0
+    invalid_total = 0
     n_layers_seen = 0
     n_layers_mapped = 0
     states_covered: set[str] = set()
@@ -415,9 +445,11 @@ def normalize_state_parcels(
         gdf = map_layer_to_canonical(g, adapter)
         del g  # free the wide raw frame before the next layer
 
-        n_before = len(gdf)
-        gdf = gdf[gdf.geometry.notna() & gdf.geometry.is_valid].copy()
-        dropped_total += n_before - len(gdf)
+        # Keep every row (full-fidelity raw preservation, CLAUDE §8 /
+        # ARCHITECTURE §3.3). map_layer_to_canonical flags invalid/null
+        # geometry via geometry_valid; compose's spatial joins exclude those
+        # rows from sjoins rather than this normalizer dropping them.
+        invalid_total += int((~gdf["geometry_valid"]).sum())
 
         gdf = add_polygon_derivatives(gdf)
         gdf = add_system_columns(gdf, adapter.source_id, "parcel")
@@ -448,22 +480,28 @@ def normalize_state_parcels(
         )
 
     log.info(
-        "%s: %d/%d layers mapped → %d raw rows → %d canonical rows (%d dropped)",
+        "%s: %d/%d layers mapped → %d raw rows → %d canonical rows (%d invalid-geom, kept + flagged)",
         adapter.source_id,
         n_layers_mapped,
         n_layers_seen,
         raw_row_total,
         canon_row_total,
-        dropped_total,
+        invalid_total,
     )
-    if dropped_total:
-        log.warning("%s: dropped %d rows with null/invalid geometry", adapter.source_id, dropped_total)
+    if invalid_total:
+        log.warning(
+            "%s: %d rows have null/invalid geometry — kept with geometry_valid=False",
+            adapter.source_id,
+            invalid_total,
+        )
 
     qr = quality_report(
         adapter.source_id,
         {"raw": qr_sample_raw, "parcels": qr_sample_parcels},
         warnings=(
-            [f"dropped {dropped_total} rows with invalid geometry"] if dropped_total else None
+            [f"{invalid_total} rows have invalid/null geometry (kept, geometry_valid=False)"]
+            if invalid_total
+            else None
         ),
     )
     # The QR tables were profiled from one representative layer (the full
@@ -500,7 +538,7 @@ def _register(adapter: ParcelAdapter) -> ParcelNormalizer:
 from .state_parcel_adapters.ar import AR_PARCELS_ADAPTER  # noqa: E402
 from .state_parcel_adapters.fdor_nal import FDOR_NAL_ADAPTER  # noqa: E402
 from .state_parcel_adapters.fl_fgdl import FL_FGDL_PARCELS_ADAPTER  # noqa: E402
-from .state_parcel_adapters.mn import MN_PARCELS_ADAPTER  # noqa: E402
+from .state_parcel_adapters.mn import MN_PARCELS_ADAPTER  # noqa: E402, F401
 from .state_parcel_adapters.mt import MT_CADASTRAL_PARCELS_ADAPTER  # noqa: E402
 from .state_parcel_adapters.nc import NC_ONEMAP_PARCELS_ADAPTER  # noqa: E402
 
@@ -509,4 +547,12 @@ _register(NC_ONEMAP_PARCELS_ADAPTER)
 _register(MT_CADASTRAL_PARCELS_ADAPTER)
 _register(FL_FGDL_PARCELS_ADAPTER)
 _register(FDOR_NAL_ADAPTER)
-_register(MN_PARCELS_ADAPTER)
+
+# Minnesota (fips 27) is DEFERRED — intentionally not registered into the
+# active normalizer set. ADR-018 defers the MN pull pending MnGeo
+# confirmation, and the source is marked "No License Provided" despite the
+# "Plan Parcels Open" name — a commercial-use blocker (see memory
+# `mn-parcels-license-commercial-blocker`). The adapter is imported above so
+# it stays maintained; re-enable by uncommenting the line below once the
+# licence terms and scope are confirmed.
+# _register(MN_PARCELS_ADAPTER)

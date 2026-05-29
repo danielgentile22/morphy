@@ -25,6 +25,7 @@ from preprocess.base import all_normalizers
 from preprocess.normalizers.state_parcels import (
     ParcelAdapter,
     ParcelNormalizer,
+    _to_4326,
     map_layer_to_canonical,
 )
 from preprocess.normalizers.state_parcel_adapters.ar import AR_PARCELS_ADAPTER
@@ -53,11 +54,13 @@ def _gdf(rows: list[dict]) -> gpd.GeoDataFrame:
 # ── registry invariants ──────────────────────────────────────────────────
 
 
-def test_six_parcel_adapters_register():
-    """Importing the package registers exactly the expected six sources.
+def test_active_parcel_adapters_register():
+    """Importing the package registers exactly the expected active sources.
 
     IN and UT were dropped during the per-source-adapter refactor — they
-    must not reappear in the registry.
+    must not reappear in the registry. MN is intentionally DEFERRED (ADR-018
+    + "No License Provided" commercial blocker), so it is imported but not
+    registered into the active set.
     """
     parcel_ids = sorted(
         n.source_id for n in all_normalizers() if "parcel" in n.canonical_types
@@ -66,7 +69,6 @@ def test_six_parcel_adapters_register():
         "ar_parcels",
         "fdor_nal",
         "fl_fgdl_parcels",
-        "mn_parcels",
         "mt_cadastral_parcels",
         "nc_onemap_parcels",
     ]
@@ -85,6 +87,58 @@ def test_parcel_adapter_is_frozen():
     """ParcelAdapter is a frozen dataclass — mutating it should raise."""
     with pytest.raises(Exception):  # noqa: B017 — dataclasses raise FrozenInstanceError
         AR_PARCELS_ADAPTER.state_fips = "99"  # type: ignore[misc]
+
+
+# ── CRS handling: an unlabeled non-4326 layer must not be mislabeled (P1) ─
+
+
+def test_to_4326_assumes_4326_only_for_lonlat_coords():
+    """An unlabeled layer whose coords look like lon/lat is assumed EPSG:4326."""
+    g = gpd.GeoDataFrame({"geometry": [_square(-92.0, 34.0)]}, geometry="geometry", crs=None)
+    out = _to_4326(g)
+    assert out is not None
+    assert out.crs is not None and out.crs.to_epsg() == 4326
+
+
+def test_to_4326_skips_unlabeled_projected_layer():
+    """An unlabeled layer with projected coords (State Plane feet, millions)
+    is SKIPPED, not silently mislabeled as WGS84 — mislabeling corrupts joins."""
+    projected = Polygon([(2_500_000, 700_000), (2_500_100, 700_000),
+                         (2_500_100, 700_100), (2_500_000, 700_100)])
+    g = gpd.GeoDataFrame({"geometry": [projected]}, geometry="geometry", crs=None)
+    assert _to_4326(g) is None
+
+
+def test_to_4326_reprojects_labeled_non_4326():
+    """A layer with a declared non-4326 CRS is reprojected to lon/lat."""
+    g = gpd.GeoDataFrame({"geometry": [_square(-92.0, 34.0)]}, geometry="geometry", crs="EPSG:4326")
+    g = g.to_crs("EPSG:3857")  # Web Mercator — coords now in metres
+    out = _to_4326(g)
+    assert out is not None and out.crs.to_epsg() == 4326
+    # Back in lon/lat range near the original.
+    minx, miny, maxx, maxy = out.total_bounds
+    assert -93.0 < minx < -91.0 and 33.0 < miny < 35.0
+
+
+# ── geometry validity is flagged, never dropped at normalize time (P2) ────
+
+
+def test_geometry_validity_flagged_not_dropped():
+    """Invalid / null geometry is flagged via the geometry_valid status column,
+    never dropped at normalize time (CLAUDE §8 full-fidelity preservation)."""
+    bowtie = Polygon([(0, 0), (1, 1), (1, 0), (0, 1)])  # self-intersecting → invalid
+    assert not bowtie.is_valid
+    g = _gdf(
+        [
+            {"ParcelId": "P1", "OwnerName": "A", "CountyFips": "001", "geometry": _square()},
+            {"ParcelId": "P2", "OwnerName": "B", "CountyFips": "001", "geometry": bowtie},
+            {"ParcelId": "P3", "OwnerName": "C", "CountyFips": "001", "geometry": None},
+        ]
+    )
+    out = map_layer_to_canonical(g, AR_PARCELS_ADAPTER)
+    assert len(out) == 3  # nothing dropped
+    assert "geometry_valid" in out.columns
+    assert list(bool(v) for v in out["geometry_valid"]) == [True, False, False]
 
 
 # ── AR: 3-digit CountyFips needs state-prefix concatenation ──────────────
