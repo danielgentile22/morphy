@@ -1,6 +1,6 @@
 # pilot
 
-**Cell-tower ground-lease renegotiation analytics.** Joins tower locations to parcel records to economic-distress overlays, then layers carrier identification + lease document storage + LLM-based extraction + triage workflow into a co-founder-facing product. **Phase 1** covers three anchor states (AR + MT + FL) with freestanding towers (NC deferred to a Phase-1 stretch candidate); **Phase 2** adds rooftop installations + operational scale.
+**Cell-tower ground-lease renegotiation analytics.** Joins tower locations to parcel records to economic-distress overlays, then layers carrier identification + lease document storage + LLM-based extraction + triage workflow into a co-founder-facing product. **Phase 1** covers three committed anchor states (AR + MT + FL) with freestanding towers (NC deferred to a Phase-1 stretch candidate; WV added 2026-05-29 as a live composed candidate); **Phase 2** adds rooftop installations + operational scale.
 
 > 🔀 **2026-05-25 phase shift:** previously a "v1 pitch-quality demo," this is now Phase 1 of a fleshed-out internal product the business co-founder uses daily for triage — see [docs/adr/0053-product-phase-shift.md](docs/adr/0053-product-phase-shift.md) for the reframe and ADRs 053–059 in [docs/adr/](docs/adr/) for the locked decisions.
 
@@ -119,9 +119,10 @@ cd app && npm run check && npm run test:unit && npm run test:e2e
 | Arkansas | 05 | ✅ Working end-to-end |
 | Montana | 30 | ✅ Working end-to-end |
 | Florida | 12 | ✅ Recomposed 2026-05-29 (all 67 counties) — live in the app; county-score gap closed (`county_scores` layer + tower/solar distress joins now present), consistent with AR/MT. See [STATUS §4.1](docs/STATUS.md) |
+| West Virginia | 54 | 🆕 Added 2026-05-29 (PR #44) — `wv_parcels` statewide layer (WVGISTC, SB 588); composed (1,389,855 parcels, all 55 counties) + live in the app. Phase-1 **candidate**, not yet a committed anchor (ADR-060 pending). See [STATUS §4.4](docs/STATUS.md) |
 | North Carolina | 37 | ⏸️ Deferred / Phase-1 stretch — raw data deleted 2026-05-20; re-fetch + normalize + compose deferred (NC OneMap re-fetch intermittently 504s). Not a committed anchor. |
 
-The three committed anchors are AR + MT + FL. See [docs/SCOPE.md §2](docs/SCOPE.md) for why these, and [docs/STATUS.md](docs/STATUS.md) for the live state.
+The three committed anchors are AR + MT + FL. WV (54) is a live, composed Phase-1 candidate (added 2026-05-29), not yet a committed anchor. See [docs/SCOPE.md §2](docs/SCOPE.md) for why these, and [docs/STATUS.md](docs/STATUS.md) for the live state.
 
 ---
 
@@ -162,7 +163,7 @@ This is a **Phase 1 internal product** for a 2-person team (dev + business co-fo
 
 **Phase 1 slice plan** (untimed, goal-driven):
 
-1. **F** — Committed anchors (AR + MT + FL) composed; FL recomposed 2026-05-29 (county-score gap closed; chunked compose ADR-051). NC re-fetch + compose **deferred** to a Phase-1 stretch (NC OneMap 504s) — not gating. — **✅ committed anchors composed**
+1. **F** — Committed anchors (AR + MT + FL) composed; FL recomposed 2026-05-29 (county-score gap closed; chunked compose ADR-051). WV (54) added 2026-05-29 as a 4th composed state (Phase-1 candidate; PR #44). NC re-fetch + compose **deferred** to a Phase-1 stretch (NC OneMap 504s) — not gating. — **✅ committed anchors composed**
 2. **A** — FCC ULS carrier identification (Cellular + PCS + AWS / 700 MHz) — **next up**
 3. **C** — Asset enrichment (billboards + solar on parcel) + tunable scoring UI
 4. **D + E** — Lease doc upload + LLM extraction + triage state / write layer / CSV exports (**backend stands up here**)

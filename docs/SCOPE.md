@@ -26,8 +26,11 @@ A **fleshed-out internal product** the co-founder uses to triage cell-tower grou
 | **Arkansas** | 05 | Primary state | Composes cleanly; 2.1M parcels; 222K LLCs; full owner data |
 | **Montana** | 30 | Western proof point | Composes cleanly; 920K parcels; rural-tower representative |
 | **Florida** | 12 | Anchor | Recomposed 2026-05-29 (28 GB raw, all 67 counties); live in app; county-score gap closed — consistent with AR/MT |
+| **West Virginia** | 54 | Phase-1 candidate (not yet committed) | Added 2026-05-29 (PR #44); `wv_parcels` statewide layer (WVGISTC, SB 588); composed 1,389,855 parcels (all 55 counties), live in app. Not yet a committed anchor — ADR-060 pending |
 
 The three committed anchors are AR + MT + FL.
+
+**Live Phase-1 candidate:** **West Virginia** (54) — added 2026-05-29 as a live, composed source (`wv_parcels`; `composite/54` built, in the app). Elevated to a Phase-1 *candidate* by the 2026-05-27 50-state review (rank #5, CU 9/10, 100% ARC coverage). This is the **code/data** integration only — formally elevating WV to a committed anchor is a separate governance step (proposed **ADR-060** + this §2 / [CLAUDE.md §7](../CLAUDE.md) edit), not yet done. Until then the committed set stays AR + MT + FL.
 
 **Deferred / Phase-1 stretch:** **North Carolina** (37, original pilot context) — all raw deleted 2026-05-20; re-fetch + normalize + compose **deferred** (NC OneMap re-fetch intermittently 504s). Still in the picture as a future stretch candidate, not a committed anchor.
 
@@ -55,7 +58,7 @@ After Slice B, the **4-week outcome-bar clock** starts.
 
 ## 4. In-scope data sources
 
-### Already in pipeline (AR/MT/FL composed; NC deferred)
+### Already in pipeline (AR/MT/FL composed; WV candidate composed; NC deferred)
 
 - **FCC ASR** — federal Antenna Structure Registration (≥ 200 ft or near airports). Authoritative point locations.
 - **FAA OEAAA** — proposed and recently-built tall structures.
