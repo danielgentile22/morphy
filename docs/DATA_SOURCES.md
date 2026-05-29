@@ -78,6 +78,7 @@ For higher-level context:
 | 30 | **Steel-in-the-Air** (free county-level lease benchmarks) — NEW | Lease comps | National (counties) | 🟡 | **Phase 1 Slice D** (bootstrap `lease_comp`) | ✅ Yes, with attribution |
 | 31 | **Secretary of State business-entity lookups** — NEW | Officer disclosure | Per anchor state | 🚫 | **Phase 1 Slice D** (one-click in lead-detail panel) | ✅ Yes (public records) |
 | 32 | **UCC-1 filings** — NEW | Third-party-ownership clues | Per anchor state | 🚫 | **Phase 1 Slice D** (surfaced in lead-detail panel) | ✅ Yes (public records) |
+| 33 | **WV statewide parcels** (WVGISTC / SB 588) — NEW | Parcels | WV (all 55 counties) | 🚫 | ✓ active | ✅ Yes, with attribution |
 
 ---
 
@@ -540,6 +541,45 @@ when you license the Premium / Property Tax tier.
 - Regional bundle: ~$8K-$15K/year
 - Nationwide: ~$15K-$50K/year
 (Exact pricing requires a sales conversation. See main project notes.)
+
+---
+
+## 33. West Virginia statewide parcels (WVGISTC / MapWV, SB 588)
+
+- **ID:** `wv_parcels` · **Cadence:** Annual (summer/fall publish) · **Size:** ~527 MB (zipped File Geodatabase)
+- **Source page:** <https://wvgis.wvu.edu/data/dataset.php?ID=371> (record) · **Direct bulk:** `https://data.wvgis.wvu.edu/pub/Clearinghouse/planningLanduseCadastres/Parcels/WVGISTC_<year>/WV_WVGISTC_Tax_<year>.gdb.zip`
+- **License:** Free public service under WV SB 588 (2017); MapWV terms (<https://www.mapwv.gov/terms.html>) — copy/distribute "without obligation … unless otherwise stated"; provided "as is," not a survey.
+- **Automation:** 🚫 Manual only — but the bulk `.gdb.zip` is an anonymous direct HTTPS download (no login/click-through). The walkthrough includes the `curl` command; could be promoted to auto-fetch later (the annual `WVGISTC_<year>` path segment is the only moving part).
+- **Commercial:** ✅ With attribution. ToS reviewed and permissive (no commercial bar, no strict attribution requirement); attribution to the custodians retained as prudent practice. Residual: embedded `.gdb` FGDC metadata not exhaustively read.
+
+### Structure
+One File Geodatabase, all 55 counties, ~1.39M parcels (Tax Year 2025).
+The record splits across two objects joined on **`CleanParcelID`**:
+
+- **`MasterSurfWV_2025`** — parcel polygons (EPSG:26917 → reprojected to
+  4326), thin owner set (`FullOwnerName`/`FullOwnerAddress`/
+  `FullPhysicalAddress`), `Acres_C`, 2-digit `CountyID`.
+- **`ParcelSummary`** — geometry-less attribute table (the full WV IAS
+  assessment record): granular owner (`Owner1`/`Owner2`), structured
+  mailing (`OwnerCity`/`OwnerStateCode`/`OwnerZipCode`), appraised values
+  (`LandAppraisal`/`BuildingAppraisal`/`TotalAppraisal`), land use
+  (`LandUseCode`/`LandUse`), `CountyName`/`CountyCode`.
+
+The normalizer left-merges `ParcelSummary` onto the polygons via the
+adapter's `AttributeJoin` (see `state_parcel_adapters/wv.py`), so the full
+owner/value/land-use detail reaches the canonical `parcel` schema.
+
+### Caveats
+- **Surface owner only.** The parcel names the SURFACE owner; split-estate
+  (severed minerals) is the norm in rural WV. That surface owner is exactly
+  the tower-lease target — do **not** conflate with mineral ownership.
+- **County code ≠ Census FIPS.** WV's `CountyID`/`CountyCode` is an
+  alphabetical 01–55 sequence that does not equal Census ANSI FIPS — Census
+  collates McDowell (54047) before Marion (54049). Resolved via an explicit
+  verified name/code → FIPS table, **not** a prefix-concat.
+- **Appraised, not assessed.** `TotalAppraisal` is total *appraised* value;
+  WV statutory assessed value is 60% of appraised and is not a stored column.
+- All 55 counties are Appalachian → ARC distress overlay covers 100% of WV.
 
 ---
 

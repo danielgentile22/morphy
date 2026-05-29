@@ -122,6 +122,106 @@ class MtCadastralParcels(ManualOnlySource):
         )
 
 
+# ── West Virginia statewide parcels (MapWV / WVGISTC, SB 588) ─────────────
+class WvParcelsManual(ManualOnlySource):
+    id = "wv_parcels"
+    name = "West Virginia statewide parcels"
+    category = CATEGORY_PARCELS
+    coverage = "State: West Virginia"
+    cadence = "Annual"
+    estimated_size_mb = 530.0  # zipped File Geodatabase (Tax Year 2025 = 527 MB)
+    update_cadence_days = 365
+    description = (
+        "West Virginia statewide tax-parcel layer (all 55 counties, "
+        "~1.39M parcels), published free under SB 588 (2017) via the WV "
+        "Property Tax Division + WVU GIS Technical Center / MapWV. Parcel "
+        "record names the SURFACE owner (split-estate is the norm in rural "
+        "WV; minerals are commonly severed). Owner, mailing address, "
+        "appraised value, acreage, land use — the owner/value/land-use "
+        "detail lives in the ParcelSummary table joined on CleanParcelID."
+    )
+    legal = _make_legal(
+        "WV Property Tax Division / WVU GIS Technical Center (WVGISTC)",
+        "https://wvgis.wvu.edu/data/dataset.php?ID=371",
+        "Source: WV Property Tax Division / WVU GIS Technical Center.",
+        notes=(
+            "SB 588 (2017) mandates a free statewide bulk parcel download. "
+            "MapWV terms-of-use (mapwv.gov/terms.html) were reviewed and are "
+            "permissive: the data is provided 'as a free public service' and "
+            "'anyone may view, copy or distribute information found here "
+            "without obligation … unless otherwise stated' — redistribution "
+            "allowed, no attribution strictly required, no commercial "
+            "restriction; provided strictly 'as is' (no warranty / not a "
+            "survey). Attribution to the custodians is retained as prudent "
+            "practice. Residual: the embedded .gdb FGDC metadata was not "
+            "exhaustively read; re-check the 'unless otherwise stated' clause "
+            "before any redistribution of the raw layer. Parcel = SURFACE "
+            "owner only; do not conflate with mineral ownership."
+        ),
+    )
+
+    def manual_walkthrough(self) -> ManualWalkthrough:
+        return ManualWalkthrough(
+            landing_page_url="https://wvgis.wvu.edu/data/dataset.php?ID=371",
+            steps=[
+                ManualStep(
+                    title="Download the statewide parcel geodatabase (direct link)",
+                    body=(
+                        "The full statewide (all-55-county) parcel layer is a "
+                        "single zipped File Geodatabase — an anonymous, direct "
+                        "HTTPS download, no login or click-through:\n"
+                        "```\n"
+                        "curl -L -C - -o WV_WVGISTC_Tax_2025.gdb.zip \\\n"
+                        "  https://data.wvgis.wvu.edu/pub/Clearinghouse/planningLanduseCadastres/Parcels/WVGISTC_2025/WV_WVGISTC_Tax_2025.gdb.zip\n"
+                        "```\n"
+                        "~527 MB (Tax Year 2025). Or click the deep link to "
+                        "open it in a browser. Prefer the File Geodatabase: a "
+                        "statewide shapefile can hit the 2 GB cap, and the .gdb "
+                        "carries the ParcelSummary attribute table (joined on "
+                        "CleanParcelID) the normalizer needs for owner/value."
+                    ),
+                    deep_link=(
+                        "https://data.wvgis.wvu.edu/pub/Clearinghouse/"
+                        "planningLanduseCadastres/Parcels/WVGISTC_2025/"
+                        "WV_WVGISTC_Tax_2025.gdb.zip"
+                    ),
+                ),
+                ManualStep(
+                    title="Unzip into data/raw/wv_parcels/current/",
+                    body=(
+                        "Unzip and move the entire `.gdb` folder into\n"
+                        "```\n"
+                        "data/raw/wv_parcels/current/\n"
+                        "```\n"
+                        "Move the whole `WV_WVGISTC_Tax_2025.gdb/` directory "
+                        "(not its contents) — it holds both the parcel polygons "
+                        "(MasterSurfWV_2025) and the ParcelSummary table."
+                    ),
+                ),
+                ManualStep(
+                    title="Click 'Rescan disk' in the puller",
+                    body=(
+                        "Back in the puller, click **Rescan disk** to register "
+                        "the files, then **Verify contents** for a sanity check."
+                    ),
+                ),
+            ],
+            expected_files=["*.gdb", "*.shp", "*.dbf"],
+            notes_on_failure=(
+                "New vintages publish annually (summer/fall) — browse the open "
+                "parent directory https://data.wvgis.wvu.edu/pub/Clearinghouse/"
+                "planningLanduseCadastres/Parcels/ and bump the WVGISTC_<year> "
+                "path segment. Per-county shapefiles (55 zips, "
+                "<County>_<NN>_WVGISTCTax_<year>_UTM83.zip) live under that "
+                "vintage's CountySplits/ folder if the single .gdb is "
+                "impractical. Alternate portals if the WVGISTC path rots: the "
+                "WV Property Viewer (https://www.mapwv.gov/parcel/) and the WV "
+                "State Tax Dept 'Property Tax Surface Maps' page. SB 588 "
+                "guarantees the data exists and is free — only the path moves."
+            ),
+        )
+
+
 # ── Minnesota MetroGIS / MnGeo parcels ────────────────────────────────────
 class MnParcelsManual(ManualOnlySource):
     id = "mn_parcels"
@@ -388,7 +488,7 @@ class UtParcelsManual(ManualOnlySource):
         )
 
 
-# ── active anchor states (AR + MT) ───────────────────────────────────────
+# ── active anchor states (AR + MT + WV) ──────────────────────────────────
 # NC has its own auto-fetch source (nc_onemap_parcels). FL has its own
 # manual source (fdor_nal). MN, IN, and UT are deferred — MN's license is
 # ambiguous (see [[mn-parcels-license-commercial-blocker]]); IN's and UT's
@@ -398,6 +498,7 @@ class UtParcelsManual(ManualOnlySource):
 SOURCES = [
     MtCadastralParcels(),
     ArParcelsManual(),
+    WvParcelsManual(),
 ]
 
 DEFERRED_SOURCES = [

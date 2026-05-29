@@ -69,6 +69,37 @@ PostMap = Callable[["gpd.GeoDataFrame"], "gpd.GeoDataFrame"]
 
 
 @dataclass(frozen=True)
+class AttributeJoin:
+    """A sidecar non-spatial table merged onto each spatial layer.
+
+    Some statewide feeds split the parcel record across two objects in
+    one container: a thin geometry feature class plus a standalone
+    attribute table holding the owner/value/land-use detail, related by a
+    shared key (WV's ``MasterSurfWV`` polygons + ``ParcelSummary`` table,
+    joined on ``CleanParcelID``). The driver left-merges the named table's
+    ``columns`` onto every spatial layer before canonical mapping, so the
+    existing column-driven ``field_map`` can reach the joined attributes.
+
+    Attributes:
+        layer_name: Exact layer name of the attribute table in the .gdb /
+            .gpkg (e.g. ``"ParcelSummary"``).
+        left_key / right_key: Join columns on the spatial layer and on the
+            attribute table (usually identical).
+        columns: Columns to pull from the attribute table. Keep this to the
+            fields the ``field_map`` actually needs — the table is read in
+            full, so a narrow projection keeps peak memory bounded. The
+            join key is always included automatically. **These names must
+            not collide with the spatial layer's own columns** (other than
+            the key) — collisions would be silently suffixed by the merge.
+    """
+
+    layer_name: str
+    left_key: str
+    right_key: str
+    columns: list[str]
+
+
+@dataclass(frozen=True)
 class ParcelAdapter:
     """Per-source description for the shared parcel-normalize driver.
 
@@ -89,6 +120,18 @@ class ParcelAdapter:
             canonical mapping. Receives the canonical GeoDataFrame and
             returns the (possibly mutated) GeoDataFrame. Reserve for
             quirks that can't be expressed via ``field_map`` alone.
+        attribute_join: Optional sidecar attribute table to left-merge onto
+            each spatial layer before mapping (see ``AttributeJoin``). When
+            None (the default) the driver reads only the spatial layers, as
+            every other source does.
+        mailing_addr_is_full: When True the ``mailing_addr`` field_map
+            candidate is already a complete single-line mailing address
+            (street + city + state + zip), so the driver does **not**
+            re-append the structured ``mailing_city/state/zip`` parts to the
+            composite (which would duplicate them). The structured columns
+            still populate from their own candidates. Default False — most
+            sources supply a street-only line that needs the city/state/zip
+            appended.
     """
 
     source_id: str
@@ -96,6 +139,8 @@ class ParcelAdapter:
     field_map: dict[str, list[str]]
     county_resolver: CountyResolver | None = None
     post_map: PostMap | None = None
+    attribute_join: AttributeJoin | None = None
+    mailing_addr_is_full: bool = False
 
 
 class ParcelNormalizer(Normalizer):
@@ -216,16 +261,28 @@ def _iter_multi_layer(path: Path):
     except Exception as e:
         log.warning("  failed to list layers in %s: %s", path, e)
         return
+    # pyogrio.list_layers rows are [name, geometry_type]; geometry_type is
+    # None for non-spatial tables (e.g. WV's ParcelSummary attribute table).
+    # Skip those here — they're handled as AttributeJoin sidecars, never
+    # mapped as parcel layers, and reading them in full just to discard
+    # them wastes time + memory.
     names: list[str] = []
     try:
         for li in layers:
             if hasattr(li, "__len__") and len(li) > 0 and not isinstance(li, str):
+                geom_type = li[1] if len(li) > 1 else None
+                if geom_type is None or str(geom_type) in ("", "None"):
+                    log.info("  skip non-spatial layer %s::%s", path.name, li[0])
+                    continue
                 names.append(str(li[0]))
             else:
                 names.append(str(li))
     except Exception:
         try:
             for i in range(layers.shape[0]):
+                geom_type = layers[i, 1] if layers.shape[1] > 1 else None
+                if geom_type is None or str(geom_type) in ("", "None"):
+                    continue
                 names.append(str(layers[i, 0]))
         except Exception as e:
             log.warning("  couldn't parse layers from %s: %s", path, e)
@@ -306,14 +363,21 @@ def map_layer_to_canonical(
     n = len(g)
 
     owner_name = _str_series(g, fm.get("owner_name", []))
-    mailing_addr = _join_nonempty(
-        [
-            _str_series(g, fm.get("mailing_addr", [])),
-            _str_series(g, fm.get("mailing_city", [])),
-            _str_series(g, fm.get("mailing_state", [])),
-            _str_series(g, fm.get("mailing_zip", [])),
-        ]
-    )
+    if adapter.mailing_addr_is_full:
+        # The mailing_addr candidate is already a complete single-line
+        # address (street + city + state + zip) — appending the structured
+        # parts again would duplicate them. The structured mailing_city /
+        # state / zip columns below still populate from their own candidates.
+        mailing_addr = _str_series(g, fm.get("mailing_addr", []))
+    else:
+        mailing_addr = _join_nonempty(
+            [
+                _str_series(g, fm.get("mailing_addr", [])),
+                _str_series(g, fm.get("mailing_city", [])),
+                _str_series(g, fm.get("mailing_state", [])),
+                _str_series(g, fm.get("mailing_zip", [])),
+            ]
+        )
     parcel_id_full = _str_series(g, fm.get("parcel_id_full", []))
 
     county_raw = _str_series(g, fm.get("county_fips", []))
@@ -386,6 +450,54 @@ def map_layer_to_canonical(
 # ── Driver entry point ───────────────────────────────────────────────────
 
 
+def _read_attribute_table(raw_dir: Path, join: AttributeJoin) -> pd.DataFrame | None:
+    """Read an ``AttributeJoin`` sidecar table (its key + requested columns)
+    from the first .gdb/.gpkg under ``raw_dir`` that contains it, deduped to
+    one row per join key. Returns None if the table can't be found/read."""
+    try:
+        import pyogrio
+    except Exception as e:  # pragma: no cover - pyogrio is a hard dep in practice
+        log.warning("  attribute join needs pyogrio, unavailable: %s", e)
+        return None
+    want = list(dict.fromkeys([join.right_key, *join.columns]))
+    containers = [p for p in sorted(raw_dir.rglob("*.gdb")) if p.is_dir()]
+    containers += sorted(raw_dir.rglob("*.gpkg"))
+    for container in containers:
+        try:
+            names = {str(li[0]) for li in pyogrio.list_layers(container)}
+        except Exception:
+            continue
+        if join.layer_name not in names:
+            continue
+        try:
+            df = pyogrio.read_dataframe(
+                container, layer=join.layer_name, read_geometry=False, columns=want
+            )
+        except Exception as e:
+            log.warning(
+                "  failed to read attribute table %s::%s: %s",
+                container.name,
+                join.layer_name,
+                e,
+            )
+            return None
+        before = len(df)
+        # One attribute row per parcel; keep the first when a key repeats
+        # (e.g. WV ParcelSummary has a handful of multi-card parcels).
+        df = df.drop_duplicates(subset=join.right_key, keep="first")
+        log.info(
+            "  attribute join: %s::%s — %d rows → %d unique %s",
+            container.name,
+            join.layer_name,
+            before,
+            len(df),
+            join.right_key,
+        )
+        return df
+    log.warning("  attribute-join table %r not found under %s", join.layer_name, raw_dir)
+    return None
+
+
 def normalize_state_parcels(
     raw_dir: Path,
     out_dir: Path,
@@ -404,6 +516,15 @@ def normalize_state_parcels(
     # only layers carrying an owner column are parcels (skips e.g. MT's
     # PLSS / water shapefiles).
     map_all = not owner_cols
+
+    # Optional sidecar attribute table (e.g. WV ParcelSummary) read once and
+    # left-merged onto each spatial layer below, so the field_map can reach
+    # the joined owner/value/land-use columns.
+    attr_df = (
+        _read_attribute_table(raw_dir, adapter.attribute_join)
+        if adapter.attribute_join is not None
+        else None
+    )
 
     parcels_dir = out_dir / "parcels"
     raw_dir_out = out_dir / "raw"
@@ -427,6 +548,17 @@ def normalize_state_parcels(
 
     for label, g in _iter_raw_layers(raw_dir):
         n_layers_seen += 1
+        # Merge the attribute sidecar before the owner-column check so the
+        # check (and the canonical mapping) can see the joined columns —
+        # WV's owner/value detail lives only in the joined ParcelSummary.
+        if attr_df is not None and adapter.attribute_join.left_key in g.columns:
+            g = g.merge(
+                attr_df,
+                left_on=adapter.attribute_join.left_key,
+                right_on=adapter.attribute_join.right_key,
+                how="left",
+                suffixes=("", "_attr"),
+            )
         if not (map_all or any(c in g.columns for c in owner_cols)):
             log.info(
                 "  %s: skip layer %s — no owner column (not a parcel layer)",
@@ -541,12 +673,14 @@ from .state_parcel_adapters.fl_fgdl import FL_FGDL_PARCELS_ADAPTER  # noqa: E402
 from .state_parcel_adapters.mn import MN_PARCELS_ADAPTER  # noqa: E402, F401
 from .state_parcel_adapters.mt import MT_CADASTRAL_PARCELS_ADAPTER  # noqa: E402
 from .state_parcel_adapters.nc import NC_ONEMAP_PARCELS_ADAPTER  # noqa: E402
+from .state_parcel_adapters.wv import WV_PARCELS_ADAPTER  # noqa: E402
 
 _register(AR_PARCELS_ADAPTER)
 _register(NC_ONEMAP_PARCELS_ADAPTER)
 _register(MT_CADASTRAL_PARCELS_ADAPTER)
 _register(FL_FGDL_PARCELS_ADAPTER)
 _register(FDOR_NAL_ADAPTER)
+_register(WV_PARCELS_ADAPTER)
 
 # Minnesota (fips 27) is DEFERRED — intentionally not registered into the
 # active normalizer set. ADR-018 defers the MN pull pending MnGeo
