@@ -13,7 +13,7 @@ For the strategic pivot from pitch demo → product, see [ADR-053](./adr/0053-pr
 
 ## 1. What Phase 1 is
 
-A **fleshed-out internal product** the co-founder uses to triage cell-tower ground-lease renegotiation candidates across 3 anchor states. The audience is *the co-founder* — he opens it, filters, ranks, picks targets, uploads leases as he gets them, marks lead status, and calls landowners. Not a demo, not a customer-facing app.
+A **fleshed-out internal product** the co-founder uses to triage cell-tower ground-lease renegotiation candidates across 4 anchor states. The audience is *the co-founder* — he opens it, filters, ranks, picks targets, uploads leases as he gets them, marks lead status, and calls landowners. Not a demo, not a customer-facing app.
 
 **Outcome bar:** the co-founder uses the product as his **primary daily triage tool for 4 consecutive weeks**, picking targets from it without falling back to spreadsheets or asking the dev for custom data pulls. Deal-closing is outside the gate (depends on his pitching + market); usage is the honest proxy.
 
@@ -26,8 +26,11 @@ A **fleshed-out internal product** the co-founder uses to triage cell-tower grou
 | **Arkansas** | 05 | Primary state | Composes cleanly; 2.1M parcels; 222K LLCs; full owner data |
 | **Montana** | 30 | Western proof point | Composes cleanly; 920K parcels; rural-tower representative |
 | **Florida** | 12 | Anchor | Recomposed 2026-05-29 (28 GB raw, all 67 counties); live in app; county-score gap closed — consistent with AR/MT |
+| **West Virginia** | 54 | Anchor (Appalachian distress) | Added 2026-05-29 (PR #44); `wv_parcels` statewide layer (WVGISTC, SB 588); composed 1,389,855 parcels (all 55 counties), live in app. Committed anchor (ADR-060) |
 
-The three committed anchors are AR + MT + FL.
+The four committed anchors are AR + MT + FL + WV.
+
+**West Virginia** (54) was elevated from candidate to a **committed Phase-1 anchor** on 2026-05-29 ([ADR-060](./adr/0060-wv-committed-anchor.md)). It was added as a live, composed source (`wv_parcels`; `composite/54` built, in the app) and ranked **#5 of 51** in the 2026-05-27 50-state review (CU 9/10, 100% ARC coverage). Parcel = **surface** owner (split-estate is the norm in rural WV — do not conflate with mineral ownership).
 
 **Deferred / Phase-1 stretch:** **North Carolina** (37, original pilot context) — all raw deleted 2026-05-20; re-fetch + normalize + compose **deferred** (NC OneMap re-fetch intermittently 504s). Still in the picture as a future stretch candidate, not a committed anchor.
 
@@ -43,7 +46,7 @@ Untimed — goal-driven, not calendar-driven. Each slice has a "shipped" gate be
 
 | # | Slice | Cost (rough) |
 |---|---|---|
-| **F** | Committed anchors (AR + MT + FL) composed — FL recomposed 2026-05-29, county-score gap closed (chunked compose ADR-051). NC re-fetch + compose **deferred** to a Phase-1 stretch — not gating this slice. | ~2 wks |
+| **F** | Committed anchors (AR + MT + FL + WV) composed — FL recomposed 2026-05-29, county-score gap closed (chunked compose ADR-051); WV added + committed 2026-05-29 (ADR-060). NC re-fetch + compose **deferred** to a Phase-1 stretch — not gating this slice. | ~2 wks |
 | **A** | FCC ULS carrier identification (Cellular + PCS + AWS/700) | 2–3 wks |
 | **C** | Asset enrichment (billboards + solar on parcel) + **tunable scoring UI** | 1-2 wks normalizers + 1-2 wks UI |
 | **D + E** | Lease doc upload + LLM extraction + triage state / write layer / CSV exports. **Backend stands up here** (ADR-055). | 4-6 wks |
@@ -55,7 +58,7 @@ After Slice B, the **4-week outcome-bar clock** starts.
 
 ## 4. In-scope data sources
 
-### Already in pipeline (AR/MT/FL composed; NC deferred)
+### Already in pipeline (AR/MT/FL/WV composed; NC deferred)
 
 - **FCC ASR** — federal Antenna Structure Registration (≥ 200 ft or near airports). Authoritative point locations.
 - **FAA OEAAA** — proposed and recently-built tall structures.
@@ -114,7 +117,7 @@ How freshness surfaces to the co-founder inside the product:
 ## 7. Hard non-goals for Phase 1
 
 - **No rooftop installations** — Phase 2 only ([ADR-054](./adr/0054-asset-universe-phase-1-2.md)).
-- **No nationwide coverage** — 3 anchor states (NC a deferred stretch).
+- **No nationwide coverage** — 4 anchor states (NC a deferred stretch).
 - **No paid skip-trace / mortgage / building tenant data** — free public records only (ADR-057 narrows the older ADRs).
 - **No mass email or CRM-style outreach automation** — surface the lead, log activity, export CSV; the actual call / email lives outside the product Phase 1.
 - **No carrier-side features** — this is a landowner-side tool.

@@ -4,13 +4,14 @@ Orientation for Claude Code sessions working in this repo. Read this
 first; then dip into the relevant doc under [docs/](docs/) when you
 need depth.
 
-**Last updated:** 2026-05-29 (audit remediation: NC demoted from the anchor set, backend labeled design-only, doc drift swept; see docs/STATUS.md).
+**Last updated:** 2026-05-29 (audit remediation: NC demoted from the anchor set, backend labeled design-only, doc drift swept; **WV (54) added + elevated to a committed Phase-1 anchor — ADR-060**; see docs/STATUS.md).
 
 > **🔀 2026-05-25 phase shift:** The project pivoted from "v1 pitch
 > demo" to **Phase 1 of a co-founder-facing product** — see
 > [ADR-053](docs/adr/0053-product-phase-shift.md). Phase 1 is
-> freestanding towers across AR + MT + FL (NC deferred to a Phase-1
-> stretch candidate); Phase 2 is rooftops
+> freestanding towers across AR + MT + FL + WV (NC deferred to a Phase-1
+> stretch candidate; WV elevated to a committed anchor 2026-05-29,
+> [ADR-060](docs/adr/0060-wv-committed-anchor.md)); Phase 2 is rooftops
 > ([ADR-054](docs/adr/0054-asset-universe-phase-1-2.md)). Several legacy
 > ADRs were superseded, narrowed, or partially reversed — see
 > [docs/DECISIONS.md](docs/DECISIONS.md) for the full index.
@@ -210,7 +211,7 @@ confirming the publisher's terms have changed.**
 
 ## 7. Pilot geography reference
 
-State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). Phase 1 committed anchor states: `05` (AR), `12` (FL), `30` (MT). Deferred / Phase-1 stretch: `37` (NC) — raw deleted 2026-05-20, re-fetch + normalize + compose deferred (NC OneMap re-fetch intermittently 504s); still in the picture, just not a committed anchor. Dropped entirely (no owner data): `18` (IN — ADR-017), `49` (UT — ADR-049). Live anchor set + per-state status in [docs/SCOPE.md §2](docs/SCOPE.md) / [docs/STATUS.md](docs/STATUS.md).
+State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). Phase 1 committed anchor states: `05` (AR), `12` (FL), `30` (MT), `54` (WV — added + elevated to a committed anchor 2026-05-29, [ADR-060](docs/adr/0060-wv-committed-anchor.md); `wv_parcels`, WVGISTC statewide layer SB 588; see [docs/STATUS.md §4.4](docs/STATUS.md)). Deferred / Phase-1 stretch: `37` (NC) — raw deleted 2026-05-20, re-fetch + normalize + compose deferred (NC OneMap re-fetch intermittently 504s); still in the picture, just not a committed anchor. Dropped entirely (no owner data): `18` (IN — ADR-017), `49` (UT — ADR-049). Live anchor set + per-state status in [docs/SCOPE.md §2](docs/SCOPE.md) / [docs/STATUS.md](docs/STATUS.md).
 
 ---
 

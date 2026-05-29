@@ -66,6 +66,7 @@ The currently-binding decisions.
 | [ADR-057](./adr/0057-budget-posture-reframed.md) | Budget posture reframed |
 | [ADR-058](./adr/0058-tunable-transparent-scoring.md) | Tunable + transparent scoring |
 | [ADR-059](./adr/0059-llm-lease-extraction.md) | LLM extraction approach for leases |
+| [ADR-060](./adr/0060-wv-committed-anchor.md) | West Virginia elevated to a committed Phase-1 anchor |
 
 ---
 

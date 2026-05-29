@@ -17,7 +17,7 @@ The product in this repo is the **co-founder's working tool** to do that triage 
 
 ## 2. Phase 1 product cut (this push)
 
-The current push produces a tool the **co-founder uses daily** to triage cell-tower ground-lease renegotiation candidates across 3 anchor states (AR + MT + FL; NC a deferred Phase-1 stretch).
+The current push produces a tool the **co-founder uses daily** to triage cell-tower ground-lease renegotiation candidates across 4 anchor states (AR + MT + FL + WV; NC a deferred Phase-1 stretch).
 
 This is no longer a pitch-quality demo (see [ADR-053](./adr/0053-product-phase-shift.md)). The audience is the co-founder; he opens the app, filters parcels, ranks, picks targets, uploads leases as he gets them, marks lead status, and calls landowners.
 
@@ -31,7 +31,7 @@ Deal-closing is outside the gate — depends on the co-founder's pitching, marke
 
 | Slice | Gate |
 |---|---|
-| **F — anchor composes** | The committed anchors (AR + MT + FL) each compose with 0 warnings, all 11 joins applied, all 8 views built; FL recomposed to close its county-score gap (done 2026-05-29). Peak memory < 14 GB (proves chunked compose works). NC re-fetch + compose is **deferred** to a Phase-1 stretch and does not gate this slice. |
+| **F — anchor composes** | The committed anchors (AR + MT + FL + WV) each compose with 0 warnings, all 11 joins applied, all 8 views built; FL recomposed to close its county-score gap and WV added + composed (both done 2026-05-29; WV per ADR-060). Peak memory < 14 GB (proves chunked compose works). NC re-fetch + compose is **deferred** to a Phase-1 stretch and does not gate this slice. |
 | **A — carriers** | ≥ 70% of FCC ASR towers in anchor states have ≥ 1 carrier identified. Carrier list in lead-detail panel. ULS↔ASR join tolerance documented. |
 | **C — billboards + solar + tunable UI** | `has_billboard` + `has_solar` populated for anchor states. Map app ships tunable scoring sliders + per-parcel components breakdown. Co-founder runs a triage session end-to-end without dev next to him. |
 | **D + E — lease docs + triage state** | Auth working; lead state persists across sessions. Lease PDF upload → structured extraction with per-field confidence. ≥ 85% field accuracy on hand-labelled 20-lease gold-set. CSV export covers every field in cofounder's wishlist. |
@@ -58,7 +58,7 @@ If they can't get all five from the docs alone, the docs are not done.
 ## 5. Anti-goals (where we deliberately under-invest in Phase 1)
 
 - **No rooftop installations** — Phase 2 ([ADR-054](./adr/0054-asset-universe-phase-1-2.md)).
-- **No nationwide coverage** — 3 anchor states (NC a deferred stretch); nationwide is paid Regrid.
+- **No nationwide coverage** — 4 anchor states (NC a deferred stretch); nationwide is paid Regrid.
 - **No paid skip-trace, mortgage data, building tenant data** — current-budget posture ([ADR-057](./adr/0057-budget-posture-reframed.md)).
 - **No mass email or CRM automation** — Phase 2.
 - **No real-time data** — manual-trigger pulls; freshness surfaced in UI.

@@ -1,7 +1,7 @@
 # STATUS — Where the project stands today
 
 **Last updated:** 2026-05-29
-**Updated by:** Phase 1 product pivot (ADRs 053–059 locked the decisions); 2026-05-29 audit-remediation pass — FL **recomposed** (county-score gap **closed**: 11 joins, `county_scores` layer + tower/solar county-score joins now present; consistent with AR/MT); merged to `main` 2026-05-29 and reconciled the issue tracker (closed #9 chunked compose, #20 FL compose, #14 solar join)
+**Updated by:** Phase 1 product pivot (ADRs 053–059 locked the decisions); 2026-05-29 audit-remediation pass — FL **recomposed** (county-score gap **closed**: 11 joins, `county_scores` layer + tower/solar county-score joins now present; consistent with AR/MT); merged to `main` 2026-05-29 and reconciled the issue tracker (closed #9 chunked compose, #20 FL compose, #14 solar join). **WV (54) added + elevated to a committed Phase-1 anchor 2026-05-29** (ADR-060, PR #44) — new `wv_parcels` source + adapter; `composite/54` built (1.39M parcels) and live in the app (§4.4)
 **Update cadence:** at the start of every slice and at every session handoff.
 
 A snapshot of reality. If this disagrees with the code or data, the code/data wins — fix the doc.
@@ -14,7 +14,7 @@ The project reframed from "v1 pitch-quality demo across 4 states" to "Phase 1 of
 
 **What carries forward unchanged** from the pitch-cut work:
 - All v0–v3 work (data puller, preprocess framework, map app at `app/`, AR/MT remediation, schema work).
-- Anchor states: AR + MT + FL (NC deferred — see §4.2).
+- Anchor states: AR + MT + FL + WV (NC deferred — see §4.2). WV (54) added + elevated to a committed anchor 2026-05-29 (ADR-060 — see §4.4).
 - Map app v2 stack (Svelte 5 + MapLibre + PMTiles + DuckDB-WASM) — Phase 1 layers new UI on top (Slices C + D).
 
 **What changes:**
@@ -29,22 +29,24 @@ The project reframed from "v1 pitch-quality demo across 4 states" to "Phase 1 of
 
 ## 1. TL;DR
 
-**Phase 1 next up:** Slice A (carriers) — Slice F's committed-anchor composes are complete. The three committed anchors (AR + MT + FL) are all composed and mutually consistent. Chunked compose (ADR-051) shipped 2026-05-19. **FL was recomposed 2026-05-29** and is live in the app (`index.json` lists 05, 12, 30); the earlier county-score gap is **closed** — FL now carries the `county_scores` layer and ran all 11 joins, including `CountyScoreToTowerJoin` + `CountyScoreToSolarJoin` (§4.1). NC (37) remains **deferred / a Phase-1 stretch** — its re-fetch + compose is not a committed Slice-F deliverable (§4.2). (Audit remediation + FL recompose merged to `main` 2026-05-29 — see §5.)
+**Phase 1 next up:** Slice A (carriers) — Slice F's committed-anchor composes are complete. The four committed anchors (AR + MT + FL + WV) are all composed and mutually consistent. Chunked compose (ADR-051) shipped 2026-05-19. **FL was recomposed 2026-05-29** and is live in the app (`index.json` lists 05, 12, 30, 54); the earlier county-score gap is **closed** — FL now carries the `county_scores` layer and ran all 11 joins, including `CountyScoreToTowerJoin` + `CountyScoreToSolarJoin` (§4.1). **WV (54) was added + committed as an anchor 2026-05-29** (new `wv_parcels` source + adapter, ADR-060, PR #44): `composite/54` is built (1.39M parcels, towers + distress joined) and live in the app (§4.4). NC (37) remains **deferred / a Phase-1 stretch** — its re-fetch + compose is not a committed Slice-F deliverable (§4.2). (Audit remediation + FL recompose merged to `main` 2026-05-29 — see §5.)
 
 | State | Raw data | Normalized | Composed | Notes |
 |---|---|---|---|---|
 | **AR** (05) | ✅ | ✅ 2,116,976 parcels | ✅ 11 joins, 8 views, 0 warnings | Audited clean 2026-05-21. |
 | **MT** (30) | ✅ all 56 counties | ✅ 920,111 parcels | ✅ 11 joins, 8 views, 0 warnings | Audited clean 2026-05-21. |
 | **FL** (12) | ✅ all 67 counties (~28 GB raw intact) | ✅ 11,184,113 parcels (fdor_nal) | ✅ recomposed 2026-05-29 — 11,425,608 parcels, 11 joins, 8 views, 0 warnings | Live in app. County-score gap **closed** 2026-05-29: `county_scores` layer + tower/solar county-score joins now present; consistent with AR/MT (§4.1). |
+| **WV** (54) | ✅ statewide .gdb (WVGISTC, SB 588) | ✅ 1,389,855 parcels (wv_parcels) | ✅ 11 joins, 8 views, 0 warnings | 🆕 Added 2026-05-29 (PR #44); **committed anchor** 2026-05-29 (ADR-060). Live in app. §4.4 |
 | **NC** (37) | ❌ deleted 2026-05-20 | ❌ | ❌ | ⏸️ Deferred / Phase-1 stretch — re-fetch from NC OneMap (504s) + normalize + compose deferred, not a committed anchor (§4.2). |
 
-Three committed anchors: AR + MT + FL. Dropped entirely from this cut: IN (18) and UT (49) — no owner data; MN (27) — license ambiguity.
+Four committed anchors: AR + MT + FL + **WV** (WV elevated 2026-05-29 — ADR-060, §4.4). Dropped entirely from this cut: IN (18) and UT (49) — no owner data; MN (27) — license ambiguity.
 
 ---
 
 ## 2. What works
 
 - **AR + MT + FL end-to-end** — pull → normalize → compose → 8 views. FL was re-normalized 2026-05-26 and **recomposed 2026-05-29** (11,425,608 parcels, 11 joins, county-score gap closed) and is live in the app.
+- **WV (54) end-to-end** — `wv_parcels` (statewide WVGISTC `.gdb`, SB 588) → normalize (1,389,855 parcels) → compose (11 joins, 8 views, 0 warnings; joined to national towers + ARC/HUD/USDA distress) → live in the app. Added 2026-05-29 (PR #44); a **committed Phase-1 anchor** (ADR-060, §4.4).
 - The v3 preprocess framework, the puller, Git + CI.
 - Map app at `app/` — Svelte 5 + MapLibre + PMTiles + DuckDB-WASM; reads catalog-driven composites for any composed state.
 - **FL normalizer code** is correct and verified (geometry bug fixed; ADR-050 streaming per-county normalizer). FL re-normalized + composed successfully on 2026-05-26 via the chunked path (ADR-051); re-running `python scripts/preprocess.py --state 12` reproduces it.
@@ -73,7 +75,7 @@ Three committed anchors: AR + MT + FL. Dropped entirely from this cut: IN (18) a
 
 ### 4.1 FL — recomposed 2026-05-29; county-score gap closed
 
-FL was recomposed on 2026-05-29 (`composite/12/summary.json` dated 2026-05-29): 11,425,608 parcels, **11 joins applied (0 skipped)**, 8 views, pmtiles, 0 warnings. It is live in the app (`index.json` lists 05, 12, 30). The raw FDOR NAL data remains at `data/raw/fdor_nal/current/` (~28 GB, all 67 counties). Composing succeeded via the **chunked compose** path (ADR-051), which keeps peak memory bounded so FL's parcels fit on the 16 GB dev machine. (The 11,425,608 composed count = `fdor_nal` canonical 11,184,113 + `fl_fgdl_parcels` ~241,518; both FL parcel sources are composed.)
+FL was recomposed on 2026-05-29 (`composite/12/summary.json` dated 2026-05-29): 11,425,608 parcels, **11 joins applied (0 skipped)**, 8 views, pmtiles, 0 warnings. It is live in the app (`index.json` lists 05, 12, 30, 54). The raw FDOR NAL data remains at `data/raw/fdor_nal/current/` (~28 GB, all 67 counties). Composing succeeded via the **chunked compose** path (ADR-051), which keeps peak memory bounded so FL's parcels fit on the 16 GB dev machine. (The 11,425,608 composed count = `fdor_nal` canonical 11,184,113 + `fl_fgdl_parcels` ~241,518; both FL parcel sources are composed.)
 
 **Gap closed (FL now consistent with AR/MT):** the earlier compose (2026-05-26) had **no `county_scores` catalog layer** and **skipped `CountyScoreToTowerJoin` + `CountyScoreToSolarJoin`** because it ran before the `arc_distressed` / `usda_persistent_poverty` normalizers finished, so county-score data wasn't loaded at compose time. The 2026-05-29 recompose ran with that data present: FL now carries the standalone `county_scores` layer and both county-score joins. (The recompose also surfaced and fixed a pre-existing `safe_merge` suffix-collision bug in `apply_county_score` that crashed once FL had county-score data — see the audit remediation.) To reproduce:
 ```bash
@@ -109,6 +111,15 @@ NB: the puller's `prepare_fresh_partial()` wipes `.partial/` at start of every f
 
 - `composite/18` and `normalized/in_parcels` — IN dropped from this cut (ADR-017); safe to delete.
 
+### 4.4 WV — committed Phase-1 anchor (added + elevated 2026-05-29)
+
+West Virginia (54) was added 2026-05-29 (PR #44, merged to `main`) as a new parcel source, the same way AR/MT/FL are wired, and elevated to a **committed Phase-1 anchor** the same day ([ADR-060](./adr/0060-wv-committed-anchor.md)). The 2026-05-27 50-state review ranked WV **#5 of 51** (CU 9/10, 100% ARC coverage — `docs/research/review-2026-05-27/state-WV-west-virginia-briefing.md`), out-performing the original anchors on the rubric.
+
+- **Source:** new `wv_parcels` MANUAL_ONLY puller source (WVGISTC / MapWV statewide File Geodatabase, SB 588 free bulk; ToS reviewed and permissive). Parcel = **surface** owner (split-estate is the norm in rural WV — do not conflate with mineral ownership).
+- **Composed:** `composite/54` — 1,389,855 parcels, **11 joins (0 skipped), 8 views, 0 warnings**, joined to the already-present national towers (7,330) + ARC/HUD/USDA distress (159). `index.json` now lists 05, 12, 30, 54; WV renders in the app (`parcels.pmtiles` built). Reproduce: `python scripts/preprocess.py --state 54`.
+- **Two WV-specific wrinkles handled in code:** (1) owner/value/land-use live in a separate `ParcelSummary` table joined on `CleanParcelID` — handled by a new opt-in `AttributeJoin` in the shared parcel driver; (2) WV's internal `CountyID` (01–55) is **not** Census FIPS — Census collates McDowell (54047) before Marion (54049) — so county resolves via an explicit verified table, not a prefix-concat. See `scripts/preprocess/normalizers/state_parcel_adapters/wv.py` + [DATA_SOURCES.md #33](./DATA_SOURCES.md).
+- **Committed anchor ([ADR-060](./adr/0060-wv-committed-anchor.md)).** WV was elevated from candidate to a committed Phase-1 anchor on 2026-05-29; the committed set is now **AR + MT + FL + WV** (reflected in [SCOPE.md §2](./SCOPE.md) / [CLAUDE.md §7](../CLAUDE.md) / README / GOALS / ROADMAP). Outreach compliance (WV §46A-6F telemarketer registration; B2B carve-out for LLC-owned parcels; mail the cleanest channel) is a business-process item, not pipeline code.
+
 ---
 
 ## 5. Commit state
@@ -119,13 +130,15 @@ This pivot's docs (this STATUS, SCOPE, GOALS, ROADMAP rewrites + 7 new ADRs + se
 
 **2026-05-29:** the audit-remediation work (map app fixes, preprocess hardening, FL recompose, doc reconciliation, CI lint/test fixes) was merged to `main` (PR #41; the stacked refactor + cleanup branches consolidated and deleted). The issue tracker was reconciled against this: **#9** (chunked compose), **#20** (FL compose), and **#14** (solar→parcel join) closed as completed; **#10**/**#21** (NC) marked `deferred`; **#27** (Steel-in-the-Air) flagged premise-overturned → `ready-for-human`.
 
+**2026-05-29 (WV):** `wv_parcels` — West Virginia statewide parcels — added and merged to `main` (**PR #44**). New MANUAL_ONLY puller source + normalizer adapter + shared-driver `AttributeJoin`/`mailing_addr_is_full` (additive, opt-in); `composite/54` built (1.39M parcels joined to national towers/distress). Full suite green (251 passed), ruff clean. WV was then **elevated to a committed Phase-1 anchor** ([ADR-060](./adr/0060-wv-committed-anchor.md)) — committed set is now AR + MT + FL + WV (§4.4).
+
 ---
 
 ## 6. Phase 1 slice progress
 
 | Slice | State |
 |---|---|
-| **F** — Anchor composes (AR + MT + FL; FL recomposed 2026-05-29, county-score gap closed). NC compose deferred. | 🟢 Committed anchors composed — gate met; merged to `main` 2026-05-29 (closed #9 chunked compose, #20 FL compose) |
+| **F** — Anchor composes (AR + MT + FL + WV; FL recomposed 2026-05-29, county-score gap closed). NC compose deferred. WV (54) added + committed as the 4th anchor 2026-05-29 (ADR-060, §4.4). | 🟢 Committed anchors composed — gate met; merged to `main` 2026-05-29 (closed #9 chunked compose, #20 FL compose; WV via PR #44) |
 | **A** — FCC ULS carrier identification | ⬜ Next up |
 | **C** — Asset enrichment + tunable scoring UI | ⬜ Partial: solar→parcel join done (#14); billboards partial (#13), scoring component-storage partial (#15), tunable UI not started (#29) |
 | **D + E** — Lease docs + triage state + backend | ⬜ |
