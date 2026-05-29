@@ -8,7 +8,6 @@ its terms. MANUAL_ONLY in the UI.
 
 from __future__ import annotations
 
-
 from ..base import (
     CATEGORY_BILLBOARDS,
     ManualOnlySource,
@@ -56,8 +55,6 @@ class TxdotBillboards(ManualOnlySource):
             "click 'Rescan disk' in the puller."
         ),
     )
-
-
 
 
 SOURCE = TxdotBillboards()

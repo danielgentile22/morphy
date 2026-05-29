@@ -25,7 +25,7 @@ from preprocess.normalizers.pandas_coerce import safe_get, safe_str, to_float, t
         (None, ""),
         (math.nan, ""),
         (float("nan"), ""),
-        ("nan", ""),       # literal "nan" string from a bad-CSV read
+        ("nan", ""),  # literal "nan" string from a bad-CSV read
         ("NaN", ""),
         (123, "123"),
         (12.5, "12.5"),

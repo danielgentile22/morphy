@@ -12,7 +12,6 @@ download link, and follow it.
 
 from __future__ import annotations
 
-
 from ..base import (
     CATEGORY_SOLAR,
     ManualOnlySource,
@@ -68,8 +67,6 @@ class LbnlTts(ManualOnlySource):
             "blocks scripted requests. This always has to be manual."
         ),
     )
-
-
 
 
 SOURCE = LbnlTts()

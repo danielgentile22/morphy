@@ -52,9 +52,7 @@ def test_pipeline_runs_steps_in_order_with_events():
     steps = [_RecordedStep("a"), _RecordedStep("b"), _RecordedStep("c")]
     events, cb = _collect_events()
     outcome = RunOutcome()
-    Pipeline(steps=steps).run(
-        outcome=outcome, manifest=None, progress_callback=cb
-    )
+    Pipeline(steps=steps).run(outcome=outcome, manifest=None, progress_callback=cb)
     assert [s.ran for s in steps] == [True, True, True]
     phases = [(e[0], e[1]) for e in events]
     # start/ok in order
@@ -79,9 +77,7 @@ def test_required_step_failure_records_in_outcome():
     after = _RecordedStep("after")
     events, cb = _collect_events()
     outcome = RunOutcome()
-    Pipeline(steps=[boom, after]).run(
-        outcome=outcome, manifest=None, progress_callback=cb
-    )
+    Pipeline(steps=[boom, after]).run(outcome=outcome, manifest=None, progress_callback=cb)
     assert outcome.failed_steps == ["boom"]
     assert after.ran is True  # pipeline keeps going after a required failure
     fail_events = [e for e in events if e[0] == "step_fail"]
@@ -99,9 +95,7 @@ def test_auxiliary_step_failure_does_not_pollute_outcome():
     )
     events, cb = _collect_events()
     outcome = RunOutcome()
-    Pipeline(steps=[aux]).run(
-        outcome=outcome, manifest=None, progress_callback=cb
-    )
+    Pipeline(steps=[aux]).run(outcome=outcome, manifest=None, progress_callback=cb)
     assert outcome.failed_steps == []  # auxiliary failures are warnings only
     fail_events = [e for e in events if e[0] == "step_fail"]
     assert fail_events[0][2]["severity"] == "auxiliary"
@@ -125,9 +119,7 @@ def test_skip_by_name_skips_with_reason():
 def test_inapplicable_step_skipped_with_reason():
     a = _RecordedStep("a", applicable=False)
     events, cb = _collect_events()
-    Pipeline(steps=[a]).run(
-        outcome=RunOutcome(), manifest=None, progress_callback=cb
-    )
+    Pipeline(steps=[a]).run(outcome=RunOutcome(), manifest=None, progress_callback=cb)
     assert a.ran is False
     assert (
         "step_skip",
@@ -141,9 +133,7 @@ def test_progress_callback_exceptions_do_not_abort_pipeline():
         raise RuntimeError("callback explode")
 
     a = _RecordedStep("a")
-    Pipeline(steps=[a]).run(
-        outcome=RunOutcome(), manifest=None, progress_callback=bad_cb
-    )
+    Pipeline(steps=[a]).run(outcome=RunOutcome(), manifest=None, progress_callback=bad_cb)
     assert a.ran is True  # pipeline still ran the step
 
 
@@ -162,7 +152,12 @@ def test_default_pipeline_steps_have_expected_names_and_severities():
     assert ComposeStatesStep().severity == Severity.REQUIRED
     assert AppAssetsStep().severity == Severity.AUXILIARY
     assert TilesStep().severity == Severity.AUXILIARY
-    assert {NormalizeAllStep().name, ComposeStatesStep().name, AppAssetsStep().name, TilesStep().name} == {
+    assert {
+        NormalizeAllStep().name,
+        ComposeStatesStep().name,
+        AppAssetsStep().name,
+        TilesStep().name,
+    } == {
         "normalize_all",
         "compose",
         "app_assets",

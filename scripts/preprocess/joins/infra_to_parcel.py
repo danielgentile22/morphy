@@ -55,9 +55,7 @@ class InfraToParcelJoin(Join):
             return
         right = parcels[[*keep, "geometry"]].rename(columns=self.parcel_columns_map)
         joined = gpd.sjoin(infra, right, how="left", predicate=self.predicate)
-        joined = joined.drop(
-            columns=[c for c in joined.columns if c.startswith("index_right")]
-        )
+        joined = joined.drop(columns=[c for c in joined.columns if c.startswith("index_right")])
         ctx.set(self.target_type, joined)
         ctx.join_log.append(self.name)
 

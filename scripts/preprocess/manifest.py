@@ -215,12 +215,10 @@ class PreprocessManifest:
         return cls(
             schema_version=raw.get("schema_version", SCHEMA_VERSION),
             normalized={
-                sid: NormalizeEntry.from_dict(e)
-                for sid, e in (raw.get("normalized") or {}).items()
+                sid: NormalizeEntry.from_dict(e) for sid, e in (raw.get("normalized") or {}).items()
             },
             composed={
-                fips: ComposeEntry.from_dict(e)
-                for fips, e in (raw.get("composed") or {}).items()
+                fips: ComposeEntry.from_dict(e) for fips, e in (raw.get("composed") or {}).items()
             },
         )
 

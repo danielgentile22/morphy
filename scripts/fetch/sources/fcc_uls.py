@@ -29,9 +29,9 @@ from ..base import (
     FetchResult,
     ProgressCallback,
 )
-from ..http import download, head
+from ..http import download
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
-from ._helpers import parse_http_date, safe_extract_zip, version_from_head
+from ._helpers import safe_extract_zip, version_from_head
 
 BASE_URL = "https://data.fcc.gov/download/pub/uls/complete"
 

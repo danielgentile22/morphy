@@ -19,7 +19,6 @@ from fetch.manifest import (
 )
 from PySide6.QtGui import QColor
 
-
 STATUS_LABELS = {
     "ok": ("✓ Current", QColor("#2e7d32")),
     "stale": ("⟳ Stale (new version available)", QColor("#ef6c00")),

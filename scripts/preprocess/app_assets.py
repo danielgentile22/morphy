@@ -88,9 +88,7 @@ def resolve_parcel_paths(state_dir: Path) -> tuple[list[Path], bool]:
         shards = sorted(sharded.glob("*.parquet"))
         if shards:
             return shards, True
-    raise FileNotFoundError(
-        f"no parcels.parquet (or parcels/ shard dir) under {state_dir}"
-    )
+    raise FileNotFoundError(f"no parcels.parquet (or parcels/ shard dir) under {state_dir}")
 
 
 def _utcnow_iso() -> str:
@@ -176,9 +174,7 @@ def write_composite_index(
     # silent missing states in production. See index_schema.py.
     validate_index(index)
     index_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_fd, tmp_path = tempfile.mkstemp(
-        dir=index_path.parent, prefix=".index.", suffix=".tmp"
-    )
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=index_path.parent, prefix=".index.", suffix=".tmp")
     try:
         with os.fdopen(tmp_fd, "w") as f:
             json.dump(index, f, indent=2, sort_keys=True)

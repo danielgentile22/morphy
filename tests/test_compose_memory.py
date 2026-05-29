@@ -65,9 +65,7 @@ def test_chunk_loop_releases_each_chunk_after_processing(
     assert len(chunk_refs) >= 2, "fixture should yield ≥2 shards"
 
 
-def test_chunks_dont_outlive_two_iterations(
-    fixture_dirs, registered_normalizers, monkeypatch
-):
+def test_chunks_dont_outlive_two_iterations(fixture_dirs, registered_normalizers, monkeypatch):
     """A chunk yielded at iteration N must be collectable by iteration N+2.
 
     Looser than "at most one live" — Python's for-loop naturally keeps the
@@ -91,9 +89,7 @@ def test_chunks_dont_outlive_two_iterations(
                 gc.collect()
                 old_label, old_ref = yielded[-3]
                 if old_ref() is not None:
-                    violations.append(
-                        f"chunk {old_label} still alive 2 iterations after yield"
-                    )
+                    violations.append(f"chunk {old_label} still alive 2 iterations after yield")
             yield label, chunk
 
     monkeypatch.setattr(cc, "iter_state_parcel_shards", tracked)

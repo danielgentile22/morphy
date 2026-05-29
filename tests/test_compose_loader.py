@@ -99,7 +99,7 @@ def test_default_loader_single_file_spatial_filters_by_state(fake_normalized_roo
         [
             {"name": "AR_tower_1", "state_fips": "05", "geometry": Point(-92.5, 35.0)},
             {"name": "AR_tower_2", "state_fips": "05", "geometry": Point(-92.7, 35.1)},
-            {"name": "MT_tower",   "state_fips": "30", "geometry": Point(-110.0, 47.0)},
+            {"name": "MT_tower", "state_fips": "30", "geometry": Point(-110.0, 47.0)},
         ],
     )
     out = _TowerStubNormalizer().load_state_data("05")

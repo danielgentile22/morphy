@@ -13,8 +13,9 @@ broadband-served polygons, etc.) follow the same shape — one
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 import geopandas as gpd
 
@@ -73,11 +74,7 @@ class SpatialAttributeJoin(Join):
             cats = [None]
 
         for cat in cats:
-            subset = (
-                src[src[self.spec.category_column] == cat]
-                if cat is not None
-                else src
-            )
+            subset = src[src[self.spec.category_column] == cat] if cat is not None else src
             try:
                 hit = gpd.sjoin(
                     tgt[["geometry"]].reset_index(),
@@ -91,13 +88,12 @@ class SpatialAttributeJoin(Join):
                 # one bad overlay_type doesn't suppress the others.
                 continue
             for idx in hit["index"].unique():
-                per_target.setdefault(int(idx), set()).add(
-                    cat if cat is not None else "_hit_"
-                )
+                per_target.setdefault(int(idx), set()).add(cat if cat is not None else "_hit_")
 
         tgt = tgt.copy()
         for col_name, fn in self.spec.derived_columns.items():
-            tgt[col_name] = tgt.index.map(lambda i: fn(per_target.get(int(i), set())))
+            # bind fn per-iteration (lambda is consumed immediately by .map)
+            tgt[col_name] = tgt.index.map(lambda i, fn=fn: fn(per_target.get(int(i), set())))
         ctx.set(self.spec.target, tgt)
         ctx.join_log.append(self.name)
 
@@ -134,9 +130,5 @@ TOWER_TO_DISTRESS_SPEC = SpatialAttributeSpec(
 )
 
 # Pin legacy names so existing manifests + logs stay continuous.
-register_join_instance(
-    SpatialAttributeJoin(PARCEL_TO_DISTRESS_SPEC, "ParcelToDistressJoin")
-)
-register_join_instance(
-    SpatialAttributeJoin(TOWER_TO_DISTRESS_SPEC, "TowerToDistressJoin")
-)
+register_join_instance(SpatialAttributeJoin(PARCEL_TO_DISTRESS_SPEC, "ParcelToDistressJoin"))
+register_join_instance(SpatialAttributeJoin(TOWER_TO_DISTRESS_SPEC, "TowerToDistressJoin"))

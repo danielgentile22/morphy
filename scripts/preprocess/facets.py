@@ -34,9 +34,7 @@ log = logging.getLogger("preprocess.facets")
 
 # Columns excluded from parcels_attr.parquet: the WKB geometry columns
 # and the extras blob (every _-prefixed internal column is also dropped).
-_DROP_EXACT: frozenset[str] = frozenset(
-    {"geometry", "geom_centroid", "geom_simplified", "extras"}
-)
+_DROP_EXACT: frozenset[str] = frozenset({"geometry", "geom_centroid", "geom_simplified", "extras"})
 
 CATEGORICAL_FACETS: tuple[str, ...] = (
     "owner_kind",

@@ -40,8 +40,6 @@ class InterestingnessScoreJoin(Join):
         # Post-weight breakdown — the legacy column the detail panel reads.
         parcels["interestingness_components"] = scored.apply(lambda t: t[1])
         # Weight-free raw signals — the TS scorer (ADR-058) will read this.
-        parcels["interestingness_components_raw"] = components.apply(
-            lambda c: c.to_dict()
-        )
+        parcels["interestingness_components_raw"] = components.apply(lambda c: c.to_dict())
         ctx.set("parcel", parcels)
         ctx.join_log.append(self.name)

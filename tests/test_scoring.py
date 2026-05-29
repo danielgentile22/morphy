@@ -41,9 +41,7 @@ def _row(**kw) -> pd.Series:
 
 
 def test_components_are_weight_free_integers_and_strings():
-    c = compute_components(
-        _row(has_tower=True, tower_count=3, in_oz=True, owner_kind="LLC")
-    )
+    c = compute_components(_row(has_tower=True, tower_count=3, in_oz=True, owner_kind="LLC"))
     assert c.infra_types == 1
     assert c.max_infra_instances == 3
     assert c.overlays == 1

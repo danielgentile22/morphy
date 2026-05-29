@@ -37,7 +37,7 @@ class Palette:
     link: str
 
     @classmethod
-    def for_dark(cls, dark: bool) -> "Palette":
+    def for_dark(cls, dark: bool) -> Palette:
         if dark:
             return cls(
                 muted="#bdbdbd",
@@ -57,5 +57,5 @@ class Palette:
         )
 
     @classmethod
-    def for_widget(cls, widget: QWidget) -> "Palette":
+    def for_widget(cls, widget: QWidget) -> Palette:
         return cls.for_dark(is_dark(widget))

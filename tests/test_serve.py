@@ -16,7 +16,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from serve import _parse_byte_range  # noqa: E402
 
-
 SIZE = 1000
 
 

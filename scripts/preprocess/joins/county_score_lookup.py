@@ -34,9 +34,7 @@ class CountyScoreLookupJoin(Join):
         if target is None or scores is None or len(scores) == 0:
             return
         agg = _aggregate_county_score(scores)
-        merged = safe_merge(
-            target, agg, on="county_fips", columns_added=self.columns_added
-        )
+        merged = safe_merge(target, agg, on="county_fips", columns_added=self.columns_added)
         merged["distress_tier"] = merged["distress_tier"].fillna("")
         merged["persistent_poverty"] = merged["persistent_poverty"].fillna(False)
         ctx.set(self.target_type, merged)

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import geopandas as gpd
 import pytest
-from shapely.geometry import Point, Polygon
 
 # Force registration of every Join.
 from preprocess import registry  # noqa: F401
@@ -20,6 +19,7 @@ from preprocess.joins.spatial_attribute import (
     SpatialAttributeJoin,
     SpatialAttributeSpec,
 )
+from shapely.geometry import Point, Polygon
 
 
 def _distress_overlays() -> gpd.GeoDataFrame:
@@ -114,9 +114,7 @@ def test_legacy_join_names_still_registered():
     assert "TowerToDistressJoin" in names
 
 
-@pytest.mark.parametrize(
-    "spec_name", ["ParcelToDistressJoin", "TowerToDistressJoin"]
-)
+@pytest.mark.parametrize("spec_name", ["ParcelToDistressJoin", "TowerToDistressJoin"])
 def test_columns_added_match_derived_keys(spec_name):
     joins = {j.name: j for j in all_joins()}
     j = joins[spec_name]

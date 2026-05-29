@@ -183,9 +183,7 @@ class Normalizer(ABC):
             return False
         return any(p.is_file() for p in raw_dir.rglob("*"))
 
-    def load_state_data(
-        self, state_fips: str
-    ) -> dict[str, Any]:
+    def load_state_data(self, state_fips: str) -> dict[str, Any]:
         """Read this source's normalized output, filtered to one state.
 
         For each declared :attr:`canonical_types`, the default looks for
@@ -475,5 +473,3 @@ def get_view(name: str) -> View:
     if name not in _VIEW_REGISTRY:
         raise KeyError(f"no view named {name!r}")
     return _VIEW_REGISTRY[name]
-
-

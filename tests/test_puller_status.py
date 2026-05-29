@@ -9,13 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from app_puller.attention_panel import attention_items
-from app_puller.status import (
-    FRESHNESS_COLORS,
-    STATUS_LABELS,
-    freshness_label_for,
-    status_for,
-)
+import pytest
 from fetch.legal import AutomationPolicy, CommercialUse, LegalInfo
 from fetch.manifest import (
     FRESHNESS_FRESH,
@@ -24,6 +18,18 @@ from fetch.manifest import (
     SourceEntry,
 )
 
+# app_puller.status imports PySide6.QtGui (QColor); the headless CI runner
+# lacks the Qt system libs (libEGL), so skip this module there rather than
+# erroring at collection. Runs normally where PySide6 is installed.
+pytest.importorskip("PySide6.QtGui")
+
+from app_puller.attention_panel import attention_items  # noqa: E402
+from app_puller.status import (  # noqa: E402
+    FRESHNESS_COLORS,
+    STATUS_LABELS,
+    freshness_label_for,
+    status_for,
+)
 
 # ── synthetic source ─────────────────────────────────────────────────────
 
@@ -46,9 +52,7 @@ class _FakeSource:
     id: str = "fake"
     name: str = "Fake"
     update_cadence_days: int | None = 30
-    legal: LegalInfo = field(
-        default_factory=lambda: _legal(AutomationPolicy.ALLOWED)
-    )
+    legal: LegalInfo = field(default_factory=lambda: _legal(AutomationPolicy.ALLOWED))
     _has_walkthrough: bool = False
     _has_creds: bool = True
 

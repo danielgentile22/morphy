@@ -18,9 +18,7 @@ from .base import safe_merge
 from .cluster import cluster_id, normalize_address, normalize_owner_name
 
 
-def attach_owner_cluster(
-    chunk: gpd.GeoDataFrame, lookup: pd.DataFrame
-) -> gpd.GeoDataFrame:
+def attach_owner_cluster(chunk: gpd.GeoDataFrame, lookup: pd.DataFrame) -> gpd.GeoDataFrame:
     """Annotate a parcel chunk with owner_cluster_* columns.
 
     Matches ``OwnerClusterJoin`` semantics: per-row cluster_id computed
@@ -40,16 +38,18 @@ def attach_owner_cluster(
         if "mailing_addr_norm" in chunk.columns
         else chunk.get("mailing_addr", "").map(normalize_address)
     )
-    chunk["owner_cluster_id"] = [
-        cluster_id(o, a) for o, a in zip(owner_norm, addr_norm)
-    ]
+    chunk["owner_cluster_id"] = [cluster_id(o, a) for o, a in zip(owner_norm, addr_norm)]
     # Map cluster_id → (size, value_total) via the unique-index lookup.
-    size_series = chunk["owner_cluster_id"].map(lookup["owner_cluster_size"]) if (
-        len(lookup) > 0
-    ) else pd.Series([pd.NA] * len(chunk), index=chunk.index)
-    value_series = chunk["owner_cluster_id"].map(lookup["owner_cluster_value_total"]) if (
-        len(lookup) > 0
-    ) else pd.Series([pd.NA] * len(chunk), index=chunk.index)
+    size_series = (
+        chunk["owner_cluster_id"].map(lookup["owner_cluster_size"])
+        if (len(lookup) > 0)
+        else pd.Series([pd.NA] * len(chunk), index=chunk.index)
+    )
+    value_series = (
+        chunk["owner_cluster_id"].map(lookup["owner_cluster_value_total"])
+        if (len(lookup) > 0)
+        else pd.Series([pd.NA] * len(chunk), index=chunk.index)
+    )
     chunk["owner_cluster_size"] = size_series.fillna(1).astype(int)
     chunk["owner_cluster_value_total"] = value_series.fillna(0).astype(float)
     return chunk
@@ -73,7 +73,7 @@ def apply_parcel_hosts_infra(
     summaries = []
     for p in pids:
         summaries.append(
-            (tower_summary.get(p, []) + solar_summary.get(p, []) + billboard_summary.get(p, []))
+            tower_summary.get(p, []) + solar_summary.get(p, []) + billboard_summary.get(p, [])
         )
 
     chunk = chunk.copy()
@@ -87,9 +87,7 @@ def apply_parcel_hosts_infra(
     return chunk
 
 
-def apply_county_score(
-    chunk: gpd.GeoDataFrame, scores: pd.DataFrame | None
-) -> gpd.GeoDataFrame:
+def apply_county_score(chunk: gpd.GeoDataFrame, scores: pd.DataFrame | None) -> gpd.GeoDataFrame:
     """Per-chunk equivalent of CountyScoreToParcelJoin."""
     if scores is None or len(scores) == 0:
         return chunk
@@ -144,9 +142,7 @@ def apply_parcel_to_distress(
     chunk["distress_overlays"] = chunk.index.map(
         lambda i: sorted(overlays_by_idx.get(int(i), set()))
     )
-    chunk["in_oz"] = chunk["distress_overlays"].apply(
-        lambda lst: "opportunity_zone" in lst
-    )
+    chunk["in_oz"] = chunk["distress_overlays"].apply(lambda lst: "opportunity_zone" in lst)
     chunk["in_qct"] = chunk["distress_overlays"].apply(lambda lst: "qct" in lst)
     return chunk
 

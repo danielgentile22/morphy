@@ -20,8 +20,8 @@ import preprocess
 import pytest
 from preprocess import COMPOSITE_ROOT as REAL_COMPOSITE_ROOT  # noqa: F401
 from preprocess.base import (
-    NormalizeResult,
     Normalizer,
+    NormalizeResult,
     QualityReport,
     register_normalizer_instance,
 )
@@ -29,7 +29,6 @@ from preprocess.compose import ComposeConfig, compose
 from preprocess.geographies import StateGeography
 from preprocess.io import write_geoparquet, write_parquet
 from shapely.geometry import Point, Polygon
-
 
 STATE = StateGeography(fips="05", abbr="AR", name="Arkansas", bbox=(-94.6, 33, -89.6, 36.5))
 
@@ -183,16 +182,12 @@ def fixture_dirs(tmp_path, monkeypatch):
             {
                 "overlay_type": "opportunity_zone",
                 "state_fips": "05",
-                "geometry": Polygon(
-                    [(-93.5, 34.0), (-92.55, 34.0), (-92.55, 35.5), (-93.5, 35.5)]
-                ),
+                "geometry": Polygon([(-93.5, 34.0), (-92.55, 34.0), (-92.55, 35.5), (-93.5, 35.5)]),
             },
             {
                 "overlay_type": "qct",
                 "state_fips": "05",
-                "geometry": Polygon(
-                    [(-93.5, 34.7), (-92.55, 34.7), (-92.55, 35.5), (-93.5, 35.5)]
-                ),
+                "geometry": Polygon([(-93.5, 34.7), (-92.55, 34.7), (-92.55, 35.5), (-93.5, 35.5)]),
             },
         ],
         geometry="geometry",
@@ -205,8 +200,18 @@ def fixture_dirs(tmp_path, monkeypatch):
     scores_dir.mkdir(parents=True)
     scores = pd.DataFrame(
         [
-            {"county_fips": "05001", "state_fips": "05", "tier": "distressed", "persistent_poverty": True},
-            {"county_fips": "05003", "state_fips": "05", "tier": "at-risk", "persistent_poverty": False},
+            {
+                "county_fips": "05001",
+                "state_fips": "05",
+                "tier": "distressed",
+                "persistent_poverty": True,
+            },
+            {
+                "county_fips": "05003",
+                "state_fips": "05",
+                "tier": "at-risk",
+                "persistent_poverty": False,
+            },
             {"county_fips": "05005", "state_fips": "05", "tier": "", "persistent_poverty": True},
         ]
     )
@@ -395,9 +400,7 @@ def test_compose_distress_overlay_membership(fixture_dirs, registered_normalizer
     assert bool(parcels.loc["A004", "in_oz"]) is False
 
 
-def test_compose_tolerates_duplicate_parcel_id_full(
-    tmp_path, monkeypatch
-):
+def test_compose_tolerates_duplicate_parcel_id_full(tmp_path, monkeypatch):
     """FL FDOR NAL's PARCEL_ID is county-unique, not state-unique — so
     chunked compose must NOT key its owner-cluster lookup on
     parcel_id_full. This test seeds duplicate parcel_id_full across two
@@ -446,8 +449,18 @@ def test_compose_tolerates_duplicate_parcel_id_full(
     write_parquet(
         pd.DataFrame(
             [
-                {"county_fips": "12001", "state_fips": "12", "tier": "", "persistent_poverty": False},
-                {"county_fips": "12003", "state_fips": "12", "tier": "at-risk", "persistent_poverty": False},
+                {
+                    "county_fips": "12001",
+                    "state_fips": "12",
+                    "tier": "",
+                    "persistent_poverty": False,
+                },
+                {
+                    "county_fips": "12003",
+                    "state_fips": "12",
+                    "tier": "at-risk",
+                    "persistent_poverty": False,
+                },
             ]
         ),
         norm_root / "fixture_dup_scores" / "county_scores.parquet",

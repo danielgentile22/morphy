@@ -23,9 +23,9 @@ from ..base import (
     FetchResult,
     ProgressCallback,
 )
-from ..http import download, head
+from ..http import download
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
-from ._helpers import parse_http_date, safe_extract_zip, version_from_head
+from ._helpers import safe_extract_zip, version_from_head
 
 DOF_URL = "https://aeronav.faa.gov/Obst_Data/DAILY_DOF_DAT.ZIP"
 

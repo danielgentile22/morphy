@@ -15,7 +15,6 @@ import json
 from dataclasses import dataclass
 
 import pytest
-
 from preprocess.catalog_schema import (
     CatalogSchemaViolation,
     validate_catalog,

@@ -77,18 +77,14 @@ def iter_state_parcel_shards(
                 log.warning("skipping unreadable shard %s: %s", shard_path, e)
                 continue
             if "state_fips" not in gdf.columns:
-                log.warning(
-                    "shard %s missing contractual state_fips column; skipping", shard_path
-                )
+                log.warning("shard %s missing contractual state_fips column; skipping", shard_path)
                 continue
             slice_ = gdf[gdf["state_fips"] == state_fips]
             if len(slice_) == 0:
                 continue
             label = f"{n.source_id}__{shard_path.stem}"
             # Re-wrap so the slice is a proper GeoDataFrame with CRS.
-            yield label, gpd.GeoDataFrame(
-                slice_.copy(), geometry="geometry", crs="EPSG:4326"
-            )
+            yield label, gpd.GeoDataFrame(slice_.copy(), geometry="geometry", crs="EPSG:4326")
 
 
 def iter_state_parcel_shards_columns(
@@ -337,12 +333,8 @@ class StateSummaryAggregator:
         self._oz += int(df.get("in_oz", False).fillna(False).sum())
         self._qct += int(df.get("in_qct", False).fillna(False).sum())
         if "distress_tier" in df.columns:
-            self._distressed += int(
-                df["distress_tier"].fillna("").isin(["distressed"]).sum()
-            )
-        self._persistent += int(
-            df.get("persistent_poverty", False).fillna(False).sum()
-        )
+            self._distressed += int(df["distress_tier"].fillna("").isin(["distressed"]).sum())
+        self._persistent += int(df.get("persistent_poverty", False).fillna(False).sum())
         # Per-chunk partial top-20 owner aggregates (combined at finalize).
         if "owner_cluster_id" in df.columns:
             sub = df[df["owner_cluster_id"] != ""]
@@ -455,9 +447,7 @@ def aggregator_for_view(view: View) -> ChunkAggregator | None:
                     df.get("in_oz", False).fillna(False)
                     | df.get("in_qct", False).fillna(False)
                     | df.get("persistent_poverty", False).fillna(False)
-                    | df.get("distress_tier", "")
-                    .fillna("")
-                    .isin(["distressed", "at-risk"])
+                    | df.get("distress_tier", "").fillna("").isin(["distressed", "at-risk"])
                 )
                 & (
                     df.get("has_tower", False).fillna(False)
@@ -484,9 +474,11 @@ def aggregator_for_view(view: View) -> ChunkAggregator | None:
             name,
             n=1000,
             sort_column="interestingness_score",
-            eligible=lambda df: ~df["owner_kind"].isin(("gov", "school"))
-            if "owner_kind" in df.columns
-            else pd.Series(True, index=df.index),
+            eligible=lambda df: (
+                ~df["owner_kind"].isin(("gov", "school"))
+                if "owner_kind" in df.columns
+                else pd.Series(True, index=df.index)
+            ),
             min_value=0.0,
         )
     if name == "county_summary":
@@ -608,8 +600,6 @@ def _owner_clusters_aggregator() -> ChunkAggregator:
                 )
                 .reset_index()
             )
-            return result[result["parcel_count"] >= 2].sort_values(
-                "total_value", ascending=False
-            )
+            return result[result["parcel_count"] >= 2].sort_values("total_value", ascending=False)
 
     return _OwnerClusters(name="owner_clusters", by="owner_cluster_id", agg={})

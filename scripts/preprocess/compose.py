@@ -56,21 +56,15 @@ from .base import (
     ordered_joins,
     utcnow_iso,
 )
+from .catalog_builder import build_catalog, geom_type, schema_summary
 from .catalog_schema import validate_catalog
+from .cluster import cluster_id, normalize_address, normalize_owner_name
 from .compose_helpers import (
     aggregator_for_view,
     iter_state_parcel_shards,
     iter_state_parcel_shards_columns,
 )
-from .cluster import cluster_id, normalize_address, normalize_owner_name
 from .geographies import StateGeography
-from .per_chunk_joins import (
-    apply_county_score,
-    apply_interestingness_score,
-    apply_parcel_hosts_infra,
-    apply_parcel_to_distress,
-    attach_owner_cluster,
-)
 from .io import (
     dual_write_spatial,
     write_geojson,
@@ -78,7 +72,13 @@ from .io import (
     write_json,
     write_parquet,
 )
-from .catalog_builder import build_catalog, geom_type, schema_summary
+from .per_chunk_joins import (
+    apply_county_score,
+    apply_interestingness_score,
+    apply_parcel_hosts_infra,
+    apply_parcel_to_distress,
+    attach_owner_cluster,
+)
 
 log = logging.getLogger("preprocess.compose")
 
@@ -135,9 +135,7 @@ def _build_owner_cluster_lookup(state_fips: str) -> pd.DataFrame:
         cluster_rows.append(
             pd.DataFrame(
                 {
-                    "owner_cluster_id": [
-                        cluster_id(o, a) for o, a in zip(owner_norm, addr_norm)
-                    ],
+                    "owner_cluster_id": [cluster_id(o, a) for o, a in zip(owner_norm, addr_norm)],
                     "assessed_value": pd.to_numeric(
                         df.get("assessed_value", 0), errors="coerce"
                     ).fillna(0.0),
@@ -159,12 +157,9 @@ def _build_owner_cluster_lookup(state_fips: str) -> pd.DataFrame:
             columns=["owner_cluster_size", "owner_cluster_value_total"],
             index=pd.Index([], name="owner_cluster_id"),
         )
-    agg = (
-        non_empty.groupby("owner_cluster_id")
-        .agg(
-            owner_cluster_size=("owner_cluster_id", "size"),
-            owner_cluster_value_total=("assessed_value", "sum"),
-        )
+    agg = non_empty.groupby("owner_cluster_id").agg(
+        owner_cluster_size=("owner_cluster_id", "size"),
+        owner_cluster_value_total=("assessed_value", "sum"),
     )
     agg["owner_cluster_size"] = agg["owner_cluster_size"].astype(int)
     agg["owner_cluster_value_total"] = agg["owner_cluster_value_total"].astype(float)
@@ -222,10 +217,7 @@ def _build_infra_to_parcel_lookup(
                 continue
             # Skip the sjoin index_right + the geometry column
             attach = {
-                k: v
-                for k, v in row_d.items()
-                if k
-                not in {"index", "index_right", "geometry"}
+                k: v for k, v in row_d.items() if k not in {"index", "index_right", "geometry"}
             }
             # First match wins — a tower in two overlapping parcels is rare
             # and `compose` today doesn't disambiguate either.
@@ -243,7 +235,8 @@ def _apply_lookup(infra: gpd.GeoDataFrame, lookup: dict[int, dict]) -> gpd.GeoDa
     for d in lookup.values():
         cols.update(d.keys())
     for col in cols:
-        infra[col] = infra.index.map(lambda i: lookup.get(int(i), {}).get(col))
+        # bind col per-iteration (lambda is consumed immediately by .map)
+        infra[col] = infra.index.map(lambda i, col=col: lookup.get(int(i), {}).get(col))
     return infra
 
 
@@ -326,16 +319,25 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
     #    iter-over-infra-rows logic of ParcelHostsInfraJoin without
     #    needing a single in-memory parcel table.
     tower_counts, tower_summary = _reverse_index(
-        tower_lookup, infra=ctx.get("tower"), kind="tower",
-        id_col="asr_number", owner_col="owner_name",
+        tower_lookup,
+        infra=ctx.get("tower"),
+        kind="tower",
+        id_col="asr_number",
+        owner_col="owner_name",
     )
     solar_counts, solar_summary = _reverse_index(
-        solar_lookup, infra=ctx.get("solar_facility"), kind="solar",
-        id_col="facility_id", owner_col="operator",
+        solar_lookup,
+        infra=ctx.get("solar_facility"),
+        kind="solar",
+        id_col="facility_id",
+        owner_col="operator",
     )
     billboard_counts, billboard_summary = _reverse_index(
-        billboard_lookup, infra=ctx.get("billboard"), kind="billboard",
-        id_col="permit_no", owner_col="owner",
+        billboard_lookup,
+        infra=ctx.get("billboard"),
+        kind="billboard",
+        id_col="permit_no",
+        owner_col="owner",
     )
 
     # 6. Per-chunk loop -----------------------------------------------------
@@ -357,7 +359,13 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
     for label, chunk in iter_state_parcel_shards(state.fips):
         # Parcel-touching joins, applied directly on the chunk.
         chunk = apply_parcel_hosts_infra(
-            chunk, tower_counts, solar_counts, billboard_counts, tower_summary, solar_summary, billboard_summary
+            chunk,
+            tower_counts,
+            solar_counts,
+            billboard_counts,
+            tower_summary,
+            solar_summary,
+            billboard_summary,
         )
         chunk = apply_county_score(chunk, ctx.get("county_score"))
         chunk = apply_parcel_to_distress(chunk, ctx.get("distress_overlay"))
@@ -382,9 +390,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
             parcel_geom_type = geom_type(chunk)
         log.info("  ✓ shard %s (%d rows) → %s", label, len(chunk), shard_path.name)
 
-    log.info(
-        "chunk loop done: %d shards, %d parcels", shard_count, total_parcel_rows
-    )
+    log.info("chunk loop done: %d shards, %d parcels", shard_count, total_parcel_rows)
 
     # 7. Apply infra→parcel lookups onto the in-memory infra tables, then
     #    run non-parcel-touching joins (CountyScoreToTower etc.) via the
@@ -662,5 +668,3 @@ def _load_state_data(ctx: ComposeContext) -> list[str]:
         if src_dir.is_dir() and any(src_dir.glob("*.parquet")):
             sources_used.append(n.source_id)
     return sources_used
-
-

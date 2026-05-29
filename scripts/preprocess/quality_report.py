@@ -84,9 +84,7 @@ class QualityReport:
 
     # Root keys recognised by the codec. Anything else found in a JSON
     # file flows into `extras` on parse.
-    _KNOWN_ROOT_KEYS = frozenset(
-        {"source_id", "generated_at", "tables", "warnings", "extras"}
-    )
+    _KNOWN_ROOT_KEYS = frozenset({"source_id", "generated_at", "tables", "warnings", "extras"})
 
     def to_dict(self) -> dict[str, Any]:
         return {

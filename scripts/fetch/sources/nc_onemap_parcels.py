@@ -67,17 +67,31 @@ PAGE_DELAY_SEC = 0.1
 # scripts/preprocess/normalizers/state_parcel_adapters/nc.py).
 # Using outFields=* would inflate each page ~36% with unused metadata.
 # objectid is required for stable orderByFields pagination.
-OUT_FIELDS = ",".join([
-    "objectid",
-    "parno", "nparno",
-    "ownname", "ownname2",
-    "mailadd", "mcity", "mstate", "mzip",
-    "siteadd", "scity",
-    "gisacres", "landval", "improvval", "parval",
-    "parusecode", "parusedesc",
-    "structyear",
-    "stcntyfips", "cntyfips", "cntyname",
-])
+OUT_FIELDS = ",".join(
+    [
+        "objectid",
+        "parno",
+        "nparno",
+        "ownname",
+        "ownname2",
+        "mailadd",
+        "mcity",
+        "mstate",
+        "mzip",
+        "siteadd",
+        "scity",
+        "gisacres",
+        "landval",
+        "improvval",
+        "parval",
+        "parusecode",
+        "parusedesc",
+        "structyear",
+        "stcntyfips",
+        "cntyfips",
+        "cntyname",
+    ]
+)
 
 # Human-facing dataset page (kept as a manual_url fallback in case the
 # auto-fetch ever breaks and the user needs to retrieve data by hand).
@@ -209,8 +223,7 @@ class NcOnemapParcels(DataSource):
                 except OSError:
                     pass
                 raise HttpError(
-                    f"NC OneMap page {page_idx} (offset {offset}) returned "
-                    f"error envelope: {head!r}"
+                    f"NC OneMap page {page_idx} (offset {offset}) returned error envelope: {head!r}"
                 )
 
             written.append(page_path)

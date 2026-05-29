@@ -22,17 +22,17 @@ import geopandas as gpd
 import pandas as pd
 import pytest
 from preprocess.base import all_normalizers
-from preprocess.normalizers.state_parcels import (
-    ParcelAdapter,
-    ParcelNormalizer,
-    _to_4326,
-    map_layer_to_canonical,
-)
 from preprocess.normalizers.state_parcel_adapters.ar import AR_PARCELS_ADAPTER
 from preprocess.normalizers.state_parcel_adapters.fdor_nal import FDOR_NAL_ADAPTER
 from preprocess.normalizers.state_parcel_adapters.mt import (
     MT_CADASTRAL_PARCELS_ADAPTER,
     MT_COUNTY_NAME_TO_FIPS,
+)
+from preprocess.normalizers.state_parcels import (
+    ParcelAdapter,
+    ParcelNormalizer,
+    _to_4326,
+    map_layer_to_canonical,
 )
 from shapely.geometry import Polygon
 
@@ -41,9 +41,7 @@ from shapely.geometry import Polygon
 
 def _square(x: float = 0.0, y: float = 0.0, size: float = 0.01) -> Polygon:
     """A trivial valid square in EPSG:4326 — geometry validity isn't the focus."""
-    return Polygon(
-        [(x, y), (x + size, y), (x + size, y + size), (x, y + size), (x, y)]
-    )
+    return Polygon([(x, y), (x + size, y), (x + size, y + size), (x, y + size), (x, y)])
 
 
 def _gdf(rows: list[dict]) -> gpd.GeoDataFrame:
@@ -62,9 +60,7 @@ def test_active_parcel_adapters_register():
     + "No License Provided" commercial blocker), so it is imported but not
     registered into the active set.
     """
-    parcel_ids = sorted(
-        n.source_id for n in all_normalizers() if "parcel" in n.canonical_types
-    )
+    parcel_ids = sorted(n.source_id for n in all_normalizers() if "parcel" in n.canonical_types)
     assert parcel_ids == [
         "ar_parcels",
         "fdor_nal",
@@ -103,8 +99,9 @@ def test_to_4326_assumes_4326_only_for_lonlat_coords():
 def test_to_4326_skips_unlabeled_projected_layer():
     """An unlabeled layer with projected coords (State Plane feet, millions)
     is SKIPPED, not silently mislabeled as WGS84 — mislabeling corrupts joins."""
-    projected = Polygon([(2_500_000, 700_000), (2_500_100, 700_000),
-                         (2_500_100, 700_100), (2_500_000, 700_100)])
+    projected = Polygon(
+        [(2_500_000, 700_000), (2_500_100, 700_000), (2_500_100, 700_100), (2_500_000, 700_100)]
+    )
     g = gpd.GeoDataFrame({"geometry": [projected]}, geometry="geometry", crs=None)
     assert _to_4326(g) is None
 
@@ -179,9 +176,24 @@ def test_mt_county_resolver_uppercases_and_resolves():
     Montana county listed in MT_COUNTY_NAME_TO_FIPS."""
     g = _gdf(
         [
-            {"PARCELID": "M1", "OwnerName": "OWNER", "CountyName": "Beaverhead", "geometry": _square()},
-            {"PARCELID": "M2", "OwnerName": "OWNER", "CountyName": "  YELLOWSTONE  ", "geometry": _square()},
-            {"PARCELID": "M3", "OwnerName": "OWNER", "CountyName": "lewis and clark", "geometry": _square()},
+            {
+                "PARCELID": "M1",
+                "OwnerName": "OWNER",
+                "CountyName": "Beaverhead",
+                "geometry": _square(),
+            },
+            {
+                "PARCELID": "M2",
+                "OwnerName": "OWNER",
+                "CountyName": "  YELLOWSTONE  ",
+                "geometry": _square(),
+            },
+            {
+                "PARCELID": "M3",
+                "OwnerName": "OWNER",
+                "CountyName": "lewis and clark",
+                "geometry": _square(),
+            },
         ]
     )
     out = map_layer_to_canonical(g, MT_CADASTRAL_PARCELS_ADAPTER)
@@ -191,7 +203,16 @@ def test_mt_county_resolver_uppercases_and_resolves():
 
 def test_mt_unknown_county_name_resolves_to_none():
     """Misspellings should yield county_fips=None; state_fips falls back to '30'."""
-    g = _gdf([{"PARCELID": "Z", "OwnerName": "OWNER", "CountyName": "NOT A REAL COUNTY", "geometry": _square()}])
+    g = _gdf(
+        [
+            {
+                "PARCELID": "Z",
+                "OwnerName": "OWNER",
+                "CountyName": "NOT A REAL COUNTY",
+                "geometry": _square(),
+            }
+        ]
+    )
     out = map_layer_to_canonical(g, MT_CADASTRAL_PARCELS_ADAPTER)
     assert out["county_fips"].iloc[0] is None
     assert out["state_fips"].iloc[0] == "30"
@@ -213,9 +234,19 @@ def test_fdor_census_bk_slices_to_county_fips():
     g = _gdf(
         [
             # Alachua county, FL: CENSUS_BK starts 12001...
-            {"PARCEL_ID": "F1", "OWN_NAME": "OWNER", "CENSUS_BK": "120010001001", "geometry": _square()},
+            {
+                "PARCEL_ID": "F1",
+                "OWN_NAME": "OWNER",
+                "CENSUS_BK": "120010001001",
+                "geometry": _square(),
+            },
             # Miami-Dade: starts 12086...
-            {"PARCEL_ID": "F2", "OWN_NAME": "OWNER", "CENSUS_BK": "120869812003", "geometry": _square()},
+            {
+                "PARCEL_ID": "F2",
+                "OWN_NAME": "OWNER",
+                "CENSUS_BK": "120869812003",
+                "geometry": _square(),
+            },
         ]
     )
     out = map_layer_to_canonical(g, FDOR_NAL_ADAPTER)
@@ -238,9 +269,24 @@ def test_owner_kind_inferred_from_owner_name():
     bug-detection for 'we forgot to call it', not a re-test of cluster.py."""
     g = _gdf(
         [
-            {"ParcelId": "1", "OwnerName": "ACME PROPERTIES LLC", "CountyFips": "001", "geometry": _square()},
-            {"ParcelId": "2", "OwnerName": "ALICE SMITH", "CountyFips": "001", "geometry": _square()},
-            {"ParcelId": "3", "OwnerName": "FIRST BAPTIST CHURCH", "CountyFips": "001", "geometry": _square()},
+            {
+                "ParcelId": "1",
+                "OwnerName": "ACME PROPERTIES LLC",
+                "CountyFips": "001",
+                "geometry": _square(),
+            },
+            {
+                "ParcelId": "2",
+                "OwnerName": "ALICE SMITH",
+                "CountyFips": "001",
+                "geometry": _square(),
+            },
+            {
+                "ParcelId": "3",
+                "OwnerName": "FIRST BAPTIST CHURCH",
+                "CountyFips": "001",
+                "geometry": _square(),
+            },
         ]
     )
     out = map_layer_to_canonical(g, AR_PARCELS_ADAPTER)

@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-
 from fetch import storage as storage_mod
 from fetch.base import (
     CATEGORY_PARCELS,
@@ -32,7 +31,6 @@ from fetch.storage import (
     prepare_fresh_partial,
     prepare_partial_for_resume,
 )
-
 
 # ── storage helpers ──────────────────────────────────────────────────────
 

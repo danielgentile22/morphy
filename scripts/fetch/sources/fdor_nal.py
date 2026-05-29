@@ -34,7 +34,6 @@ those condo extras alongside the main per-county PAR ZIPs.
 
 from __future__ import annotations
 
-
 from ..base import (
     CATEGORY_PARCELS,
     ManualOnlySource,
@@ -46,18 +45,73 @@ from ..walkthroughs import ManualStep, ManualWalkthrough
 # the Map Data directory. Listed alphabetically to match the directory
 # listing order; the walkthrough uses this as a download checklist.
 FL_COUNTIES: list[str] = [
-    "Alachua", "Baker", "Bay", "Bradford", "Brevard", "Broward",
-    "Calhoun", "Charlotte", "Citrus", "Clay", "Collier", "Columbia",
-    "DeSoto", "Dixie", "Duval", "Escambia", "Flagler", "Franklin",
-    "Gadsden", "Gilchrist", "Glades", "Gulf", "Hamilton", "Hardee",
-    "Hendry", "Hernando", "Highlands", "Hillsborough", "Holmes",
-    "Indian River", "Jackson", "Jefferson", "Lafayette", "Lake", "Lee",
-    "Leon", "Levy", "Liberty", "Madison", "Manatee", "Marion", "Martin",
-    "Miami-Dade", "Monroe", "Nassau", "Okaloosa", "Okeechobee", "Orange",
-    "Osceola", "Palm Beach", "Pasco", "Pinellas", "Polk", "Putnam",
-    "Santa Rosa", "Sarasota", "Seminole", "St. Johns", "St. Lucie",
-    "Sumter", "Suwannee", "Taylor", "Union", "Volusia", "Wakulla",
-    "Walton", "Washington",
+    "Alachua",
+    "Baker",
+    "Bay",
+    "Bradford",
+    "Brevard",
+    "Broward",
+    "Calhoun",
+    "Charlotte",
+    "Citrus",
+    "Clay",
+    "Collier",
+    "Columbia",
+    "DeSoto",
+    "Dixie",
+    "Duval",
+    "Escambia",
+    "Flagler",
+    "Franklin",
+    "Gadsden",
+    "Gilchrist",
+    "Glades",
+    "Gulf",
+    "Hamilton",
+    "Hardee",
+    "Hendry",
+    "Hernando",
+    "Highlands",
+    "Hillsborough",
+    "Holmes",
+    "Indian River",
+    "Jackson",
+    "Jefferson",
+    "Lafayette",
+    "Lake",
+    "Lee",
+    "Leon",
+    "Levy",
+    "Liberty",
+    "Madison",
+    "Manatee",
+    "Marion",
+    "Martin",
+    "Miami-Dade",
+    "Monroe",
+    "Nassau",
+    "Okaloosa",
+    "Okeechobee",
+    "Orange",
+    "Osceola",
+    "Palm Beach",
+    "Pasco",
+    "Pinellas",
+    "Polk",
+    "Putnam",
+    "Santa Rosa",
+    "Sarasota",
+    "Seminole",
+    "St. Johns",
+    "St. Lucie",
+    "Sumter",
+    "Suwannee",
+    "Taylor",
+    "Union",
+    "Volusia",
+    "Wakulla",
+    "Walton",
+    "Washington",
 ]
 
 LANDING_PAGE = (
@@ -113,8 +167,6 @@ class FdorNal(ManualOnlySource):
             "User's Guide for Department Property Tax Data Files."
         ),
     )
-
-
 
     def manual_walkthrough(self) -> ManualWalkthrough:
         # Format as a 3-column checklist so 67 names don't dominate the modal.

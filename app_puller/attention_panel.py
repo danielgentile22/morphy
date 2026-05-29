@@ -15,7 +15,6 @@ from fetch.base import DataSource
 from fetch.legal import AutomationPolicy
 from fetch.manifest import FRESHNESS_STALE, Manifest
 
-
 ActionKind = Literal["walkthrough", "refresh", "open_manual"]
 
 
@@ -39,7 +38,9 @@ def attention_items(sources: list[DataSource], manifest: Manifest) -> list[Atten
 
         if e.status == "check_failed":
             if s.legal.automation == AutomationPolicy.MANUAL_ONLY and has_walkthrough:
-                out.append(AttentionItem(s, "Endpoint failing — walkthrough available", "walkthrough"))
+                out.append(
+                    AttentionItem(s, "Endpoint failing — walkthrough available", "walkthrough")
+                )
             else:
                 out.append(AttentionItem(s, f"Endpoint failing: {e.error or '—'}", "open_manual"))
             continue

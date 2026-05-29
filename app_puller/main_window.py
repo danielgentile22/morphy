@@ -36,7 +36,6 @@ from fetch.legal import AutomationPolicy, CommercialUse
 from fetch.manifest import (
     FRESHNESS_STALE,
     Manifest,
-    SourceEntry,
 )
 from fetch.registry import all_sources, get_source, grouped
 from fetch.storage import current_dir, directory_bytes, human_bytes
@@ -70,15 +69,14 @@ from verify_raw import verify_one
 
 from . import state as ui_state
 from .attention_panel import AttentionItem, attention_items
+from .manual_install import mark_manual_install, pick_and_upload
 from .preprocess_dialog import PreprocessDialog
 from .status import (
-    FRESHNESS_COLORS,
     STATUS_LABELS,
     freshness_label_for,
     status_for,
 )
 from .theme import Palette, is_dark
-from .manual_install import mark_manual_install, pick_and_upload
 from .walkthrough_dialog import WalkthroughDialog
 from .workers import (
     CheckWorker,

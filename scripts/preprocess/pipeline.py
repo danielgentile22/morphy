@@ -47,11 +47,11 @@ class PipelineStep(Protocol):
     name: str
     severity: Severity
 
-    def is_applicable(self, outcome: "RunOutcome") -> bool: ...
+    def is_applicable(self, outcome: RunOutcome) -> bool: ...
     def run(
         self,
-        outcome: "RunOutcome",
-        manifest: "PreprocessManifest",
+        outcome: RunOutcome,
+        manifest: PreprocessManifest,
         *,
         progress_callback: ProgressCallback | None,
     ) -> None: ...
@@ -73,11 +73,11 @@ class Pipeline:
     def run(
         self,
         *,
-        outcome: "RunOutcome",
-        manifest: "PreprocessManifest",
+        outcome: RunOutcome,
+        manifest: PreprocessManifest,
         progress_callback: ProgressCallback | None = None,
         skip: set[str] = frozenset(),
-    ) -> "RunOutcome":
+    ) -> RunOutcome:
         t0 = time.monotonic()
         for step in self.steps:
             if step.name in skip:
@@ -112,9 +112,7 @@ class Pipeline:
         return outcome
 
 
-def _emit(
-    cb: ProgressCallback | None, phase: str, key: str, info: dict
-) -> None:
+def _emit(cb: ProgressCallback | None, phase: str, key: str, info: dict) -> None:
     if cb is None:
         return
     try:
@@ -132,13 +130,13 @@ class NormalizeAllStep:
     severity: Severity = Severity.REQUIRED
     force_rebuild: bool = False
 
-    def is_applicable(self, outcome: "RunOutcome") -> bool:
+    def is_applicable(self, outcome: RunOutcome) -> bool:
         return True
 
     def run(
         self,
-        outcome: "RunOutcome",
-        manifest: "PreprocessManifest",
+        outcome: RunOutcome,
+        manifest: PreprocessManifest,
         *,
         progress_callback: ProgressCallback | None,
     ) -> None:
@@ -165,15 +163,15 @@ class ComposeStatesStep:
     name: str = "compose"
     severity: Severity = Severity.REQUIRED
     # When None, the step picks every state with normalized parcel data.
-    states: list["StateGeography"] | None = None
+    states: list[StateGeography] | None = None
 
-    def is_applicable(self, outcome: "RunOutcome") -> bool:
+    def is_applicable(self, outcome: RunOutcome) -> bool:
         return True
 
     def run(
         self,
-        outcome: "RunOutcome",
-        manifest: "PreprocessManifest",
+        outcome: RunOutcome,
+        manifest: PreprocessManifest,
         *,
         progress_callback: ProgressCallback | None,
     ) -> None:
@@ -205,13 +203,13 @@ class AppAssetsStep:
     name: str = "app_assets"
     severity: Severity = Severity.AUXILIARY
 
-    def is_applicable(self, outcome: "RunOutcome") -> bool:
+    def is_applicable(self, outcome: RunOutcome) -> bool:
         return True
 
     def run(
         self,
-        outcome: "RunOutcome",
-        manifest: "PreprocessManifest",
+        outcome: RunOutcome,
+        manifest: PreprocessManifest,
         *,
         progress_callback: ProgressCallback | None,
     ) -> None:
@@ -230,13 +228,13 @@ class TilesStep:
     severity: Severity = Severity.AUXILIARY
     tile_failures: list[str] = field(default_factory=list)
 
-    def is_applicable(self, outcome: "RunOutcome") -> bool:
+    def is_applicable(self, outcome: RunOutcome) -> bool:
         return bool(outcome.composed_ok)
 
     def run(
         self,
-        outcome: "RunOutcome",
-        manifest: "PreprocessManifest",
+        outcome: RunOutcome,
+        manifest: PreprocessManifest,
         *,
         progress_callback: ProgressCallback | None,
     ) -> None:

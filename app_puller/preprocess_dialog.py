@@ -251,9 +251,7 @@ class PreprocessDialog(QDialog):
         item.setForeground(1, QColor(color))
 
     def _log_line(self, msg: str, *, level: str = "info") -> None:
-        color = (
-            self._p.fail if level == "err" else (self._p.muted if level == "warn" else None)
-        )
+        color = self._p.fail if level == "err" else (self._p.muted if level == "warn" else None)
         if color:
             self.log.append(f'<span style="color:{color}">{msg}</span>')
         else:

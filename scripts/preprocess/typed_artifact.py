@@ -115,7 +115,7 @@ class TypedArtifact(ABC):
 
     @classmethod
     @abstractmethod
-    def from_dict(cls, d: dict[str, Any]) -> "TypedArtifact":
+    def from_dict(cls, d: dict[str, Any]) -> TypedArtifact:
         """Parse a dict — tolerant of legacy / unknown keys."""
 
     @classmethod
@@ -131,7 +131,7 @@ class TypedArtifact(ABC):
         )
 
     @classmethod
-    def read(cls, path: Path) -> "TypedArtifact":
+    def read(cls, path: Path) -> TypedArtifact:
         """Read + parse from disk."""
         return cls.from_dict(json.loads(Path(path).read_text()))
 
@@ -145,9 +145,7 @@ class TypedArtifact(ABC):
         type(self).validate(d)
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_fd, tmp_path = tempfile.mkstemp(
-            dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
-        )
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
         try:
             with os.fdopen(tmp_fd, "w") as f:
                 json.dump(d, f, indent=2, sort_keys=True)

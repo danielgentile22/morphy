@@ -9,7 +9,6 @@ The exact URL is a stable filename refreshed in place each month.
 
 from __future__ import annotations
 
-
 from ..base import (
     CATEGORY_BILLBOARDS,
     ManualOnlySource,
@@ -73,8 +72,6 @@ class FdotBillboards(ManualOnlySource):
             "data/raw/fdot_billboards/current/ and click 'Rescan disk'."
         ),
     )
-
-
 
 
 SOURCE = FdotBillboards()

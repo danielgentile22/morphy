@@ -13,7 +13,6 @@ filename; if/when we automate it, the fetch path would scrape the
 
 from __future__ import annotations
 
-
 from ..base import (
     CATEGORY_PARCELS,
     ManualOnlySource,
@@ -64,8 +63,6 @@ class FlFgdlParcels(ManualOnlySource):
             "use, and parcel identifiers."
         ),
     )
-
-
 
 
 SOURCE = FlFgdlParcels()

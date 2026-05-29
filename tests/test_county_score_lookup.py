@@ -10,7 +10,6 @@ from __future__ import annotations
 import geopandas as gpd
 import pandas as pd
 import pytest
-from shapely.geometry import Point, Polygon
 
 # Importing the registry ensures every Join is registered before the test
 # touches the registry. The county-score lookup module registers three
@@ -21,6 +20,7 @@ from preprocess.joins.county_score_lookup import (
     CountyScoreLookupJoin,
     _aggregate_county_score,
 )
+from shapely.geometry import Point, Polygon
 
 
 def _county_scores() -> pd.DataFrame:

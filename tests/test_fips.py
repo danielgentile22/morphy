@@ -23,14 +23,14 @@ from preprocess.normalizers.fips import (
 @pytest.mark.parametrize(
     "raw,expected",
     [
-        ("05", "05"),          # already canonical
-        ("5", "05"),           # integer-as-string, pad to 2
-        (5, "05"),             # native int
-        (5.0, "05"),           # native float
-        ("AR", "05"),          # abbreviation
-        ("ar", "05"),          # lowercased abbreviation
-        ("Mt", "30"),          # mixed-case abbreviation
-        ("37", "37"),          # already canonical, NC
+        ("05", "05"),  # already canonical
+        ("5", "05"),  # integer-as-string, pad to 2
+        (5, "05"),  # native int
+        (5.0, "05"),  # native float
+        ("AR", "05"),  # abbreviation
+        ("ar", "05"),  # lowercased abbreviation
+        ("Mt", "30"),  # mixed-case abbreviation
+        ("37", "37"),  # already canonical, NC
         (37, "37"),
     ],
 )

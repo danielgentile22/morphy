@@ -13,8 +13,6 @@ matching class can be promoted to AutomationPolicy.ALLOWED with a
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from ..base import CATEGORY_PARCELS, ManualOnlySource
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ..walkthroughs import ManualStep, ManualWalkthrough

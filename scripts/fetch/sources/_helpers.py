@@ -31,9 +31,7 @@ def version_from_head(url: str, *, label: str = "") -> str:
     cl = h.get("content_length")
     if cl:
         return f"len-{cl}"
-    raise RuntimeError(
-        f"could not derive remote version{' for ' + label if label else ''}"
-    )
+    raise RuntimeError(f"could not derive remote version{' for ' + label if label else ''}")
 
 
 def safe_extract_zip(zip_path: Path, dest: Path) -> list[Path]:

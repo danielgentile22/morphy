@@ -9,7 +9,6 @@ MANUAL_ONLY in the UI.
 
 from __future__ import annotations
 
-
 from ..base import (
     CATEGORY_BILLBOARDS,
     ManualOnlySource,
@@ -66,8 +65,6 @@ class NcdotBillboards(ManualOnlySource):
             "data/raw/ncdot_billboards/current/ and click 'Rescan disk'."
         ),
     )
-
-
 
 
 SOURCE = NcdotBillboards()
