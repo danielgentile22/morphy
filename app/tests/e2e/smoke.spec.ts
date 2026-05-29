@@ -10,7 +10,7 @@ function watchConsole(page: import('@playwright/test').Page): string[] {
   return errors;
 }
 
-test('boots, renders the map, and lists AR + MT', async ({ page }) => {
+test('boots, renders the map, and lists AR + FL + MT', async ({ page }) => {
   const errors = watchConsole(page);
   await page.goto('/');
 
@@ -18,10 +18,10 @@ test('boots, renders the map, and lists AR + MT', async ({ page }) => {
   await expect(page.getByTestId('map')).toBeVisible();
   await expect(page.locator('.maplibregl-canvas')).toBeVisible();
 
-  // The state selector is catalog-driven: AR + MT, nothing hardcoded.
+  // The state selector is catalog-driven: AR + FL + MT, nothing hardcoded.
   const select = page.getByTestId('state-select');
   await expect(select).toBeVisible();
-  await expect(select.locator('option')).toHaveCount(2);
+  await expect(select.locator('option')).toHaveCount(3);
 
   // Default state is the first alphabetically — Arkansas.
   await expect(page.locator('h1')).toHaveText('Arkansas');

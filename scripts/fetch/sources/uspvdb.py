@@ -103,6 +103,7 @@ class Uspvdb(DataSource):
         raise HttpError("could not derive remote version for USPVDB")
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
+        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
         zip_path = dest_dir / "uspvdbSHP.zip"
         n = download(
             SHP_ZIP_URL,
@@ -114,7 +115,7 @@ class Uspvdb(DataSource):
         zip_path.unlink()
         return FetchResult(
             files=extracted,
-            remote_version=self.remote_version(),
+            remote_version=rv,
             total_bytes=n,
         )
 

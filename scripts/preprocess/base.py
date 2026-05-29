@@ -7,7 +7,12 @@ Defines:
   - View ABC + registry (run after joins)
   - ComposeContext — the per-state working state shared between joins + views
   - NormalizeResult / ComposeResult — return types
-  - Helpers (system columns, raw-parquet write, valid_from/to bookkeeping)
+
+System-column helpers (``utcnow_iso``, ``add_system_columns``,
+``safe_merge``) live in :mod:`preprocess.system_columns`. Quality-report
+types and builders live in :mod:`preprocess.quality_report`. Both are
+re-exported here so the long-standing ``from preprocess.base import …``
+surface stays stable.
 
 The puller is independent of this module; preprocess only depends on the
 puller's manifest at read time (for raw_local_version tracking).
@@ -15,15 +20,55 @@ puller's manifest at read time (for raw_local_version tracking).
 
 from __future__ import annotations
 
-import json
 import logging
 import sys
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from .quality_report import (
+    ColumnStats,
+    QualityReport,
+    TableStats,
+    quality_report,
+    write_quality_report,
+)
+from .system_columns import add_system_columns, safe_merge, utcnow_date, utcnow_iso
+
+__all__ = [
+    "CURRENT_SCHEMA_VERSIONS",
+    "SPATIAL_TYPES",
+    "TABULAR_TYPES",
+    "OUTPUT_BASENAMES",
+    "ColumnStats",
+    "ComposeContext",
+    "ComposeResult",
+    "Join",
+    "Normalizer",
+    "NormalizeResult",
+    "QualityReport",
+    "TableStats",
+    "View",
+    "add_system_columns",
+    "all_joins",
+    "all_normalizers",
+    "all_views",
+    "get_normalizer",
+    "get_view",
+    "ordered_joins",
+    "quality_report",
+    "register_join",
+    "register_join_instance",
+    "register_normalizer",
+    "register_normalizer_instance",
+    "register_view",
+    "safe_merge",
+    "utcnow_date",
+    "utcnow_iso",
+    "write_quality_report",
+]
 
 # Make the sibling 'fetch' package importable when running as a script.
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
@@ -33,7 +78,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 log = logging.getLogger("preprocess")
 
 
-# ── Schema versions ───────────────────────────────────────────────────────────
+# ── Per-canonical-type metadata ──────────────────────────────────────────────
 
 CURRENT_SCHEMA_VERSIONS: dict[str, int] = {
     "tower": 1,
@@ -54,6 +99,42 @@ CURRENT_SCHEMA_VERSIONS: dict[str, int] = {
     "address_point": 1,
 }
 
+# Spatial canonical types carry geometry; tabular ones don't. The default
+# loader uses this to decide whether to read parquets as GeoDataFrames.
+SPATIAL_TYPES: set[str] = {
+    "tower",
+    "parcel",
+    "distress_overlay",
+    "solar_facility",
+    "billboard",
+    "address_point",
+}
+TABULAR_TYPES: set[str] = {
+    "county_score",
+    "license",
+    "location",
+    "entity",
+    "transfer",
+    "lease",
+    "distributed_pv",
+    "aggregation",
+    "model_prediction",
+}
+
+# Per-canonical-type file/directory basename. The default loader reads from
+# ``normalized/<source_id>/<basename>/*.parquet`` (sharded) or
+# ``normalized/<source_id>/<basename>.parquet`` (single file); the Composer
+# uses the same basename when writing per-state composite outputs. Where a
+# canonical type isn't listed, the type name itself is the basename.
+OUTPUT_BASENAMES: dict[str, str] = {
+    "tower": "towers",
+    "parcel": "parcels",
+    "distress_overlay": "distress_overlays",
+    "solar_facility": "solar_facilities",
+    "billboard": "billboards",
+    "county_score": "county_scores",
+}
+
 
 # ── Result types ──────────────────────────────────────────────────────────────
 
@@ -67,7 +148,7 @@ class NormalizeResult:
     bytes: int  # total bytes written
     output_files: list[Path]
     canonical_types_written: list[str]
-    quality_report: dict
+    quality_report: QualityReport
 
 
 @dataclass
@@ -78,6 +159,7 @@ class ComposeResult:
     views_built: list[str]
     counts: dict[str, int]
     output_files: list[Path]
+    joins_skipped: list[str] = field(default_factory=list)
 
 
 # ── Normalizer ABC + registry ────────────────────────────────────────────────
@@ -101,26 +183,122 @@ class Normalizer(ABC):
             return False
         return any(p.is_file() for p in raw_dir.rglob("*"))
 
+    def load_state_data(self, state_fips: str) -> dict[str, Any]:
+        """Read this source's normalized output, filtered to one state.
+
+        For each declared :attr:`canonical_types`, the default looks for
+        parquet output under
+        ``normalized/<source_id>/<basename>/*.parquet`` (sharded layout,
+        used by per-county parcel normalizers — ADR-050) or, failing
+        that, ``normalized/<source_id>/<basename>.parquet`` (single
+        file, used by the national sources). Spatial types are read as
+        GeoDataFrames; tabular types as DataFrames. Rows are filtered
+        by the ``state_fips`` column — which is a **hard contract** on
+        every canonical output. A canonical type with no rows for the
+        requested state is omitted from the returned dict.
+
+        Override only when the source's output layout or
+        state-identification scheme genuinely differs from this
+        contract (no source needs to today).
+        """
+        from . import NORMALIZED_ROOT  # local to avoid an import cycle
+
+        src_dir = NORMALIZED_ROOT / self.source_id
+        if not src_dir.exists():
+            return {}
+
+        out: dict[str, Any] = {}
+        for ct in self.canonical_types:
+            basename = OUTPUT_BASENAMES.get(ct, ct)
+            subdir = src_dir / basename
+            if subdir.is_dir():
+                paths = sorted(subdir.glob("*.parquet"))
+            else:
+                single = src_dir / f"{basename}.parquet"
+                paths = [single] if single.exists() else []
+            if not paths:
+                continue
+
+            frames: list[Any] = []
+            for p in paths:
+                try:
+                    df = _read_parquet_typed(p, ct)
+                except Exception as e:
+                    log.warning("load_state_data: failed to read %s: %s", p, e)
+                    continue
+                if "state_fips" not in df.columns:
+                    log.warning(
+                        "load_state_data: %s lacks the contractual `state_fips` "
+                        "column; skipping (override Normalizer.load_state_data "
+                        "to filter another way)",
+                        p,
+                    )
+                    continue
+                filtered = df[df["state_fips"] == state_fips]
+                if len(filtered) > 0:
+                    frames.append(filtered.copy())
+
+            if frames:
+                out[ct] = _concat_typed(frames, ct)
+        return out
+
+
+def _read_parquet_typed(path: Path, canonical_type: str):
+    """Read a parquet as the right frame type for its canonical_type."""
+    import pandas as pd
+
+    if canonical_type in SPATIAL_TYPES:
+        import geopandas as gpd
+
+        return gpd.read_parquet(path)
+    return pd.read_parquet(path)
+
+
+def _concat_typed(frames: list, canonical_type: str):
+    """Concat frames preserving GeoDataFrame-ness for spatial types."""
+    import pandas as pd
+
+    if canonical_type in SPATIAL_TYPES:
+        import geopandas as gpd
+
+        return gpd.GeoDataFrame(
+            pd.concat(frames, ignore_index=True),
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+    return pd.concat(frames, ignore_index=True)
+
 
 _NORMALIZER_REGISTRY: OrderedDict[str, Normalizer] = OrderedDict()
 
 
 def register_normalizer(cls: type[Normalizer]) -> type[Normalizer]:
     """Class decorator: instantiate and register a Normalizer."""
-    inst = cls()
+    register_normalizer_instance(cls())
+    return cls
+
+
+def register_normalizer_instance(inst: Normalizer) -> Normalizer:
+    """Register an already-constructed Normalizer.
+
+    Sibling of @register_normalizer for normalizers whose construction
+    needs arguments (e.g. ParcelNormalizer, which takes a ParcelAdapter)
+    and so can't fit the zero-arg-decorator pattern.
+    """
+    cls_name = type(inst).__name__
     if not inst.source_id:
-        raise ValueError(f"{cls.__name__}: source_id is required")
+        raise ValueError(f"{cls_name}: source_id is required")
     if not inst.canonical_types:
-        raise ValueError(f"{cls.__name__}: canonical_types is required")
+        raise ValueError(f"{cls_name}: canonical_types is required")
     for ct in inst.canonical_types:
         if ct not in CURRENT_SCHEMA_VERSIONS:
             raise ValueError(
-                f"{cls.__name__}: unknown canonical_type {ct!r} — add it to CURRENT_SCHEMA_VERSIONS"
+                f"{cls_name}: unknown canonical_type {ct!r} — add it to CURRENT_SCHEMA_VERSIONS"
             )
     if inst.source_id in _NORMALIZER_REGISTRY:
         raise ValueError(f"duplicate normalizer for source_id {inst.source_id!r}")
     _NORMALIZER_REGISTRY[inst.source_id] = inst
-    return cls
+    return inst
 
 
 def all_normalizers() -> list[Normalizer]:
@@ -199,14 +377,28 @@ _JOIN_REGISTRY: list[Join] = []
 
 def register_join(cls: type[Join]) -> type[Join]:
     inst = cls()
-    if not inst.name:
-        inst.name = cls.__name__
-    if not inst.inputs:
-        raise ValueError(f"{cls.__name__}: inputs required")
-    if not inst.annotates:
-        raise ValueError(f"{cls.__name__}: annotates required")
-    _JOIN_REGISTRY.append(inst)
+    register_join_instance(inst)
     return cls
+
+
+def register_join_instance(inst: Join) -> Join:
+    """Register an already-constructed Join.
+
+    Sibling of @register_join for joins built by a factory (e.g.
+    CountyScoreLookupJoin, SpatialAttributeJoin) whose construction takes
+    parameters and so can't fit the zero-arg-decorator pattern.
+    """
+    cls_name = type(inst).__name__
+    if not inst.name:
+        inst.name = cls_name
+    if not inst.inputs:
+        raise ValueError(f"{cls_name}: inputs required")
+    if not inst.annotates:
+        raise ValueError(f"{cls_name}: annotates required")
+    if any(j.name == inst.name for j in _JOIN_REGISTRY):
+        raise ValueError(f"duplicate join name {inst.name!r}")
+    _JOIN_REGISTRY.append(inst)
+    return inst
 
 
 def all_joins() -> list[Join]:
@@ -281,135 +473,3 @@ def get_view(name: str) -> View:
     if name not in _VIEW_REGISTRY:
         raise KeyError(f"no view named {name!r}")
     return _VIEW_REGISTRY[name]
-
-
-# ── System-column helpers (used by Normalizer subclasses) ─────────────────────
-
-
-def utcnow_iso() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
-
-
-def utcnow_date() -> str:
-    return datetime.now(UTC).date().isoformat()
-
-
-def add_system_columns(
-    df,
-    source_id: str,
-    canonical_type: str,
-    *,
-    tenant_id: str = "pilot",
-    valid_from: str | None = None,
-):
-    """Stamp the four system columns + the three time-series ones on every row.
-
-    Returns the same DataFrame/GeoDataFrame (modified in place + returned for
-    chaining). Caller decides ordering — these are typically appended last so
-    they're easy to spot.
-    """
-    schema_version = CURRENT_SCHEMA_VERSIONS.get(canonical_type, 1)
-    now = utcnow_iso()
-    today = valid_from or utcnow_date()
-
-    df["_source"] = source_id
-    df["_processed_at"] = now
-    df["_schema_version"] = schema_version
-    df["_tenant_id"] = tenant_id
-    if "_quality_score" not in df.columns:
-        df["_quality_score"] = None
-    df["valid_from"] = today
-    if "valid_to" not in df.columns:
-        df["valid_to"] = None
-    return df
-
-
-# ── Join helper ───────────────────────────────────────────────────────────────
-
-
-def safe_merge(left, right, *, on, columns_added, how="left"):
-    """Left-merge ``right`` into ``left``, where ``right`` contributes
-    ``columns_added``.
-
-    Normalizers initialise reverse-summary columns (e.g. ``distress_tier``,
-    ``persistent_poverty`` on a parcel) as placeholders so the canonical
-    schema is stable before any Join runs. When a Join later merges in the
-    *real* values, pandas sees the column on both sides and produces
-    ``col_x`` / ``col_y`` — silently leaving the placeholder in place. This
-    helper drops the pre-existing ``columns_added`` from ``left`` first so
-    the merge populates fresh values cleanly.
-
-    Restores GeoDataFrame geometry registration when ``left`` was
-    geospatial — a plain ``merge`` can drop the geometry-column binding.
-
-    Callers still do their own ``fillna`` afterwards: the right default
-    differs per column ("" for a tier string, False for a boolean flag).
-    """
-    import geopandas as gpd
-
-    left_clean = left.drop(columns=[c for c in columns_added if c in left.columns])
-    merged = left_clean.merge(right, on=on, how=how)
-    if "geometry" in merged.columns:
-        merged = gpd.GeoDataFrame(merged, geometry="geometry", crs=getattr(left, "crs", None))
-    return merged
-
-
-# ── Quality-report builder ────────────────────────────────────────────────────
-
-
-def quality_report(
-    source_id: str,
-    tables: dict[str, Any],
-    *,
-    warnings: list[str] | None = None,
-) -> dict:
-    """Build a quality report from a dict of {table_name: dataframe}."""
-    report: dict[str, Any] = {
-        "source_id": source_id,
-        "generated_at": utcnow_iso(),
-        "tables": {},
-        "warnings": list(warnings or []),
-    }
-    for name, df in tables.items():
-        if df is None:
-            report["tables"][name] = {"rows": 0, "note": "table not produced"}
-            continue
-        try:
-            rows = len(df)
-        except TypeError:
-            rows = 0
-        cols_summary: dict[str, dict] = {}
-        for col in getattr(df, "columns", []):
-            if col == "geometry":
-                continue
-            try:
-                ser = df[col]
-                non_null = int(ser.notna().sum())
-                null_rate = round(1.0 - non_null / max(rows, 1), 4)
-                cols_summary[str(col)] = {
-                    "null_rate": null_rate,
-                    "dtype": str(ser.dtype),
-                }
-            except Exception:
-                cols_summary[str(col)] = {"null_rate": None, "dtype": "unknown"}
-
-        geom_pct = None
-        if hasattr(df, "geometry"):
-            try:
-                geom_pct = round(float(df.geometry.is_valid.mean()) * 100, 2) if rows else None
-            except Exception:
-                geom_pct = None
-
-        report["tables"][name] = {
-            "rows": rows,
-            "columns": cols_summary,
-            "geometry_validity_pct": geom_pct,
-        }
-    return report
-
-
-def write_quality_report(out_dir: Path, report: dict) -> Path:
-    path = out_dir / "quality_report.json"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(report, indent=2, sort_keys=True, default=str))
-    return path

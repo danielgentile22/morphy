@@ -61,7 +61,6 @@ markers = [
 [tool.coverage.run]
 source = ["scripts/preprocess", "scripts/fetch"]
 omit = [
-    "scripts/_legacy/*",
     "scripts/preprocess/normalizers/__init__.py",
     "scripts/preprocess/joins/__init__.py",
     "scripts/preprocess/views/__init__.py",

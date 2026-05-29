@@ -1,19 +1,42 @@
-"""State-level parcel normalizers.
+"""State-parcel normalizer + the shared streaming driver.
 
-Every state's parcel layer maps to the same canonical schema; only the
-column names differ. We declare per-state field mappings in PARCEL_FIELD_MAPS
-and share a common _normalize_parcels() implementation.
+Every state's parcel feed maps to the same canonical schema; only the
+column names differ. Each upstream feed gets one ``ParcelAdapter``
+constant under :mod:`preprocess.normalizers.state_parcel_adapters`, and
+the shared driver :func:`normalize_state_parcels` does the actual work.
 
-Supports both shapefile and File Geodatabase. Reads everything in
-data/raw/<source_id>/current/ — including multiple .gdb chunks (e.g. MN
-split into chunks by anumber). All chunks concat into one canonical layer.
+Importing this module triggers ``register_normalizer_instance`` for
+every adapter, so the rest of the pipeline (Composer, CLI, UI) sees one
+Normalizer per ``source_id`` just as before.
+
+Adding a new parcel source:
+
+  1. Create ``state_parcel_adapters/<state>.py`` exporting one
+     ``ParcelAdapter`` constant. See ``state_parcel_adapters/ar.py`` for
+     the minimal shape and ``mt.py`` for the optional ``county_resolver``.
+  2. Import it below and pass it to ``_register``.
+
+Pipeline:
+
+  raw layer  →  raw parquet                (full fidelity)
+            →  map_layer_to_canonical()    (vectorized, adapter-driven)
+            →  geometry-valid filter
+            →  add_polygon_derivatives
+            →  add_system_columns
+            →  per-layer canonical parquet under ``parcels/``
+
+Peak memory stays bounded to a single layer so FL's 67-county / ~10 M-parcel
+PAR set works on a 16 GB machine (ADR-050).
 """
 
 from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import geopandas as gpd
 import pandas as pd
@@ -23,237 +46,76 @@ from ..base import (
     NormalizeResult,
     add_system_columns,
     quality_report,
-    register_normalizer,
+    register_normalizer_instance,
     write_quality_report,
 )
 from ..cluster import infer_owner_kind, normalize_address, normalize_owner_name
 from ..geom import add_polygon_derivatives
 from ..io import write_geoparquet, write_raw_parquet
-from ._helpers import (
-    canon_county_fips,
-    safe_str,
-    state_fips_from_county_fips,
-)
+from .fips import canon_county_fips, state_fips_from_county_fips
+from .pandas_coerce import safe_str
+
+if TYPE_CHECKING:
+    pass
 
 log = logging.getLogger("preprocess.state_parcels")
 
 
-# Per-state column maps. Keys are canonical-schema field names; values are
-# lists of possible source column names (first match wins).
-PARCEL_FIELD_MAPS: dict[str, dict[str, list[str]]] = {
-    "nc_onemap_parcels": {
-        # Two casings per field: uppercase is the legacy shapefile bulk
-        # download; lowercase is the MapServer /query GeoJSON output that
-        # the current auto-fetch produces (see nc_onemap_parcels.py).
-        "parcel_id": ["PARNO", "parno"],
-        "parcel_id_full": ["NPARNO", "nparno"],
-        "owner_name": ["OWNNAME", "ownname"],
-        "owner_name_2": ["OWNNAME2", "ownname2"],
-        "mailing_addr": ["MAILADD", "mailadd"],
-        "mailing_city": ["MCITY", "mcity"],
-        "mailing_state": ["MSTATE", "mstate"],
-        "mailing_zip": ["MZIP", "mzip"],
-        "situs_addr": ["SITEADD", "siteadd"],
-        "situs_city": ["SCITY", "scity"],
-        "acreage": ["GISACRES", "gisacres"],
-        "land_value": ["LANDVAL", "landval"],
-        "improvement_value": ["IMPROVVAL", "improvval"],
-        "assessed_value": ["PARVAL", "parval"],
-        "land_use_code": ["PARUSECODE", "parusecode"],
-        "land_use_desc": ["PARUSEDESC", "parusedesc"],
-        "year_built": ["STRUCTYEAR", "structyear"],
-        "county_fips": ["STCNTYFIPS", "stcntyfips"],
-    },
-    "fl_fgdl_parcels": {
-        # NOTE: the user's installed FL data is the FGDL "DSL parcel
-        # composite" — state-owned land parcels (Division of State Land),
-        # NOT general taxable parcels with owners. For the FDOR NAL
-        # (with private owners), the user needs PARCELS_<YEAR>.zip from
-        # the FGDL portal instead.
-        # Map maintained against dsl_parcel_composite_oct25.gdb columns.
-        "parcel_id": ["BTLDS_PARCEL_KEY", "DSL_PARCEL_COMPOSITE_KEY"],
-        "parcel_id_full": ["DSL_PARCEL_COMPOSITE_KEY", "BTLDS_PARCEL_KEY"],
-        "owner_name": ["FACILITY_NAME"],  # not a true owner — state-land facility
-        "mailing_addr": [],
-        "situs_addr": [],
-        "acreage": ["PLOT_ACREAGE_NBR"],
-        "land_use_code": ["LAND_CATEGORY_NAME"],
-        "land_use_desc": ["LAND_CATEGORY_NAME"],
-        # COUNTY_NAME only — no FIPS. canon_county_fips can't resolve this.
-        # state_fips will fall back to '12' from SOURCE_STATE_FIPS.
-        "county_fips": [],
-    },
-    # When the user downloads PARCELS_<YEAR>.zip (taxable parcels w/ NAL),
-    # the columns differ; the puller stores it under fl_fgdl_parcels too,
-    # so we'd need to detect-and-route in the normalizer if both could be
-    # present. For Phase 1 we assume one or the other.
-    "mn_parcels": {
-        "parcel_id": ["PIN", "PARCEL_ID", "PARCEL_PIN"],
-        "parcel_id_full": ["PIN"],
-        "owner_name": ["OWNER_NAME", "OWNER1"],
-        "mailing_addr": ["MAIL_ADDR1", "OWNER_ADDR"],
-        "mailing_city": ["MAIL_CITY"],
-        "mailing_state": ["MAIL_STATE"],
-        "mailing_zip": ["MAIL_ZIP"],
-        "situs_addr": ["PROP_ADDR", "SITE_ADDR"],
-        "acreage": ["ACRES", "GIS_ACRES"],
-        "land_value": ["LAND_VAL"],
-        "improvement_value": ["BLDG_VAL"],
-        "assessed_value": ["EST_MKT_VAL", "TOT_VAL"],
-        "land_use_code": ["USE1_DESC", "USECLASS1"],
-        "land_use_desc": ["USE1_DESC"],
-        "year_built": ["YEAR_BUILT"],
-        "county_fips": ["COUNTY_CD", "COUNTY_FIPS"],
-    },
-    "mt_cadastral_parcels": {
-        # Verified against the MT Cadastral OWNERPARCEL.shp .dbf schema.
-        # Shapefile 10-char column truncation: OwnerAddress→OwnerAddre,
-        # TotalLandValue→TotalLandV, OwnerZipCode→OwnerZipCo, etc.
-        "parcel_id": ["PARCELID"],
-        "parcel_id_full": ["PARCELID"],
-        "owner_name": ["OwnerName"],
-        "owner_name_2": ["DbaName"],
-        "mailing_addr": ["OwnerAddre"],
-        "mailing_city": ["OwnerCity"],
-        "mailing_state": ["OwnerState"],
-        "mailing_zip": ["OwnerZipCo"],
-        "situs_addr": ["AddressLin"],
-        "acreage": ["GISAcres"],
-        "land_value": ["TotalLandV"],
-        "improvement_value": ["TotalBuild"],
-        "assessed_value": ["TotalValue"],
-        "land_use_code": ["PropType"],
-        "land_use_desc": ["PropType"],
-        # CountyName is a name, not a FIPS — resolved via
-        # COUNTY_NAME_RESOLVERS below.
-        "county_fips": ["CountyName"],
-    },
-    "in_parcels": {
-        # IGIO Parcel Boundaries (Current) — no owner_name in public release.
-        # Mailing/situs fields exist but the user has to look up owners via
-        # the county assessor portals (out of scope for v1).
-        "parcel_id": ["parcel_id", "state_parcel_id", "local_id"],
-        "parcel_id_full": ["state_parcel_id", "parcel_id"],
-        "owner_name": [],  # not in public IGIO release
-        "mailing_addr": ["dlgf_prop_address"],
-        "mailing_city": ["dlgf_prop_address_city"],
-        "mailing_state": ["dlgf_prop_address_state"],
-        "mailing_zip": ["dlgf_prop_address_zip"],
-        "situs_addr": ["prop_add"],
-        "situs_city": ["prop_city"],
-        "land_use_code": ["dlgf_prop_class_code"],
-        "county_fips": ["county_fips"],
-    },
-    "ar_parcels": {
-        # Verified against DataScout OneMap statewide layer (2026 vintage).
-        "parcel_id": ["ParcelId", "CountyId", "ParcelID"],
-        "parcel_id_full": ["CountyId", "ParcelId"],
-        "owner_name": ["OwnerName"],
-        "mailing_addr": ["AdrLabel"],
-        "mailing_city": ["AdrCity"],
-        "mailing_zip": ["AdrZip5"],
-        "situs_addr": ["AdrLabel"],
-        "situs_city": ["AdrCity"],
-        "acreage": ["TaxArea"],
-        "land_value": ["LandValue"],
-        "improvement_value": ["ImpValue"],
-        "assessed_value": ["TotalValue", "AssessValu"],
-        "land_use_code": ["ParcelType"],
-        "land_use_desc": ["ParcelType"],
-        "county_fips": ["CountyFips"],
-    },
-    "fdor_nal": {
-        # FDOR per-county PAR shapefile = PIN geometry + NAL tax-roll
-        # attributes joined on PARCELNO. Verified against the 2025 PAR
-        # .dbf schema (alachua_2025Ppar). Shapefile column names are
-        # capped at 10 chars, so STATE_PARCEL_ID → STATE_PAR_ etc.
-        "parcel_id": ["PARCEL_ID", "PARCELNO"],
-        "parcel_id_full": ["STATE_PAR_", "PARCEL_ID"],
-        "owner_name": ["OWN_NAME"],
-        "owner_name_2": [],
-        "mailing_addr": ["OWN_ADDR1"],
-        "mailing_city": ["OWN_CITY"],
-        "mailing_state": ["OWN_STATE"],
-        "mailing_zip": ["OWN_ZIPCD"],
-        "situs_addr": ["PHY_ADDR1"],
-        "situs_city": ["PHY_CITY"],
-        # NAL ships LND_SQFOOT (square feet), not acres — left null
-        # rather than mislabel sqft as acreage.
-        "acreage": [],
-        "land_value": ["LND_VAL"],
-        # NAL has no direct improvement value (JV = land + improvements);
-        # left null rather than compute, to keep the field map declarative.
-        "improvement_value": [],
-        "assessed_value": ["JV"],  # JV = just value (FL's market value)
-        "land_use_code": ["DOR_UC"],
-        "land_use_desc": ["DOR_UC"],
-        "year_built": ["ACT_YR_BLT"],
-        # CENSUS_BK is a 12-digit census-block GEOID; canon_county_fips
-        # slices positions 0-4 for the county FIPS.
-        "county_fips": ["CENSUS_BK"],
-    },
-    "ut_parcels": {
-        "parcel_id": ["PARCEL_ID"],
-        "parcel_id_full": ["PARCEL_ID"],
-        "owner_name": ["OWNER_NAME"],
-        "mailing_addr": ["OWNER_ADDR"],
-        "mailing_city": ["OWNER_CITY"],
-        "mailing_state": ["OWNER_STAT"],
-        "mailing_zip": ["OWNER_ZIP"],
-        "situs_addr": ["PROP_ADDR"],
-        "acreage": ["TAX_AREA", "ACRES"],
-        "assessed_value": ["TOTAL_MKT"],
-        "land_use_code": ["LAND_USE"],
-        "county_fips": ["COUNTY"],
-    },
-}
+# ── Adapter dataclass + Normalizer ───────────────────────────────────────
 
 
-# Montana county name → 5-digit FIPS. The MT Cadastral OWNERPARCEL layer
-# identifies counties only by name (CountyName); there is no FIPS column.
-# MT FIPS are alphabetical, odd codes 30001-30111.
-MT_COUNTY_NAME_TO_FIPS: dict[str, str] = {
-    "BEAVERHEAD": "30001", "BIG HORN": "30003", "BLAINE": "30005",
-    "BROADWATER": "30007", "CARBON": "30009", "CARTER": "30011",
-    "CASCADE": "30013", "CHOUTEAU": "30015", "CUSTER": "30017",
-    "DANIELS": "30019", "DAWSON": "30021", "DEER LODGE": "30023",
-    "FALLON": "30025", "FERGUS": "30027", "FLATHEAD": "30029",
-    "GALLATIN": "30031", "GARFIELD": "30033", "GLACIER": "30035",
-    "GOLDEN VALLEY": "30037", "GRANITE": "30039", "HILL": "30041",
-    "JEFFERSON": "30043", "JUDITH BASIN": "30045", "LAKE": "30047",
-    "LEWIS AND CLARK": "30049", "LIBERTY": "30051", "LINCOLN": "30053",
-    "MCCONE": "30055", "MADISON": "30057", "MEAGHER": "30059",
-    "MINERAL": "30061", "MISSOULA": "30063", "MUSSELSHELL": "30065",
-    "PARK": "30067", "PETROLEUM": "30069", "PHILLIPS": "30071",
-    "PONDERA": "30073", "POWDER RIVER": "30075", "POWELL": "30077",
-    "PRAIRIE": "30079", "RAVALLI": "30081", "RICHLAND": "30083",
-    "ROOSEVELT": "30085", "ROSEBUD": "30087", "SANDERS": "30089",
-    "SHERIDAN": "30091", "SILVER BOW": "30093", "STILLWATER": "30095",
-    "SWEET GRASS": "30097", "TETON": "30099", "TOOLE": "30101",
-    "TREASURE": "30103", "VALLEY": "30105", "WHEATLAND": "30107",
-    "WIBAUX": "30109", "YELLOWSTONE": "30111",
-}
-
-# Sources whose county field carries a county *name* rather than a FIPS
-# code. The vectorized normalizer resolves these via name lookup instead
-# of canon_county_fips. Key = source_id, value = {UPPERCASE name: FIPS}.
-COUNTY_NAME_RESOLVERS: dict[str, dict[str, str]] = {
-    "mt_cadastral_parcels": MT_COUNTY_NAME_TO_FIPS,
-}
+CountyResolver = Callable[[str], "str | None"]
+PostMap = Callable[["gpd.GeoDataFrame"], "gpd.GeoDataFrame"]
 
 
-# State FIPS hint per source_id — used when the source's county_fips field
-# doesn't include the state prefix.
-SOURCE_STATE_FIPS: dict[str, str] = {
-    "nc_onemap_parcels": "37",
-    "fl_fgdl_parcels": "12",
-    "fdor_nal": "12",
-    "mn_parcels": "27",
-    "mt_cadastral_parcels": "30",
-    "in_parcels": "18",
-    "ar_parcels": "05",
-    "ut_parcels": "49",
-}
+@dataclass(frozen=True)
+class ParcelAdapter:
+    """Per-source description for the shared parcel-normalize driver.
+
+    Attributes:
+        source_id: The fetch-side ``DataSource.id`` this adapter describes.
+        state_fips: Two-digit state FIPS hint, used when the raw county
+            column doesn't carry the state prefix (e.g. MT has only county
+            names; AR has a 3-digit county code).
+        field_map: Canonical-name → list of candidate raw column names;
+            first match wins. See ``map_layer_to_canonical`` for the
+            canonical-field vocabulary.
+        county_resolver: Optional callable taking a raw county value and
+            returning a 5-digit county FIPS (or None if it can't resolve).
+            Used when the raw field is a county *name* rather than a FIPS
+            (e.g. MT Cadastral's ``CountyName``). When None, the driver
+            falls back to ``canon_county_fips``.
+        post_map: Optional escape hatch — runs after the default
+            canonical mapping. Receives the canonical GeoDataFrame and
+            returns the (possibly mutated) GeoDataFrame. Reserve for
+            quirks that can't be expressed via ``field_map`` alone.
+    """
+
+    source_id: str
+    state_fips: str
+    field_map: dict[str, list[str]]
+    county_resolver: CountyResolver | None = None
+    post_map: PostMap | None = None
+
+
+class ParcelNormalizer(Normalizer):
+    """Concrete Normalizer that delegates to the shared parcel driver.
+
+    One instance per ParcelAdapter — registered via
+    ``register_normalizer_instance(ParcelNormalizer(ADAPTER))``.
+    """
+
+    canonical_types = ["parcel"]
+
+    def __init__(self, adapter: ParcelAdapter) -> None:
+        self.adapter = adapter
+        self.source_id = adapter.source_id
+
+    def normalize(self, raw_dir: Path, out_dir: Path) -> NormalizeResult:
+        return normalize_state_parcels(raw_dir, out_dir, self.adapter)
+
+
+# ── Column helpers (vectorized) ──────────────────────────────────────────
 
 
 def _resolve_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
@@ -299,11 +161,40 @@ def _map_unique(series: pd.Series, fn) -> pd.Series:
     return series.map(lookup)
 
 
+# ── Layer readers (multi-format, streaming) ──────────────────────────────
+
+
+def _looks_like_lonlat(g: gpd.GeoDataFrame) -> bool:
+    """True when a layer's coordinate bounds fall inside the valid lon/lat
+    envelope. The only case where assuming an *unlabeled* CRS is EPSG:4326 is
+    safe — otherwise ``set_crs`` would silently mislabel a projected layer
+    (e.g. State Plane feet, where coordinates run into the millions) as WGS84
+    and corrupt every downstream spatial join."""
+    try:
+        minx, miny, maxx, maxy = g.total_bounds
+    except Exception:
+        return False
+    if any(pd.isna(v) for v in (minx, miny, maxx, maxy)):
+        return False
+    return -180.0 <= minx and maxx <= 180.0 and -90.0 <= miny and maxy <= 90.0
+
+
 def _to_4326(g: gpd.GeoDataFrame) -> gpd.GeoDataFrame | None:
-    """Reproject one layer to EPSG:4326. Returns None if reprojection fails."""
+    """Reproject one layer to EPSG:4326. Returns None if reprojection fails
+    or an unlabeled layer cannot be safely assumed to already be lon/lat."""
     if g.crs is None:
-        log.warning("  layer has no CRS — assuming EPSG:4326")
-        return g.set_crs("EPSG:4326")
+        # No CRS — only assume 4326 when the coordinates actually look like
+        # lon/lat. Mislabeling projected data as WGS84 corrupts joins silently
+        # and irreversibly, so a layer that fails the check is skipped (loud
+        # log) rather than mislabeled. The CRS must be declared upstream.
+        if _looks_like_lonlat(g):
+            log.warning("  layer has no CRS — coordinates look like lon/lat, assuming EPSG:4326")
+            return g.set_crs("EPSG:4326")
+        log.error(
+            "  layer has no CRS and coordinates are outside the lon/lat range — "
+            "skipping (cannot assume EPSG:4326 without mislabeling projected data)"
+        )
+        return None
     if g.crs.to_epsg() != 4326:
         try:
             return g.to_crs("EPSG:4326")
@@ -354,10 +245,9 @@ def _iter_raw_layers(raw_dir: Path):
     """Yield (label, GeoDataFrame) for every parcel layer under raw_dir, one
     at a time, reprojected to EPSG:4326.
 
-    Streaming — only one layer is held at a time. The old _read_all_layers
-    materialised every layer before concatenating, which needs ~50 GB peak
-    for FL's 67-county / ~28 GB FDOR set. This generator keeps peak memory
-    bounded to a single county.
+    Streaming — only one layer is held at a time. Materialising every layer
+    before concatenating would need ~50 GB peak for FL's 67-county / ~28 GB
+    FDOR set; this generator keeps peak memory bounded to a single county.
     """
     for shp in sorted(raw_dir.rglob("*.shp")):
         # Some FDOR county exports ship a *directory* named `<county>.shp`
@@ -398,11 +288,12 @@ def _iter_raw_layers(raw_dir: Path):
             yield gj.stem, g
 
 
-def _map_layer_to_canonical(
+# ── Canonical mapping (adapter-driven) ───────────────────────────────────
+
+
+def map_layer_to_canonical(
     g: gpd.GeoDataFrame,
-    field_map: dict[str, list[str]],
-    source_id: str,
-    expected_state_fips: str | None,
+    adapter: ParcelAdapter,
 ) -> gpd.GeoDataFrame:
     """Map one raw parcel layer to the canonical narrow schema.
 
@@ -411,7 +302,7 @@ def _map_layer_to_canonical(
     normalize_owner_name, normalize_address) run once per *distinct* value.
     Returns the narrow GeoDataFrame *before* the geometry-validity filter.
     """
-    fm = field_map
+    fm = adapter.field_map
     n = len(g)
 
     owner_name = _str_series(g, fm.get("owner_name", []))
@@ -426,16 +317,15 @@ def _map_layer_to_canonical(
     parcel_id_full = _str_series(g, fm.get("parcel_id_full", []))
 
     county_raw = _str_series(g, fm.get("county_fips", []))
-    name_resolver = COUNTY_NAME_RESOLVERS.get(source_id)
-    if name_resolver is not None:
+    if adapter.county_resolver is not None:
         # Source identifies counties by name (e.g. MT Cadastral).
-        county_fips = _map_unique(county_raw, lambda v: name_resolver.get(v.strip().upper()))
+        county_fips = _map_unique(county_raw, adapter.county_resolver)
     else:
         county_fips = _map_unique(
-            county_raw, lambda v: canon_county_fips(v, state_fips=expected_state_fips)
+            county_raw, lambda v: canon_county_fips(v, state_fips=adapter.state_fips)
         )
     state_fips = _map_unique(
-        county_fips, lambda v: state_fips_from_county_fips(v) or expected_state_fips
+        county_fips, lambda v: state_fips_from_county_fips(v) or adapter.state_fips
     )
 
     out = pd.DataFrame(index=g.index)
@@ -485,28 +375,31 @@ def _map_layer_to_canonical(
     out["owner_cluster_value_total"] = 0.0
     out["_source_row_id"] = parcel_id_full
     out["geometry"] = g.geometry.values
+    # Geometry-validity status column. Full-fidelity preservation (CLAUDE §8 /
+    # ARCHITECTURE §3.3) means we never drop rows at normalize time — invalid /
+    # null geometry is flagged here, and compose's spatial joins filter on it.
+    out["geometry_valid"] = (g.geometry.notna() & g.geometry.is_valid).values
 
     return gpd.GeoDataFrame(out, geometry="geometry", crs="EPSG:4326")
 
 
-def _normalize_state_parcels(
+# ── Driver entry point ───────────────────────────────────────────────────
+
+
+def normalize_state_parcels(
     raw_dir: Path,
     out_dir: Path,
-    source_id: str,
+    adapter: ParcelAdapter,
 ) -> NormalizeResult:
-    """Streaming per-layer normalize.
+    """Streaming per-layer normalize for one parcel source.
 
     Each input layer (county shapefile, GeoJSON page, gdb layer) is read,
     mapped to the canonical schema, geometry-filtered, and written to its
     own ``parcels/<label>.parquet`` — a standard multi-file parquet
     dataset the Composer reads back. Peak memory stays bounded to a single
-    layer, so FL's 67-county / ~10M-parcel set works on a 16 GB machine.
+    layer (ADR-050).
     """
-    field_map = PARCEL_FIELD_MAPS.get(source_id)
-    if field_map is None:
-        raise RuntimeError(f"no parcel field map for source_id {source_id!r}")
-    expected_state_fips = SOURCE_STATE_FIPS.get(source_id)
-    owner_cols = field_map.get("owner_name", [])
+    owner_cols = adapter.field_map.get("owner_name", [])
     # A source with no declared owner column maps every layer; otherwise
     # only layers carrying an owner column are parcels (skips e.g. MT's
     # PLSS / water shapefiles).
@@ -524,7 +417,7 @@ def _normalize_state_parcels(
     canon_bytes = 0
     raw_row_total = 0
     canon_row_total = 0
-    dropped_total = 0
+    invalid_total = 0
     n_layers_seen = 0
     n_layers_mapped = 0
     states_covered: set[str] = set()
@@ -535,7 +428,11 @@ def _normalize_state_parcels(
     for label, g in _iter_raw_layers(raw_dir):
         n_layers_seen += 1
         if not (map_all or any(c in g.columns for c in owner_cols)):
-            log.info("  %s: skip layer %s — no owner column (not a parcel layer)", source_id, label)
+            log.info(
+                "  %s: skip layer %s — no owner column (not a parcel layer)",
+                adapter.source_id,
+                label,
+            )
             continue
         n_layers_mapped += 1
         raw_row_total += len(g)
@@ -545,15 +442,20 @@ def _normalize_state_parcels(
         if qr_sample_raw is None:
             qr_sample_raw = g
 
-        gdf = _map_layer_to_canonical(g, field_map, source_id, expected_state_fips)
+        gdf = map_layer_to_canonical(g, adapter)
         del g  # free the wide raw frame before the next layer
 
-        n_before = len(gdf)
-        gdf = gdf[gdf.geometry.notna() & gdf.geometry.is_valid].copy()
-        dropped_total += n_before - len(gdf)
+        # Keep every row (full-fidelity raw preservation, CLAUDE §8 /
+        # ARCHITECTURE §3.3). map_layer_to_canonical flags invalid/null
+        # geometry via geometry_valid; compose's spatial joins exclude those
+        # rows from sjoins rather than this normalizer dropping them.
+        invalid_total += int((~gdf["geometry_valid"]).sum())
 
         gdf = add_polygon_derivatives(gdf)
-        gdf = add_system_columns(gdf, source_id, "parcel")
+        gdf = add_system_columns(gdf, adapter.source_id, "parcel")
+
+        if adapter.post_map is not None:
+            gdf = adapter.post_map(gdf)
 
         for s in gdf["state_fips"].dropna().unique():
             if s:
@@ -568,46 +470,53 @@ def _normalize_state_parcels(
         del gdf
 
     if n_layers_seen == 0:
-        raise FileNotFoundError(f"{source_id}: no parcel layers under {raw_dir}")
+        raise FileNotFoundError(f"{adapter.source_id}: no parcel layers under {raw_dir}")
     if n_layers_mapped == 0:
         # Loud failure beats the old silent "fall back to all layers", which
         # concatenated non-parcel layers into millions of garbage rows.
         raise RuntimeError(
-            f"{source_id}: read {n_layers_seen} layer(s) but none carried an "
-            f"owner column {owner_cols!r} — check PARCEL_FIELD_MAPS."
+            f"{adapter.source_id}: read {n_layers_seen} layer(s) but none carried an "
+            f"owner column {owner_cols!r} — check the adapter's field_map."
         )
 
     log.info(
-        "%s: %d/%d layers mapped → %d raw rows → %d canonical rows (%d dropped)",
-        source_id,
+        "%s: %d/%d layers mapped → %d raw rows → %d canonical rows (%d invalid-geom, kept + flagged)",
+        adapter.source_id,
         n_layers_mapped,
         n_layers_seen,
         raw_row_total,
         canon_row_total,
-        dropped_total,
+        invalid_total,
     )
-    if dropped_total:
-        log.warning("%s: dropped %d rows with null/invalid geometry", source_id, dropped_total)
+    if invalid_total:
+        log.warning(
+            "%s: %d rows have null/invalid geometry — kept with geometry_valid=False",
+            adapter.source_id,
+            invalid_total,
+        )
 
     qr = quality_report(
-        source_id,
+        adapter.source_id,
         {"raw": qr_sample_raw, "parcels": qr_sample_parcels},
         warnings=(
-            [f"dropped {dropped_total} rows with invalid geometry"] if dropped_total else None
+            [f"{invalid_total} rows have invalid/null geometry (kept, geometry_valid=False)"]
+            if invalid_total
+            else None
         ),
     )
     # The QR tables were profiled from one representative layer (the full
     # set is too large to hold in memory) — correct the row counts to totals.
     for tbl, total in (("raw", raw_row_total), ("parcels", canon_row_total)):
-        if tbl in qr.get("tables", {}):
-            qr["tables"][tbl]["rows"] = total
-            qr["tables"][tbl]["note"] = (
+        if tbl in qr.tables:
+            qr.tables[tbl].rows = total
+            qr.tables[tbl].note = (
                 f"column stats sampled from 1 of {n_layers_mapped} layers; "
                 "rows is the true total across all layers"
             )
+    qr.extras["states_covered"] = sorted(states_covered)
     qr_path = write_quality_report(out_dir, qr)
 
-    res = NormalizeResult(
+    return NormalizeResult(
         raw_rows=raw_row_total,
         canonical_rows=canon_row_total,
         bytes=raw_bytes + canon_bytes,
@@ -615,38 +524,35 @@ def _normalize_state_parcels(
         canonical_types_written=["parcel"],
         quality_report=qr,
     )
-    res.quality_report["states_covered"] = sorted(states_covered)
-    return res
 
 
-def _make_parcel_normalizer(source_id_value: str):
-    """Build a concrete Normalizer subclass for one state parcel source.
-
-    We define normalize() at class-creation time (not as a post-hoc
-    attribute assignment) so the ABCMeta abstract-method check passes when
-    @register_normalizer instantiates the class.
-    """
-    captured = source_id_value
-    cls_name = f"_ParcelNormalizer_{captured}"
-    body = {
-        "source_id": captured,
-        "canonical_types": ["parcel"],
-        "normalize": lambda self, raw_dir, out_dir: _normalize_state_parcels(
-            raw_dir,
-            out_dir,
-            captured,
-        ),
-    }
-    cls = type(cls_name, (Normalizer,), body)
-    return register_normalizer(cls)
+# ── Registrations ────────────────────────────────────────────────────────
 
 
-# Register one Normalizer per state parcel source.
-NcOnemapParcelsNormalizer = _make_parcel_normalizer("nc_onemap_parcels")
-FlFgdlParcelsNormalizer = _make_parcel_normalizer("fl_fgdl_parcels")
-FdorNalNormalizer = _make_parcel_normalizer("fdor_nal")
-MnParcelsNormalizer = _make_parcel_normalizer("mn_parcels")
-MtCadastralParcelsNormalizer = _make_parcel_normalizer("mt_cadastral_parcels")
-InParcelsNormalizer = _make_parcel_normalizer("in_parcels")
-ArParcelsNormalizer = _make_parcel_normalizer("ar_parcels")
-UtParcelsNormalizer = _make_parcel_normalizer("ut_parcels")
+def _register(adapter: ParcelAdapter) -> ParcelNormalizer:
+    return register_normalizer_instance(ParcelNormalizer(adapter))
+
+
+# Imports kept at the bottom so the dataclass + driver are defined
+# before the adapters try to reference ``ParcelAdapter``.
+from .state_parcel_adapters.ar import AR_PARCELS_ADAPTER  # noqa: E402
+from .state_parcel_adapters.fdor_nal import FDOR_NAL_ADAPTER  # noqa: E402
+from .state_parcel_adapters.fl_fgdl import FL_FGDL_PARCELS_ADAPTER  # noqa: E402
+from .state_parcel_adapters.mn import MN_PARCELS_ADAPTER  # noqa: E402, F401
+from .state_parcel_adapters.mt import MT_CADASTRAL_PARCELS_ADAPTER  # noqa: E402
+from .state_parcel_adapters.nc import NC_ONEMAP_PARCELS_ADAPTER  # noqa: E402
+
+_register(AR_PARCELS_ADAPTER)
+_register(NC_ONEMAP_PARCELS_ADAPTER)
+_register(MT_CADASTRAL_PARCELS_ADAPTER)
+_register(FL_FGDL_PARCELS_ADAPTER)
+_register(FDOR_NAL_ADAPTER)
+
+# Minnesota (fips 27) is DEFERRED — intentionally not registered into the
+# active normalizer set. ADR-018 defers the MN pull pending MnGeo
+# confirmation, and the source is marked "No License Provided" despite the
+# "Plan Parcels Open" name — a commercial-use blocker (see memory
+# `mn-parcels-license-commercial-blocker`). The adapter is imported above so
+# it stays maintained; re-enable by uncommenting the line below once the
+# licence terms and scope are confirmed.
+# _register(MN_PARCELS_ADAPTER)

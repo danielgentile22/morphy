@@ -85,6 +85,7 @@ class UsdaPersistentPoverty(DataSource):
         return "unknown"
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
+        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
         out = dest_dir / "county_typology_codes.csv"
         n = download(
             DOWNLOAD_URL,
@@ -94,7 +95,7 @@ class UsdaPersistentPoverty(DataSource):
         )
         return FetchResult(
             files=[out],
-            remote_version=self.remote_version(),
+            remote_version=rv,
             total_bytes=n,
         )
 

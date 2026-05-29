@@ -28,6 +28,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .manual_install import mark_manual_install, pick_and_upload
+from .theme import Palette
+
 
 class WalkthroughDialog(QDialog):
     """Guided manual-download flow with prev/next nav and final validate."""
@@ -61,14 +64,9 @@ class WalkthroughDialog(QDialog):
 
     # ── helpers ─────────────────────────────────────────────────────────
 
-    def _muted(self) -> str:
-        return "#bdbdbd" if self._dark else "#616161"
-
-    def _text(self) -> str:
-        return "#eeeeee" if self._dark else "#212121"
-
-    def _err(self) -> str:
-        return "#e57373" if self._dark else "#c62828"
+    @property
+    def _p(self) -> Palette:
+        return Palette.for_dark(self._dark)
 
     # ── construction ────────────────────────────────────────────────────
 
@@ -86,13 +84,13 @@ class WalkthroughDialog(QDialog):
         header_row.addWidget(lbl_title)
         header_row.addStretch(1)
         self.lbl_counter = QLabel("")
-        self.lbl_counter.setStyleSheet(f"color: {self._muted()};")
+        self.lbl_counter.setStyleSheet(f"color: {self._p.muted};")
         header_row.addWidget(self.lbl_counter)
         v.addLayout(header_row)
 
         landing = self._walkthrough.landing_page_url
         self.lbl_landing = QLabel(f'Landing page: <a href="{landing}">{landing}</a>')
-        self.lbl_landing.setStyleSheet(f"color: {self._muted()}; font-size: 11px;")
+        self.lbl_landing.setStyleSheet(f"color: {self._p.muted}; font-size: 11px;")
         self.lbl_landing.setOpenExternalLinks(False)
         self.lbl_landing.linkActivated.connect(self._open_url)  # type: ignore
         self.lbl_landing.setWordWrap(True)
@@ -103,7 +101,7 @@ class WalkthroughDialog(QDialog):
                 "Expected files in <code>current/</code>: "
                 + ", ".join(f"<code>{p}</code>" for p in self._walkthrough.expected_files)
             )
-            self.lbl_expected.setStyleSheet(f"color: {self._muted()}; font-size: 11px;")
+            self.lbl_expected.setStyleSheet(f"color: {self._p.muted}; font-size: 11px;")
             self.lbl_expected.setWordWrap(True)
             v.addWidget(self.lbl_expected)
 
@@ -140,7 +138,7 @@ class WalkthroughDialog(QDialog):
         v.addWidget(self.btn_upload)
 
         self.lbl_error = QLabel("")
-        self.lbl_error.setStyleSheet(f"color: {self._err()};")
+        self.lbl_error.setStyleSheet(f"color: {self._p.fail};")
         self.lbl_error.setWordWrap(True)
         self.lbl_error.setTextFormat(Qt.RichText)
         self.lbl_error.hide()
@@ -213,7 +211,7 @@ class WalkthroughDialog(QDialog):
         # so the spec is visible (avoids "missing entirely" silent UX).
         self.screenshot_label.setPixmap(QPixmap())
         self.screenshot_label.setText(f"(screenshot not present: {path.name})")
-        self.screenshot_label.setStyleSheet(f"color: {self._muted()};")
+        self.screenshot_label.setStyleSheet(f"color: {self._p.muted};")
         self.screenshot_wrap.show()
 
     def _open_current_deep_link(self) -> None:
@@ -222,8 +220,6 @@ class WalkthroughDialog(QDialog):
             self._open_url(step.deep_link)
 
     def _upload_files(self) -> None:
-        from .upload import pick_and_upload
-
         result = pick_and_upload(self._source, self)
         if result is None:
             return
@@ -241,7 +237,7 @@ class WalkthroughDialog(QDialog):
         if parts:
             # Inline confirmation — non-blocking; user can keep walking
             # through or click "I'm done" to finalize.
-            self.lbl_error.setStyleSheet("color: #81c784;" if self._dark else "color: #2e7d32;")
+            self.lbl_error.setStyleSheet(f"color: {self._p.ok};")
             self.lbl_error.setText(
                 f"✓ Upload complete: {', '.join(parts)} → "
                 f"<code>data/raw/{self._source.id}/current/</code>"
@@ -288,8 +284,6 @@ class WalkthroughDialog(QDialog):
             )
             return
 
-        from .upload import mark_manual_install
-
         mark_manual_install(self._source, self._manifest)
         self._completed = True
         self.accept()
@@ -297,6 +291,6 @@ class WalkthroughDialog(QDialog):
     def _show_error(self, msg_html: str) -> None:
         # lbl_error is overloaded for upload-success too — always re-set
         # the color here so prior success-green doesn't leak into errors.
-        self.lbl_error.setStyleSheet(f"color: {self._err()};")
+        self.lbl_error.setStyleSheet(f"color: {self._p.fail};")
         self.lbl_error.setText(msg_html)
         self.lbl_error.show()

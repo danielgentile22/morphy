@@ -4,7 +4,6 @@ import {
   fmtAcres,
   fmtMeters,
   fmtLatLng,
-  formatPhone,
   fmtInt,
   fmtYear,
   fmtScore,
@@ -13,7 +12,6 @@ import {
   fmtText,
   joinNonEmpty,
   hasValue,
-  escapeHtml,
 } from '../../src/lib/format';
 
 describe('fmtMoney', () => {
@@ -69,20 +67,6 @@ describe('fmtLatLng', () => {
     expect(fmtLatLng(33, null)).toBeNull();
     expect(fmtLatLng(null, -91)).toBeNull();
     expect(fmtLatLng(null, null)).toBeNull();
-  });
-});
-
-describe('formatPhone', () => {
-  it('formats a 10-digit number', () => {
-    expect(formatPhone('5015551234')).toBe('(501) 555-1234');
-    expect(formatPhone('(501) 555-1234')).toBe('(501) 555-1234');
-  });
-  it('returns non-10-digit input unchanged', () => {
-    expect(formatPhone('123')).toBe('123');
-  });
-  it('returns null for absent input', () => {
-    expect(formatPhone(null)).toBeNull();
-    expect(formatPhone('')).toBeNull();
   });
 });
 
@@ -191,11 +175,3 @@ describe('hasValue', () => {
   });
 });
 
-describe('escapeHtml', () => {
-  it('escapes HTML-significant characters', () => {
-    expect(escapeHtml('<a href="x">&\'')).toBe('&lt;a href=&quot;x&quot;&gt;&amp;&#39;');
-  });
-  it('leaves plain text untouched', () => {
-    expect(escapeHtml('BURCH FAMILY FARM TRUST')).toBe('BURCH FAMILY FARM TRUST');
-  });
-});

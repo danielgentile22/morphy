@@ -67,6 +67,41 @@ a {
   color: var(--muted);
 }
 
+/* Sidebar panel h2 — the "LAYERS" / "FILTERS" / "LEGEND" caps title that
+   appears at the top of every sidebar section. Centralised here so each
+   component doesn't need to repeat the same 6 declarations in its own
+   scoped <style> block. */
+.panel h2 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+/* Pill-shaped filter chip — used in FilterPanel + TopList for
+   single-select category filters. Per-component overrides handle small
+   variations (FilterPanel chips embed a count, TopList chips are
+   text-only). */
+.chip {
+  display: inline-flex;
+  gap: 5px;
+  align-items: baseline;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

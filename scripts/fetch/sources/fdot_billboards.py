@@ -9,13 +9,9 @@ The exact URL is a stable filename refreshed in place each month.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from ..base import (
     CATEGORY_BILLBOARDS,
-    DataSource,
-    FetchResult,
-    ProgressCallback,
+    ManualOnlySource,
 )
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 
@@ -29,7 +25,7 @@ from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 NEW_OA_PAGE = "https://www.fdot.gov/rightofway/OutdoorAdvertising.shtm/new-outdoor-advertising-site"
 
 
-class FdotBillboards(DataSource):
+class FdotBillboards(ManualOnlySource):
     id = "fdot_billboards"
     name = "FDOT Outdoor Advertising permits"
     category = CATEGORY_BILLBOARDS
@@ -76,15 +72,6 @@ class FdotBillboards(DataSource):
             "data/raw/fdot_billboards/current/ and click 'Rescan disk'."
         ),
     )
-
-    def remote_version(self) -> str:
-        return "manual"
-
-    def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        raise RuntimeError(
-            "fdot_billboards is MANUAL_ONLY — FDOT retired the bulk extract. "
-            "Contact the OA office (notes have the phone number)."
-        )
 
 
 SOURCE = FdotBillboards()

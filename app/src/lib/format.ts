@@ -47,16 +47,6 @@ export function fmtLatLng(lat: unknown, lon: unknown): string | null {
   return `${la.toFixed(5)}, ${lo.toFixed(5)}`;
 }
 
-/** US phone, e.g. "5015551234" -> "(501) 555-1234". Non-10-digit input is returned as-is. */
-export function formatPhone(v: unknown): string | null {
-  if (v === null || v === undefined || v === '') return null;
-  const digits = String(v).replace(/\D/g, '');
-  if (digits.length === 10) {
-    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
-  return String(v);
-}
-
 /** Integer with thousands separators, e.g. 2116976 -> "2,116,976". */
 export function fmtInt(v: unknown): string | null {
   const n = toNum(v);
@@ -120,21 +110,3 @@ export function hasValue(v: unknown): boolean {
   return true;
 }
 
-/** HTML entity escape. Svelte auto-escapes `{text}`; this is for the rare
- *  case of building markup by hand (kept for parity with the v1 app). */
-export function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => {
-    switch (c) {
-      case '&':
-        return '&amp;';
-      case '<':
-        return '&lt;';
-      case '>':
-        return '&gt;';
-      case '"':
-        return '&quot;';
-      default:
-        return '&#39;';
-    }
-  });
-}

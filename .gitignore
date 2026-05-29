@@ -50,6 +50,8 @@ Thumbs.db
 # ─── Local Claude Code state ─────────────────────────────────────────
 .claude/projects/
 .claude/cache/
+.claude/settings.local.json
+.claude/*.lock
 # NOTE: .claude/plans/ may contain working plan docs — uncomment to ignore.
 
 # ─── Backups + temp ──────────────────────────────────────────────────

@@ -11,6 +11,15 @@ return empty and the whole pipeline is a no-op.
 """
 
 # ── Normalizers ───────────────────────────────────────────────────────
+# ── Joins ─────────────────────────────────────────────────────────────
+from .joins import (  # noqa: F401
+    county_score_lookup,
+    infra_to_parcel,
+    interestingness_score,
+    owner_cluster,
+    parcel_hosts_infra,
+    spatial_attribute,
+)
 from .normalizers import (  # noqa: F401
     arc_distressed,
     eia_860,
@@ -23,22 +32,6 @@ from .normalizers import (  # noqa: F401
     state_parcels,
     usda_persistent_poverty,
     uspvdb,
-)
-
-# ── Joins ─────────────────────────────────────────────────────────────
-from .joins import (  # noqa: F401
-    billboard_to_parcel,
-    county_score_to_parcel,
-    county_score_to_solar,
-    county_score_to_tower,
-    geometry_derivatives,
-    interestingness_score,
-    owner_cluster,
-    parcel_hosts_infra,
-    parcel_to_distress,
-    solar_to_parcel,
-    tower_to_distress,
-    tower_to_parcel,
 )
 
 # ── Views ─────────────────────────────────────────────────────────────

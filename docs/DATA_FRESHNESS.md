@@ -1,9 +1,7 @@
 # DATA_FRESHNESS — Per-source cadence rules
 
-**Last updated:** 2026-05-20
-**Pairs with:** [DATA_SOURCES.md](./DATA_SOURCES.md) (per-source schema
-+ license) and [PULLER_UX.md](./PULLER_UX.md) (UX design for surfacing
-this in the puller).
+**Last updated:** 2026-05-25
+**Pairs with:** [DATA_SOURCES.md](./DATA_SOURCES.md) (per-source schema + license + status), [PULLER_UX.md](./PULLER_UX.md) (puller UX), [SCOPE.md §6](./SCOPE.md) (Phase 1 product freshness UX).
 
 This document codifies, per source, the rules the puller uses to decide
 whether data is **fresh**, **due soon**, or **stale**. These map
@@ -58,21 +56,9 @@ Sources with `update_cadence_days = None` show no badge but display
 
 ---
 
-## 3. Deferred / retired sources (not surfaced as actionable)
+## 3. Deferred / retired sources
 
-These appear in the puller for visibility but are not subject to
-freshness alerting:
-
-| Source ID | State | Notes |
-|---|---|---|
-| `hifld_towers` | **Retired** | DHS retired in 2024; no further updates expected |
-| `regrid_parcels` | Out of scope (paid) | `update_cadence_days = None`; user opts in only if budget unlocks |
-| `lbnl_tts` | Deferred | Dropped from active registry; cadence ignored |
-| `fcc_uls_*` (6 bands) | Deferred | Cadence is weekly upstream; raw data refreshable manually if user wants, but no normalize path |
-| `state_billboards` (FDOT, NCDOT, TXDOT) | Deferred | Cadence varies; not pursued |
-| `fl_fgdl_parcels` | Replaced by `fdor_nal` | Hidden in registry |
-| `in_parcels` | Dropped from anchors | No owner data |
-| `mn_parcels` | Deferred (license) | Pending MnGeo confirmation |
+Deferred / retired sources appear in the puller for visibility but are not subject to freshness alerting. The canonical status list lives in [DATA_SOURCES.md §Status overrides](./DATA_SOURCES.md) (ADR-linked rationale per source).
 
 ---
 
@@ -97,19 +83,14 @@ Specifically:
 
 ## 5. Refresh discipline at pitch time
 
-Before any pitch / partner walkthrough, the user runs a **pre-pitch
-checklist** in the puller:
+Before any partner walkthrough or material co-founder triage session, the user runs a refresh discipline pass in the puller:
 
-1. Click **Check for updates** — surfaces every source past
-   `next_recommended_check_at`.
-2. Refresh stale sources (auto sources via puller; manual sources via
-   walkthrough modal).
+1. Click **Check for updates** — surfaces every source past `next_recommended_check_at`.
+2. Refresh stale sources (auto sources via puller; manual sources via walkthrough modal).
 3. Re-run preprocess on affected states.
-4. Verify `docs/STATUS.md` matches reality (or update it).
-5. Re-record `docs/NUMBERS.md` if any totals changed.
+4. Verify [STATUS.md](./STATUS.md) matches reality (or update it).
 
-This checklist is mirrored in [PULLER_UX.md](./PULLER_UX.md) §6 as a
-discrete UI flow (the "What needs my attention" panel).
+This checklist is mirrored in [PULLER_UX.md](./PULLER_UX.md) §6 as a discrete UI flow (the "What needs my attention" panel).
 
 ---
 
@@ -127,8 +108,7 @@ Manually trigger a refresh after:
 - **News-event-driven need** — a partner asks "what changed in
   X county between Q1 and Q2?" — force-refresh before answering.
 
-The puller's UI cannot detect these. Document in CHANGELOG.md when a
-manual off-cadence refresh happens.
+The puller's UI cannot detect these. Note any off-cadence refresh in the relevant commit message; git log is the canonical history.
 
 ---
 
@@ -142,3 +122,33 @@ This document drives concrete code changes in Section 3 of the work plan:
 - **3.3:** "What needs my attention" panel aggregating stale + missing.
 - **3.5:** Every active source populates `update_cadence_days` per
   this table.
+
+---
+
+## 8. Phase 1 product UX for freshness (Slice 3 + Slice 4)
+
+The puller surfaces freshness to the dev (the operator). The Phase 1 product surfaces freshness to the **co-founder** (the user) so he can judge confidence on a specific lead. See [SCOPE.md §6](./SCOPE.md) for the product-side policy.
+
+### Surfaces
+
+| Surface | What's shown | Where it lands |
+|---|---|---|
+| Top of triage list | "Last full data refresh: AR 12d, MT 9d, FL 47d, NC 21d" | Slice 3 UI (map app) |
+| Per-lead detail panel | "Parcel data from {date}; tower data from {date}; lease comp data from {date}" | Slice 3 / Slice 4 lead-detail panel |
+| Per-source admin view (gated) | Per-source freshness table + refresh-trigger button | Slice 4 backend admin; refresh-trigger is Phase 2 |
+
+### Staleness policy
+
+- **Information-only for most sources** — show the age, let the co-founder judge; **don't block triage**.
+- **One hard banner** when a state's parcel source is **> 180 days old**: *"AR parcels last refreshed 192 days ago — schedule a re-pull before working AR leads."* Warns prominently; still doesn't block.
+- **Carrier (ULS) staleness** — soft warning only. Carriers don't churn off towers fast.
+- **Distress overlays** — soft warning. OZ annual; ARC tiers annual.
+
+### Refresh trigger model
+
+- **Phase 1 = dev-only refresh.** You run the puller; co-founder sees freshness state but does not trigger refreshes himself. Simpler; the puller is currently a Qt desktop app and not easily backend-driven.
+- **Phase 2 = self-serve refresh from product.** Wire the puller into the backend so the co-founder presses a button. Real work — out of Phase 1 scope.
+
+### MANUAL_ONLY pain (acknowledged)
+
+Sources flagged MANUAL_ONLY (notably **FDOR NAL** — 67 Florida counties, each requiring per-county selection + click-through) need *you* to walk through them at every refresh. **Phase 1 does not fix this.** Phase 2 candidates: guided checklist UI in the puller, or paid bulk-data unlocks (consistent with ADR-057's reframing of ADR-010).

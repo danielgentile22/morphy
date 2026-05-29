@@ -80,6 +80,7 @@ class FccAsr(DataSource):
         raise RuntimeError("could not derive remote version for FCC ASR")
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
+        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
         files: list[Path] = []
         total = 0
 
@@ -114,7 +115,7 @@ class FccAsr(DataSource):
 
         return FetchResult(
             files=files,
-            remote_version=self.remote_version(),
+            remote_version=rv,
             total_bytes=total,
         )
 

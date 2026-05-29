@@ -1,70 +1,30 @@
 /**
  * SQL composition for the DuckDB-WASM filter engine.
  *
- * `composeWhere` turns a FilterState into a SQL WHERE-clause body. Pure
- * and deterministic — the unit tests assert its output byte-for-byte, so
- * a filter-logic regression is caught immediately. String literals are
- * single-quote-escaped; numbers are validated finite — no SQL injection
- * even from the free-text owner search.
+ * `composeWhere` turns a FilterState into a SQL WHERE-clause body by
+ * iterating `FILTER_SPECS` (defined in `./filters`) and joining each
+ * spec's contribution with AND. The output is deterministic — the unit
+ * tests assert it byte-for-byte, so a filter-logic regression is caught
+ * immediately. String literals are single-quote-escaped; numbers are
+ * validated finite — no SQL injection even from the free-text owner
+ * search.
  */
 
-import type { FilterState } from './filters';
+import { FILTER_SPECS, type FilterState, sqlNumber, sqlString } from './filters';
 
 /** The DuckDB view/table name the parcels_attr.parquet is registered as. */
 export const PARCELS_TABLE = 'parcels';
 
-/** Escape a string as a SQL literal. */
-export function sqlString(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
-}
-
-function sqlNumber(n: number): string {
-  if (!Number.isFinite(n)) throw new Error(`non-finite number in a filter: ${n}`);
-  return String(n);
-}
-
-function inClause(column: string, values: string[]): string {
-  return `${column} IN (${values.map(sqlString).join(', ')})`;
-}
-
 /**
  * The WHERE-clause body for a filter state — `''` when nothing is
- * filtered. Clauses are AND-ed in a fixed order so the output is stable.
+ * filtered. Clauses are AND-ed in FILTER_SPECS order so the output is stable.
  */
 export function composeWhere(f: FilterState): string {
   const clauses: string[] = [];
-
-  if (f.ownerKind.length) clauses.push(inClause('owner_kind', f.ownerKind));
-  if (f.distressTier.length) clauses.push(inClause('distress_tier', f.distressTier));
-  if (f.landUse.length) clauses.push(inClause('land_use_desc', f.landUse));
-  if (f.countyFips.length) clauses.push(inClause('county_fips', f.countyFips));
-
-  if (f.hasTower) clauses.push('has_tower');
-  if (f.hasSolar) clauses.push('has_solar');
-  if (f.hasBillboard) clauses.push('has_billboard');
-  if (f.inOz) clauses.push('in_oz');
-  if (f.inQct) clauses.push('in_qct');
-  if (f.persistentPoverty) clauses.push('persistent_poverty');
-
-  if (f.scoreMin > 0) {
-    clauses.push(`interestingness_score >= ${sqlNumber(f.scoreMin)}`);
+  for (const spec of FILTER_SPECS) {
+    const fragment = spec.toSQL(f);
+    if (fragment !== null) clauses.push(fragment);
   }
-  if (f.clusterSizeMin > 1) {
-    clauses.push(`owner_cluster_size >= ${sqlNumber(f.clusterSizeMin)}`);
-  }
-  if (f.assessedValue) {
-    clauses.push(
-      `assessed_value BETWEEN ${sqlNumber(f.assessedValue[0])} ` +
-        `AND ${sqlNumber(f.assessedValue[1])}`,
-    );
-  }
-  if (f.acreage) {
-    clauses.push(`acreage BETWEEN ${sqlNumber(f.acreage[0])} AND ${sqlNumber(f.acreage[1])}`);
-  }
-  if (f.ownerClusterId) {
-    clauses.push(`owner_cluster_id = ${sqlString(f.ownerClusterId)}`);
-  }
-
   return clauses.join(' AND ');
 }
 

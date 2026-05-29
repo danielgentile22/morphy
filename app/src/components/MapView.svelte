@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import maplibregl from 'maplibre-gl';
   import type {
     ExpressionSpecification,
@@ -86,6 +86,15 @@
   const sourceIds = new Set<string>();
   let interactiveLayerIds: string[] = [];
   let highlighted: { source: string; id: number } | null = null;
+  /** The fips whose layers are currently rendered. A change means a state
+   *  switch (full rebuild); an unchanged fips with new layerData keys means
+   *  a lazy view loaded (incremental add — no full re-tile). */
+  let syncedFips: string | null = null;
+  /** Interactive layer ids the pointer is currently over — drives the
+   *  pointer cursor without a per-mousemove queryRenderedFeatures scan. */
+  const hoveredLayers = new Set<string>();
+  /** Teardown fns for the per-layer mouseenter/mouseleave listeners. */
+  const hoverListenerCleanups: Array<() => void> = [];
 
   function rasterize(svg: string, px: number): Promise<ImageData> {
     return new Promise((resolve, reject) => {
@@ -135,7 +144,6 @@
     });
 
     m.on('click', onMapClick);
-    m.on('mousemove', onMapMove);
 
     return () => {
       delete (window as unknown as { __pilotMap?: maplibregl.Map }).__pilotMap;
@@ -159,6 +167,7 @@
     nameToLayerIds.clear();
     sourceIds.clear();
     interactiveLayerIds = [];
+    detachHover();
     highlighted = null;
   }
 
@@ -197,28 +206,75 @@
     const ids = nameToLayerIds.get(name) ?? [];
     ids.push(layerId);
     nameToLayerIds.set(name, ids);
-    if (interactive) interactiveLayerIds.push(layerId);
+    if (interactive) {
+      interactiveLayerIds.push(layerId);
+      attachHover(layerId);
+    }
   }
 
-  function addPolygonSublayers(name: string): void {
+  function updateCursor(): void {
+    if (map) map.getCanvas().style.cursor = hoveredLayers.size > 0 ? 'pointer' : '';
+  }
+
+  // Per-layer hover tracking for the pointer cursor. MapLibre hit-tests
+  // internally for these delegated listeners, so the cursor costs nothing
+  // per frame — unlike querying every interactive layer on each mousemove
+  // (10-30×/s over 50k+ features). Hidden layers don't fire mouseenter, so
+  // no visibility filter is needed (applyVisibility prunes stale entries
+  // when a layer the pointer sits over is toggled off).
+  function attachHover(layerId: string): void {
+    if (!map) return;
+    const enter = (): void => {
+      hoveredLayers.add(layerId);
+      updateCursor();
+    };
+    const leave = (): void => {
+      hoveredLayers.delete(layerId);
+      updateCursor();
+    };
+    map.on('mouseenter', layerId, enter);
+    map.on('mouseleave', layerId, leave);
+    hoverListenerCleanups.push(() => {
+      map?.off('mouseenter', layerId, enter);
+      map?.off('mouseleave', layerId, leave);
+    });
+  }
+
+  function detachHover(): void {
+    for (const off of hoverListenerCleanups) off();
+    hoverListenerCleanups.length = 0;
+    hoveredLayers.clear();
+    updateCursor();
+  }
+
+  // `beforeId`, when given, inserts the sublayers beneath that layer so an
+  // incrementally-added polygon view stays under the point markers (the
+  // full-sync two-pass order). Omitted during a full sync (append).
+  function addPolygonSublayers(name: string, beforeId?: string): void {
     if (!map) return;
     const src = `src:${name}`;
     const fillId = `${name}:fill`;
     const lineId = `${name}:line`;
-    map.addLayer({
-      id: fillId,
-      type: 'fill',
-      source: src,
-      filter: ['match', ['geometry-type'], ['Polygon', 'MultiPolygon'], true, false],
-      paint: { 'fill-color': fillColor(name), 'fill-opacity': fillOpacity(name) },
-    });
-    map.addLayer({
-      id: lineId,
-      type: 'line',
-      source: src,
-      filter: ['match', ['geometry-type'], ['Polygon', 'MultiPolygon'], true, false],
-      paint: { 'line-color': fillColor(name), 'line-width': selectedWidth(1.1) },
-    });
+    map.addLayer(
+      {
+        id: fillId,
+        type: 'fill',
+        source: src,
+        filter: ['match', ['geometry-type'], ['Polygon', 'MultiPolygon'], true, false],
+        paint: { 'fill-color': fillColor(name), 'fill-opacity': fillOpacity(name) },
+      },
+      beforeId,
+    );
+    map.addLayer(
+      {
+        id: lineId,
+        type: 'line',
+        source: src,
+        filter: ['match', ['geometry-type'], ['Polygon', 'MultiPolygon'], true, false],
+        paint: { 'line-color': fillColor(name), 'line-width': selectedWidth(1.1) },
+      },
+      beforeId,
+    );
     register(fillId, name, true);
     register(lineId, name, false);
   }
@@ -381,23 +437,55 @@
     addChoropleth();
     addParcels();
 
-    const entries = Object.entries(data);
-    for (const [name, fc] of entries) {
+    // Detect each layer's geometry families once. A layer can mix families
+    // (e.g. solar_facilities has Point + Polygon), so this can't be read
+    // from catalog.geometry_type — but it need only be scanned a single
+    // time, not once per sublayer pass.
+    const entries = Object.entries(data).map(([name, fc]) => ({
+      name,
+      fc,
+      classes: detectGeometryClasses(fc.features),
+    }));
+    for (const { name, fc } of entries) {
       const src = `src:${name}`;
       map.addSource(src, { type: 'geojson', data: fc, generateId: true });
       sourceIds.add(src);
     }
     // Polygon sublayers (drawn under points).
-    for (const [name, fc] of entries) {
-      if (detectGeometryClasses(fc.features).hasPolygon) addPolygonSublayers(name);
+    for (const { name, classes } of entries) {
+      if (classes.hasPolygon) addPolygonSublayers(name);
     }
     // Point / symbol sublayers (drawn on top).
-    for (const [name, fc] of entries) {
-      if (detectGeometryClasses(fc.features).hasPoint) addPointSublayer(name);
+    for (const { name, classes } of entries) {
+      if (classes.hasPoint) addPointSublayer(name);
     }
     applyVisibility();
     reapplyHighlight();
     applyFilterFade();
+  }
+
+  /** The lowest point/symbol layer id, so an incrementally-added polygon
+   *  view can be inserted beneath the markers (matching the full-sync
+   *  two-pass order). */
+  function firstPointLayerId(): string | undefined {
+    for (const id of layerIdToName.keys()) {
+      if (id.endsWith(':circle') || id.endsWith(':symbol')) return id;
+    }
+    return undefined;
+  }
+
+  // Add a single catalog GeoJSON layer (source + sublayers) without
+  // tearing down the rest of the map — used when a lazy view loads. A full
+  // clearRenderedLayers()/syncLayers() would re-tile every source and
+  // flicker the selection; this touches only the new layer.
+  function addCatalogLayer(name: string, fc: FeatureCollection): void {
+    if (!map || map.getSource(`src:${name}`)) return;
+    const src = `src:${name}`;
+    map.addSource(src, { type: 'geojson', data: fc, generateId: true });
+    sourceIds.add(src);
+    const classes = detectGeometryClasses(fc.features);
+    if (classes.hasPolygon) addPolygonSublayers(name, firstPointLayerId());
+    if (classes.hasPoint) addPointSublayer(name);
   }
 
   // Re-apply the selected feature's highlight after a re-sync recreated
@@ -453,8 +541,12 @@
         if (map.getLayer(id)) {
           map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
         }
+        // A layer toggled off under a stationary pointer never fires
+        // mouseleave — drop it so the cursor doesn't stick on 'pointer'.
+        if (!visible) hoveredLayers.delete(id);
       }
     }
+    updateCursor();
   }
 
   // ── interaction ──────────────────────────────────────────────────────────
@@ -519,31 +611,52 @@
     if (!app.catalog) return;
     const kind = entityKind(app.catalog, name);
     if (!kind) return;
-    const original = index >= 0 ? app.layerData[name]?.features[index] : undefined;
+    // Only reference the source feature when its GeoJSON is actually
+    // loaded; a featureRef into a failed / unloaded layer can't be
+    // resolved or highlighted. The stringified queryRenderedFeatures
+    // props still give the detail panel something to show.
+    const dataReady = !!app.layerData[name] && !app.failedLayers.includes(name);
+    const original = dataReady && index >= 0 ? app.layerData[name]?.features[index] : undefined;
     app.setSelection({
       kind,
       props: (original?.properties as Props | undefined) ?? props,
-      featureRef: index >= 0 ? { layer: name, index } : undefined,
+      featureRef: dataReady && index >= 0 ? { layer: name, index } : undefined,
     });
-  }
-
-  function onMapMove(e: maplibregl.MapMouseEvent): void {
-    if (!map) return;
-    const ids = visibleInteractive();
-    const hit = ids.length > 0 && map.queryRenderedFeatures(e.point, { layers: ids }).length > 0;
-    map.getCanvas().style.cursor = hit ? 'pointer' : '';
   }
 
   // ── effects ──────────────────────────────────────────────────────────────
 
-  // Re-sync rendered layers whenever the active state's data / base
-  // layers change (a state switch replaces all three).
+  // Keep rendered layers in step with the store. A state switch (activeFips
+  // change) rebuilds everything; growing layerData within the same state
+  // (a lazy view loaded) adds only the new layers. The imperative body is
+  // untracked so this effect depends solely on the data/state identity —
+  // not on layerVisible / selection / filter state, which have their own
+  // effects (otherwise a visibility toggle or filter change would trigger
+  // a full rebuild here).
   $effect(() => {
     const data = app.layerData;
+    const fips = app.activeFips;
     void app.countyData;
     void app.parcelsUrl;
     if (!map || !ready) return;
-    syncLayers(data);
+    untrack(() => {
+      if (fips !== syncedFips) {
+        syncedFips = fips;
+        syncLayers(data);
+        return;
+      }
+      let added = false;
+      for (const [name, fc] of Object.entries(data)) {
+        if (!map!.getSource(`src:${name}`)) {
+          addCatalogLayer(name, fc);
+          added = true;
+        }
+      }
+      if (added) {
+        applyVisibility();
+        reapplyHighlight();
+      }
+    });
   });
 
   // Toggle MapLibre layer visibility from the store.
@@ -553,12 +666,16 @@
     applyVisibility();
   });
 
-  // Fade non-matching parcels whenever the filter result changes.
+  // Fade non-matching parcels once per *settled* filter result. Driven by
+  // the engine's result epoch (bumped only on non-querying emits), so a
+  // rapid slider drag yields one clear+reapply per query — not per tick,
+  // and never the transient empty querying state. applyFilterFade's reads
+  // of filtersActive/filterMatchIds are untracked so they don't re-add the
+  // per-change triggering we're coalescing away.
   $effect(() => {
-    void app.filtersActive;
-    void app.filterMatchIds;
+    void app.filterResultEpoch;
     if (!map || !ready) return;
-    applyFilterFade();
+    untrack(() => applyFilterFade());
   });
 
   // Fit the map to the active state.

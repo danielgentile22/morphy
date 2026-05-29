@@ -96,6 +96,51 @@
   {/if}
 {/snippet}
 
+{#snippet rangeRow(
+  title: string,
+  column: 'assessed_value' | 'acreage',
+  current: [number, number] | null,
+  set: (next: [number, number] | null) => void,
+)}
+  {#if facets}
+    {@const r = facetRange(facets, column)}
+    {#if r}
+      <div class="group">
+        <span class="glabel">{title}</span>
+        <div class="range">
+          <input
+            type="number"
+            placeholder={String(Math.round(r.min))}
+            value={current?.[0] ?? ''}
+            onchange={(e) =>
+              set(
+                rangeOrNull(
+                  column,
+                  Number(e.currentTarget.value) || r.min,
+                  current?.[1] ?? r.max,
+                ),
+              )}
+          />
+          <span>to</span>
+          <input
+            type="number"
+            placeholder={String(Math.round(r.max))}
+            value={current?.[1] ?? ''}
+            onchange={(e) =>
+              set(
+                rangeOrNull(
+                  column,
+                  current?.[0] ?? r.min,
+                  Number(e.currentTarget.value) || r.max,
+                ),
+              )}
+          />
+        </div>
+      </div>
+    {/if}
+  {/if}
+{/snippet}
+
 {#if app.filtersAvailable && facets}
   <section class="panel" data-testid="filter-panel">
     <header class="fheader">
@@ -139,19 +184,12 @@
       (v) => ({ distressTier: v }),
     )}
 
+    <!-- Tract-level federal overlays — distinct signals from the county
+         distress tier above (OZ/QCT are tract designations; persistent
+         poverty is a USDA county flag not folded into the ARC tier).
+         Grouped beside the tier so "Distress" reads as one section. -->
     <div class="group">
-      <span class="glabel">Hosts infrastructure</span>
-      <div class="checks">
-        {@render check('Tower', app.filters.hasTower, (v) => app.updateFilter({ hasTower: v }))}
-        {@render check('Solar', app.filters.hasSolar, (v) => app.updateFilter({ hasSolar: v }))}
-        {@render check('Billboard', app.filters.hasBillboard, (v) =>
-          app.updateFilter({ hasBillboard: v }),
-        )}
-      </div>
-    </div>
-
-    <div class="group">
-      <span class="glabel">Distress flags</span>
+      <span class="glabel">Federal overlays</span>
       <div class="checks">
         {@render check('Opportunity Zone', app.filters.inOz, (v) => app.updateFilter({ inOz: v }))}
         {@render check('Qualified Census Tract', app.filters.inQct, (v) =>
@@ -164,8 +202,21 @@
     </div>
 
     <div class="group">
+      <span class="glabel">Hosts infrastructure</span>
+      <div class="checks">
+        {@render check('Tower', app.filters.hasTower, (v) => app.updateFilter({ hasTower: v }))}
+        {@render check('Solar', app.filters.hasSolar, (v) => app.updateFilter({ hasSolar: v }))}
+      </div>
+    </div>
+
+    <div class="group">
       <span class="glabel">
-        Min. interestingness score: {app.filters.scoreMin.toFixed(2)}
+        Priority score: {app.filters.scoreMin.toFixed(2)}
+        <span
+          class="info"
+          title="Higher = more infrastructure + distress + owner portfolio. Currently a baked composite; per-signal weighting is Slice-3 work (ADR-058)."
+          >ⓘ</span
+        >
       </span>
       <input
         type="range"
@@ -181,7 +232,7 @@
     {#if facetRange(facets, 'owner_cluster_size')}
       {@const cr = facetRange(facets, 'owner_cluster_size')!}
       <div class="group">
-        <span class="glabel">Min. parcels owned: {app.filters.clusterSizeMin}</span>
+        <span class="glabel">Owner portfolio size: ≥ {app.filters.clusterSizeMin} parcels</span>
         <input
           type="range"
           min="1"
@@ -193,77 +244,19 @@
       </div>
     {/if}
 
-    {#if facetRange(facets, 'assessed_value')}
-      {@const ar = facetRange(facets, 'assessed_value')!}
-      <div class="group">
-        <span class="glabel">Assessed value ($)</span>
-        <div class="range">
-          <input
-            type="number"
-            placeholder={String(Math.round(ar.min))}
-            value={app.filters.assessedValue?.[0] ?? ''}
-            onchange={(e) =>
-              app.updateFilter({
-                assessedValue: rangeOrNull(
-                  'assessed_value',
-                  Number(e.currentTarget.value) || ar.min,
-                  app.filters.assessedValue?.[1] ?? ar.max,
-                ),
-              })}
-          />
-          <span>to</span>
-          <input
-            type="number"
-            placeholder={String(Math.round(ar.max))}
-            value={app.filters.assessedValue?.[1] ?? ''}
-            onchange={(e) =>
-              app.updateFilter({
-                assessedValue: rangeOrNull(
-                  'assessed_value',
-                  app.filters.assessedValue?.[0] ?? ar.min,
-                  Number(e.currentTarget.value) || ar.max,
-                ),
-              })}
-          />
-        </div>
-      </div>
-    {/if}
+    {@render rangeRow(
+      'Assessed value ($)',
+      'assessed_value',
+      app.filters.assessedValue,
+      (next) => app.updateFilter({ assessedValue: next }),
+    )}
 
-    {#if facetRange(facets, 'acreage')}
-      {@const acr = facetRange(facets, 'acreage')!}
-      <div class="group">
-        <span class="glabel">Acreage</span>
-        <div class="range">
-          <input
-            type="number"
-            placeholder={String(Math.round(acr.min))}
-            value={app.filters.acreage?.[0] ?? ''}
-            onchange={(e) =>
-              app.updateFilter({
-                acreage: rangeOrNull(
-                  'acreage',
-                  Number(e.currentTarget.value) || acr.min,
-                  app.filters.acreage?.[1] ?? acr.max,
-                ),
-              })}
-          />
-          <span>to</span>
-          <input
-            type="number"
-            placeholder={String(Math.round(acr.max))}
-            value={app.filters.acreage?.[1] ?? ''}
-            onchange={(e) =>
-              app.updateFilter({
-                acreage: rangeOrNull(
-                  'acreage',
-                  app.filters.acreage?.[0] ?? acr.min,
-                  Number(e.currentTarget.value) || acr.max,
-                ),
-              })}
-          />
-        </div>
-      </div>
-    {/if}
+    {@render rangeRow(
+      'Acreage',
+      'acreage',
+      app.filters.acreage,
+      (next) => app.updateFilter({ acreage: next }),
+    )}
 
     {@render checklist(
       'County',
@@ -271,13 +264,6 @@
       app.filters.countyFips,
       (v) => countyNames.get(v) ?? v,
       (v) => ({ countyFips: v }),
-    )}
-    {@render checklist(
-      'Land use',
-      'land_use_desc',
-      app.filters.landUse,
-      (v) => v,
-      (v) => ({ landUse: v }),
     )}
   </section>
 {/if}
@@ -287,13 +273,6 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-  }
-  h2 {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--muted);
   }
   .reset {
     background: none;
@@ -332,26 +311,15 @@
     color: var(--muted);
     margin-bottom: 5px;
   }
+  .info {
+    cursor: help;
+    opacity: 0.65;
+    font-size: 11px;
+  }
   .chips {
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-  }
-  .chip {
-    display: inline-flex;
-    gap: 5px;
-    align-items: baseline;
-    padding: 3px 9px;
-    font-size: 11.5px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--panel);
-    color: var(--text-2);
-  }
-  .chip.on {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
   }
   .chip .ct {
     font-size: 10px;

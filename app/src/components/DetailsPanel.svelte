@@ -40,6 +40,14 @@
       </button>
     </header>
 
+    {#if sel.kind === 'parcel' && app.enrichmentStatus === 'loading'}
+      <p class="enrich enrich-loading" data-testid="enrich-loading">Loading full details…</p>
+    {:else if sel.kind === 'parcel' && app.enrichmentStatus === 'error'}
+      <p class="enrich enrich-error" data-testid="enrich-error">
+        Couldn't load full parcel details — showing partial data.
+      </p>
+    {/if}
+
     {#if schema}
       {@const tags = schema.tags(props)}
       {#if tags.length > 0}
@@ -256,6 +264,20 @@
     padding: 14px;
     font-size: 13px;
     color: var(--muted);
+  }
+
+  .enrich {
+    margin: 0;
+    padding: 7px 14px;
+    font-size: 11.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .enrich-loading {
+    color: var(--muted);
+  }
+  .enrich-error {
+    background: rgba(213, 94, 0, 0.12);
+    color: #9c4500;
   }
 
   .see-owner {

@@ -8,18 +8,14 @@ its terms. MANUAL_ONLY in the UI.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from ..base import (
     CATEGORY_BILLBOARDS,
-    DataSource,
-    FetchResult,
-    ProgressCallback,
+    ManualOnlySource,
 )
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 
 
-class TxdotBillboards(DataSource):
+class TxdotBillboards(ManualOnlySource):
     id = "txdot_billboards"
     name = "TxDOT Outdoor Advertising permits"
     category = CATEGORY_BILLBOARDS
@@ -59,12 +55,6 @@ class TxdotBillboards(DataSource):
             "click 'Rescan disk' in the puller."
         ),
     )
-
-    def remote_version(self) -> str:
-        return "manual"
-
-    def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        raise RuntimeError("txdot_billboards is MANUAL_ONLY — use the manual download URL.")
 
 
 SOURCE = TxdotBillboards()

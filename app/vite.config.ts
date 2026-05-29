@@ -2,12 +2,12 @@ import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 // The app fetches its data with root-relative paths (`/data/...`). In dev
-// the app is served by Vite while `data/` is served by a separate static
-// server at the repo root (`python -m http.server 8765`) — a cross-origin
-// fetch that `http.server` sends no CORS headers for. The proxy below
-// makes the browser talk only to the Vite origin; Vite forwards `/data/*`
-// to :8765, passing through HTTP Range / 206 so PMTiles + parquet range
-// reads work in later phases. See _review/APP_REHAUL_PLAN.md "Dev server".
+// the app is served by Vite while `data/` is served by the repo-root
+// range-capable static server (`python scripts/serve.py 8765`) — a
+// cross-origin fetch the static server sends no CORS headers for. The proxy
+// below makes the browser talk only to the Vite origin; Vite forwards
+// `/data/*` to :8765, passing through HTTP Range / 206 so PMTiles + parquet
+// range reads work. (Plain `python -m http.server` is not range-capable.)
 export default defineConfig({
   plugins: [svelte()],
   server: {

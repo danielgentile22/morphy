@@ -94,6 +94,7 @@ class HifldTowers(DataSource):
         return f"name-{meta.get('name', '?')}"
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
+        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
         out = dest_dir / "cellular_towers.geojson"
         n = download(
             GEOJSON_URL,
@@ -103,7 +104,7 @@ class HifldTowers(DataSource):
         )
         return FetchResult(
             files=[out],
-            remote_version=self.remote_version(),
+            remote_version=rv,
             total_bytes=n,
         )
 

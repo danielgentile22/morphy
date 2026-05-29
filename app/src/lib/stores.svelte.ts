@@ -18,23 +18,21 @@ import {
   loadIndex,
   parcelsAttrUrl,
   pmtilesUrl,
-  resourceExists,
+  probeResource,
 } from './data';
 import { duckDb } from './duckdb';
 import type { FacetData } from './facets';
+import {
+  FilterEngine,
+  type FilterResult,
+  type FilterStatus,
+} from './filter-engine';
 import { bboxCenter, parseGeomBbox } from './geo';
 import { emptyFilters, isAnyFilterActive, type FilterState } from './filters';
-import { composeWhere } from './query';
 import type { EntityKind, Props } from './schema';
 import { readUrlState } from './url';
 
-/** Cap on parcel ids fetched for the map fade — beyond this the count
- *  badge still shows the true total, but only the top-N by score are
- *  highlighted (fading millions of features would jank the map). */
-const FILTER_FADE_CAP = 20_000;
-const FILTER_DEBOUNCE_MS = 160;
-
-export type FilterStatus = 'idle' | 'querying' | 'error';
+export type { FilterStatus } from './filter-engine';
 
 /** Synthetic layer-visibility keys for the two base layers (not catalog
  *  entries — parcels come from PMTiles, the choropleth from an
@@ -55,75 +53,20 @@ export interface Selection {
 
 export type BootStatus = 'loading' | 'ready' | 'error';
 
-/**
- * Views whose GeoJSON is large (5–19 MB each). Eager-loading every layer
- * is ~85 MB, so these load lazily — only when their toggle is switched on.
- */
-export const HEAVY_VIEWS: ReadonlySet<string> = new Set([
-  'parcels_hosting_infra',
-  'distressed_parcels_hosting_infra',
-  'llc_owned_parcels_with_infra',
-  'towers_with_landowner',
-]);
-
-/** Layers / views shown by default when a state loads. */
-const DEFAULT_ON: ReadonlySet<string> = new Set([
-  'towers',
-  'distress_overlays',
-  'interestingness_top_1000',
-]);
-
-export interface LoadableAsset {
-  name: string;
-  geojsonPath: string;
-}
-
-/** Layers + views that carry GeoJSON and are small enough to boot-load. */
-export function eagerAssets(catalog: Catalog): LoadableAsset[] {
-  const out: LoadableAsset[] = [];
-  for (const l of catalog.layers) {
-    if (l.geojsonPath && !HEAVY_VIEWS.has(l.name)) {
-      out.push({ name: l.name, geojsonPath: l.geojsonPath });
-    }
-  }
-  for (const v of catalog.views) {
-    if (v.geojsonPath && !HEAVY_VIEWS.has(v.name)) {
-      out.push({ name: v.name, geojsonPath: v.geojsonPath });
-    }
-  }
-  return out;
-}
-
-/** Initial visibility for every GeoJSON-bearing layer / view of a catalog. */
-export function defaultVisibility(catalog: Catalog): Record<string, boolean> {
-  const vis: Record<string, boolean> = {};
-  for (const l of catalog.layers) {
-    if (l.geojsonPath) vis[l.name] = DEFAULT_ON.has(l.name);
-  }
-  for (const v of catalog.views) {
-    if (v.geojsonPath) vis[v.name] = DEFAULT_ON.has(v.name);
-  }
-  return vis;
-}
-
-/** Decide which state to open from the URL `?state=` param. */
-export function pickInitialState(
-  search: string,
-  states: StateEntry[],
-): { fips: string; invalidRequest: string | null } {
-  const requested = new URLSearchParams(search).get('state');
-  if (requested && states.some((s) => s.fips === requested)) {
-    return { fips: requested, invalidRequest: null };
-  }
-  return {
-    fips: states[0]?.fips ?? '',
-    invalidRequest: requested && requested.trim() !== '' ? requested : null,
-  };
-}
-
-function errMsg(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
+export {
+  HEAVY_VIEWS,
+  eagerAssets,
+  defaultVisibility,
+  pickInitialState,
+  type LoadableAsset,
+} from './stores-helpers';
+import {
+  defaultVisibility,
+  eagerAssets,
+  errMsg,
+  pickInitialState,
+  syncStateParam,
+} from './stores-helpers';
 
 export class AppStore {
   status = $state<BootStatus>('loading');
@@ -157,11 +100,18 @@ export class AppStore {
   /** Up to FILTER_FADE_CAP matching parcel ids — the map fades non-matches. */
   filterMatchIds = $state<string[]>([]);
   filterStatus = $state<FilterStatus>('idle');
+  /** Bumped once per *settled* engine result (idle/error — never the
+   *  intermediate querying emit) so the map fade coalesces to a single
+   *  clear+reapply per query instead of one per filterMatchIds change. */
+  filterResultEpoch = $state(0);
   /** False until boot has read the deep-link — guards the URL-sync effect
    *  from erasing the query string before it is restored. */
   urlSyncReady = $state(false);
 
   selection = $state<Selection | null>(null);
+  /** Status of the async full-row enrichment for a selected parcel — the
+   *  detail panel shows a hint while loading and a banner on failure. */
+  enrichmentStatus = $state<'idle' | 'loading' | 'error'>('idle');
 
   activeState = $derived<StateEntry | null>(
     this.index && this.activeFips
@@ -171,8 +121,24 @@ export class AppStore {
 
   filtersActive = $derived(isAnyFilterActive(this.filters));
 
-  #filterTimer: ReturnType<typeof setTimeout> | null = null;
-  #filterToken = 0;
+  /** Execution mechanics (debounce, token, cap, DuckDB calls) live in
+   *  the engine; AppStore just mirrors the engine's result callback
+   *  into the three reactive fields above. */
+  #engine = new FilterEngine(
+    {
+      count: (where) => duckDb.count(where),
+      matchingIds: (where, limit) => duckDb.matchingIds(where, limit),
+      available: () => this.filtersAvailable,
+    },
+    (r: FilterResult) => {
+      this.filterCount = r.count;
+      this.filterMatchIds = r.matchIds;
+      this.filterStatus = r.status;
+      // A settled result drives the map's filter-fade exactly once; the
+      // transient querying emit (empty ids) must not clear the live fade.
+      if (r.status !== 'querying') this.filterResultEpoch++;
+    },
+  );
   #selectionToken = 0;
 
   // ── synchronous mutations ────────────────────────────────────────────
@@ -183,11 +149,12 @@ export class AppStore {
     // A parcel clicked on the map / top-list carries only a partial set
     // of attributes (PMTiles baked tiles, or a view's GeoJSON). Fetch the
     // full row from DuckDB so the detail panel shows everything.
-    if (sel?.kind === 'parcel' && this.filtersAvailable) {
-      const parcelId = sel.props.parcel_id;
-      if (typeof parcelId === 'string' && parcelId) {
-        void this.#enrichParcel(parcelId, token);
-      }
+    const parcelId = sel?.kind === 'parcel' ? sel.props.parcel_id : null;
+    if (sel?.kind === 'parcel' && this.filtersAvailable && typeof parcelId === 'string' && parcelId) {
+      this.enrichmentStatus = 'loading';
+      void this.#enrichParcel(parcelId, token);
+    } else {
+      this.enrichmentStatus = 'idle';
     }
   }
   clearSelection(): void {
@@ -196,10 +163,15 @@ export class AppStore {
 
   async #enrichParcel(parcelId: string, token: number): Promise<void> {
     const row = await duckDb.fetchParcel(parcelId).catch(() => null);
-    if (!row || token !== this.#selectionToken) return;
+    if (token !== this.#selectionToken) return; // superseded by a newer selection
+    if (!row) {
+      this.enrichmentStatus = 'error';
+      return;
+    }
     const sel = this.selection;
     if (sel?.kind !== 'parcel') return;
     this.selection = { ...sel, props: row };
+    this.enrichmentStatus = 'idle';
   }
 
   /** Look a parcel up by exact APN; select + fly to it. Returns false if
@@ -216,6 +188,7 @@ export class AppStore {
       props: row,
       at: bbox ? bboxCenter(bbox) : undefined,
     };
+    this.enrichmentStatus = 'idle'; // row is already the full record
     return true;
   }
   setLayerVisible(name: string, visible: boolean): void {
@@ -236,53 +209,25 @@ export class AppStore {
   /** Merge a patch into the filter state and re-query (debounced). */
   updateFilter(patch: Partial<FilterState>): void {
     this.filters = { ...this.filters, ...patch };
-    this.#scheduleFilterQuery();
+    this.#engine.schedule(this.filters);
   }
 
   /** Clear every filter. */
   resetFilters(): void {
     this.filters = emptyFilters();
-    this.#scheduleFilterQuery();
+    this.#engine.schedule(this.filters);
   }
 
-  #scheduleFilterQuery(): void {
-    if (this.#filterTimer) clearTimeout(this.#filterTimer);
-    this.#filterTimer = setTimeout(() => void this.applyFilters(), FILTER_DEBOUNCE_MS);
-  }
-
-  /** Run the active filter against DuckDB — live count + match ids for
-   *  the map fade. A token guards against a stale query overwriting a
-   *  newer one. */
+  /** Run the active filter immediately (bypassing the debounce). Kept
+   *  as a public method for boot's deep-link restore and for callers
+   *  that need a synchronous round-trip. */
   async applyFilters(): Promise<void> {
-    const token = ++this.#filterToken;
-    const where = composeWhere(this.filters);
-    if (!where || !this.filtersAvailable) {
-      this.filterCount = null;
-      this.filterMatchIds = [];
-      this.filterStatus = 'idle';
-      return;
-    }
-    this.filterStatus = 'querying';
-    try {
-      const [count, ids] = await Promise.all([
-        duckDb.count(where),
-        duckDb.matchingIds(where, FILTER_FADE_CAP),
-      ]);
-      if (token !== this.#filterToken) return; // superseded by a newer filter
-      this.filterCount = count;
-      this.filterMatchIds = ids;
-      this.filterStatus = 'idle';
-    } catch {
-      if (token === this.#filterToken) this.filterStatus = 'error';
-    }
+    await this.#engine.run(this.filters);
   }
 
   #resetFilterState(): void {
-    if (this.#filterTimer) clearTimeout(this.#filterTimer);
     this.filters = emptyFilters();
-    this.filterCount = null;
-    this.filterMatchIds = [];
-    this.filterStatus = 'idle';
+    this.#engine.reset();
   }
 
   // ── async boot / state switch ────────────────────────────────────────
@@ -334,11 +279,12 @@ export class AppStore {
     this.status = 'loading';
     this.errorMessage = null;
     this.selection = null;
+    this.enrichmentStatus = 'idle';
     this.#resetFilterState();
     try {
       const catalog = await loadCatalog(fips);
       const assets = eagerAssets(catalog);
-      const [assetResults, countyData, hasParcelTiles, facets, hasAttrParquet] =
+      const [assetResults, countyData, parcelTilesProbe, facets, attrParquetProbe] =
         await Promise.all([
           Promise.allSettled(
             assets.map((a) => loadGeoJson(compositeAssetUrl(fips, a.geojsonPath))),
@@ -346,9 +292,9 @@ export class AppStore {
           // Base layers + filter inputs — tolerant: a missing choropleth /
           // pmtiles / facets / slim parquet is not fatal.
           loadGeoJson(countyBoundariesUrl(fips)).catch(() => null),
-          resourceExists(pmtilesUrl(fips)),
+          probeResource(pmtilesUrl(fips)),
           loadFacets(fips).catch(() => null),
-          resourceExists(parcelsAttrUrl(fips)),
+          probeResource(parcelsAttrUrl(fips)),
         ]);
       const data: Record<string, FeatureCollection> = {};
       const failed: string[] = [];
@@ -362,14 +308,27 @@ export class AppStore {
       this.layerData = data;
       this.failedLayers = failed;
       this.countyData = countyData;
-      this.parcelsUrl = hasParcelTiles ? pmtilesUrl(fips) : null;
+      this.parcelsUrl = parcelTilesProbe === 'present' ? pmtilesUrl(fips) : null;
       this.facets = facets;
-      this.filtersAvailable = hasAttrParquet;
+      this.filtersAvailable = attrParquetProbe === 'present';
+      // A genuine 404 (absent parquet) degrades silently; an unreachable
+      // probe means the server is down — say so rather than pretend the
+      // filter data simply doesn't exist for this state.
+      if (attrParquetProbe === 'unreachable') {
+        this.notice =
+          'Could not reach the parcel attribute data — filters and parcel search are ' +
+          'unavailable. Is the data server running?';
+      }
       // Point the DuckDB filter engine at this state (lazy WASM init),
       // then fire a warm-up count so the user's first filter is instant
       // instead of paying the cold parquet-read cost.
-      if (hasAttrParquet) {
-        void duckDb.loadState(fips, parcelsAttrUrl(fips));
+      if (this.filtersAvailable) {
+        void duckDb.loadState(fips, parcelsAttrUrl(fips)).catch(() => {
+          // Registration failed after a successful HEAD — disable filters
+          // and tell the user instead of leaving a silently broken panel.
+          this.filtersAvailable = false;
+          this.notice = 'Filters are unavailable — the parcel attribute data failed to load.';
+        });
         void duckDb.count('').catch(() => undefined);
       }
       const visibility = defaultVisibility(catalog);
@@ -398,14 +357,6 @@ export class AppStore {
       this.failedLayers = [...this.failedLayers, name];
     }
   }
-}
-
-/** Reflect the active state in the URL so a reload reopens it. */
-function syncStateParam(fips: string): void {
-  if (typeof history === 'undefined') return;
-  const url = new URL(location.href);
-  url.searchParams.set('state', fips);
-  history.replaceState(null, '', url);
 }
 
 export const app = new AppStore();

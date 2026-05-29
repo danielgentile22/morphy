@@ -20,7 +20,8 @@ from ..base import (
     write_quality_report,
 )
 from ..io import write_parquet, write_raw_parquet
-from ._helpers import canon_county_fips, safe_str
+from .fips import canon_county_fips
+from .pandas_coerce import safe_str
 
 log = logging.getLogger("preprocess.usda_pp")
 
@@ -78,9 +79,11 @@ class UsdaPersistentPovertyNormalizer(Normalizer):
 
         rows = []
         for _, r in grouped.iterrows():
+            fips = r["fips_canon"]
             rows.append(
                 {
-                    "county_fips": r["fips_canon"],
+                    "county_fips": fips,
+                    "state_fips": fips[:2] if fips else None,
                     "tier": "",
                     "score": None,
                     "persistent_poverty": bool(r["val_bool"]),

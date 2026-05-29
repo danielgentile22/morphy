@@ -44,7 +44,15 @@ def _make_parcels_parquet(path: Path, n: int = 12) -> None:
 
 
 def test_attr_columns_drops_geometry_and_internals() -> None:
-    cols = ["parcel_id", "geometry", "geom_centroid", "geom_bbox", "extras", "_source", "owner_kind"]
+    cols = [
+        "parcel_id",
+        "geometry",
+        "geom_centroid",
+        "geom_bbox",
+        "extras",
+        "_source",
+        "owner_kind",
+    ]
     assert attr_columns(cols) == ["parcel_id", "geom_bbox", "owner_kind"]
 
 

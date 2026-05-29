@@ -12,65 +12,16 @@ download link, and follow it.
 
 from __future__ import annotations
 
-import re
-from html.parser import HTMLParser
-from pathlib import Path
-
 from ..base import (
     CATEGORY_SOLAR,
-    DataSource,
-    FetchResult,
-    ProgressCallback,
+    ManualOnlySource,
 )
-from ..http import HttpError, fetch_text
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 
 LANDING_URL = "https://emp.lbl.gov/tracking-the-sun"
 
 
-class _LinkScraper(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.links: list[str] = []
-
-    def handle_starttag(self, tag, attrs):
-        if tag.lower() != "a":
-            return
-        for k, v in attrs:
-            if k.lower() == "href" and v:
-                self.links.append(v)
-
-
-def _absolutise(href: str) -> str:
-    if href.startswith("http"):
-        return href
-    if href.startswith("//"):
-        return "https:" + href
-    if href.startswith("/"):
-        return "https://emp.lbl.gov" + href
-    return "https://emp.lbl.gov/" + href.lstrip("./")
-
-
-def _find_public_file_link() -> tuple[str, str]:
-    """Return (download_url, version_string) for the most recent public data file."""
-    html = fetch_text(LANDING_URL)
-    parser = _LinkScraper()
-    parser.feed(html)
-    candidates = [h for h in parser.links if re.search(r"public.+(csv|zip)$", h, re.I)]
-    # Prefer the link mentioning the most recent year
-    candidates.sort(
-        key=lambda h: max((int(y) for y in re.findall(r"20\d{2}", h)), default=0),
-        reverse=True,
-    )
-    if not candidates:
-        raise HttpError("LBNL Tracking the Sun: no public data link found on page")
-    chosen = _absolutise(candidates[0])
-    # Use filename as the version slug
-    name = chosen.rsplit("/", 1)[-1]
-    return chosen, name
-
-
-class LbnlTts(DataSource):
+class LbnlTts(ManualOnlySource):
     id = "lbnl_tts"
     name = "LBNL U.S. Distributed Solar & Storage Data (formerly Tracking the Sun)"
     category = CATEGORY_SOLAR
@@ -116,15 +67,6 @@ class LbnlTts(DataSource):
             "blocks scripted requests. This always has to be manual."
         ),
     )
-
-    def remote_version(self) -> str:
-        return "manual"
-
-    def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        raise RuntimeError(
-            "lbnl_tts is MANUAL_ONLY — Cloudflare blocks scripted fetches. "
-            "Download from the landing page."
-        )
 
 
 SOURCE = LbnlTts()

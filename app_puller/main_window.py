@@ -30,22 +30,17 @@ import time
 import webbrowser
 from datetime import UTC, datetime
 
-from diagnose import DiagnoseUnavailable, diagnose
 from fetch import RAW_ROOT
 from fetch.base import DataSource
 from fetch.legal import AutomationPolicy, CommercialUse
 from fetch.manifest import (
-    FRESHNESS_DUE_SOON,
-    FRESHNESS_FRESH,
     FRESHNESS_STALE,
-    FRESHNESS_UNKNOWN,
     Manifest,
-    SourceEntry,
 )
 from fetch.registry import all_sources, get_source, grouped
 from fetch.storage import current_dir, directory_bytes, human_bytes
 from PySide6.QtCore import Qt, QThread, QTimer
-from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -70,112 +65,27 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from verify_raw import verify_all, verify_one
+from verify_raw import verify_one
 
 from . import state as ui_state
+from .attention_panel import AttentionItem, attention_items
+from .manual_install import mark_manual_install, pick_and_upload
 from .preprocess_dialog import PreprocessDialog
-from .upload import mark_manual_install, pick_and_upload
+from .status import (
+    STATUS_LABELS,
+    freshness_label_for,
+    status_for,
+)
+from .theme import Palette, is_dark
 from .walkthrough_dialog import WalkthroughDialog
-from .workers import CheckWorker, FetchWorker
-
-# ── status presentation ──────────────────────────────────────────────────────
-
-
-STATUS_LABELS = {
-    "ok": ("✓ Current", QColor("#2e7d32")),
-    "stale": ("⟳ Stale (new version available)", QColor("#ef6c00")),
-    "missing": ("✗ Not installed", QColor("#9e9e9e")),
-    "check_failed": ("⚠ Check failed", QColor("#c62828")),
-    "fetch_failed": ("⚠ Fetch failed", QColor("#c62828")),
-    "manual_only": ("⤓ Manual download required", QColor("#5e35b1")),
-    "needs_credentials": ("🔒 Credentials required", QColor("#5e35b1")),
-}
-
-
-# Colors for the freshness-aware status column. Matches docs/PULLER_UX.md §2.2.
-FRESHNESS_COLORS = {
-    FRESHNESS_FRESH: QColor("#2e7d32"),  # green
-    FRESHNESS_DUE_SOON: QColor("#ef6c00"),  # orange
-    FRESHNESS_STALE: QColor("#c62828"),  # red
-    FRESHNESS_UNKNOWN: QColor("#9e9e9e"),  # gray
-}
-
-
-def freshness_label_for(source: DataSource, entry: SourceEntry) -> tuple[str, QColor]:
-    """Display label + color combining install state + cadence freshness.
-
-    The status column shows whichever is more actionable: install /
-    policy state (missing, manual-only, needs-creds, endpoint failing,
-    new version available), or freshness (fresh/due-soon/stale based on
-    cadence).
-    """
-    # Policy / install state first — these always override freshness.
-    if source.legal.automation == AutomationPolicy.MANUAL_ONLY and not entry.is_installed():
-        return STATUS_LABELS["manual_only"]
-    if (
-        source.legal.automation == AutomationPolicy.CREDENTIALED
-        and not source.credentials_available()
-        and not entry.is_installed()
-    ):
-        return STATUS_LABELS["needs_credentials"]
-    if entry.status == "check_failed":
-        return ("⚠ Endpoint failing", QColor("#c62828"))
-    if entry.status == "fetch_failed":
-        return STATUS_LABELS["fetch_failed"]
-    if not entry.is_installed():
-        return STATUS_LABELS["missing"]
-    if entry.is_stale():
-        return STATUS_LABELS["stale"]
-
-    # Installed + remote-version matches → fall back to cadence freshness.
-    freshness = entry.freshness()
-    days = entry.days_since_fetch()
-    cadence = source.update_cadence_days
-
-    if freshness == FRESHNESS_FRESH:
-        label = f"✓ Fresh ({days}d)" if days is not None else "✓ Fresh"
-        return (label, FRESHNESS_COLORS[FRESHNESS_FRESH])
-    if freshness == FRESHNESS_DUE_SOON:
-        label = (
-            f"⏳ Due soon ({days}d / {cadence}d)" if days is not None and cadence else "⏳ Due soon"
-        )
-        return (label, FRESHNESS_COLORS[FRESHNESS_DUE_SOON])
-    if freshness == FRESHNESS_STALE:
-        label = (
-            f"↻ Stale ({days}d / {cadence}d)"
-            if days is not None and cadence
-            else "↻ Stale (past cadence)"
-        )
-        return (label, FRESHNESS_COLORS[FRESHNESS_STALE])
-    # FRESHNESS_UNKNOWN — installed but no cadence (one-shot reference data)
-    return STATUS_LABELS["ok"]
-
-
-def status_for(source: DataSource, entry: SourceEntry) -> str:
-    """Resolve the displayable status, combining manifest + source policy.
-
-    For MANUAL_ONLY / CREDENTIALED sources, files dropped into current/
-    by hand (detected by ``_detect_manual_installs``) should still show
-    as ✓ Current — show the install state when present, fall back to
-    the policy-restricted state otherwise.
-    """
-    if source.legal.automation == AutomationPolicy.MANUAL_ONLY:
-        if entry.is_installed():
-            return "ok"
-        return "manual_only"
-    if (
-        source.legal.automation == AutomationPolicy.CREDENTIALED
-        and not source.credentials_available()
-    ):
-        if entry.is_installed():
-            return "ok"
-        return "needs_credentials"
-    if entry.status in STATUS_LABELS:
-        if entry.status == "ok" and entry.is_stale():
-            return "stale"
-        return entry.status
-    return "missing"
-
+from .workers import (
+    CheckWorker,
+    DiagnoseWorker,
+    FetchWorker,
+    VerifyWorker,
+    make_thread,
+    stop_thread,
+)
 
 # ── columns ──────────────────────────────────────────────────────────────────
 
@@ -207,12 +117,15 @@ class MainWindow(QMainWindow):
         # threads / workers held to keep alive
         self._check_thread: QThread | None = None
         self._fetch_thread: QThread | None = None
+        self._verify_thread: QThread | None = None
+        self._diagnose_thread: QThread | None = None
         self._check_worker: CheckWorker | None = None
         self._fetch_worker: FetchWorker | None = None
+        self._verify_worker: VerifyWorker | None = None
+        self._diagnose_worker: DiagnoseWorker | None = None
 
         # progress accounting for rate calc
         self._dl_start_ts: float | None = None
-        self._dl_start_bytes: int = 0
 
         # Queue of manual sources to walk through after a bulk auto-fetch.
         self._pending_manual_queue: list[DataSource] = []
@@ -314,14 +227,10 @@ class MainWindow(QMainWindow):
             self._manifest.save()
 
     def _is_dark(self) -> bool:
-        bg = self.palette().color(QPalette.Window)
-        return bg.lightness() < 128
+        return is_dark(self)
 
-    def _muted_hex(self) -> str:
-        return "#bdbdbd" if self._is_dark() else "#616161"
-
-    def _text_hex(self) -> str:
-        return "#eeeeee" if self._is_dark() else "#212121"
+    def _palette(self) -> Palette:
+        return Palette.for_widget(self)
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -372,7 +281,7 @@ class MainWindow(QMainWindow):
         h.addWidget(title)
         h.addStretch(1)
 
-        muted = self._muted_hex()
+        muted = self._palette().muted
         self.lbl_storage = QLabel("…")
         self.lbl_storage.setStyleSheet(f"color: {muted};")
         h.addWidget(self.lbl_storage)
@@ -500,7 +409,7 @@ class MainWindow(QMainWindow):
         h.setContentsMargins(0, 0, 0, 0)
 
         lbl = QLabel("Search:")
-        lbl.setStyleSheet(f"color: {self._muted_hex()};")
+        lbl.setStyleSheet(f"color: {self._palette().muted};")
         h.addWidget(lbl)
 
         self.search_box = QLineEdit()
@@ -510,7 +419,7 @@ class MainWindow(QMainWindow):
         h.addWidget(self.search_box, stretch=1)
 
         self.lbl_match_count = QLabel("")
-        self.lbl_match_count.setStyleSheet(f"color: {self._muted_hex()}; font-size: 11px;")
+        self.lbl_match_count.setStyleSheet(f"color: {self._palette().muted}; font-size: 11px;")
         h.addWidget(self.lbl_match_count)
 
         return bar
@@ -551,7 +460,7 @@ class MainWindow(QMainWindow):
         v.addWidget(self.det_title)
 
         self.det_subtitle = QLabel("")
-        self.det_subtitle.setStyleSheet(f"color: {self._muted_hex()};")
+        self.det_subtitle.setStyleSheet(f"color: {self._palette().muted};")
         self.det_subtitle.setWordWrap(True)
         v.addWidget(self.det_subtitle)
 
@@ -597,7 +506,7 @@ class MainWindow(QMainWindow):
         v.setContentsMargins(12, 8, 12, 8)
 
         self.pb_label = QLabel("Idle. No pull in progress.")
-        self.pb_label.setStyleSheet(f"color: {self._muted_hex()};")
+        self.pb_label.setStyleSheet(f"color: {self._palette().muted};")
         v.addWidget(self.pb_label)
 
         self.progress = QProgressBar()
@@ -608,7 +517,7 @@ class MainWindow(QMainWindow):
         v.addWidget(self.progress)
 
         self.pb_substatus = QLabel("")
-        self.pb_substatus.setStyleSheet(f"color: {self._muted_hex()}; font-size: 11px;")
+        self.pb_substatus.setStyleSheet(f"color: {self._palette().muted}; font-size: 11px;")
         v.addWidget(self.pb_substatus)
 
         return wrap
@@ -796,8 +705,8 @@ class MainWindow(QMainWindow):
 
         notes = s.legal.notes or ""
 
-        muted = self._muted_hex()
-        text = self._text_hex()
+        muted = self._palette().muted
+        text = self._palette().text
         is_dark = self._is_dark()
         badge_bg = "#37474f" if is_dark else "#eceff1"
         badge_fg = "#eceff1" if is_dark else "#37474f"
@@ -973,9 +882,7 @@ class MainWindow(QMainWindow):
         self._append_log(f"Checking remote versions for {len(self._sources)} sources…")
 
         worker = CheckWorker(self._sources, self._manifest)
-        thread = QThread(self)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)  # type: ignore
+        thread = make_thread(worker, parent=self)
         worker.progress.connect(self._on_check_progress)
         worker.one_done.connect(self._on_check_one_done)
         worker.all_done.connect(self._on_check_all_done)
@@ -1009,9 +916,7 @@ class MainWindow(QMainWindow):
         self._append_log(f"Starting pull for {len(sources)} source(s).")
 
         worker = FetchWorker(sources, self._manifest)
-        thread = QThread(self)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)  # type: ignore
+        thread = make_thread(worker, parent=self)
         worker.started.connect(self._on_fetch_started)
         worker.progress.connect(self._on_fetch_progress)
         worker.one_done.connect(self._on_fetch_one_done)
@@ -1035,10 +940,28 @@ class MainWindow(QMainWindow):
         self._append_log("Preprocess dialog closed.")
 
     def _verify_contents(self) -> None:
+        if self._verify_thread is not None:
+            return  # already running
         self._append_log("Verifying contents of every source folder…")
-        QApplication.processEvents()
-        results = verify_all()
+        self.btn_verify.setEnabled(False)
+
+        worker = VerifyWorker()
+        thread = make_thread(worker, parent=self)
+        worker.done.connect(self._on_verify_done)
+        worker.failed.connect(self._on_verify_failed)
+        self._verify_worker = worker
+        self._verify_thread = thread
+        thread.start()
+
+    def _on_verify_done(self, results: list) -> None:
+        self._teardown_thread("verify")
+        self.btn_verify.setEnabled(True)
         self._show_verify_dialog(results, summary_to_log=True)
+
+    def _on_verify_failed(self, msg: str) -> None:
+        self._teardown_thread("verify")
+        self.btn_verify.setEnabled(True)
+        self._append_log(f"Verify failed: {msg}", error=True)
 
     def _show_verify_dialog(self, results, summary_to_log: bool = False) -> None:
         from fetch.storage import human_bytes as _hb
@@ -1048,22 +971,17 @@ class MainWindow(QMainWindow):
         n_unknown = sum(1 for r in results if r.verdict == "UNKNOWN")
         n_missing = sum(1 for r in results if r.verdict == "NOT_INSTALLED")
 
-        is_dark = self._is_dark()
-        muted = self._muted_hex()
-        text = self._text_hex()
-        ok_color = "#81c784" if is_dark else "#2e7d32"
-        fail_color = "#e57373" if is_dark else "#c62828"
-        unknown_color = "#ffd54f" if is_dark else "#f57c00"
-        link_color = "#64b5f6" if is_dark else "#1565c0"
+        p = self._palette()
+        muted, text = p.muted, p.text
 
         rows = []
         for r in results:
             if r.verdict == "OK":
-                color, mark = ok_color, "✓"
+                color, mark = p.ok, "✓"
             elif r.verdict in ("FAIL", "EMPTY"):
-                color, mark = fail_color, "✗"
+                color, mark = p.fail, "✗"
             elif r.verdict == "UNKNOWN":
-                color, mark = unknown_color, "?"
+                color, mark = p.warn, "?"
             else:  # NOT_INSTALLED
                 color, mark = muted, "·"
             size = _hb(r.nbytes) if r.nbytes else "—"
@@ -1075,7 +993,7 @@ class MainWindow(QMainWindow):
             )
             diag_link = (
                 f' &nbsp;<a href="diagnose:{r.source_id}" '
-                f'style="color:{link_color};text-decoration:none">'
+                f'style="color:{p.link};text-decoration:none">'
                 f"[Diagnose with AI]</a>"
                 if r.verdict in ("FAIL", "EMPTY")
                 else ""
@@ -1091,11 +1009,11 @@ class MainWindow(QMainWindow):
 
         summary = (
             f'<div style="font-size:13px;margin-bottom:8px">'
-            f'<span style="color:{ok_color}"><b>{n_ok} OK</b></span> &nbsp;·&nbsp; '
-            f'<span style="color:{fail_color}"><b>{n_fail} failing</b></span> &nbsp;·&nbsp; '
+            f'<span style="color:{p.ok}"><b>{n_ok} OK</b></span> &nbsp;·&nbsp; '
+            f'<span style="color:{p.fail}"><b>{n_fail} failing</b></span> &nbsp;·&nbsp; '
             f'<span style="color:{muted}">{n_missing} not installed</span>'
             + (
-                f' &nbsp;·&nbsp; <span style="color:{unknown_color}">{n_unknown} unknown</span>'
+                f' &nbsp;·&nbsp; <span style="color:{p.warn}">{n_unknown} unknown</span>'
                 if n_unknown
                 else ""
             )
@@ -1141,8 +1059,8 @@ class MainWindow(QMainWindow):
 
     def _diagnose_one(self, source_id: str, parent) -> None:
         result = verify_one(source_id)
-        text = self._text_hex()
-        muted = self._muted_hex()
+        text = self._palette().text
+        muted = self._palette().muted
 
         dlg = QDialog(parent)
         dlg.setWindowTitle(f"Diagnose: {source_id}")
@@ -1169,9 +1087,6 @@ class MainWindow(QMainWindow):
         bb.accepted.connect(dlg.accept)
         v.addWidget(bb)
 
-        dlg.show()
-        QApplication.processEvents()
-
         buf: list[str] = []
 
         def on_chunk(text_chunk: str) -> None:
@@ -1181,14 +1096,23 @@ class MainWindow(QMainWindow):
             cursor = body.textCursor()
             cursor.movePosition(cursor.End)
             body.setTextCursor(cursor)
-            QApplication.processEvents()
 
-        try:
-            diagnose(result, on_chunk=on_chunk)
-        except DiagnoseUnavailable as e:
-            body.setHtml(f'<div style="color:{muted}">Diagnosis unavailable.<br><br>{e}</div>')
+        def on_failed(msg: str) -> None:
+            body.setHtml(f'<div style="color:{muted}">{msg.replace(chr(10), "<br>")}</div>')
+
+        worker = DiagnoseWorker(source_id)
+        thread = make_thread(worker, parent=dlg)
+        worker.chunk.connect(on_chunk)
+        worker.failed.connect(on_failed)
+        # Closing the dialog must reap the thread; we don't expose a cancel
+        # hook on DiagnoseWorker (the Anthropic stream is short and cheap),
+        # but quit()+wait() ensures we don't leak the QThread.
+        self._diagnose_worker = worker
+        self._diagnose_thread = thread
+        thread.start()
 
         dlg.exec()
+        self._teardown_thread("diagnose")
 
     def _cancel_active(self) -> None:
         if self._fetch_worker:
@@ -1225,7 +1149,6 @@ class MainWindow(QMainWindow):
 
     def _on_fetch_started(self, source_id: str, name: str) -> None:
         self._dl_start_ts = time.monotonic()
-        self._dl_start_bytes = 0
         self.pb_label.setText(f"Downloading: {name}")
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
@@ -1282,16 +1205,22 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self._process_pending_manuals)
 
     def _teardown_thread(self, kind: str) -> None:
-        if kind == "check" and self._check_thread:
-            self._check_thread.quit()
-            self._check_thread.wait(2000)
+        if kind == "check":
+            stop_thread(self._check_thread)
             self._check_thread = None
             self._check_worker = None
-        elif kind == "fetch" and self._fetch_thread:
-            self._fetch_thread.quit()
-            self._fetch_thread.wait(2000)
+        elif kind == "fetch":
+            stop_thread(self._fetch_thread)
             self._fetch_thread = None
             self._fetch_worker = None
+        elif kind == "verify":
+            stop_thread(self._verify_thread)
+            self._verify_thread = None
+            self._verify_worker = None
+        elif kind == "diagnose":
+            stop_thread(self._diagnose_thread)
+            self._diagnose_thread = None
+            self._diagnose_worker = None
 
     # ── utils ───────────────────────────────────────────────────────────
 
@@ -1320,67 +1249,8 @@ class MainWindow(QMainWindow):
 
     # ── attention panel ─────────────────────────────────────────────────
 
-    def _attention_items(self) -> list[tuple[DataSource, str, str]]:
-        """Return list of (source, reason, action_kind) needing attention.
-
-        action_kind ∈ {"walkthrough", "refresh", "open_manual"}.
-        """
-        items: list[tuple[DataSource, str, str]] = []
-        for s in self._sources:
-            e = self._manifest.entry(s.id)
-            has_walkthrough = s.manual_walkthrough() is not None
-            # Endpoint failing (auto sources we tried to check)
-            if e.status == "check_failed":
-                if s.legal.automation == AutomationPolicy.MANUAL_ONLY and has_walkthrough:
-                    items.append((s, "Endpoint failing — walkthrough available", "walkthrough"))
-                else:
-                    items.append((s, f"Endpoint failing: {e.error or '—'}", "open_manual"))
-                continue
-            if e.status == "fetch_failed":
-                items.append((s, f"Last fetch failed: {e.error or '—'}", "refresh"))
-                continue
-            # Manual sources that haven't been installed yet
-            if s.legal.automation == AutomationPolicy.MANUAL_ONLY and not e.is_installed():
-                reason = "Manual download required" + (
-                    " — walkthrough available" if has_walkthrough else ""
-                )
-                items.append(
-                    (
-                        s,
-                        reason,
-                        "walkthrough" if has_walkthrough else "open_manual",
-                    )
-                )
-                continue
-            # Auto sources that aren't installed (and aren't credentialed-no-creds)
-            if not e.is_installed():
-                if (
-                    s.legal.automation == AutomationPolicy.CREDENTIALED
-                    and not s.credentials_available()
-                ):
-                    # surfaced separately as informational; not actionable here
-                    continue
-                items.append((s, "Not installed", "refresh"))
-                continue
-            # Stale (remote version differs)
-            if e.is_stale():
-                items.append((s, "New version available", "refresh"))
-                continue
-            # Past cadence
-            freshness = e.freshness()
-            if freshness == FRESHNESS_STALE:
-                days = e.days_since_fetch()
-                cad = s.update_cadence_days
-                reason = (
-                    f"Past cadence ({days}d / {cad}d) — re-check publisher"
-                    if days is not None and cad
-                    else "Past recommended refresh date"
-                )
-                if s.legal.automation == AutomationPolicy.MANUAL_ONLY and has_walkthrough:
-                    items.append((s, reason, "walkthrough"))
-                else:
-                    items.append((s, reason, "refresh"))
-        return items
+    def _attention_items(self) -> list[AttentionItem]:
+        return attention_items(self._sources, self._manifest)
 
     def _refresh_attention_panel(self) -> None:
         # Clear existing rows (keep the trailing stretch).
@@ -1399,31 +1269,33 @@ class MainWindow(QMainWindow):
         self.lbl_attention_title.setText(
             f"⚠ What needs my attention ({len(items)} source{'s' if len(items) != 1 else ''})"
         )
-        muted = self._muted_hex()
-        for source, reason, action_kind in items:
+        muted = self._palette().muted
+        for it in items:
             row = QWidget()
             h = QHBoxLayout(row)
             h.setContentsMargins(0, 0, 0, 0)
             h.setSpacing(8)
-            lbl = QLabel(f"<b>{source.id}</b> &nbsp; <span style='color:{muted}'>{reason}</span>")
+            lbl = QLabel(
+                f"<b>{it.source.id}</b> &nbsp; <span style='color:{muted}'>{it.reason}</span>"
+            )
             lbl.setTextFormat(Qt.RichText)
             lbl.setWordWrap(True)
             h.addWidget(lbl, stretch=1)
 
-            if action_kind == "walkthrough":
+            if it.action == "walkthrough":
                 btn = QPushButton("▶ Walk me through")
                 btn.clicked.connect(  # type: ignore
-                    lambda _checked=False, s=source: self._open_walkthrough_for(s)
+                    lambda _checked=False, s=it.source: self._open_walkthrough_for(s)
                 )
-            elif action_kind == "refresh":
+            elif it.action == "refresh":
                 btn = QPushButton("↻ Refresh")
                 btn.clicked.connect(  # type: ignore
-                    lambda _checked=False, s=source: self._start_fetch([s])
+                    lambda _checked=False, s=it.source: self._start_fetch([s])
                 )
             else:  # open_manual
                 btn = QPushButton("Open URL")
                 btn.clicked.connect(  # type: ignore
-                    lambda _checked=False, s=source: webbrowser.open(s.legal.manual_url)
+                    lambda _checked=False, s=it.source: webbrowser.open(s.legal.manual_url)
                 )
             btn.setMinimumHeight(26)
             h.addWidget(btn)
@@ -1558,12 +1430,10 @@ class MainWindow(QMainWindow):
             self.log.append(self._render_log_line(ts, msg, error))
 
     def _render_log_line(self, ts: str, msg: str, error: bool) -> str:
-        muted = self._muted_hex()
+        muted = self._palette().muted
         prefix = f"<span style='color:{muted}'>[{ts}]</span> "
-        if error:
-            color = "#e57373" if self._is_dark() else "#c62828"
-        else:
-            color = self._text_hex()
+        p = self._palette()
+        color = p.fail if error else p.text
         return f"{prefix}<span style='color:{color}'>{msg}</span>"
 
     def _log_filter_allows(self, error: bool) -> bool:
@@ -1656,6 +1526,8 @@ class MainWindow(QMainWindow):
             if self._check_worker:
                 self._check_worker.cancel()
                 self._check_thread.wait(2000)
+        stop_thread(self._verify_thread)
+        stop_thread(self._diagnose_thread)
         try:
             self._manifest.save()
         except Exception:

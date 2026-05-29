@@ -13,14 +13,7 @@ matching class can be promoted to AutomationPolicy.ALLOWED with a
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from ..base import (
-    CATEGORY_PARCELS,
-    DataSource,
-    FetchResult,
-    ProgressCallback,
-)
+from ..base import CATEGORY_PARCELS, ManualOnlySource
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ..walkthroughs import ManualStep, ManualWalkthrough
 
@@ -38,18 +31,8 @@ def _make_legal(publisher: str, manual_url: str, attribution: str, notes: str) -
     )
 
 
-class _ManualParcels(DataSource):
-    """Common implementation for MANUAL_ONLY state parcel layers."""
-
-    def remote_version(self) -> str:
-        return "manual"
-
-    def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        raise RuntimeError(f"{self.id} is MANUAL_ONLY — see manual_url.")
-
-
 # ── Montana Cadastral ─────────────────────────────────────────────────────
-class MtCadastralParcels(_ManualParcels):
+class MtCadastralParcels(ManualOnlySource):
     id = "mt_cadastral_parcels"
     name = "Montana Cadastral (statewide parcels)"
     category = CATEGORY_PARCELS
@@ -140,7 +123,7 @@ class MtCadastralParcels(_ManualParcels):
 
 
 # ── Minnesota MetroGIS / MnGeo parcels ────────────────────────────────────
-class MnParcelsManual(_ManualParcels):
+class MnParcelsManual(ManualOnlySource):
     id = "mn_parcels"
     name = "Minnesota statewide parcels (MnGeo aggregate)"
     category = CATEGORY_PARCELS
@@ -193,7 +176,7 @@ class MnParcelsManual(_ManualParcels):
 
 
 # ── Indiana statewide parcels (IGS / IGIO) ────────────────────────────────
-class InParcelsManual(_ManualParcels):
+class InParcelsManual(ManualOnlySource):
     id = "in_parcels"
     name = "Indiana statewide parcels"
     category = CATEGORY_PARCELS
@@ -240,7 +223,7 @@ class InParcelsManual(_ManualParcels):
 
 
 # ── Arkansas GIS Office statewide parcels ─────────────────────────────────
-class ArParcelsManual(_ManualParcels):
+class ArParcelsManual(ManualOnlySource):
     id = "ar_parcels"
     name = "Arkansas statewide parcels"
     category = CATEGORY_PARCELS
@@ -324,7 +307,7 @@ class ArParcelsManual(_ManualParcels):
 
 
 # ── Utah AGRC statewide parcels ───────────────────────────────────────────
-class UtParcelsManual(_ManualParcels):
+class UtParcelsManual(ManualOnlySource):
     id = "ut_parcels"
     name = "Utah statewide parcels (UGRC LIR)"
     category = CATEGORY_PARCELS

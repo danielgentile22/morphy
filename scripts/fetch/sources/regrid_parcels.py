@@ -108,6 +108,7 @@ class RegridParcels(DataSource):
         return latest.date().isoformat()
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
+        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
         bucket, prefix = os.environ["REGRID_S3_BUCKET"], os.environ["REGRID_S3_PREFIX"]
         s3 = self._s3_client()
         paginator = s3.get_paginator("list_objects_v2")
@@ -140,7 +141,7 @@ class RegridParcels(DataSource):
 
         return FetchResult(
             files=files,
-            remote_version=self.remote_version(),
+            remote_version=rv,
             total_bytes=total,
         )
 

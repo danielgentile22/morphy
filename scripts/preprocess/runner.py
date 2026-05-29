@@ -48,6 +48,9 @@ class RunOutcome:
     normalized_unavailable: list[str] = field(default_factory=list)
     composed_ok: list[str] = field(default_factory=list)
     composed_failed: list[str] = field(default_factory=list)
+    # Names of REQUIRED pipeline steps that raised. AUXILIARY-step failures
+    # are not recorded here — they're logged at WARNING.
+    failed_steps: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
 
 
@@ -99,7 +102,7 @@ def run_normalize_one(
         _emit(progress_callback, "normalize_fail", source_id, {"error": str(e)})
         return "failed", None
 
-    states_covered = list(result.quality_report.get("states_covered") or [])
+    states_covered = list(result.quality_report.extras.get("states_covered") or [])
     if not states_covered:
         states_covered = _infer_states_covered(out_dir)
     manifest.record_normalize(
@@ -149,12 +152,12 @@ def run_compose_one(
     state: StateGeography,
     manifest: PreprocessManifest,
     *,
-    force_rebuild: bool = False,
     progress_callback: ProgressCallback | None = None,
 ) -> ComposeResult | None:
+    """Compose one state via the streaming Composer (ADR-051)."""
     _emit(progress_callback, "compose_start", state.fips, {"name": state.name})
     try:
-        cfg = ComposeConfig(state=state, force_rebuild=force_rebuild)
+        cfg = ComposeConfig(state=state)
         result = compose(cfg)
     except Exception as e:
         tb = traceback.format_exc(limit=3)
@@ -175,6 +178,7 @@ def run_compose_one(
         state.fips,
         sources_used=result.sources_used,
         joins_applied=result.joins_applied,
+        joins_skipped=result.joins_skipped,
         views_built=result.views_built,
         counts=result.counts,
         status="ok",
@@ -197,7 +201,6 @@ def run_compose_all(
     manifest: PreprocessManifest,
     *,
     states: list[StateGeography] | None = None,
-    force_rebuild: bool = False,
     progress_callback: ProgressCallback | None = None,
 ) -> dict[str, ComposeResult | None]:
     if states is None:
@@ -207,7 +210,6 @@ def run_compose_all(
         results[s.fips] = run_compose_one(
             s,
             manifest,
-            force_rebuild=force_rebuild,
             progress_callback=progress_callback,
         )
     manifest.save()
@@ -221,75 +223,43 @@ def run_all(
     skip_tiles: bool = False,
     progress_callback: ProgressCallback | None = None,
 ) -> RunOutcome:
-    """Normalize all sources, then compose either one state or all that have data."""
-    import time
+    """Normalize all sources, then compose either one state or all that have data.
 
-    t0 = time.monotonic()
+    Orchestration is delegated to a ``Pipeline`` of named steps
+    (NormalizeAll → ComposeStates → AppAssets → Tiles). The pipeline
+    centralises severity policy (REQUIRED vs AUXILIARY) and progress
+    emission; ``skip_tiles=True`` translates to skipping the ``tiles``
+    step. Inner per-source events still flow through ``progress_callback``
+    unchanged.
+    """
+    from .pipeline import (
+        AppAssetsStep,
+        ComposeStatesStep,
+        NormalizeAllStep,
+        Pipeline,
+        TilesStep,
+    )
+
     outcome = RunOutcome()
     manifest = PreprocessManifest.load()
+    states = [get_state(state_fips)] if state_fips else None
 
-    normalize_statuses = run_normalize_all(
-        manifest,
-        force_rebuild=force_rebuild,
-        progress_callback=progress_callback,
+    pipeline = Pipeline(
+        steps=[
+            NormalizeAllStep(force_rebuild=force_rebuild),
+            ComposeStatesStep(states=states),
+            AppAssetsStep(),
+            TilesStep(),
+        ]
     )
-    for sid, st in normalize_statuses.items():
-        if st == "ok":
-            outcome.normalized_ok.append(sid)
-        elif st == "failed":
-            outcome.normalized_failed.append(sid)
-        elif st == "skipped":
-            outcome.normalized_skipped.append(sid)
-        else:
-            outcome.normalized_unavailable.append(sid)
-
-    if state_fips:
-        states = [get_state(state_fips)]
-    else:
-        states = _states_with_normalized_parcel_data(manifest)
-
-    compose_results = run_compose_all(
-        manifest,
-        states=states,
-        force_rebuild=force_rebuild,
+    skip: set[str] = {"tiles"} if skip_tiles else set()
+    pipeline.run(
+        outcome=outcome,
+        manifest=manifest,
         progress_callback=progress_callback,
+        skip=skip,
     )
-    for fips, res in compose_results.items():
-        if res is None:
-            outcome.composed_failed.append(fips)
-        else:
-            outcome.composed_ok.append(fips)
 
-    # App-support assets (composite/index.json) — refresh the global
-    # state index so the map app never reads a stale state list after a
-    # normal run. Auxiliary: a failure here is logged, not fatal — the
-    # compose outputs are already on disk and `--app-assets` re-runs it.
-    try:
-        from .app_assets import run_app_assets
-
-        run_app_assets(progress_callback=progress_callback)
-    except Exception as exc:  # noqa: BLE001 — auxiliary step must not abort the run
-        log.warning("app-assets step failed; composite/index.json not refreshed: %s", exc)
-
-    # Parcel vector tiles (composite/<fips>/parcels.pmtiles) for every
-    # state just composed. Auxiliary + heavy: a missing tippecanoe or a
-    # per-state failure is logged, never fatal. Skipped by --skip-tiles.
-    if not skip_tiles and outcome.composed_ok:
-        from .tiles import build_state_tiles, tippecanoe_available
-
-        if not tippecanoe_available():
-            log.warning(
-                "tippecanoe not installed — skipping parcels.pmtiles "
-                "(brew install tippecanoe; or pass --skip-tiles)"
-            )
-        else:
-            for fips in sorted(set(outcome.composed_ok)):
-                try:
-                    build_state_tiles(fips)
-                except Exception as exc:  # noqa: BLE001 — auxiliary, per-state
-                    log.warning("tile generation failed for state %s: %s", fips, exc)
-
-    outcome.duration_seconds = time.monotonic() - t0
     _emit(
         progress_callback,
         "all_done",
@@ -307,19 +277,19 @@ def _states_with_normalized_parcel_data(manifest: PreprocessManifest) -> list[St
     """States for which at least one parcel Normalizer succeeded."""
     parcel_sources = {n.source_id for n in all_normalizers() if "parcel" in n.canonical_types}
     seen: set[str] = set()
-    for sid, entry in (manifest.normalized or {}).items():
+    for sid, entry in manifest.normalized.items():
         if sid not in parcel_sources:
             continue
-        if (entry or {}).get("status") != "ok":
+        if entry.status != "ok":
             continue
-        for f in entry.get("states_covered") or []:
+        for f in entry.states_covered:
             seen.add(f)
     if not seen:
         # Fallback: if no parcel data normalized yet, compose for every state
         # that's covered by tower / distress data so the user gets *something*.
         log.info("no normalized parcel data — composing for every state with any normalized data")
-        for _sid, entry in (manifest.normalized or {}).items():
-            for f in (entry or {}).get("states_covered") or []:
+        for _sid, entry in manifest.normalized.items():
+            for f in entry.states_covered:
                 seen.add(f)
     return [get_state(f) for f in sorted(seen) if f]
 

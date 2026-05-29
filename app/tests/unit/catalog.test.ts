@@ -89,21 +89,31 @@ describe('parseCompositeIndex', () => {
   });
 
   it('throws on a non-object root', () => {
-    expect(() => parseCompositeIndex(null)).toThrow(/index\.json/);
-    expect(() => parseCompositeIndex('nope')).toThrow(/index\.json/);
+    expect(() => parseCompositeIndex(null)).toThrow(/index/);
+    expect(() => parseCompositeIndex('nope')).toThrow(/index/);
   });
 
   it('throws when the states array is missing', () => {
-    expect(() => parseCompositeIndex({ schema_version: 1 })).toThrow(/states/);
+    expect(() =>
+      parseCompositeIndex({ schema_version: 1, generated_at: '' }),
+    ).toThrow(/states/);
   });
 
   it('throws when a state has an invalid bbox', () => {
-    const bad = { states: [{ fips: '05', abbr: 'AR', name: 'Arkansas', bbox: [1, 2, 3] }] };
+    const bad = {
+      schema_version: 1,
+      generated_at: '',
+      states: [{ fips: '05', abbr: 'AR', name: 'Arkansas', bbox: [1, 2, 3] }],
+    };
     expect(() => parseCompositeIndex(bad)).toThrow(/bbox/);
   });
 
   it('throws when a state is missing its fips', () => {
-    const bad = { states: [{ abbr: 'AR', bbox: [-94, 33, -89, 36] }] };
+    const bad = {
+      schema_version: 1,
+      generated_at: '',
+      states: [{ abbr: 'AR', bbox: [-94, 33, -89, 36] }],
+    };
     expect(() => parseCompositeIndex(bad)).toThrow(/fips/);
   });
 });
@@ -125,11 +135,21 @@ describe('parseCatalog', () => {
   });
 
   it('throws when state_fips is missing', () => {
-    expect(() => parseCatalog({ layers: {}, views: {} })).toThrow(/state_fips/);
+    expect(() =>
+      parseCatalog({
+        schema_version: 3,
+        state_name: 'Arkansas',
+        state_abbr: 'AR',
+        generated_at: '',
+        layers: {},
+        views: {},
+        sources_used_versions: {},
+      }),
+    ).toThrow(/state_fips/);
   });
 
   it('throws on a non-object root', () => {
-    expect(() => parseCatalog(null)).toThrow(/catalog\.json/);
+    expect(() => parseCatalog(null)).toThrow(/catalog/);
   });
 });
 

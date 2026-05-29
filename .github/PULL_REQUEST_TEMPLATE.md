@@ -1,4 +1,4 @@
-<!-- See docs/TESTING.md + docs/CHANGELOG.md for the rules referenced below. -->
+<!-- See docs/TESTING.md for the rules referenced below. -->
 
 ## Summary
 
@@ -19,7 +19,6 @@
 
 ## Docs
 
-- [ ] `docs/CHANGELOG.md` updated (one entry under "Unreleased")
 - [ ] `docs/STATUS.md` updated if the state of an anchor source /
       anchor state changed
 - [ ] Affected docs (e.g. DATA_SOURCES.md, LIMITATIONS.md) reflect the change

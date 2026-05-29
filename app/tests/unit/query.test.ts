@@ -6,8 +6,8 @@ import {
   idQuery,
   ownerSearchQuery,
   parcelRowQuery,
-  sqlString,
 } from '../../src/lib/query';
+import { sqlString } from '../../src/lib/filters';
 
 function filters(overrides: Partial<FilterState>): FilterState {
   return { ...emptyFilters(), ...overrides };

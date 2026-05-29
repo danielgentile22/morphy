@@ -22,9 +22,9 @@ the next run skips already-completed pages.
 
 The MapServer returns lowercase field names (``ownname``,
 ``mailadd``, ``cntyfips`` etc.) whereas the old shapefile bulk used
-uppercase (``OWNNAME``, ``MAILADD``, ``STCNTYFIPS``). The normalizer's
-field map (``scripts/preprocess/normalizers/state_parcels.py``) lists
-both casings so old data on disk still normalizes correctly.
+uppercase (``OWNNAME``, ``MAILADD``, ``STCNTYFIPS``). The NC adapter's
+field map (``scripts/preprocess/normalizers/state_parcel_adapters/nc.py``)
+lists both casings so old data on disk still normalizes correctly.
 """
 
 from __future__ import annotations
@@ -62,22 +62,36 @@ PAGE_SIZE = 5000
 # server during the ~1k-request loop. Negligible vs per-request time.
 PAGE_DELAY_SEC = 0.1
 
-# Explicit field list — must include every column the normalizer's
-# nc_onemap_parcels field map references (see
-# scripts/preprocess/normalizers/state_parcels.py PARCEL_FIELD_MAPS).
+# Explicit field list — must include every column the NC adapter's
+# field map references (see
+# scripts/preprocess/normalizers/state_parcel_adapters/nc.py).
 # Using outFields=* would inflate each page ~36% with unused metadata.
 # objectid is required for stable orderByFields pagination.
-OUT_FIELDS = ",".join([
-    "objectid",
-    "parno", "nparno",
-    "ownname", "ownname2",
-    "mailadd", "mcity", "mstate", "mzip",
-    "siteadd", "scity",
-    "gisacres", "landval", "improvval", "parval",
-    "parusecode", "parusedesc",
-    "structyear",
-    "stcntyfips", "cntyfips", "cntyname",
-])
+OUT_FIELDS = ",".join(
+    [
+        "objectid",
+        "parno",
+        "nparno",
+        "ownname",
+        "ownname2",
+        "mailadd",
+        "mcity",
+        "mstate",
+        "mzip",
+        "siteadd",
+        "scity",
+        "gisacres",
+        "landval",
+        "improvval",
+        "parval",
+        "parusecode",
+        "parusedesc",
+        "structyear",
+        "stcntyfips",
+        "cntyfips",
+        "cntyname",
+    ]
+)
 
 # Human-facing dataset page (kept as a manual_url fallback in case the
 # auto-fetch ever breaks and the user needs to retrieve data by hand).
@@ -92,6 +106,12 @@ class NcOnemapParcels(DataSource):
     cadence = "Monthly (per-county refresh schedule)"
     estimated_size_mb = 10000.0  # ~10 GB across ~1186 paginated GeoJSON files
     update_cadence_days = 90
+    # The 1,186-page fetch is the longest single operation in the puller;
+    # a server-side 504 at page 1,106 (real history, 2026-05) used to mean
+    # starting over from page 1. With resume support enabled, prepare_partial
+    # preserves the previous run's page_*.geojson files and the per-page
+    # `if page_path.exists()` guard in `fetch()` below skips them.
+    supports_resume = True
     description = (
         "NC OneMap publishes a statewide normalised parcel layer "
         "aggregating all 100 NC counties via the Integrated Cadastral "
@@ -143,6 +163,7 @@ class NcOnemapParcels(DataSource):
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
         """Paginated MapServer query → one GeoJSON file per 5000-feature page."""
+        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         # 1) Total record count — needed for progress + page-count.
@@ -202,8 +223,7 @@ class NcOnemapParcels(DataSource):
                 except OSError:
                     pass
                 raise HttpError(
-                    f"NC OneMap page {page_idx} (offset {offset}) returned "
-                    f"error envelope: {head!r}"
+                    f"NC OneMap page {page_idx} (offset {offset}) returned error envelope: {head!r}"
                 )
 
             written.append(page_path)
@@ -217,7 +237,7 @@ class NcOnemapParcels(DataSource):
         total_bytes = sum(p.stat().st_size for p in written)
         return FetchResult(
             files=written,
-            remote_version=self.remote_version(),
+            remote_version=rv,
             total_bytes=total_bytes,
         )
 

@@ -7,12 +7,31 @@ specific to one source stays in that source file.
 from __future__ import annotations
 
 import json
-import re
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
-from ..http import HttpError, fetch_text
+from ..http import HttpError, fetch_text, head
+
+
+def version_from_head(url: str, *, label: str = "") -> str:
+    """HEAD ``url`` and derive a stable version string.
+
+    Tries Last-Modified → ETag → Content-Length in that order. Raises
+    ``RuntimeError`` when none of those are present (a misconfigured
+    publisher; better to surface than silently version with timestamps).
+    """
+    h = head(url)
+    lm = parse_http_date(h.get("last_modified"))
+    if lm:
+        return lm
+    etag = h.get("etag")
+    if etag:
+        return etag.strip('"')
+    cl = h.get("content_length")
+    if cl:
+        return f"len-{cl}"
+    raise RuntimeError(f"could not derive remote version{' for ' + label if label else ''}")
 
 
 def safe_extract_zip(zip_path: Path, dest: Path) -> list[Path]:
@@ -57,28 +76,6 @@ def parse_http_date(value: str | None) -> str | None:
         return dt.date().isoformat()
     except Exception:
         return value
-
-
-def find_dates(text: str) -> list[str]:
-    """Extract ISO-ish dates (YYYY-MM-DD or MM/DD/YYYY) from a blob of text."""
-    found = set()
-    for m in re.finditer(r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b", text):
-        y, mo, d = m.groups()
-        found.add(f"{y}-{int(mo):02d}-{int(d):02d}")
-    for m in re.finditer(r"\b(\d{1,2})[-/](\d{1,2})[-/](20\d{2})\b", text):
-        mo, d, y = m.groups()
-        found.add(f"{y}-{int(mo):02d}-{int(d):02d}")
-    return sorted(found)
-
-
-def find_years(text: str, low: int = 2010, high: int = 2030) -> list[int]:
-    """Extract plausible publication years (4-digit) within a sane range."""
-    found = set()
-    for m in re.finditer(r"\b(20\d{2})\b", text):
-        y = int(m.group(1))
-        if low <= y <= high:
-            found.add(y)
-    return sorted(found)
 
 
 def arcgis_query_all(

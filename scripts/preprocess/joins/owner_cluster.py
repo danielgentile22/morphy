@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from ..base import ComposeContext, Join, register_join
+from ..base import ComposeContext, Join, register_join, safe_merge
 from ..cluster import cluster_id
 
 
@@ -50,24 +50,21 @@ class OwnerClusterJoin(Join):
             agg = pd.DataFrame(
                 columns=["owner_cluster_id", "owner_cluster_size", "owner_cluster_value_total"]
             )
-        merged = parcels.merge(agg, on="owner_cluster_id", how="left", suffixes=("", "_new"))
-        # Overwrite the initial 0 with the real cluster size.
-        if "owner_cluster_size_new" in merged.columns:
-            merged["owner_cluster_size"] = merged["owner_cluster_size_new"].fillna(1).astype(int)
-            merged["owner_cluster_value_total"] = (
-                merged["owner_cluster_value_total_new"].fillna(0).astype(float)
-            )
-            merged = merged.drop(
-                columns=["owner_cluster_size_new", "owner_cluster_value_total_new"]
-            )
-        else:
-            merged["owner_cluster_size"] = merged["owner_cluster_size"].fillna(1).astype(int)
-            merged["owner_cluster_value_total"] = (
-                merged["owner_cluster_value_total"].fillna(0).astype(float)
-            )
-        # Restore GeoDataFrame typing.
-        import geopandas as gpd
-
-        merged = gpd.GeoDataFrame(merged, geometry="geometry", crs=parcels.crs)
+        # safe_merge drops the placeholder owner_cluster_size / _value_total
+        # that the normalizer initialised on `parcels` before merging the real
+        # aggregates in, avoiding pandas' _x/_y suffix trap, and restores
+        # GeoDataFrame typing (ADR-020). owner_cluster_id is the join key (set
+        # just above), not a placeholder, so it stays out of columns_added.
+        merged = safe_merge(
+            parcels,
+            agg,
+            on="owner_cluster_id",
+            columns_added=["owner_cluster_size", "owner_cluster_value_total"],
+        )
+        # A parcel with no cluster match (incl. empty owner id) is a cluster of one.
+        merged["owner_cluster_size"] = merged["owner_cluster_size"].fillna(1).astype(int)
+        merged["owner_cluster_value_total"] = (
+            merged["owner_cluster_value_total"].fillna(0).astype(float)
+        )
         ctx.set("parcel", merged)
         ctx.join_log.append(self.name)

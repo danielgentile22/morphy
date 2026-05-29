@@ -33,8 +33,7 @@ from .sources.faa_oeaaa import SOURCE as FAA_OEAAA
 from .sources.fcc_asr import SOURCE as FCC_ASR
 
 # Towers (deferred — large + complex schema; normalize post-pitch)
-from .sources.fcc_uls import SOURCES as FCC_ULS_BANDS
-from .sources.fcc_uls_meta import SOURCES as FCC_ULS_META
+from .sources.fcc_uls import SOURCES as FCC_ULS_ALL
 
 # FL parcels — `fl_fgdl_parcels` is deferred (wrong dataset for landowner work);
 # replaced by `fdor_nal`.
@@ -93,10 +92,9 @@ _ACTIVE: list[DataSource] = [
 _DEFERRED: list[DataSource] = [
     # Retired — DHS removed the public HIFLD Cellular Towers layer in 2024.
     HIFLD_TOWERS,
-    # FCC ULS — ~5 GB raw across 6 bands + a metadata sidecar. Adds
-    # carrier/leasing context but not core to the landowner-side pitch.
-    *FCC_ULS_BANDS,
-    *FCC_ULS_META,
+    # FCC ULS — ~5 GB raw across 3 per-band files + 3 cross-service files.
+    # Adds carrier/leasing context but not core to the landowner-side pitch.
+    *FCC_ULS_ALL,
     # LBNL Tracking the Sun — superseded by USPVDB + EIA 860 for our purposes.
     LBNL_TTS,
     # State billboard datasets — not core to the cell-tower thesis.
@@ -135,15 +133,6 @@ def all_sources() -> list[DataSource]:
         if cat not in CATEGORY_ORDER:
             ordered.extend(sorted(sources, key=lambda s: s.name.lower()))
     return ordered
-
-
-def deferred_sources() -> list[DataSource]:
-    """Return every deferred source — for documentation / tooling only.
-
-    Not surfaced in the puller UI. Reactivate by moving from `_DEFERRED`
-    to `_ACTIVE`.
-    """
-    return list(_DEFERRED)
 
 
 def get_source(source_id: str) -> DataSource:

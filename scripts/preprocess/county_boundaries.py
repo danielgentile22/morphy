@@ -98,16 +98,11 @@ def build_county_boundaries(state_fips: str, *, composite_root: Path | None = No
 
 def _states_with_county_scores(composite_root: Path) -> list[str]:
     """FIPS of every composed state with county_scores, app-excluded ones dropped."""
-    from .app_assets import EXCLUDED_FIPS
+    from .app_assets import iter_composed_states
 
-    if not composite_root.exists():
-        return []
-    return sorted(
-        d.name
-        for d in composite_root.iterdir()
-        if d.is_dir()
-        and d.name not in EXCLUDED_FIPS
-        and (d / "county_scores.parquet").exists()
+    return iter_composed_states(
+        composite_root,
+        predicate=lambda d: (d / "county_scores.parquet").exists(),
     )
 
 

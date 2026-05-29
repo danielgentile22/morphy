@@ -1,7 +1,6 @@
 # DATA_SOURCES
 
-**Last updated:** 2026-05-20 (per-source detail reconciled with the
-Section 4 raw-data pulls).
+**Last updated:** 2026-05-25 (Phase 1 product pivot — reverses several deferrals; adds Steel-in-the-Air + SoS + UCC-1 entries).
 
 Reference for every data feed the puller knows about. Serves two audiences:
 
@@ -25,22 +24,21 @@ For higher-level context:
 > 🔒 Credentialed / paid source
 > ⊘ **Retired or deferred** — source not active in v1 cut; see [DECISIONS.md](./DECISIONS.md)
 
-**Pitch-cut status overrides** (effective 2026-05-19; reconcile with the
-per-source table below):
+**Status overrides** (current as of 2026-05-25; reconcile with the per-source table below):
 
 - **`hifld_towers`** is **RETIRED** (DHS removed the public layer in 2024 — ADR-015).
-- **`regrid_parcels`** is **OUT OF SCOPE** (paid; free-only budget — ADR-012).
+- **`regrid_parcels`** is **Phase 2+ unlock** (paid; ADR-010 reframed by [ADR-057](./adr/0057-budget-posture-reframed.md) — was "out of scope," now "current-budget posture").
 - **`lbnl_tts`** is **DROPPED** from active registry (superseded — ADR-016).
-- **`fcc_uls_*` (6 bands + meta)** are **DEFERRED** to post-pitch (ADR-013).
-- **`state_billboards` (FDOT, NCDOT, TXDOT)** are **DEFERRED** (ADR-014).
+- **`fcc_uls_cellular`, `fcc_uls_pcs`, `fcc_uls_aws`, `fcc_uls_700mhz`** are **Phase 1 Slice A** (in scope for carrier identification — [ADR-053](./adr/0053-product-phase-shift.md) partially reverses ADR-013).
+- **`fcc_uls_wcs`, `fcc_uls_micro`** remain **DEFERRED** (microwave is point-to-point backhaul, not carrier-tenancy; WCS is low-volume).
+- **`fdot_billboards`, `ncdot_billboards`** are **Phase 1 Slice C as parcel enrichment** (ADR-014 partially reversed for FL + NC). `txdot_billboards` stays deferred (TX not in anchor states).
 - **`fl_fgdl_parcels`** is **REPLACED** by `fdor_nal` (ADR-019).
 - **`in_parcels`** is **MOTHBALLED** (no owner data — ADR-017).
 - **`mn_parcels`** is **DEFERRED** (license ambiguity — ADR-018).
-- **`hud_oz`, `hud_qct`, `usda_persistent_poverty`** — endpoints
-  confirmed live 2026-05-21; pulled and normalized into the AR + MT
-  composites (OZ + QCT tract polygons, USDA persistent-poverty county
-  flags). **`nc_onemap_parcels`** fetch is still incomplete (server
-  504 at deep offsets — see LIMITATIONS.md).
+- **`ut_parcels`** is **DEFERRED** (no owner data — ADR-049).
+- **`hud_oz`, `hud_qct`, `usda_persistent_poverty`** — endpoints confirmed live 2026-05-21; pulled and normalized into the AR + MT composites.
+- **`nc_onemap_parcels`** fetch deleted 2026-05-20; needs full re-fetch (Slice F).
+- **NEW Phase 1 additions** (see source entries 30–32 below): Steel-in-the-Air free county-level lease benchmarks (`steel_in_the_air_free`), Secretary of State business-entity lookups (`sos_business_<state>`), UCC-1 filings (`ucc1_<state>`) — all bake into the Slice 4 lead-detail panel per [ADR-057](./adr/0057-budget-posture-reframed.md).
 
 ---
 
@@ -49,10 +47,10 @@ per-source table below):
 | # | Source | Category | Coverage | Automation | v1 status | Commercial use |
 |---|---|---|---|---|---|---|
 | 1 | FCC ASR | Towers | National | ✅ | ✓ active | ✅ Yes (public domain) |
-| 2 | FCC ULS — Cellular (Part 22) | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
-| 3 | FCC ULS — PCS | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
-| 4 | FCC ULS — AWS | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
-| 5 | FCC ULS — 700 MHz | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
+| 2 | FCC ULS — Cellular (Part 22) | Towers | National | ✅ | **Phase 1 Slice A** | ✅ Yes (public domain) |
+| 3 | FCC ULS — PCS | Towers | National | ✅ | **Phase 1 Slice A** | ✅ Yes (public domain) |
+| 4 | FCC ULS — AWS | Towers | National | ✅ | **Phase 1 Slice A** | ✅ Yes (public domain) |
+| 5 | FCC ULS — 700 MHz | Towers | National | ✅ | **Phase 1 Slice A** | ✅ Yes (public domain) |
 | 6 | FCC ULS — WCS | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
 | 7 | FCC ULS — Microwave (Part 101) | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
 | 8 | FAA Digital Obstacle File (DOF) | Towers | National | ✅ | ✓ active | ✅ Yes (public domain) |
@@ -61,9 +59,9 @@ per-source table below):
 | 11 | EIA Form 860M (monthly) | Solar | National | ✅ | ✓ active | ✅ Yes (public domain) |
 | 12 | USGS USPVDB | Solar | National | ✅ | ✓ active | ✅ Yes (public domain) |
 | 13 | LBNL Tracking the Sun | Solar | National | 🟡 | ⊘ deferred | ✅ Yes, with attribution |
-| 14 | FDOT Outdoor Advertising permits | Billboards | Florida | ✅ | ⊘ deferred | ✅ Yes (public records) |
-| 15 | NCDOT Outdoor Advertising permits | Billboards | North Carolina | 🚫 | ⊘ deferred | ✅ Yes (public records) |
-| 16 | TxDOT Outdoor Advertising permits | Billboards | Texas | 🚫 | ⊘ deferred | ✅ Yes (public records) |
+| 14 | FDOT Outdoor Advertising permits | Billboards | Florida | ✅ | **Phase 1 Slice C** (parcel enrichment) | ✅ Yes (public records) |
+| 15 | NCDOT Outdoor Advertising permits | Billboards | North Carolina | 🚫 | **Phase 1 Slice C** (parcel enrichment) | ✅ Yes (public records) |
+| 16 | TxDOT Outdoor Advertising permits | Billboards | Texas | 🚫 | ⊘ deferred (TX not anchor) | ✅ Yes (public records) |
 | 17 | NC OneMap statewide parcels | Parcels | NC (100 counties) | ✅ | ✓ active — raw deleted 2026-05-20; needs re-fetch | ✅ Yes, with attribution |
 | 18 | FL FGDL DSL parcels | Parcels | Florida | 🚫 | ⊘ deferred (wrong dataset; replaced by #29) | ✅ Yes, with attribution |
 | 19 | Montana Cadastral parcels | Parcels | Montana | 🚫 | ✓ active | ✅ Yes, with attribution |
@@ -76,7 +74,10 @@ per-source table below):
 | 26 | HUD Qualified Census Tracts | Distress | National | ✅ | ✓ active | ✅ Yes (public domain) |
 | 27 | ARC County Economic Status | Distress | Appalachia (13 states) | ✅ | ✓ active | ✅ Yes (public domain) |
 | 28 | USDA ERS Persistent Poverty Counties | Distress | National | 🟡 | ✓ active | ✅ Yes (public domain) |
-| 29 | **FL FDOR NAL** (per-county tax roll) — NEW | Parcels | FL (all 67 counties) | 🚫 | ✓ active — raw intact; normalized + composite deleted 2026-05-20, needs re-run | ✅ Yes, with attribution |
+| 29 | **FL FDOR NAL** (per-county tax roll) | Parcels | FL (all 67 counties) | 🚫 | ✓ active — raw intact; normalized + composite deleted 2026-05-20, needs re-run (Slice F) | ✅ Yes, with attribution |
+| 30 | **Steel-in-the-Air** (free county-level lease benchmarks) — NEW | Lease comps | National (counties) | 🟡 | **Phase 1 Slice D** (bootstrap `lease_comp`) | ✅ Yes, with attribution |
+| 31 | **Secretary of State business-entity lookups** — NEW | Officer disclosure | Per anchor state | 🚫 | **Phase 1 Slice D** (one-click in lead-detail panel) | ✅ Yes (public records) |
+| 32 | **UCC-1 filings** — NEW | Third-party-ownership clues | Per anchor state | 🚫 | **Phase 1 Slice D** (surfaced in lead-detail panel) | ✅ Yes (public records) |
 
 ---
 
@@ -131,16 +132,16 @@ Pipe-delimited `.dat` files (no header row). Column order comes from
 
 ## 2–7. FCC Universal Licensing System (ULS) — six radio services
 
-Six separate source IDs, one per band:
+Six separate source IDs, one per band. **Phase 1 Slice A normalises bands 2–5 (Cellular + PCS + AWS + 700 MHz)** for carrier identification per tower ([ADR-053](./adr/0053-product-phase-shift.md) partially reverses ADR-013). Bands 6 + 7 (WCS, Microwave) remain deferred — WCS is low-volume; Microwave is point-to-point backhaul, not carrier-tenancy.
 
-| ID | Band | File | Approx size |
-|---|---|---|---|
-| `fcc_uls_cellular` | Cellular (Part 22) | `l_cell.zip` | ~220 MB |
-| `fcc_uls_pcs` | Broadband PCS | `l_broad.zip` | ~140 MB |
-| `fcc_uls_aws` | AWS | `l_aws.zip` | ~60 MB |
-| `fcc_uls_700mhz` | Lower/Upper 700 MHz | `l_700.zip` | ~40 MB |
-| `fcc_uls_wcs` | WCS 2.3 GHz | `l_wcs.zip` | ~10 MB |
-| `fcc_uls_micro` | Microwave (Part 101) | `l_micro.zip` | ~350 MB |
+| ID | Band | File | Approx size | Phase 1? |
+|---|---|---|---|---|
+| `fcc_uls_cellular` | Cellular (Part 22) | `l_cell.zip` | ~220 MB | **Yes (Slice A)** |
+| `fcc_uls_pcs` | Broadband PCS | `l_broad.zip` | ~140 MB | **Yes (Slice A)** |
+| `fcc_uls_aws` | AWS | `l_aws.zip` | ~60 MB | **Yes (Slice A)** |
+| `fcc_uls_700mhz` | Lower/Upper 700 MHz | `l_700.zip` | ~40 MB | **Yes (Slice A)** |
+| `fcc_uls_wcs` | WCS 2.3 GHz | `l_wcs.zip` | ~10 MB | Deferred |
+| `fcc_uls_micro` | Microwave (Part 101) | `l_micro.zip` | ~350 MB | Deferred |
 
 - **Cadence:** Weekly (Sundays) · **Base URL:** `https://data.fcc.gov/download/pub/uls/complete/`
 - **Source page:** <https://www.fcc.gov/uls/transactions/daily-weekly>
@@ -675,6 +676,73 @@ FAA / HUD overlays via point-in-polygon spatial join.
 
 ---
 
+# PHASE 1 ADDITIONS (Slice D — Lead-detail panel enrichment)
+
+## 30. Steel-in-the-Air — free county-level lease benchmarks
+
+- **ID:** `steel_in_the_air_free` · **Cadence:** Irregular (Steel-in-the-Air publishes annually-ish) · **Size:** small (~MB)
+- **Source page:** <https://www.steelintheair.com/cell-tower-lease-rates/>
+- **License:** Steel-in-the-Air's free-tier terms (free with attribution)
+- **Automation:** 🟡 Tolerated (TBD at Slice D kickoff — confirm download URL + format)
+- **Commercial use:** ✅ With attribution.
+
+### Purpose
+
+Bootstraps the `lease_comp` table in the Slice 4 backend. ~3000 US counties with rent-mean / rent-percentile estimates. UI surfaces *"this tower's rent is in the Nth percentile vs {county/region}."* **Note (2026-05-26):** data-source research found that no free Steel-in-the-Air county-level lease-rate dataset exists — see [STATUS.md §7](./STATUS.md) for the Slice D rescope.
+
+### Open at Slice D kickoff
+
+- Confirm exact download URL + format (web-scrape vs static CSV/JSON).
+- Confirm the free tier's attribution requirements.
+- Schema mapping: target `lease_comp(state, county, asset_type, source='steel_in_the_air_free', year, rent_mean, rent_p25, rent_p75, sample_size)`.
+
+### Phase 2 unlock
+
+Steel-in-the-Air **paid tier** has finer-than-county granularity. Phase 2 conversation per [ADR-057](./adr/0057-budget-posture-reframed.md).
+
+---
+
+## 31. Secretary of State business-entity lookups (per anchor state)
+
+- **IDs:** `sos_business_ar`, `sos_business_mt`, `sos_business_fl`, `sos_business_nc` · **Cadence:** Live (lookup on-demand) · **Size:** N/A (no bulk download)
+- **Source pages:**
+  - AR: <https://www.sos.arkansas.gov/corps/search_corps.php>
+  - MT: <https://biz.sosmt.gov/search/business>
+  - FL: <https://search.sunbiz.org/>
+  - NC: <https://www.sosnc.gov/online_services/search>
+- **License:** Public records (per-state public-information statutes)
+- **Automation:** Per-state UX varies — some allow direct URL queries; others require search form posts. Backend wraps each per-state quirk.
+- **Commercial use:** ✅ Yes.
+
+### Purpose
+
+Slice 4 lead-detail panel surfaces a **one-click "look up LLC officers"** button per lead. Returns publicly-disclosed managers / officers / registered-agent details for the LLC named on the parcel. **Not** identity resolution — these are officers the entity itself publicly registered ([ADR-057](./adr/0057-budget-posture-reframed.md) narrowing of ADR-041).
+
+### Implementation notes
+
+- Backend caches lookups per `tenant_id`-scoped `(state, entity_name)` for a TTL (~30 days) to avoid hammering SoS endpoints.
+- Each state's UX is bespoke (FL's Sunbiz is well-structured; NC's portal needs more parsing). Expect a per-state adapter per anchor state.
+
+---
+
+## 32. UCC-1 filings (per anchor state)
+
+- **IDs:** `ucc1_ar`, `ucc1_mt`, `ucc1_fl`, `ucc1_nc` · **Cadence:** Live (lookup on-demand) · **Size:** N/A (no bulk download)
+- **Source pages:** each state SoS's UCC search (same SoS portals as #31 above, separate UCC tab)
+- **License:** Public records.
+- **Automation:** Per-state lookup; bespoke adapters.
+- **Commercial use:** ✅ Yes.
+
+### Purpose
+
+Surfaced in the Slice 4 lead-detail panel as **third-party-ownership clues**. UCC-1 financing statements name secured parties — useful for confirming whether an asset (often solar systems, occasionally tower equipment) is third-party-owned and therefore on a renegotiable contract.
+
+### Caveat
+
+UCC-1 lookups by debtor name return many irrelevant filings (any UCC filing the debtor has, not just real-estate-related). The lead-detail panel filters / labels by filing date + secured-party patterns rather than trying to be exhaustive.
+
+---
+
 ## Per-source on-disk layout
 
 All sources land at `data/raw/<source_id>/current/`. Example after a
@@ -725,7 +793,8 @@ consuming, (b) fail fast if a required source is missing.
 
 1. Add `scripts/fetch/sources/<your_source>.py` defining a subclass of
    `DataSource` exported as `SOURCE` (or `SOURCES` for a list).
-2. Import it in `scripts/fetch/registry.py` and append to `_ALL`.
+2. Import it in `scripts/fetch/registry.py` and append to `_ACTIVE`
+   (or `_DEFERRED` if not part of the v1 pitch scope — see ADR-045).
 3. Document it here with the same headings (Cadence / Size / Source /
    Direct URL / License / Automation / Commercial / Structure / Joins).
 4. Restart the Puller — the new source appears in its category group.

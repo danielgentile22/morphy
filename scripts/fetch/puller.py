@@ -8,22 +8,37 @@ is staged + promoted atomically, errors are logged, and legal policy
 
 from __future__ import annotations
 
+import json
 import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
+from . import LOG_PATH
 from .base import DataSource, ProgressCallback
-from .http import HttpError
 from .legal import AutomationPolicy
-from .log import log_event
 from .manifest import Manifest
 from .storage import (
     current_dir,
     directory_bytes,
     prepare_fresh_partial,
+    prepare_partial_for_resume,
     promote_partial,
 )
+
+
+def log_event(event: str, **fields: Any) -> None:
+    """Append a single JSON object to fetch.log."""
+    payload: dict[str, Any] = {
+        "ts": datetime.now(UTC).isoformat(timespec="seconds"),
+        "event": event,
+    }
+    payload.update(fields)
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
 
 
 @dataclass
@@ -64,7 +79,7 @@ def check_one(source: DataSource, manifest: Manifest) -> CheckOutcome:
 
     try:
         rv = source.remote_version()
-    except (HttpError, Exception) as e:  # broad: source may raise anything
+    except Exception as e:  # noqa: BLE001 — sources can raise anything
         msg = f"{type(e).__name__}: {e}"
         manifest.mark_check_failed(source.id, msg)
         log_event("check_failed", source=source.id, error=msg)
@@ -114,7 +129,15 @@ def fetch_one(
             )
 
     try:
-        partial = prepare_fresh_partial(sid)
+        # Resumable sources (e.g. NC OneMap's 1,186-page fetch) preserve
+        # the previous run's .partial/ so a stall can pick up where it
+        # left off. Non-resumable sources start clean — every source's
+        # validate() expects to see only files this run produced.
+        if getattr(source, "supports_resume", False):
+            partial = prepare_partial_for_resume(sid)
+            log_event("fetch_resume_attempt", source=sid, bytes_carried=directory_bytes(partial))
+        else:
+            partial = prepare_fresh_partial(sid)
         # Source-supplied progress is forwarded as (done, total, label)
         result = source.fetch(partial, progress)
         source.validate(result.files)

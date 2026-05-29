@@ -1,23 +1,17 @@
 # PROJECT BRIEF — Infrastructure Lease-Optimization Prototype
 
-**Last updated:** 2026-05-19 (preamble added; Sections 1–4 + 7–10 remain
-authoritative for business context; Sections 5 + 6 describe the
-original v1 Graham-County prototype and are now historical).
+**Last updated:** 2026-05-26 (preamble updated for the 2026-05-25 product pivot; Sections 1–4 + 7–10 remain authoritative for business context; Sections 5 + 6 describe the original v1 Graham-County prototype and are now historical).
 
-> **Read this file for the *business case + market context*** — what
-> we are building, why, and the strategic data sources we tap.
+> **Read this file for the *business case + market context*** — what we are building, why, and the strategic data sources we tap.
 >
 > For the **current technical state** see:
 >
-> - [docs/SCOPE.md](docs/SCOPE.md) — what's in scope right now (3–5
->   anchor states, free-only budget, pitch cut)
+> - [docs/SCOPE.md](docs/SCOPE.md) — Phase 1 product cut (AR + MT + FL + NC; freestanding towers; co-founder-facing internal product)
 > - [docs/STATUS.md](docs/STATUS.md) — what works today
-> - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the system fits
->   together (replaces the Sections 5 + 6 description below)
+> - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the system fits together (replaces the Sections 5 + 6 description below)
+> - [docs/adr/0053-product-phase-shift.md](docs/adr/0053-product-phase-shift.md) — the 2026-05-25 reframe from "pitch demo" to "fleshed-out co-founder product" (ADRs 053–059 in [docs/adr/](docs/adr/) lock the resulting decisions)
 >
-> The v1 Graham-County one-shot referenced in Sections 5 + 6 has been
-> superseded by the v3 framework. The business case (Sections 1–4,
-> 7–10) remains authoritative.
+> The v1 Graham-County one-shot referenced in Sections 5 + 6 has been superseded by the v3 framework and the 2026-05-25 product pivot. The business case (Sections 1–4, 7–10) remains authoritative.
 
 ---
 

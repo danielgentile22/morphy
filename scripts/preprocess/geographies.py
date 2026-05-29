@@ -105,23 +105,3 @@ def all_states() -> list[StateGeography]:
 
 def states_iter() -> Iterator[StateGeography]:
     yield from STATES.values()
-
-
-def states_with_normalized_data(preprocess_manifest: dict) -> list[StateGeography]:
-    """Return states for which at least one normalized parcel layer exists.
-
-    Looks at preprocess_manifest['normalized'][*]['states_covered'] when the
-    field is populated by parcel Normalizers; falls back to listing every
-    state if no parcel manifest is present (so the dropdown isn't empty
-    on first run).
-    """
-    covered: set[str] = set()
-    norm = (preprocess_manifest or {}).get("normalized", {})
-    for entry in norm.values():
-        for fips in (entry or {}).get("states_covered", []) or []:
-            if fips in STATES:
-                covered.add(fips)
-    if not covered:
-        # Fallback so the UI dropdown shows something useful on first run.
-        return all_states()
-    return [STATES[f] for f in sorted(covered)]

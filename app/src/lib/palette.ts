@@ -28,7 +28,6 @@ export const DISTRESS_TIERS = [
   'competitive',
   'attainment',
 ] as const;
-export type DistressTier = (typeof DISTRESS_TIERS)[number];
 
 const DISTRESS_TIER_COLOR: Record<string, string> = {
   distressed: WONG.vermillion,
