@@ -1,7 +1,7 @@
 # STATUS — Where the project stands today
 
 **Last updated:** 2026-05-29
-**Updated by:** Phase 1 product pivot (ADRs 053–059 locked the decisions); 2026-05-29 audit-remediation pass — FL **recomposed** (county-score gap **closed**: 11 joins, `county_scores` layer + tower/solar county-score joins now present; consistent with AR/MT)
+**Updated by:** Phase 1 product pivot (ADRs 053–059 locked the decisions); 2026-05-29 audit-remediation pass — FL **recomposed** (county-score gap **closed**: 11 joins, `county_scores` layer + tower/solar county-score joins now present; consistent with AR/MT); merged to `main` 2026-05-29 and reconciled the issue tracker (closed #9 chunked compose, #20 FL compose, #14 solar join)
 **Update cadence:** at the start of every slice and at every session handoff.
 
 A snapshot of reality. If this disagrees with the code or data, the code/data wins — fix the doc.
@@ -29,7 +29,7 @@ The project reframed from "v1 pitch-quality demo across 4 states" to "Phase 1 of
 
 ## 1. TL;DR
 
-**Phase 1 next up:** Slice A (carriers) — Slice F's committed-anchor composes are complete. The three committed anchors (AR + MT + FL) are all composed and mutually consistent. Chunked compose (ADR-051) shipped 2026-05-19. **FL was recomposed 2026-05-29** and is live in the app (`index.json` lists 05, 12, 30); the earlier county-score gap is **closed** — FL now carries the `county_scores` layer and ran all 11 joins, including `CountyScoreToTowerJoin` + `CountyScoreToSolarJoin` (§4.1). NC (37) remains **deferred / a Phase-1 stretch** — its re-fetch + compose is not a committed Slice-F deliverable (§4.2). (Remediation not yet committed — see §5.)
+**Phase 1 next up:** Slice A (carriers) — Slice F's committed-anchor composes are complete. The three committed anchors (AR + MT + FL) are all composed and mutually consistent. Chunked compose (ADR-051) shipped 2026-05-19. **FL was recomposed 2026-05-29** and is live in the app (`index.json` lists 05, 12, 30); the earlier county-score gap is **closed** — FL now carries the `county_scores` layer and ran all 11 joins, including `CountyScoreToTowerJoin` + `CountyScoreToSolarJoin` (§4.1). NC (37) remains **deferred / a Phase-1 stretch** — its re-fetch + compose is not a committed Slice-F deliverable (§4.2). (Audit remediation + FL recompose merged to `main` 2026-05-29 — see §5.)
 
 | State | Raw data | Normalized | Composed | Notes |
 |---|---|---|---|---|
@@ -48,6 +48,8 @@ Three committed anchors: AR + MT + FL. Dropped entirely from this cut: IN (18) a
 - The v3 preprocess framework, the puller, Git + CI.
 - Map app at `app/` — Svelte 5 + MapLibre + PMTiles + DuckDB-WASM; reads catalog-driven composites for any composed state.
 - **FL normalizer code** is correct and verified (geometry bug fixed; ADR-050 streaming per-county normalizer). FL re-normalized + composed successfully on 2026-05-26 via the chunked path (ADR-051); re-running `python scripts/preprocess.py --state 12` reproduces it.
+- **Chunked compose** (ADR-051) — memory-bounded per-county streaming Composer; the only compose path now (single-shot retired 2026-05-27). Closed #9.
+- **Solar→parcel enrichment** — `SolarToParcelJoin` combines USPVDB polygons + EIA-860 points (both normalize to the `solar_facility` type); `has_solar` / `solar_count` populated on parcels in AR/MT/FL, covered by `tests/test_infra_to_parcel.py`. Closed #14.
 
 ---
 
@@ -58,7 +60,7 @@ Three committed anchors: AR + MT + FL. Dropped entirely from this cut: IN (18) a
 | NC raw data | ⏸️ Deferred | Deleted 2026-05-20. Re-fetch from NC OneMap deferred to a Phase-1 stretch (endpoint intermittently 504s). Not a committed Slice-F deliverable. §4.2 |
 | NC normalize + compose | ⏸️ Deferred | Follows the deferred NC re-fetch — future stretch, not gating. |
 | FCC ULS normalizers (carriers) | ⬜ Slice A | Raw data on disk (~5 GB across 6 bands). Phase 1 needs Cellular + PCS + AWS/700 (ADR-013 reverses for these). |
-| Billboard + solar normalizers / joins | ⬜ Slice C | Raw on disk for FL/NC billboards; solar partial. ADR-014 partially reverses. |
+| Billboards normalizer + join | 🟡 Slice C (partial) | `fdot_/ncdot_/txdot_billboards` normalizers + `BillboardToParcelJoin` are registered and emit `has_billboard`/`billboard_count`, but billboard raw isn't populated for the anchors (FL composed the join as a no-op) and there are no tests yet (#13). ADR-014 partially reverses. *(Solar join is done — see §2, #14.)* |
 | Backend (Postgres + S3 + FastAPI + auth) | ⬜ Slice D+E | Per [ADR-055](./adr/0055-hosted-private-backend.md). Tenant-shaped schema Day 1. |
 | Lease doc upload + LLM extraction | ⬜ Slice D+E | Per [ADR-059](./adr/0059-llm-lease-extraction.md). 20-lease gold-set built first. |
 | Tunable scoring UI | ⬜ Slice C | Per [ADR-058](./adr/0058-tunable-transparent-scoring.md). Client-side over DuckDB-WASM. |
@@ -115,15 +117,17 @@ Section 5 + the Section 4 source rewrites + AR/MT data-quality remediation + doc
 
 This pivot's docs (this STATUS, SCOPE, GOALS, ROADMAP rewrites + 7 new ADRs + session summary + CONTEXT additions) commit as a single set documenting the 2026-05-25 phase shift.
 
+**2026-05-29:** the audit-remediation work (map app fixes, preprocess hardening, FL recompose, doc reconciliation, CI lint/test fixes) was merged to `main` (PR #41; the stacked refactor + cleanup branches consolidated and deleted). The issue tracker was reconciled against this: **#9** (chunked compose), **#20** (FL compose), and **#14** (solar→parcel join) closed as completed; **#10**/**#21** (NC) marked `deferred`; **#27** (Steel-in-the-Air) flagged premise-overturned → `ready-for-human`.
+
 ---
 
 ## 6. Phase 1 slice progress
 
 | Slice | State |
 |---|---|
-| **F** — Anchor composes (AR + MT + FL; FL recomposed 2026-05-29, county-score gap closed). NC compose deferred. | 🟢 Committed anchors composed — gate met (remediation not yet committed) |
+| **F** — Anchor composes (AR + MT + FL; FL recomposed 2026-05-29, county-score gap closed). NC compose deferred. | 🟢 Committed anchors composed — gate met; merged to `main` 2026-05-29 (closed #9 chunked compose, #20 FL compose) |
 | **A** — FCC ULS carrier identification | ⬜ Next up |
-| **C** — Asset enrichment + tunable scoring UI | ⬜ |
+| **C** — Asset enrichment + tunable scoring UI | ⬜ Partial: solar→parcel join done (#14); billboards partial (#13), scoring component-storage partial (#15), tunable UI not started (#29) |
 | **D + E** — Lease docs + triage state + backend | ⬜ |
 | **B** — Vendor inference | ⬜ |
 
