@@ -67,6 +67,7 @@ def test_active_parcel_adapters_register():
         "fl_fgdl_parcels",
         "mt_cadastral_parcels",
         "nc_onemap_parcels",
+        "wv_parcels",
     ]
 
 
@@ -259,6 +260,144 @@ def test_fdor_missing_census_bk_falls_back_to_state_fips():
     out = map_layer_to_canonical(g, FDOR_NAL_ADAPTER)
     assert out["county_fips"].iloc[0] is None
     assert out["state_fips"].iloc[0] == "12"
+
+
+# ── WV: county resolver (Mc collation), sidecar-join fields, full mailing ─
+
+
+def test_wv_county_resolver_handles_mc_collation_and_names():
+    """WV's CountyID 01..55 is alphabetical and does NOT equal Census FIPS:
+    Census collates McDowell (54047) before Marion (54049). The resolver must
+    map both the 2-digit code and the county name to the right Census FIPS."""
+    from preprocess.normalizers.state_parcel_adapters.wv import (
+        WV_COUNTY_CODE_TO_FIPS,
+        WV_COUNTY_NAME_TO_FIPS,
+        _resolve_wv_county,
+    )
+
+    # The Mc-collation quirk — a naive 2*N-1 prefix would mis-assign these.
+    assert _resolve_wv_county("27") == "54047"  # McDowell by code
+    assert _resolve_wv_county("24") == "54049"  # Marion by code
+    assert _resolve_wv_county("MCDOWELL") == "54047"
+    assert _resolve_wv_county("Marion") == "54049"
+    assert _resolve_wv_county("01") == "54001"  # Barbour
+    assert _resolve_wv_county("Wyoming") == "54109"
+    assert _resolve_wv_county("") is None
+    assert _resolve_wv_county("NOT A COUNTY") is None
+
+    # Table integrity: 55 counties, the odd 54001..54109 Census range, no dupes.
+    assert len(WV_COUNTY_NAME_TO_FIPS) == 55
+    assert len(WV_COUNTY_CODE_TO_FIPS) == 55
+    odd_range = [f"54{n:03d}" for n in range(1, 110, 2)]
+    assert sorted(WV_COUNTY_NAME_TO_FIPS.values()) == odd_range
+    assert set(WV_COUNTY_CODE_TO_FIPS.values()) == set(WV_COUNTY_NAME_TO_FIPS.values())
+
+
+def test_wv_parcels_mapping_post_join():
+    """WV canonical mapping over a frame shaped like the post-AttributeJoin
+    result (MasterSurfWV polygon columns + joined ParcelSummary columns):
+    county from CountyID code, owner/value/land-use from the joined columns,
+    and mailing_addr as the full single line (no city/state/zip duplication)."""
+    from preprocess.normalizers.state_parcel_adapters.wv import WV_PARCELS_ADAPTER
+
+    g = _gdf(
+        [
+            {  # CountyID 27 = McDowell -> 54047
+                "CleanParcelID": "W1",
+                "CountyID": "27",
+                "FullOwnerName": None,  # polygon owner can be null; Owner1 wins
+                "Owner1": "ALICE SMITH",
+                "Owner2": "BOB SMITH",
+                "FullOwnerAddress": "1 MAIN ST, WELCH, WV 24801",
+                "OwnerCity": "WELCH",
+                "OwnerStateCode": "WV",
+                "OwnerZipCode": "24801",
+                "FullPhysicalAddress": "1 MAIN ST",
+                "CalculatedAcres": 5.0,
+                "LandAppraisal": 1000,
+                "BuildingAppraisal": 2000,
+                "TotalAppraisal": 3000.0,
+                "LandUseCode": "112",
+                "LandUse": "112 - Active Farm",
+                "geometry": _square(),
+            },
+            {  # CountyID 24 = Marion -> 54049
+                "CleanParcelID": "W2",
+                "CountyID": "24",
+                "FullOwnerName": None,
+                "Owner1": "CARL JONES",
+                "Owner2": "",
+                "FullOwnerAddress": "2 OAK AVE, FAIRMONT, WV 26554",
+                "OwnerCity": "FAIRMONT",
+                "OwnerStateCode": "WV",
+                "OwnerZipCode": "26554",
+                "FullPhysicalAddress": "2 OAK AVE",
+                "CalculatedAcres": 1.0,
+                "LandAppraisal": 500,
+                "BuildingAppraisal": 0,
+                "TotalAppraisal": 500.0,
+                "LandUseCode": "100",
+                "LandUse": "100 - Residential Vacant",
+                "geometry": _square(),
+            },
+        ]
+    )
+    out = map_layer_to_canonical(g, WV_PARCELS_ADAPTER)
+    assert out["county_fips"].tolist() == ["54047", "54049"]
+    assert out["state_fips"].tolist() == ["54", "54"]
+    assert out["owner_name"].tolist() == ["ALICE SMITH", "CARL JONES"]
+    assert out["owner_name_2"].tolist() == ["BOB SMITH", ""]
+    # mailing_addr is the full single line — NOT the city/state/zip appended.
+    assert out["mailing_addr"].iloc[0] == "1 MAIN ST, WELCH, WV 24801"
+    assert out["mailing_city"].iloc[0] == "WELCH"
+    assert out["mailing_state"].iloc[0] == "WV"
+    assert out["mailing_zip"].iloc[0] == "24801"
+    assert out["situs_addr"].iloc[0] == "1 MAIN ST"
+    assert out["land_value"].tolist() == [1000.0, 500.0]
+    assert out["improvement_value"].tolist() == [2000.0, 0.0]
+    assert out["assessed_value"].tolist() == [3000.0, 500.0]
+    assert out["land_use_code"].tolist() == ["112", "100"]
+    assert out["acreage"].tolist() == [5.0, 1.0]
+
+
+# ── mailing_addr_is_full: full single-line address isn't duplicated ───────
+
+
+def test_mailing_addr_is_full_skips_structured_append():
+    """With mailing_addr_is_full=True the composite is just the full-line
+    candidate; the structured city/state/zip columns still populate but are
+    not re-appended. The default (False) appends them (and would duplicate)."""
+    field_map = {
+        "owner_name": ["O"],
+        "mailing_addr": ["FULLADDR"],
+        "mailing_city": ["CITY"],
+        "mailing_state": ["ST"],
+        "mailing_zip": ["ZIP"],
+        "county_fips": ["CF"],
+    }
+    g = _gdf(
+        [
+            {
+                "O": "X",
+                "FULLADDR": "1 MAIN ST, WELCH, WV 24801",
+                "CITY": "WELCH",
+                "ST": "WV",
+                "ZIP": "24801",
+                "CF": "54047",
+                "geometry": _square(),
+            }
+        ]
+    )
+    full = ParcelAdapter(
+        source_id="t_full", state_fips="54", field_map=field_map, mailing_addr_is_full=True
+    )
+    out = map_layer_to_canonical(g, full)
+    assert out["mailing_addr"].iloc[0] == "1 MAIN ST, WELCH, WV 24801"
+    assert out["mailing_city"].iloc[0] == "WELCH"
+
+    default = ParcelAdapter(source_id="t_def", state_fips="54", field_map=field_map)
+    out2 = map_layer_to_canonical(g, default)
+    assert out2["mailing_addr"].iloc[0] == "1 MAIN ST, WELCH, WV 24801, WELCH, WV, 24801"
 
 
 # ── owner-kind inference runs through the canonical mapping ──────────────

@@ -77,7 +77,7 @@ _ACTIVE: list[DataSource] = [
     # Parcels — anchor states
     NC_PARCELS,
     FDOR_NAL,
-    *STATE_PARCELS_ACTIVE,  # MT + AR
+    *STATE_PARCELS_ACTIVE,  # MT + AR + WV
     # Distress overlays
     HUD_OZ,
     HUD_QCT,
