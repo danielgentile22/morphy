@@ -1,6 +1,6 @@
 # GLOSSARY — Domain Terms
 
-**Last updated:** 2026-05-25
+**Last updated:** 2026-05-29
 
 Alphabetical reference for every domain-specific term used across the docs and code. If a doc uses a term not defined here, file a fix.
 
@@ -79,6 +79,7 @@ For the canonical product-language slice (Vendor / Carrier / Registrant / Freest
 - **LBNL Tracking the Sun** — Lawrence Berkeley National Lab dataset of US rooftop / distributed PV installations. Dropped from active registry (ADR-016).
 - **Lead** — the co-founder's outreach unit. **Keyed on `owner_cluster_id`** ([ADR-056](./adr/0056-lead-equals-owner-cluster.md)) — one cluster = one lead, regardless of how many parcels the cluster owns. Outreach state (new / flagged / contacted / talking / won / lost / passed / re_engage_later) lives on the lead.
 - **Lease** — the carrier-side ground-lease record. Keyed on `(parcel_id, tower_asr_id, carrier_callsign)`. State machine: unknown → pending_upload → uploaded → extracted → verified → superseded. Document storage + LLM-extracted structured fields land here in Slice 4 ([ADR-059](./adr/0059-llm-lease-extraction.md)).
+- **Lease extraction** — the Slice 4 pipeline that turns an uploaded lease PDF into structured fields (rent, escalation, expiry, amendment count, parties, …) plus per-field confidence, via the Claude API. Sonnet 4.6 default with an Opus 4.7 retry path for low-confidence leases; prompt caching on. See [ADR-059](./adr/0059-llm-lease-extraction.md). **Design only — unimplemented as of 2026-05-29.**
 - **`lease_comp`** — per-area lease-rent benchmark table. Bootstrapped from Steel-in-the-Air free county-level data in Slice 4; augmented over time by extracted-lease rent from the cofounder's uploads. Powers the "comparables within X-mile radius" feature.
 - **libpostal** — native C library for international address normalization. Preferred for the address half of owner-cluster strengthening in Slice 4. Fall back to pure-Python `usaddress` if dep-management is painful.
 - **LLC unmasking** — the (sensitive, expensive) process of resolving the human(s) behind a legal entity. **Narrowed in [ADR-057](./adr/0057-budget-posture-reframed.md):** paid skip-trace + shell-piercing remain permanent non-goals; **free public-records officer disclosure** (Secretary of State business-entity lookups; UCC-1) is in scope for Phase 1 Slice 4 lead-detail panel.
@@ -110,7 +111,7 @@ For the canonical product-language slice (Vendor / Carrier / Registrant / Freest
 
 - **Parcel** — single legally-defined unit of real estate with a unique APN, polygon boundary, owner, mailing address, assessed value. Atomic geographic unit linking infrastructure to a human/entity. Not the same as a **Lead** (which is the owner-cluster).
 - **Persistent poverty** — USDA designation for counties with ≥ 20% poverty rate sustained over the past ~30 years.
-- **Phase 1** — the current cut. Co-founder-facing product across AR + MT + FL + NC, freestanding towers only. Slices F → A → C → D+E → B. See [SCOPE.md](./SCOPE.md), [ADR-053](./adr/0053-product-phase-shift.md).
+- **Phase 1** — the current cut. Co-founder-facing product across the committed anchors AR + MT + FL (NC demoted 2026-05-29 to a deferred Phase-1 stretch), freestanding towers only. Slices F → A → C → D+E → B. See [SCOPE.md](./SCOPE.md), [ADR-053](./adr/0053-product-phase-shift.md).
 - **Phase 2** — post-Phase-1 expansion. Rooftop installations + mass email + paid Steel-in-the-Air tier + self-serve refresh + recorded-lease automation. See [ROADMAP.md](./ROADMAP.md).
 - **PII** — Personally Identifiable Information. Parcel-owner names + mailing addresses meet most PII definitions even when individually public-record. See ADR-040 + [SECURITY.md](./SECURITY.md).
 - **PMTiles** — single-file format for vector tiles. HTTP Range-request friendly; no tile server needed. Used for the parcel base layer in the map app.
@@ -132,8 +133,9 @@ For the canonical product-language slice (Vendor / Carrier / Registrant / Freest
 - **safe_merge** — helper in `scripts/preprocess/base.py` that drops pre-existing target columns before a pandas merge, preventing `_x` / `_y` column collisions when a Join adds columns that Normalizers initialize. See ADR-020.
 - **SCOPE** — see [SCOPE.md](./SCOPE.md). The locked definition of what's in / out of the current cut.
 - **Schema version** — integer field stamped on every canonical output (`_schema_version`). Bumps when the canonical-type schema changes.
+- **Scoring profile** — a saved set of client-side interestingness-score weights. Under the tunable/transparent scoring model the score components are stored in parquet and the weights are set via UI sliders; a scoring profile persists a chosen weighting so the co-founder can switch between prioritization lenses. See [ADR-058](./adr/0058-tunable-transparent-scoring.md) and **Interestingness score**.
 - **Skip-trace** — paid contact-data resolution (phone, email, current address) via third-party vendors (Whitepages Pro, Cole Information, IDI, Pipl). Permanent non-goal for Phase 1 per [ADR-057](./adr/0057-budget-posture-reframed.md) (narrowing ADR-041). Phase 2 unlock conversation.
-- **Slice** — one unit of Phase 1 work with its own "shipped" gate. Phase 1 slices in order: **F** (finish FL+NC), **A** (carriers via ULS), **C** (asset enrichment + tunable scoring UI), **D+E** (lease docs + backend + triage state), **B** (vendor inference). See [GOALS.md §3](./GOALS.md) for gates.
+- **Slice** — one unit of Phase 1 work with its own "shipped" gate. Phase 1 slices in order: **F** (committed-anchor composes AR+MT+FL; NC deferred), **A** (carriers via ULS), **C** (asset enrichment + tunable scoring UI), **D+E** (lease docs + backend + triage state), **B** (vendor inference). See [GOALS.md §3](./GOALS.md) for gates.
 - **SoS** — Secretary of State. Each state's SoS publishes business-entity records (LLC formation, officers, registered agent). **In scope for Phase 1 Slice 4** lead-detail panel as a one-click helper — see [ADR-057](./adr/0057-budget-posture-reframed.md).
 - **Spatial join** — assigning attributes from one geographic layer to another based on spatial relationship (typical case: point-in-polygon, "which parcel contains this tower").
 - **Steel-in-the-Air** — third-party publisher of cell-tower lease-rent benchmarks. Free tier publishes county-level rent averages (~3000 counties); paid tier has finer granularity. **Free tier bootstraps the `lease_comp` table in Slice 4** — see session summary §Comparables. Paid tier is a Phase 2 unlock.

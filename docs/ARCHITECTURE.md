@@ -3,7 +3,7 @@
 **Last updated:** 2026-05-25
 **Audience:** engineers (human or AI) who need to understand or extend the code without reading every file.
 
-This doc describes what's *implemented today* plus the Phase 1 Slice 4 backend in design. Future-state designs live in [ROADMAP.md](./ROADMAP.md). Design decisions are locked under [docs/adr/](./adr/) — [DECISIONS.md](./DECISIONS.md) is the cross-doc index.
+This doc describes what's *implemented today* plus the Phase 1 Slice 4 backend, which is a **locked design that is UNIMPLEMENTED** (no `backend/` code exists on disk as of 2026-05-29). Future-state designs live in [ROADMAP.md](./ROADMAP.md). Design decisions are locked under [docs/adr/](./adr/) — [DECISIONS.md](./DECISIONS.md) is the cross-doc index.
 
 ---
 
@@ -302,6 +302,8 @@ The v1 Leaflet prototype is retired (preserved in git history). The realized des
 ---
 
 ## 5. Subsystem 4 — The backend (Slice 4 — in design, `backend/`)
+
+> **NOTE:** Everything in this section is a **locked DESIGN that is UNIMPLEMENTED** as of 2026-05-29. No `backend/` directory or code exists on disk yet — it stands up in Phase 1 Slice 4 (D + E). The tables, routes, and decisions below describe the intended build, not shipped code.
 
 A small FastAPI + Postgres + S3-compatible + Claude-API service that stands up in Phase 1 Slice 4 (D + E). Holds the **write-layer features** the static map app can't: lead state, uploaded lease PDFs, LLM-extracted lease fields, activity log, per-user scoring profiles, manual owner-cluster merge/split overrides. Lives **alongside** the static map app — the map app reads parquet + PMTiles via HTTP range requests for analytical layers, and hits the backend over a thin API for the write-layer state.
 

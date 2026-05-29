@@ -43,11 +43,11 @@ Eight-section production-readiness plan oriented to a pitch-quality demo across 
 
 ## Present — Phase 1 (the product cut)
 
-On **2026-05-25** the project pivoted from "pitch-quality demo" to "fleshed-out co-founder-facing product" — see [ADR-053](./adr/0053-product-phase-shift.md). The 4 anchor states remain (AR + MT + FL + NC); the audience changed; several previously-deferred feature areas flipped to in-scope.
+On **2026-05-25** the project pivoted from "pitch-quality demo" to "fleshed-out co-founder-facing product" — see [ADR-053](./adr/0053-product-phase-shift.md). The committed anchors are **AR + MT + FL** (NC demoted to a deferred Phase-1 stretch 2026-05-29 — see [SCOPE.md §2](./SCOPE.md)); the audience changed; several previously-deferred feature areas flipped to in-scope.
 
 Slice plan (untimed, goal-driven):
 
-1. **F** — Finish FL + NC composes (chunked compose ADR-051 + NC re-fetch)
+1. **F** — Committed-anchor composes (AR + MT + FL); FL recomposed 2026-05-29, county-score gap closed (chunked compose ADR-051). NC re-fetch + compose **deferred** (Phase-1 stretch).
 2. **A** — FCC ULS carrier identification (Cellular + PCS + AWS / 700)
 3. **C** — Asset enrichment (billboards + solar on parcel) + tunable scoring UI
 4. **D + E** — Lease doc upload + LLM extraction + triage state / write layer / CSV exports (backend stands up here per [ADR-055](./adr/0055-hosted-private-backend.md))

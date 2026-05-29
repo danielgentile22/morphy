@@ -1,6 +1,6 @@
 # ADR-055: Hosted-private backend with tenant-shaped schema from Day 1
 
-**Status:** Accepted
+**Status:** Accepted — **locked design, UNIMPLEMENTED as of 2026-05-29 (Slice 4; no `backend/` code exists yet).**
 **Supersedes:** ADR-006 (static-site, no backend) — for write-layer features only; read-only analytical layers stay static.
 **Date:** 2026-05-25
 **Pairs with:** ADR-053

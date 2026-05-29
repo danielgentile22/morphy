@@ -1,6 +1,6 @@
 # ADR-059: LLM extraction approach for lease documents (Slice 4)
 
-**Status:** Accepted
+**Status:** Accepted — **locked design, UNIMPLEMENTED as of 2026-05-29 (Slice 4; no `backend/` code exists yet).**
 **Date:** 2026-05-25
 **Pairs with:** ADR-053, ADR-055
 

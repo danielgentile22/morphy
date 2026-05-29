@@ -205,7 +205,7 @@ supplement with no `.shp` cannot enter a spatial pipeline.
 
 ## 🚫 NC parcel fetch incomplete — stalled on a server 504
 
-**Added 2026-05-20. Updated 2026-05-20.**
+**Added 2026-05-20. Updated 2026-05-29:** the NC partial (~8.6 GB) was **deleted 2026-05-20**, and NC was **demoted from the committed anchors on 2026-05-29** — it's now a deferred Phase-1 stretch (re-fetch is not a Slice-F gate). The forensic detail below describes the fetch state *as of 2026-05-20* and is retained for whoever picks NC back up; see [STATUS.md §4.2](./STATUS.md) for the current position.
 
 The NC OneMap MapServer auto-fetch (ADR-048) is **~93% done** —
 **1,106 of 1,186** pages (offsets 0–5,525,000, ~8.6 GB) are fetched
@@ -224,7 +224,9 @@ driver pointed at the existing `.partial/`.
 Implication:
 
 - NC cannot be normalized or composed until the remaining ~80 pages
-  land. NC remains a blocker for "all 4 anchor states compose."
+  land. Since NC was demoted to a deferred Phase-1 stretch (2026-05-29),
+  this no longer blocks the committed-anchor set (AR + MT + FL) — it is
+  deferred work, not a Slice-F gate.
 - NC compose (~5.9M parcels) will also hit the memory wall above.
 
 How to mitigate:

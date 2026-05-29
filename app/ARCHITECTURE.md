@@ -25,15 +25,17 @@ The app reads, from one origin under `/data/processed/composite/`:
 - `<fips>/catalog.json` — per-state layer/view manifest + field schema.
 - `<fips>/summary.json` — headline counts for the summary card.
 
-`src/lib/schema.ts` pins the v3 composite field names. If a future
-compose renames a field, that one file fails `npm run check` — drift is
-caught at build time, not as a blank detail panel.
+`src/lib/schema.ts` pins the v3 composite field names. The
+schema-completeness contract (`tests/unit/schema-completeness.test.ts`)
+fails `npm run test:unit` if a future compose renames or drops a field —
+drift is caught in CI, not as a blank detail panel.
 
 ## Three map data layers
 
 1. **Catalog GeoJSON** — towers, distress overlays, solar facilities and
-   the five interestingness views. Loaded as MapLibre GeoJSON sources;
-   heavy views lazy-load on first toggle.
+   the catalog views: one interestingness view (`interestingness_top_1000`)
+   plus segment/summary views (see `<fips>/catalog.json` for the live set).
+   Loaded as MapLibre GeoJSON sources; heavy views lazy-load on first toggle.
 2. **Parcel base layer** — `<fips>/parcels.pmtiles` vector tiles (2.1 M AR
    / 920 K MT parcels), discovered by convention, read over HTTP Range.
    12 attributes are baked into the tiles for instant click/paint.

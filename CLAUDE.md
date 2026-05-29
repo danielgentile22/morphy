@@ -4,12 +4,13 @@ Orientation for Claude Code sessions working in this repo. Read this
 first; then dip into the relevant doc under [docs/](docs/) when you
 need depth.
 
-**Last updated:** 2026-05-27 (doc cleanup pass; legacy ADRs migrated to `docs/adr/`).
+**Last updated:** 2026-05-29 (audit remediation: NC demoted from the anchor set, backend labeled design-only, doc drift swept; see docs/STATUS.md).
 
 > **🔀 2026-05-25 phase shift:** The project pivoted from "v1 pitch
 > demo" to **Phase 1 of a co-founder-facing product** — see
 > [ADR-053](docs/adr/0053-product-phase-shift.md). Phase 1 is
-> freestanding towers across AR + MT + FL + NC; Phase 2 is rooftops
+> freestanding towers across AR + MT + FL (NC deferred to a Phase-1
+> stretch candidate); Phase 2 is rooftops
 > ([ADR-054](docs/adr/0054-asset-universe-phase-1-2.md)). Several legacy
 > ADRs were superseded, narrowed, or partially reversed — see
 > [docs/DECISIONS.md](docs/DECISIONS.md) for the full index.
@@ -107,7 +108,7 @@ pilot/
 │   └── archive/              Historical (preprocess v1, original v3 plan)
 ├── app/                      Svelte 5 + MapLibre map app (see app/ARCHITECTURE.md)
 ├── app_puller/               PySide6 desktop puller
-├── backend/                  FastAPI + Postgres + S3 + Claude API (Slice 4 — in design)
+├── backend/                  DESIGN ONLY — NOT YET IMPLEMENTED (Slice 4; no code on disk). Planned: FastAPI + Postgres + S3 + Claude API
 ├── scripts/
 │   ├── fetch/                Headless puller library
 │   ├── preprocess/           Normalizer/Join/View framework + Composer
@@ -209,7 +210,7 @@ confirming the publisher's terms have changed.**
 
 ## 7. Pilot geography reference
 
-State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). Phase 1 anchor states: `05` (AR), `12` (FL), `30` (MT), `37` (NC). Dropped (no owner data): `18` (IN — ADR-017), `49` (UT — ADR-049). Live anchor set + per-state status in [docs/SCOPE.md §2](docs/SCOPE.md) / [docs/STATUS.md](docs/STATUS.md).
+State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). Phase 1 committed anchor states: `05` (AR), `12` (FL), `30` (MT). Deferred / Phase-1 stretch: `37` (NC) — raw deleted 2026-05-20, re-fetch + normalize + compose deferred (NC OneMap re-fetch intermittently 504s); still in the picture, just not a committed anchor. Dropped entirely (no owner data): `18` (IN — ADR-017), `49` (UT — ADR-049). Live anchor set + per-state status in [docs/SCOPE.md §2](docs/SCOPE.md) / [docs/STATUS.md](docs/STATUS.md).
 
 ---
 
@@ -229,7 +230,7 @@ State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). Ph
   add status / validity columns; let Joins and Views filter.
 - **Use `safe_merge`** when a Join adds columns that a Normalizer
   initializes as placeholders ([ADR-020](docs/adr/0020-safe-merge-helper.md)).
-- **Backend (Slice 4) — `tenant_id` everywhere** ([ADR-055](docs/adr/0055-hosted-private-backend.md)). Every table has it; every route filters by it.
+- **Backend (Slice 4) — `tenant_id` everywhere** (design only — unimplemented) ([ADR-055](docs/adr/0055-hosted-private-backend.md)). Every table has it; every route filters by it.
 
 ---
 
@@ -254,7 +255,7 @@ State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). Ph
 | Puller UX design | [docs/PULLER_UX.md](docs/PULLER_UX.md) |
 | Map app — architecture + how to run | [app/ARCHITECTURE.md](app/ARCHITECTURE.md) |
 | Data-source legal/license research (2026-05-26) | [docs/research/](docs/research/) |
-| Active work plan | `.claude/plans/cached-wobbling-token.md` |
+| Active work plan | [docs/STATUS.md](docs/STATUS.md) + [docs/ROADMAP.md](docs/ROADMAP.md) |
 | What's on disk + last fetch time | `data/manifest.json` |
 | Last 200 puller events | `data/fetch.log` |
 | Per-source canonical-schema mapping | `scripts/preprocess/normalizers/<source>.py` |

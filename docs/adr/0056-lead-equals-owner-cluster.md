@@ -1,6 +1,6 @@
 # ADR-056: Lead = owner-cluster as the triage primitive
 
-**Status:** Accepted
+**Status:** Accepted — **locked design, UNIMPLEMENTED as of 2026-05-29 (Slice 4; no `backend/` code exists yet).**
 **Date:** 2026-05-25
 **Pairs with:** ADR-053, ADR-058. **Drives a follow-up to:** ADR-024.
 
