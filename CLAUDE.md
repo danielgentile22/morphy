@@ -4,7 +4,7 @@ Orientation for Claude Code sessions working in this repo. Read this
 first; then dip into the relevant doc under [docs/](docs/) when you
 need depth.
 
-**Last updated:** 2026-05-29 (audit remediation: NC demoted from the anchor set, backend labeled design-only, doc drift swept; **WV (54) added + elevated to a committed Phase-1 anchor — ADR-060**; see docs/STATUS.md).
+**Last updated:** 2026-05-30 (**the first backend code landed** — the Slice 1 lead-triage write-layer tracer: cross-state owners index + tenant-scoped FastAPI/SQLAlchemy Lead backend + Candidates/Lead UI, #47 / PR #54; `backend/` is no longer design-only). Prior: 2026-05-29 audit remediation (NC demoted from the anchor set; doc drift swept; **WV (54) added + elevated to a committed Phase-1 anchor — ADR-060**); see docs/STATUS.md.
 
 > **🔀 2026-05-25 phase shift:** The project pivoted from "v1 pitch
 > demo" to **Phase 1 of a co-founder-facing product** — see
@@ -109,7 +109,7 @@ pilot/
 │   └── archive/              Historical (preprocess v1, original v3 plan)
 ├── app/                      Svelte 5 + MapLibre map app (see app/ARCHITECTURE.md)
 ├── app_puller/               PySide6 desktop puller
-├── backend/                  DESIGN ONLY — NOT YET IMPLEMENTED (Slice 4; no code on disk). Planned: FastAPI + Postgres + S3 + Claude API
+├── backend/                  FastAPI + SQLAlchemy lead-triage write-layer (Slice 1 tracer, #47 — tenant-scoped Lead state; SQLite dev / Postgres). S3 + Claude API + magic-link auth still planned. See backend/README.md
 ├── scripts/
 │   ├── fetch/                Headless puller library
 │   ├── preprocess/           Normalizer/Join/View framework + Composer
@@ -127,6 +127,8 @@ The full repository layout + system diagram is in
 ## 3. The current work plan
 
 Phase 1 slice plan (untimed, goal-driven): **F → A → C → D+E → B**. After Slice B, the **4-week outcome-bar clock** starts (cofounder uses the product as his primary daily triage tool for 4 consecutive weeks).
+
+> **Update (2026-05-30):** the ADR-055/056 write-layer (originally part of D+E) was pulled ahead via the lead-centric triage redesign, and its end-to-end **tracer is merged** (#47 / PR #54) — a cross-state owners-index precompute + a tenant-scoped FastAPI/Postgres Lead backend + a Candidates/Lead UI. Lease-doc upload + LLM extraction (the rest of D+E) remain unimplemented; see docs/STATUS.md §6.
 
 Per-slice "shipped" gates in [docs/GOALS.md §3](docs/GOALS.md). Current slice + blockers in [docs/STATUS.md](docs/STATUS.md) — always check it before starting a new task.
 
@@ -231,7 +233,7 @@ State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). Ph
   add status / validity columns; let Joins and Views filter.
 - **Use `safe_merge`** when a Join adds columns that a Normalizer
   initializes as placeholders ([ADR-020](docs/adr/0020-safe-merge-helper.md)).
-- **Backend (Slice 4) — `tenant_id` everywhere** (design only — unimplemented) ([ADR-055](docs/adr/0055-hosted-private-backend.md)). Every table has it; every route filters by it.
+- **Backend — `tenant_id` everywhere** (implemented in the Slice 1 write-layer tracer, #47; [ADR-055](docs/adr/0055-hosted-private-backend.md)). Every table has it; every route filters by it. SQLAlchemy ORM, SQLite dev / Postgres via `DATABASE_URL`; auth stubbed to tenant `1` until magic-link (next slice). See `backend/README.md`.
 
 ---
 
