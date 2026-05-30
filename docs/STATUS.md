@@ -1,7 +1,7 @@
 # STATUS — Where the project stands today
 
-**Last updated:** 2026-05-29
-**Updated by:** Phase 1 product pivot (ADRs 053–059 locked the decisions); 2026-05-29 audit-remediation pass — FL **recomposed** (county-score gap **closed**: 11 joins, `county_scores` layer + tower/solar county-score joins now present; consistent with AR/MT); merged to `main` 2026-05-29 and reconciled the issue tracker (closed #9 chunked compose, #20 FL compose, #14 solar join). **WV (54) added + elevated to a committed Phase-1 anchor 2026-05-29** (ADR-060, PR #44) — new `wv_parcels` source + adapter; `composite/54` built (1.39M parcels) and live in the app (§4.4)
+**Last updated:** 2026-05-30
+**Updated by:** **Slice 1 lead-triage write-layer tracer merged 2026-05-30** (#47 / PR #54) — the first backend code on disk: a cross-state owners-index precompute + a tenant-scoped FastAPI/SQLAlchemy Lead backend + a Candidates/Lead UI (§6). Prior: Phase 1 product pivot (ADRs 053–059 locked the decisions); 2026-05-29 audit-remediation pass — FL **recomposed** (county-score gap **closed**: 11 joins, `county_scores` layer + tower/solar county-score joins now present; consistent with AR/MT); merged to `main` 2026-05-29 and reconciled the issue tracker (closed #9 chunked compose, #20 FL compose, #14 solar join). **WV (54) added + elevated to a committed Phase-1 anchor 2026-05-29** (ADR-060, PR #44) — new `wv_parcels` source + adapter; `composite/54` built (1.39M parcels) and live in the app (§4.4)
 **Update cadence:** at the start of every slice and at every session handoff.
 
 A snapshot of reality. If this disagrees with the code or data, the code/data wins — fix the doc.
@@ -28,6 +28,8 @@ The project reframed from "v1 pitch-quality demo across 4 states" to "Phase 1 of
 ---
 
 ## 1. TL;DR
+
+**Backend is live (tracer):** the ADR-055/056 write-layer was pulled ahead via the lead-centric triage redesign, and its end-to-end tracer is **merged** (#47 / PR #54) — `backend/` now holds a tenant-scoped FastAPI + SQLAlchemy Lead service (SQLite dev / Postgres) plus a cross-state owners-index precompute (`scripts/preprocess/owners_index.py`, `--owners-index`). Lease-doc upload + LLM extraction + magic-link auth remain unimplemented (§6).
 
 **Phase 1 next up:** Slice A (carriers) — Slice F's committed-anchor composes are complete. The four committed anchors (AR + MT + FL + WV) are all composed and mutually consistent. Chunked compose (ADR-051) shipped 2026-05-19. **FL was recomposed 2026-05-29** and is live in the app (`index.json` lists 05, 12, 30, 54); the earlier county-score gap is **closed** — FL now carries the `county_scores` layer and ran all 11 joins, including `CountyScoreToTowerJoin` + `CountyScoreToSolarJoin` (§4.1). **WV (54) was added + committed as an anchor 2026-05-29** (new `wv_parcels` source + adapter, ADR-060, PR #44): `composite/54` is built (1.39M parcels, towers + distress joined) and live in the app (§4.4). NC (37) remains **deferred / a Phase-1 stretch** — its re-fetch + compose is not a committed Slice-F deliverable (§4.2). (Audit remediation + FL recompose merged to `main` 2026-05-29 — see §5.)
 
@@ -63,11 +65,12 @@ Four committed anchors: AR + MT + FL + **WV** (WV elevated 2026-05-29 — ADR-06
 | NC normalize + compose | ⏸️ Deferred | Follows the deferred NC re-fetch — future stretch, not gating. |
 | FCC ULS normalizers (carriers) | ⬜ Slice A | Raw data on disk (~5 GB across 6 bands). Phase 1 needs Cellular + PCS + AWS/700 (ADR-013 reverses for these). |
 | Billboards normalizer + join | 🟡 Slice C (partial) | `fdot_/ncdot_/txdot_billboards` normalizers + `BillboardToParcelJoin` are registered and emit `has_billboard`/`billboard_count`, but billboard raw isn't populated for the anchors (FL composed the join as a no-op) and there are no tests yet (#13). ADR-014 partially reverses. *(Solar join is done — see §2, #14.)* |
-| Backend (Postgres + S3 + FastAPI + auth) | ⬜ Slice D+E | Per [ADR-055](./adr/0055-hosted-private-backend.md). Tenant-shaped schema Day 1. |
+| Backend (FastAPI + Postgres + auth) | 🟡 Tracer merged (#47, PR #54) | Lead write-layer on disk: tenant-shaped `lead` / `contact_attempt`, `LeadStore` + `OwnersIndexService` + status ladder, stub tenant=`1` auth, SQLite dev / Postgres via `DATABASE_URL`. Per [ADR-055](./adr/0055-hosted-private-backend.md). S3 + magic-link auth still ⬜. |
+| Cross-state owners index (Lead identity) | 🟢 Merged (#47, PR #54) | `scripts/preprocess/owners_index.py` (`--owners-index`): name-anchored cross-state `display_cluster_id` + rollups (ADR-056 score). 16,287 owners across the 4 anchors, 79 cross-state. |
 | Lease doc upload + LLM extraction | ⬜ Slice D+E | Per [ADR-059](./adr/0059-llm-lease-extraction.md). 20-lease gold-set built first. |
 | Tunable scoring UI | ⬜ Slice C | Per [ADR-058](./adr/0058-tunable-transparent-scoring.md). Client-side over DuckDB-WASM. |
 | Vendor inference | ⬜ Slice B | ASR registrant + portfolio rollup. Lowest Phase 1 priority. |
-| Tests (Slice 4 backend + LLM eval + multi-tenancy) | ⬜ | Per [TESTING.md §11](./TESTING.md). |
+| Tests (backend + LLM eval + multi-tenancy) | 🟡 Partial | Backend `LeadStore` + multi-tenancy isolation + status-machine tests landed with the Slice 1 tracer (#47) — default SQLite, Postgres opt-in (`PILOT_TEST_DATABASE_URL` / `PILOT_TEST_TESTCONTAINERS=1`). LLM eval still ⬜. Per [TESTING.md §11](./TESTING.md). |
 
 ---
 
@@ -141,7 +144,7 @@ This pivot's docs (this STATUS, SCOPE, GOALS, ROADMAP rewrites + 7 new ADRs + se
 | **F** — Anchor composes (AR + MT + FL + WV; FL recomposed 2026-05-29, county-score gap closed). NC compose deferred. WV (54) added + committed as the 4th anchor 2026-05-29 (ADR-060, §4.4). | 🟢 Committed anchors composed — gate met; merged to `main` 2026-05-29 (closed #9 chunked compose, #20 FL compose; WV via PR #44) |
 | **A** — FCC ULS carrier identification | ⬜ Next up |
 | **C** — Asset enrichment + tunable scoring UI | ⬜ Partial: solar→parcel join done (#14); billboards partial (#13), scoring component-storage partial (#15), tunable UI not started (#29) |
-| **D + E** — Lease docs + triage state + backend | ⬜ |
+| **D + E** — Lease docs + triage state + backend | 🟡 Write-layer **tracer merged** (#47, PR #54): cross-state owners index + tenant-scoped Lead backend + Candidates/Lead UI. Lease-doc upload + LLM extraction still ⬜. |
 | **B** — Vendor inference | ⬜ |
 
 Outcome bar: co-founder uses the product as his primary daily triage tool for 4 consecutive weeks (after Slice B ships). See [GOALS.md §3](./GOALS.md).
