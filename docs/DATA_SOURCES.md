@@ -29,8 +29,8 @@ For higher-level context:
 - **`hifld_towers`** is **RETIRED** (DHS removed the public layer in 2024 — ADR-015).
 - **`regrid_parcels`** is **Phase 2+ unlock** (paid; ADR-010 reframed by [ADR-057](./adr/0057-budget-posture-reframed.md) — was "out of scope," now "current-budget posture").
 - **`lbnl_tts`** is **DROPPED** from active registry (superseded — ADR-016).
-- **`fcc_uls_cellular`, `fcc_uls_pcs`, `fcc_uls_aws`, `fcc_uls_700mhz`** are **Phase 1 Slice A** (in scope for carrier identification — [ADR-053](./adr/0053-product-phase-shift.md) partially reverses ADR-013).
-- **`fcc_uls_wcs`, `fcc_uls_micro`** remain **DEFERRED** (microwave is point-to-point backhaul, not carrier-tenancy; WCS is low-volume).
+- **`fcc_uls_cellular`** (Part 22, the `l_cell` bulk file) + the **PCS / AWS / 700 MHz radio-service-code subset of `fcc_uls_market`** (the `l_market` Market-Based Services bulk file) are **Phase 1 Slice A** (carrier identification — [ADR-053](./adr/0053-product-phase-shift.md) partially reverses ADR-013). The FCC does **not** ship `fcc_uls_pcs` / `_aws` / `_700mhz` as separate downloads — those bands are carved out of the single `l_market` file by `radio_service_code` (see §2–7).
+- The rest of `fcc_uls_market` (WCS code `WS`, 600 MHz `WT`, Narrowband PCS, paging, BRS/EBS, …) and **`fcc_uls_micro`** (Microwave, point-to-point backhaul) remain **DEFERRED** — not one of the four Phase-1 carrier bands.
 - **`fdot_billboards`, `ncdot_billboards`** are **Phase 1 Slice C as parcel enrichment** (ADR-014 partially reversed for FL + NC). `txdot_billboards` stays deferred (TX not in anchor states).
 - **`fl_fgdl_parcels`** is **REPLACED** by `fdor_nal` (ADR-019).
 - **`in_parcels`** is **MOTHBALLED** (no owner data — ADR-017).
@@ -47,12 +47,12 @@ For higher-level context:
 | # | Source | Category | Coverage | Automation | v1 status | Commercial use |
 |---|---|---|---|---|---|---|
 | 1 | FCC ASR | Towers | National | ✅ | ✓ active | ✅ Yes (public domain) |
-| 2 | FCC ULS — Cellular (Part 22) | Towers | National | ✅ | **Phase 1 Slice A** | ✅ Yes (public domain) |
-| 3 | FCC ULS — PCS | Towers | National | ✅ | **Phase 1 Slice A** | ✅ Yes (public domain) |
-| 4 | FCC ULS — AWS | Towers | National | ✅ | **Phase 1 Slice A** | ✅ Yes (public domain) |
-| 5 | FCC ULS — 700 MHz | Towers | National | ✅ | **Phase 1 Slice A** | ✅ Yes (public domain) |
-| 6 | FCC ULS — WCS | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
-| 7 | FCC ULS — Microwave (Part 101) | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
+| 2 | FCC ULS — Cellular (`fcc_uls_cellular`, Part 22, `l_cell`) | Towers | National | ✅ | **Phase 1 Slice A** | ✅ Yes (public domain) |
+| 3 | FCC ULS — Market-Based: PCS subset (`fcc_uls_market` `l_market`, code `CW`) | Towers | National | ✅ | **Phase 1 Slice A** | ✅ Yes (public domain) |
+| 4 | FCC ULS — Market-Based: AWS subset (`fcc_uls_market`, codes `AW/AT/AD/AH`) | Towers | National | ✅ | **Phase 1 Slice A** | ✅ Yes (public domain) |
+| 5 | FCC ULS — Market-Based: 700 MHz subset (`fcc_uls_market`, codes `WY/WZ/WU/WX`) | Towers | National | ✅ | **Phase 1 Slice A** | ✅ Yes (public domain) |
+| 6 | FCC ULS — Market-Based: WCS + other market services (`l_market` code `WS`, etc.) | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
+| 7 | FCC ULS — Microwave (`fcc_uls_micro`, Part 101) | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
 | 8 | FAA Digital Obstacle File (DOF) | Towers | National | ✅ | ✓ active | ✅ Yes (public domain) |
 | 9 | HIFLD Cellular Towers | Towers | National | 🚫 | ⊘ retired (2024) | ✅ Yes (open data) |
 | 10 | EIA Form 860 (annual) | Solar | National | ✅ | ✓ active | ✅ Yes (public domain) |
@@ -131,18 +131,33 @@ Pipe-delimited `.dat` files (no header row). Column order comes from
 
 ---
 
-## 2–7. FCC Universal Licensing System (ULS) — six radio services
+## 2–7. FCC Universal Licensing System (ULS)
 
-Six separate source IDs, one per band. **Phase 1 Slice A normalises bands 2–5 (Cellular + PCS + AWS + 700 MHz)** for carrier identification per tower ([ADR-053](./adr/0053-product-phase-shift.md) partially reverses ADR-013). Bands 6 + 7 (WCS, Microwave) remain deferred — WCS is low-volume; Microwave is point-to-point backhaul, not carrier-tenancy.
+**On-disk reality (corrected 2026-05-30, #12).** Despite the per-band IDs in the index above, the FCC ships only **two** relevant bulk files, mirrored on disk as two raw source dirs:
 
-| ID | Band | File | Approx size | Phase 1? |
+- **`fcc_uls_cellular`** → `l_cell` — Part 22 site-based Cellular, a single radio service (`CL`).
+- **`fcc_uls_market`** → `l_market` — the *Market-Based Services* bundle: PCS, AWS, 700 MHz **plus** WCS, 600 MHz, Narrowband PCS, paging, BRS/EBS and ~30 other geographic-area services, all interleaved in one table set and distinguished only by the HD `radio_service_code`.
+
+There is **no** separate `l_broad` / `l_aws` / `l_700` / `l_wcs` download — those rows all live inside `l_market`.
+
+**Phase 1 Slice A** (carrier identification, [ADR-053](./adr/0053-product-phase-shift.md) partially reverses ADR-013) normalizes **all of `l_cell`** plus the **PCS / AWS / 700 MHz `radio_service_code` subset of `l_market`**. Every other market service — notably WCS and the separate Microwave file (`l_micro`) — stays deferred. The normalizer (`scripts/preprocess/normalizers/fcc_uls.py`) writes the `cellular` band at `normalized/fcc_uls_cellular/` and the three market bands at `normalized/fcc_uls_market/{pcs,aws,700mhz}/`, each as canonical `license` / `location` / `entity` parquet + a `quality_report.json`. A `band` column on every row carries the classification downstream (#22/#24).
+
+### Radio-service-code → band classification (the Slice-A scope decision)
+
+| Band (in scope) | Source file | `radio_service_code`(s) |
+|---|---|---|
+| `cellular` | `l_cell` | `CL` |
+| `pcs` | `l_market` | `CW` (Broadband PCS, Part 24) |
+| `aws` | `l_market` | `AW` (AWS-1), `AT` (AWS-3), `AD` (AWS-4), `AH` (AWS H-Block) — Part 27 |
+| `700mhz` | `l_market` | `WY`, `WZ` (Lower), `WU` (Upper C), `WX` (Guard band) — Part 27 (`WP` mapped, absent in current extract) |
+
+Excluded as out of band-scope (a documented scope decision, **not** a quality filter): `WS` (WCS — deferred per ADR-013), `WT` (600 MHz), `CN` / `CY` (Narrowband PCS) and all other `l_market` services.
+
+| ID | Band(s) | File | Approx size (zip) | Phase 1? |
 |---|---|---|---|---|
-| `fcc_uls_cellular` | Cellular (Part 22) | `l_cell.zip` | ~220 MB | **Yes (Slice A)** |
-| `fcc_uls_pcs` | Broadband PCS | `l_broad.zip` | ~140 MB | **Yes (Slice A)** |
-| `fcc_uls_aws` | AWS | `l_aws.zip` | ~60 MB | **Yes (Slice A)** |
-| `fcc_uls_700mhz` | Lower/Upper 700 MHz | `l_700.zip` | ~40 MB | **Yes (Slice A)** |
-| `fcc_uls_wcs` | WCS 2.3 GHz | `l_wcs.zip` | ~10 MB | Deferred |
-| `fcc_uls_micro` | Microwave (Part 101) | `l_micro.zip` | ~350 MB | Deferred |
+| `fcc_uls_cellular` | Cellular (Part 22) | `l_cell.zip` | ~20 MB | **Yes (Slice A)** |
+| `fcc_uls_market` | PCS + AWS + 700 MHz (+ deferred WCS / 600 / NB-PCS / paging / …) | `l_market.zip` | ~75 MB | **PCS/AWS/700 subset (Slice A)** |
+| `fcc_uls_micro` | Microwave (Part 101) | `l_micro.zip` | ~185 MB | Deferred |
 
 - **Cadence:** Weekly (Sundays) · **Base URL:** `https://data.fcc.gov/download/pub/uls/complete/`
 - **Source page:** <https://www.fcc.gov/uls/transactions/daily-weekly>

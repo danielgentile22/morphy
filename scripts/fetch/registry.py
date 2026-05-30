@@ -32,7 +32,10 @@ from .sources.faa_oeaaa import SOURCE as FAA_OEAAA
 # Towers (active)
 from .sources.fcc_asr import SOURCE as FCC_ASR
 
-# Towers (deferred — large + complex schema; normalize post-pitch)
+# Towers — FCC ULS bulk files. Cellular (l_cell) + Market-Based (l_market; the
+# PCS/AWS/700 subset) are Phase 1 Slice A (ADR-053 partially reverses ADR-013);
+# Microwave + the cross-service ownership/transfers/leasing files stay deferred.
+# Split into active/deferred below.
 from .sources.fcc_uls import SOURCES as FCC_ULS_ALL
 
 # FL parcels — `fl_fgdl_parcels` is deferred (wrong dataset for landowner work);
@@ -65,11 +68,18 @@ from .sources.txdot_billboards import SOURCE as TXDOT_BILLBOARDS
 from .sources.usda_persistent_poverty import SOURCE as USDA_PP
 from .sources.uspvdb import SOURCE as USPVDB
 
+# FCC ULS Phase-1 split: the two bands we now normalize (Slice A, #12) go
+# active; Microwave + ownership/transfers/leasing stay deferred.
+FCC_ULS_ACTIVE = [s for s in FCC_ULS_ALL if s.id in ("fcc_uls_cellular", "fcc_uls_market")]
+FCC_ULS_DEFERRED = [s for s in FCC_ULS_ALL if s.id not in ("fcc_uls_cellular", "fcc_uls_market")]
+
 # ── active sources (v1 pitch scope) ──────────────────────────────────────
 _ACTIVE: list[DataSource] = [
     # Towers
     FCC_ASR,
     FAA_OEAAA,
+    *FCC_ULS_ACTIVE,  # FCC ULS Cellular + Market-Based (PCS/AWS/700) — Slice A
+
     # Solar
     EIA_860,
     EIA_860M,
@@ -92,9 +102,10 @@ _ACTIVE: list[DataSource] = [
 _DEFERRED: list[DataSource] = [
     # Retired — DHS removed the public HIFLD Cellular Towers layer in 2024.
     HIFLD_TOWERS,
-    # FCC ULS — ~5 GB raw across 3 per-band files + 3 cross-service files.
-    # Adds carrier/leasing context but not core to the landowner-side pitch.
-    *FCC_ULS_ALL,
+    # FCC ULS — Microwave (point-to-point backhaul) + the cross-service
+    # ownership / transfers / leasing files. Cellular + Market-Based moved to
+    # _ACTIVE for Slice A (ADR-053 partially reverses ADR-013).
+    *FCC_ULS_DEFERRED,
     # LBNL Tracking the Sun — superseded by USPVDB + EIA 860 for our purposes.
     LBNL_TTS,
     # State billboard datasets — not core to the cell-tower thesis.
