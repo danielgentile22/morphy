@@ -4,7 +4,9 @@
   function onChange(e: Event): void {
     const fips = (e.currentTarget as HTMLSelectElement).value;
     if (fips && fips !== app.activeFips) {
-      void app.selectState(fips);
+      // Picking a state frames the map on it (and loads its parcels/catalog);
+      // the all-anchors tower layer stays put underneath.
+      void app.focusState(fips);
     }
   }
 </script>

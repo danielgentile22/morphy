@@ -11,13 +11,14 @@
   // code — Vite 8 / Rolldown mis-compiles it (the GeoJSON tiler throws
   // "f is not defined"). Same pattern as the DuckDB-WASM worker.
   import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-csp-worker.js?url';
-  import type { FeatureCollection } from 'geojson';
+  import type { FeatureCollection, Point } from 'geojson';
   import { Protocol } from 'pmtiles';
   import { app, BASE_COUNTY, BASE_PARCELS } from '../lib/stores.svelte';
   import { entityKind } from '../lib/catalog';
   import { detectGeometryClasses } from '../lib/geo';
   import { layerColor, TOWER_MARKER_SVG, WONG } from '../lib/palette';
   import type { Props } from '../lib/schema';
+  import { towerHoverHtml, resolveTowerLeadKey, type TowerProps } from '../lib/towers';
 
   maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
@@ -48,6 +49,20 @@
 
   const US_BOUNDS: [number, number, number, number] = [-125, 24, -66, 50];
   const TOWER_ICON = 'tower-marker';
+
+  // Structures-first tower layer (Slice 4 / #50): one clustered source across
+  // every anchor state, the map's primary clickable layer. Lives outside the
+  // per-state catalog machinery (its own ids, never torn down on a state
+  // switch) so the all-anchors view persists. `towers` is the catalog name the
+  // LayerPanel toggle drives.
+  const TOWERS_SRC = 'towers-all';
+  const TL_CLUSTERS = 'towers-clusters';
+  const TL_COUNT = 'towers-cluster-count';
+  const TL_POINT = 'towers-point';
+  const TOWER_LAYER_IDS = [TL_CLUSTERS, TL_COUNT, TL_POINT];
+  let towerLayersAdded = false;
+  let towerHandlersAttached = false;
+  let towerPopup: maplibregl.Popup | undefined;
 
   // parcels:fill opacity — the plain zoom fade, and the filtered form
   // where DuckDB-matched parcels (feature-state `match`) stay bright.
@@ -147,6 +162,10 @@
 
     return () => {
       delete (window as unknown as { __pilotMap?: maplibregl.Map }).__pilotMap;
+      towerPopup?.remove();
+      towerPopup = undefined;
+      towerLayersAdded = false;
+      towerHandlersAttached = false;
       m.remove();
       map = undefined;
       ready = false;
@@ -429,6 +448,163 @@
     register(`${BASE_PARCELS}:line`, BASE_PARCELS, false);
   }
 
+  // ── structures-first tower layer ─────────────────────────────────────────
+
+  /** Navigate a clicked tower to its landowner's Lead, or warn when its
+   *  owner can't be clustered into a Lead (blank parcel_owner). */
+  function openTowerLead(props: TowerProps): void {
+    const key = resolveTowerLeadKey(props);
+    if (!key) {
+      app.notice = 'No landowner on file for this tower — nothing to open.';
+      return;
+    }
+    location.hash = `#/lead/${encodeURIComponent(key)}`;
+  }
+
+  // Click / hover handlers — attached once (the tower layers are never torn
+  // down, so the layer-scoped listeners stay valid for the map's lifetime).
+  function attachTowerHandlers(): void {
+    if (!map || towerHandlersAttached) return;
+    towerHandlersAttached = true;
+    towerPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
+
+    map.on('mouseenter', TL_POINT, (e) => {
+      if (!map) return;
+      map.getCanvas().style.cursor = 'pointer';
+      const f = e.features?.[0];
+      if (!f) return;
+      const coords = (f.geometry as Point).coordinates as [number, number];
+      towerPopup?.setLngLat(coords).setHTML(towerHoverHtml(f.properties as TowerProps)).addTo(map);
+    });
+    map.on('mouseleave', TL_POINT, () => {
+      if (map) map.getCanvas().style.cursor = '';
+      towerPopup?.remove();
+    });
+    map.on('click', TL_POINT, (e) => {
+      const f = e.features?.[0];
+      if (f) openTowerLead(f.properties as TowerProps);
+    });
+
+    map.on('mouseenter', TL_CLUSTERS, () => {
+      if (map) map.getCanvas().style.cursor = 'pointer';
+    });
+    map.on('mouseleave', TL_CLUSTERS, () => {
+      if (map) map.getCanvas().style.cursor = '';
+    });
+    map.on('click', TL_CLUSTERS, (e) => {
+      if (!map) return;
+      const f = map.queryRenderedFeatures(e.point, { layers: [TL_CLUSTERS] })[0];
+      const clusterId = f?.properties?.cluster_id;
+      const src = map.getSource(TOWERS_SRC) as maplibregl.GeoJSONSource | undefined;
+      if (clusterId == null || !src) return;
+      void src.getClusterExpansionZoom(clusterId).then((z) => {
+        map?.easeTo({ center: (f.geometry as Point).coordinates as [number, number], zoom: z });
+      });
+    });
+  }
+
+  function addTowerLayers(): void {
+    if (!map || towerLayersAdded || !app.towerPoints) return;
+    map.addSource(TOWERS_SRC, {
+      type: 'geojson',
+      data: app.towerPoints,
+      cluster: true,
+      clusterRadius: 50,
+      // Split into individual towers at high zoom (acceptance criterion).
+      clusterMaxZoom: 11,
+    });
+    // NB: deliberately NOT added to `sourceIds` — the tower source/layers are
+    // managed independently and must survive `clearRenderedLayers()` on a
+    // state switch (they only go away on full map teardown).
+
+    map.addLayer({
+      id: TL_CLUSTERS,
+      type: 'circle',
+      source: TOWERS_SRC,
+      filter: ['has', 'point_count'],
+      paint: {
+        'circle-color': WONG.blue,
+        'circle-opacity': 0.85,
+        'circle-stroke-width': 1.5,
+        'circle-stroke-color': '#ffffff',
+        // Grow with the number of towers in the cluster.
+        'circle-radius': ['step', ['get', 'point_count'], 13, 25, 17, 100, 22, 1000, 30],
+      },
+    });
+    map.addLayer({
+      id: TL_COUNT,
+      type: 'symbol',
+      source: TOWERS_SRC,
+      filter: ['has', 'point_count'],
+      layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12 },
+      paint: { 'text-color': '#ffffff' },
+    });
+
+    if (towerIconReady) {
+      map.addLayer({
+        id: TL_POINT,
+        type: 'symbol',
+        source: TOWERS_SRC,
+        filter: ['!', ['has', 'point_count']],
+        layout: {
+          'icon-image': TOWER_ICON,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'icon-size': ['interpolate', ['linear'], ['zoom'], 6, 0.4, 11, 0.6, 14, 0.85],
+        },
+        // Dim inactive towers so live structures stand out.
+        paint: { 'icon-opacity': ['case', ['get', 'active'], 0.95, 0.45] },
+      });
+    } else {
+      map.addLayer({
+        id: TL_POINT,
+        type: 'circle',
+        source: TOWERS_SRC,
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 4, 14, 8],
+          'circle-color': ['case', ['get', 'active'], WONG.black, '#9aa0aa'],
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#ffffff',
+        },
+      });
+    }
+    towerLayersAdded = true;
+    attachTowerHandlers();
+  }
+
+  /** Add (first time) or refresh the tower source data, keep it on top, and
+   *  honour the `towers` visibility toggle. */
+  function syncTowerLayers(): void {
+    if (!map || !app.towerPoints) return;
+    if (!towerLayersAdded) {
+      addTowerLayers();
+    } else {
+      const src = map.getSource(TOWERS_SRC) as maplibregl.GeoJSONSource | undefined;
+      src?.setData(app.towerPoints);
+    }
+    ensureTowersOnTop();
+    applyTowerVisibility();
+  }
+
+  /** Keep the tower layers above the per-state catalog/parcel layers, which a
+   *  state-switch rebuild re-adds on top. */
+  function ensureTowersOnTop(): void {
+    if (!map || !towerLayersAdded) return;
+    for (const id of TOWER_LAYER_IDS) {
+      if (map.getLayer(id)) map.moveLayer(id);
+    }
+  }
+
+  /** Tower layers follow the catalog `towers` visibility toggle (default on). */
+  function applyTowerVisibility(): void {
+    if (!map || !towerLayersAdded) return;
+    const vis = app.isLayerVisible('towers') ? 'visible' : 'none';
+    for (const id of TOWER_LAYER_IDS) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+    }
+  }
+
   function syncLayers(data: Record<string, FeatureCollection>): void {
     if (!map) return;
     clearRenderedLayers();
@@ -455,13 +631,18 @@
     for (const { name, classes } of entries) {
       if (classes.hasPolygon) addPolygonSublayers(name);
     }
-    // Point / symbol sublayers (drawn on top).
+    // Point / symbol sublayers (drawn on top). `towers` is map-owned (the
+    // global clustered layer) and never arrives in catalog data here, but
+    // skip it defensively so a future per-state load can't double-render it.
     for (const { name, classes } of entries) {
-      if (classes.hasPoint) addPointSublayer(name);
+      if (name !== 'towers' && classes.hasPoint) addPointSublayer(name);
     }
     applyVisibility();
     reapplyHighlight();
     applyFilterFade();
+    // Catalog/parcel layers were just (re)added on top — restore the tower
+    // layers to the very top so they stay the primary clickable layer.
+    ensureTowersOnTop();
   }
 
   /** The lowest point/symbol layer id, so an incrementally-added polygon
@@ -479,7 +660,7 @@
   // clearRenderedLayers()/syncLayers() would re-tile every source and
   // flicker the selection; this touches only the new layer.
   function addCatalogLayer(name: string, fc: FeatureCollection): void {
-    if (!map || map.getSource(`src:${name}`)) return;
+    if (!map || name === 'towers' || map.getSource(`src:${name}`)) return;
     const src = `src:${name}`;
     map.addSource(src, { type: 'geojson', data: fc, generateId: true });
     sourceIds.add(src);
@@ -562,6 +743,15 @@
 
   function onMapClick(e: maplibregl.MapMouseEvent): void {
     if (!map) return;
+    // Towers are the primary layer: a tower/cluster hit is handled by its own
+    // layer listener (open Lead / expand cluster), so don't also select the
+    // parcel beneath it.
+    if (towerLayersAdded && app.isLayerVisible('towers')) {
+      const towerIds = TOWER_LAYER_IDS.filter((id) => map!.getLayer(id));
+      if (towerIds.length && map.queryRenderedFeatures(e.point, { layers: towerIds }).length) {
+        return;
+      }
+    }
     const interactive = visibleInteractive();
     const baseFills = [`${BASE_PARCELS}:fill`, `${BASE_COUNTY}:fill`];
 
@@ -655,6 +845,7 @@
       if (added) {
         applyVisibility();
         reapplyHighlight();
+        ensureTowersOnTop();
       }
     });
   });
@@ -664,6 +855,16 @@
     void app.layerVisible;
     if (!map || !ready) return;
     applyVisibility();
+    applyTowerVisibility();
+  });
+
+  // Build / refresh the all-anchors tower layer once its data loads. Kept on
+  // its own effect (not the per-state catalog sync) so a state switch never
+  // rebuilds it — the structures-first layer is global.
+  $effect(() => {
+    void app.towerPoints;
+    if (!map || !ready) return;
+    untrack(() => syncTowerLayers());
   });
 
   // Fade non-matching parcels once per *settled* filter result. Driven by
@@ -678,11 +879,20 @@
     untrack(() => applyFilterFade());
   });
 
-  // Fit the map to the active state.
+  // Frame the map. Default is all anchors (structures-first — survey the
+  // whole pilot at once); an explicit state pick / deep-link frames that one.
   $effect(() => {
-    const st = app.activeState;
-    if (!map || !st) return;
-    map.fitBounds(st.bbox, { padding: 28, duration: ready ? 700 : 0 });
+    const focus = app.mapFocus;
+    const anchors = app.anchorBounds;
+    if (!map) return;
+    let bounds: maplibregl.LngLatBoundsLike | undefined;
+    if (focus.kind === 'state') {
+      bounds = app.index?.states.find((s) => s.fips === focus.fips)?.bbox;
+    } else {
+      bounds = anchors ?? undefined;
+    }
+    if (!bounds) return;
+    map.fitBounds(bounds, { padding: 28, duration: ready ? 700 : 0 });
   });
 
   // Highlight the selected feature; fly to it when a centre is supplied.

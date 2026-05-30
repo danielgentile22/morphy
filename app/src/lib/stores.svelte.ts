@@ -31,6 +31,15 @@ import { bboxCenter, parseGeomBbox } from './geo';
 import { emptyFilters, isAnyFilterActive, type FilterState } from './filters';
 import type { EntityKind, Props } from './schema';
 import { readUrlState } from './url';
+import { loadTowerPoints, type TowerProps } from './towers';
+import type { Point } from 'geojson';
+
+/** A pair of corners for MapLibre `fitBounds` — `[[w, s], [e, n]]`. */
+export type BoundsCorners = [[number, number], [number, number]];
+
+/** Where the map is framed: all anchors at once (structures-first default),
+ *  or zoomed to one focused state (an explicit StateSelector / deep-link pick). */
+export type MapFocus = { kind: 'anchors' } | { kind: 'state'; fips: string };
 
 export type { FilterStatus } from './filter-engine';
 
@@ -66,6 +75,7 @@ import {
   errMsg,
   pickInitialState,
   syncStateParam,
+  unionBounds,
 } from './stores-helpers';
 
 export class AppStore {
@@ -113,11 +123,25 @@ export class AppStore {
    *  detail panel shows a hint while loading and a banner on failure. */
   enrichmentStatus = $state<'idle' | 'loading' | 'error'>('idle');
 
+  // ── structures-first map (Slice 4 / #50) ──────────────────────────────
+  /** Tower points across every anchor state — the map's primary clustered
+   *  layer. Loaded once (independent of the active state) so the all-anchors
+   *  view survives state switches and route round-trips. */
+  towerPoints = $state<FeatureCollection<Point, TowerProps> | null>(null);
+  towersStatus = $state<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  towersError = $state<string | null>(null);
+  /** How the map is framed (all anchors by default; a state on explicit pick). */
+  mapFocus = $state<MapFocus>({ kind: 'anchors' });
+
   activeState = $derived<StateEntry | null>(
     this.index && this.activeFips
       ? (this.index.states.find((s) => s.fips === this.activeFips) ?? null)
       : null,
   );
+
+  /** Union of every anchor state's bbox — the all-anchors map framing.
+   *  Null until the index has loaded. */
+  anchorBounds = $derived<BoundsCorners | null>(unionBounds(this.index?.states ?? []));
 
   filtersActive = $derived(isAnyFilterActive(this.filters));
 
@@ -248,12 +272,20 @@ export class AppStore {
         );
       }
       this.index = index;
+      // Tower points span all anchors and are independent of the active
+      // state — kick the load off now and let the map render them when ready.
+      void this.loadTowers();
       const pick = pickInitialState(initialSearch, index.states);
       if (pick.invalidRequest) {
         this.notice = `No composed state "${pick.invalidRequest}" — showing ${
           index.states.find((s) => s.fips === pick.fips)?.name ?? pick.fips
         } instead.`;
       }
+      // Structures-first default: always frame all anchors at once. (?state=
+      // still picks which state's parcels/catalog load, and is auto-written to
+      // the URL — so it can't be read as an explicit "focus this state"
+      // intent; that comes only from a StateSelector pick → focusState.)
+      this.mapFocus = { kind: 'anchors' };
       await this.selectState(pick.fips);
       this.#restoreFromUrl(initialSearch);
     } catch (e) {
@@ -341,6 +373,31 @@ export class AppStore {
       this.status = 'error';
       this.errorMessage = errMsg(e);
     }
+  }
+
+  /** Load tower points across every anchor state into one clustered source.
+   *  Idempotent-ish: re-runnable on error; a success is kept for the session. */
+  async loadTowers(): Promise<void> {
+    if (this.towersStatus === 'loading' || this.towersStatus === 'ready') return;
+    const fipsList = this.index?.states.map((s) => s.fips) ?? [];
+    if (fipsList.length === 0) return;
+    this.towersStatus = 'loading';
+    this.towersError = null;
+    try {
+      this.towerPoints = await loadTowerPoints(fipsList);
+      this.towersStatus = 'ready';
+    } catch (e) {
+      this.towersError = errMsg(e);
+      this.towersStatus = 'error';
+    }
+  }
+
+  /** Frame the map on one state and load its detail (parcels / catalog).
+   *  The StateSelector calls this; boot uses the lower-level selectState so
+   *  it can keep the all-anchors framing. */
+  async focusState(fips: string): Promise<void> {
+    this.mapFocus = { kind: 'state', fips };
+    await this.selectState(fips);
   }
 
   /** Lazy-load a heavy view's GeoJSON on first toggle-on. */

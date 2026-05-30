@@ -7,6 +7,7 @@ import {
   errMsg,
   HEAVY_VIEWS,
   pickInitialState,
+  unionBounds,
 } from '../../src/lib/stores-helpers';
 
 const STATE_FIELDS: Omit<StateEntry, 'fips'> = {
@@ -28,10 +29,12 @@ function fakeCatalog(overrides: Partial<Catalog> = {}): Catalog {
 }
 
 describe('eagerAssets', () => {
-  it('returns layers + views with a geojsonPath, excluding HEAVY_VIEWS', () => {
+  it('returns layers + views with a geojsonPath, excluding HEAVY_VIEWS and map-owned towers', () => {
     const catalog = fakeCatalog({
       layers: [
+        // map-owned: drawn as the global clustered tower layer, not per-state
         { name: 'towers', geojsonPath: 't.geojson', rows: 1 },
+        { name: 'solar_facilities', geojsonPath: 's.geojson', rows: 1 },
         { name: 'no_path', geojsonPath: null, rows: 1 },
       ] as any,
       views: [
@@ -41,7 +44,7 @@ describe('eagerAssets', () => {
       ] as any,
     });
     const got = eagerAssets(catalog);
-    expect(got.map((a) => a.name)).toEqual(['towers', 'interestingness_top_1000']);
+    expect(got.map((a) => a.name)).toEqual(['solar_facilities', 'interestingness_top_1000']);
   });
 });
 
@@ -69,6 +72,30 @@ describe('defaultVisibility', () => {
       layers: [{ name: 'towers', geojsonPath: null, rows: 0 }] as any,
     });
     expect(defaultVisibility(catalog)).toEqual({});
+  });
+});
+
+describe('unionBounds', () => {
+  it('unions state bboxes into [[w, s], [e, n]] fit corners', () => {
+    // AR + MT — the union should span the westmost/southmost to eastmost/northmost.
+    expect(
+      unionBounds([
+        { bbox: [-94.62, 33.0, -89.64, 36.5] },
+        { bbox: [-116.06, 44.36, -104.04, 49.0] },
+      ]),
+    ).toEqual([
+      [-116.06, 33.0],
+      [-89.64, 49.0],
+    ]);
+  });
+  it('returns the single bbox corners for one state', () => {
+    expect(unionBounds([{ bbox: [-94.62, 33.0, -89.64, 36.5] }])).toEqual([
+      [-94.62, 33.0],
+      [-89.64, 36.5],
+    ]);
+  });
+  it('is null when there are no states', () => {
+    expect(unionBounds([])).toBeNull();
   });
 });
 

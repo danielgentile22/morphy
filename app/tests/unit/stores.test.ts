@@ -70,11 +70,12 @@ const INDEX = parseCompositeIndex({
 });
 
 describe('eagerAssets', () => {
-  it('includes GeoJSON layers + the light view, excludes heavy views', () => {
+  it('includes GeoJSON layers + the light view, excludes heavy + map-owned layers', () => {
     const names = eagerAssets(CATALOG).map((a) => a.name);
-    expect(names).toContain('towers');
     expect(names).toContain('distress_overlays');
     expect(names).toContain('interestingness_top_1000');
+    // towers is map-owned (the global clustered layer) — not eager-loaded per state.
+    expect(names).not.toContain('towers');
     // parcels_hosting_infra is a heavy view — lazy-loaded, not eager.
     expect(names).not.toContain('parcels_hosting_infra');
     // owner_clusters has no GeoJSON — not loadable at all.

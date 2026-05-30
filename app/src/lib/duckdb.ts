@@ -33,6 +33,25 @@ export interface OwnerSearchHit {
   owner_cluster_size: number;
 }
 
+/** One slim tower row read off a state's `towers.parquet` for the
+ *  structures-first map. `owner` is the landowner (`parcel_owner`). */
+export interface TowerRow {
+  asr: string;
+  owner: string | null;
+  height_m: number | null;
+  state: string;
+  active: boolean | null;
+  lat: number;
+  lon: number;
+}
+
+/** A source state's `towers.parquet` URL, keyed by FIPS for a stable
+ *  DuckDB-registered filename. */
+export interface TowerSource {
+  fips: string;
+  url: string;
+}
+
 /** Convert an Arrow query result into plain JS objects (BigInt → number). */
 function toObjects<T>(table: { toArray(): unknown[] }): T[] {
   return table.toArray().map((row) => {
@@ -140,6 +159,49 @@ class DuckDbEngine {
   async fetchParcel(parcelId: string): Promise<Record<string, unknown> | null> {
     const rows = await this.query<Record<string, unknown>>(parcelRowQuery(parcelId));
     return rows[0] ?? null;
+  }
+
+  /**
+   * Slim tower points across the anchor states for the structures-first map.
+   *
+   * Reads only the columns the map needs from each state's `towers.parquet`
+   * over HTTP Range (~6 MB total vs ~99 MB of raw towers GeoJSON), unioned
+   * into one result. Runs on a dedicated connection so it can't collide with
+   * the parcels filter pipeline on the shared one. The `sources` are assumed
+   * to exist (the caller probes); a state whose query fails aborts the union,
+   * so the caller filters to present files first.
+   */
+  async loadTowerPoints(sources: TowerSource[]): Promise<TowerRow[]> {
+    if (sources.length === 0) return [];
+    await this.init();
+    const db = this.db!;
+    const conn = await db.connect();
+    try {
+      const selects: string[] = [];
+      for (const s of sources) {
+        const file = `towers_${s.fips}.parquet`;
+        const absolute = new URL(s.url, location.href).href;
+        try {
+          await db.dropFile(file);
+        } catch {
+          // not registered yet — fine
+        }
+        await db.registerFileURL(file, absolute, duckdb.DuckDBDataProtocol.HTTP, false);
+        selects.push(
+          `SELECT CAST(asr_number AS VARCHAR) AS asr, ` +
+            `CAST(parcel_owner AS VARCHAR) AS owner, ` +
+            `CAST(height_m AS DOUBLE) AS height_m, ` +
+            `CAST(state AS VARCHAR) AS state, ` +
+            `CAST(is_active AS BOOLEAN) AS active, ` +
+            `CAST(lat AS DOUBLE) AS lat, CAST(lon AS DOUBLE) AS lon ` +
+            `FROM parquet_scan('${file}') WHERE lat IS NOT NULL AND lon IS NOT NULL`,
+        );
+      }
+      const table = await conn.query(selects.join('\nUNION ALL\n'));
+      return toObjects<TowerRow>(table);
+    } finally {
+      await conn.close();
+    }
   }
 }
 

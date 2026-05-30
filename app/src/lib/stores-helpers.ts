@@ -30,11 +30,17 @@ export interface LoadableAsset {
   geojsonPath: string;
 }
 
+/** Catalog layers the structures-first map renders itself, not as per-state
+ *  GeoJSON. `towers` is served across ALL anchors as one clustered DuckDB-fed
+ *  layer (Slice 4 / #50), so the per-state ~20 MB towers.geojson is neither
+ *  eager-loaded nor drawn here — the global tower layer owns it. */
+export const MAP_OWNED_LAYERS: ReadonlySet<string> = new Set(['towers']);
+
 /** Layers + views that carry GeoJSON and are small enough to boot-load. */
 export function eagerAssets(catalog: Catalog): LoadableAsset[] {
   const out: LoadableAsset[] = [];
   for (const l of catalog.layers) {
-    if (l.geojsonPath && !HEAVY_VIEWS.has(l.name)) {
+    if (l.geojsonPath && !HEAVY_VIEWS.has(l.name) && !MAP_OWNED_LAYERS.has(l.name)) {
       out.push({ name: l.name, geojsonPath: l.geojsonPath });
     }
   }
@@ -87,4 +93,27 @@ export function syncStateParam(fips: string): void {
 /** Render an unknown thrown value as a user-displayable string. */
 export function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/** Union of state bboxes (`[w, s, e, n]`) into `fitBounds` corners
+ *  `[[w, s], [e, n]]` — the all-anchors map framing. Null for no states. */
+export function unionBounds(
+  states: { bbox: [number, number, number, number] }[],
+): [[number, number], [number, number]] | null {
+  if (states.length === 0) return null;
+  let w = Infinity;
+  let s = Infinity;
+  let e = -Infinity;
+  let n = -Infinity;
+  for (const st of states) {
+    const [bw, bs, be, bn] = st.bbox;
+    if (bw < w) w = bw;
+    if (bs < s) s = bs;
+    if (be > e) e = be;
+    if (bn > n) n = bn;
+  }
+  return [
+    [w, s],
+    [e, n],
+  ];
 }
