@@ -6,9 +6,7 @@
   import SummaryCard from './components/SummaryCard.svelte';
   import LayerPanel from './components/LayerPanel.svelte';
   import Legend from './components/Legend.svelte';
-  import SearchPanel from './components/SearchPanel.svelte';
-  import FilterPanel from './components/FilterPanel.svelte';
-  import TopList from './components/TopList.svelte';
+  import TopFilterBar from './components/TopFilterBar.svelte';
   import DetailsPanel from './components/DetailsPanel.svelte';
   import Candidates from './components/Candidates.svelte';
   import MyLeads from './components/MyLeads.svelte';
@@ -153,9 +151,6 @@
         <SummaryCard />
         <LayerPanel />
         <Legend />
-        <SearchPanel />
-        <FilterPanel />
-        <TopList />
       {/if}
     </div>
 
@@ -178,23 +173,28 @@
         </div>
       </div>
     {:else}
-      <MapView />
-      <DetailsPanel />
-      <div class="launchers">
-        <button class="launcher" data-testid="open-candidates" onclick={goCandidates}>
-          Candidates{#if leads.candidatesCount}
-            <span class="lc-badge">{leads.candidatesCount}</span>
-          {/if}
-        </button>
-        <button class="launcher" data-testid="open-my-leads-map" onclick={goLeads}>
-          My Leads{#if leads.myLeadsCount}
-            <span class="lc-badge">{leads.myLeadsCount}</span>
-          {/if}
-        </button>
-      </div>
-      {#if app.status === 'loading'}
-        <div class="loading-pill" data-testid="loading">Loading…</div>
+      {#if app.status === 'ready'}
+        <TopFilterBar />
       {/if}
+      <div class="map-wrap">
+        <MapView />
+        <DetailsPanel />
+        <div class="launchers">
+          <button class="launcher" data-testid="open-candidates" onclick={goCandidates}>
+            Candidates{#if leads.candidatesCount}
+              <span class="lc-badge">{leads.candidatesCount}</span>
+            {/if}
+          </button>
+          <button class="launcher" data-testid="open-my-leads-map" onclick={goLeads}>
+            My Leads{#if leads.myLeadsCount}
+              <span class="lc-badge">{leads.myLeadsCount}</span>
+            {/if}
+          </button>
+        </div>
+        {#if app.status === 'loading'}
+          <div class="loading-pill" data-testid="loading">Loading…</div>
+        {/if}
+      </div>
     {/if}
   </main>
 
@@ -225,6 +225,9 @@
           <span class="nav-note">Lead = one cross-state landowner · ADR-061</span>
         {/if}
       </nav>
+      {#if auth.signedIn && route.name === 'candidates'}
+        <TopFilterBar />
+      {/if}
       <div class="lead-content">
         {#if !auth.signedIn}
           <SignIn />
@@ -326,7 +329,15 @@
   .stage {
     flex: 1;
     position: relative;
+    display: flex;
+    flex-direction: column;
     background: var(--panel-2);
+  }
+  /* Holds the absolutely-positioned map + its overlays, below the top filter
+     bar (which sits in normal flow at the top of the stage). */
+  .map-wrap {
+    flex: 1;
+    position: relative;
   }
 
   .loading-pill {

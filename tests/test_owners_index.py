@@ -196,7 +196,7 @@ def test_build_owners_index_on_missing_root_is_empty(tmp_path):
     out = build_owners_index(composite_root=tmp_path)
     assert out["count"] == 0
     assert out["owners"] == []
-    assert out["schema_version"] == 2
+    assert out["schema_version"] == 3
 
 
 # ── holdings + mailing + tallest tower (Slice 3 / #49) ───────────────────────
@@ -333,3 +333,114 @@ def test_owner_with_no_resolvable_mailing_has_none():
         pd.DataFrame([_parcel_with_holding("ACME LLC", "05", score=0.5, parcel_id="P")])
     )
     assert _row_for(idx, "ACME").mailing_address is None
+
+
+# ── filter rollups (Slice 6 / #52, index schema v3) ─────────────────────────
+def test_counties_rollup_is_distinct_sorted_across_holdings():
+    idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(
+        pd.DataFrame(
+            [
+                _parcel_with_holding(
+                    "DELTA LAND LLC", "05", score=0.5, parcel_id="P1", county_fips="05119"
+                ),
+                _parcel_with_holding(
+                    "DELTA LAND LLC", "12", score=0.5, parcel_id="P2", county_fips="12099"
+                ),
+                # a duplicate county must collapse; a blank one must be dropped
+                _parcel_with_holding(
+                    "DELTA LAND LLC", "05", score=0.5, parcel_id="P3", county_fips="05119"
+                ),
+                _parcel_with_holding(
+                    "DELTA LAND LLC", "05", score=0.5, parcel_id="P4", county_fips=""
+                ),
+            ]
+        )
+    )
+    assert _row_for(idx, "DELTA LAND").counties == ["05119", "12099"]
+
+
+def test_structure_count_and_types_roll_up_towers_and_solar():
+    idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(
+        pd.DataFrame(
+            [
+                _parcel("TOWER ONLY LLC", "05", score=0.5, towers=2, solar=0),
+                _parcel("MIXED ASSETS LLC", "30", score=0.5, towers=1, solar=3),
+                _parcel("SOLAR ONLY LLC", "12", score=0.5, towers=0, solar=1),
+            ]
+        )
+    )
+    tower = _row_for(idx, "ONLY TOWER")
+    mixed = _row_for(idx, "ASSETS MIXED")
+    solar = _row_for(idx, "ONLY SOLAR")
+    assert tower.structure_count == 2 and tower.structure_types == ["tower"]
+    assert mixed.structure_count == 4 and mixed.structure_types == ["tower", "solar"]
+    assert solar.structure_count == 1 and solar.structure_types == ["solar"]
+
+
+def test_active_tower_count_counts_only_active_towers():
+    towers = {
+        "A1": {"height_m": 100.0, "lat": 35.0, "lon": -90.0, "is_active": True},
+        "A2": {"height_m": 90.0, "lat": 35.1, "lon": -90.1, "is_active": False},
+        "A3": {"height_m": 80.0, "lat": 38.0, "lon": -81.0, "is_active": True},
+        # A4 has no tower-attr entry → unknown active flag → not counted active.
+    }
+    idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(
+        pd.DataFrame(
+            [
+                _parcel_with_holding(
+                    "GRID TOWERS LLC", "05", score=0.6, parcel_id="P1", towers_asr=("A1", "A2")
+                ),
+                _parcel_with_holding(
+                    "GRID TOWERS LLC", "54", score=0.6, parcel_id="P2", towers_asr=("A3", "A4")
+                ),
+            ]
+        ),
+        towers_by_asr=towers,
+    )
+    row = _row_for(idx, "GRID TOWERS")
+    assert row.tower_count == 4  # raw tower_count from parcel rows
+    assert row.active_tower_count == 2  # A1 + A3; A2 inactive, A4 unknown
+
+
+def test_filter_index_is_a_slim_projection_without_holdings():
+    from preprocess.owners_index import FILTER_INDEX_FIELDS, build_owners_filter_index
+
+    full = {
+        "schema_version": 3,
+        "generated_at": "2026-05-30T00:00:00+00:00",
+        "states": ["05", "54"],
+        "count": 1,
+        "owners": [
+            {
+                "display_cluster_id": "abc123",
+                "owner_name": "AMERICAN TOWERS LLC",
+                "owner_kind": "llc",
+                "states": ["AR", "WV"],
+                "n_states": 2,
+                "cross_state": True,
+                "counties": ["05119"],
+                "score": 0.9,
+                "distress_tier": "distressed",
+                "in_oz": True,
+                "in_qct": False,
+                "persistent_poverty": False,
+                "parcel_count": 5,
+                "tower_count": 3,
+                "solar_count": 1,
+                "structure_count": 4,
+                "structure_types": ["tower", "solar"],
+                "active_tower_count": 2,
+                "total_assessed_value": 1000.0,
+                "tallest_tower_height_m": 120.0,
+                # heavy fields that must NOT survive into the slim index
+                "holdings": [{"parcel_id": "P1"}],
+                "mailing_address": {"addr": "10 MAIN ST"},
+            }
+        ],
+    }
+    slim = build_owners_filter_index(full)
+    assert slim["schema_version"] == 3 and slim["count"] == 1
+    owner = slim["owners"][0]
+    assert set(owner.keys()) == set(FILTER_INDEX_FIELDS)
+    assert "holdings" not in owner and "mailing_address" not in owner
+    assert owner["counties"] == ["05119"] and owner["structure_types"] == ["tower", "solar"]

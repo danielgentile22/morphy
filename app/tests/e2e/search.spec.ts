@@ -1,95 +1,51 @@
 import { test, expect, type Page } from '@playwright/test';
 
-// Phase C — owner / APN search and the DuckDB-enriched detail panel.
-// The first DuckDB query pays a cold-start cost, so query-gated
-// assertions get a generous timeout.
-const DB = 25_000;
-const AR_PARCEL_AREA: [number, number] = [-92.289, 34.746];
+// Slice 6 (#52) — the top-bar owner-name / ASR search "jumps to the match":
+// an owner hit opens its Lead; an ASR hit flies the map to that tower. Runs
+// against the static read-layer (towers + owners_filter.json), no backend.
+const MAP = 25_000;
 
 async function waitReady(page: Page): Promise<void> {
-  await page.getByTestId('search-panel').waitFor({ state: 'visible', timeout: DB });
+  await page.getByTestId('top-filter-bar').first().waitFor({ state: 'visible', timeout: MAP });
+  await page.waitForFunction(() => !!(window as any).__pilotMap, null, { timeout: MAP });
 }
 
-async function jumpTo(page: Page, zoom: number): Promise<void> {
-  await page.evaluate(
-    ([c, z]) =>
-      new Promise<void>((res) => {
-        const m = (window as any).__pilotMap;
-        m.once('idle', () => res());
-        m.jumpTo({ center: c, zoom: z });
-      }),
-    [AR_PARCEL_AREA, zoom] as const,
-  );
+function search(page: Page) {
+  return page.getByRole('main').getByTestId('owner-search');
 }
 
-test('owner search suggests clusters and filters by the chosen owner', async ({ page }) => {
-  await page.goto('/?state=05');
+test('owner-name search surfaces matching owners and opens a Lead', async ({ page }) => {
+  await page.goto('/');
   await waitReady(page);
 
-  await page.getByTestId('owner-search').fill('burch');
-  const hits = page.getByTestId('owner-hits');
-  await expect(hits).toBeVisible({ timeout: DB });
-  await expect(hits.locator('li')).not.toHaveCount(0);
+  await search(page).fill('weyerhaeuser');
+  const hits = page.getByRole('main').getByTestId('search-hits');
+  await expect(hits).toBeVisible({ timeout: MAP });
+  await expect(hits.getByText(/WEYERHAEUSER/i).first()).toBeVisible();
 
-  await hits.locator('li button').first().click();
-  // Choosing an owner applies an owner-cluster filter.
-  const badge = page.getByTestId('filter-count');
-  await expect(badge).toContainText('match', { timeout: DB });
+  await hits.locator('.hit').first().click();
+  // Jumps to the matched owner's Lead (the shareable detail route).
+  await expect(page).toHaveURL(/#\/lead\//, { timeout: MAP });
+  await expect(page.getByTestId('lead-overlay')).toBeVisible();
 });
 
-test('APN search flies to and selects a parcel', async ({ page }) => {
-  await page.goto('/?state=05');
+test('ASR search surfaces tower matches and flies the map to one', async ({ page }) => {
+  await page.goto('/');
   await waitReady(page);
+  await page.waitForFunction(() => (window as any).__pilotMap.isStyleLoaded());
 
-  await page.getByTestId('apn-search').fill('0001-05431-0000');
-  await page.getByTestId('apn-search').press('Enter');
+  const center = () =>
+    page.evaluate(() => {
+      const c = (window as any).__pilotMap.getCenter();
+      return [Math.round(c.lng * 100) / 100, Math.round(c.lat * 100) / 100];
+    });
+  const before = await center();
 
-  const panel = page.getByTestId('details-panel');
-  await expect(panel).toBeVisible({ timeout: DB });
-  await expect(panel.locator('h2')).toContainText('0001-05431-0000');
-});
+  await search(page).fill('1064');
+  const hits = page.getByRole('main').getByTestId('search-hits');
+  await expect(hits.getByText(/ASR/).first()).toBeVisible({ timeout: MAP });
+  await hits.locator('.hit').first().click();
 
-test('APN search reports an unknown id', async ({ page }) => {
-  await page.goto('/?state=05');
-  await waitReady(page);
-
-  await page.getByTestId('apn-search').fill('NOT-A-REAL-APN');
-  await page.getByTestId('apn-search').press('Enter');
-  await expect(page.getByTestId('search-panel')).toContainText('No parcel with that ID', {
-    timeout: DB,
-  });
-});
-
-test('clicking a tile parcel enriches the panel with the full DuckDB row', async ({ page }) => {
-  await page.goto('/?state=05');
-  await waitReady(page);
-
-  // Isolate the parcel base layer, zoom in, click a parcel.
-  for (const layer of ['towers', 'distress_overlays', 'interestingness_top_1000']) {
-    await page.getByTestId(`layer-toggle-${layer}`).click();
-  }
-  await jumpTo(page, 13);
-  const box = (await page.getByTestId('map').boundingBox())!;
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-
-  const panel = page.getByTestId('details-panel');
-  await expect(panel).toBeVisible();
-  // owner_cluster_size is NOT a baked tile attribute — its row appears
-  // only after the DuckDB full-row enrichment.
-  await expect(panel.locator('[data-field="Parcels by this owner"] .v')).toBeVisible({
-    timeout: DB,
-  });
-});
-
-test('"see all parcels by this owner" applies an owner-cluster filter', async ({ page }) => {
-  await page.goto('/?state=05');
-  await waitReady(page);
-
-  // The #1 top-list parcel — its owner holds several parcels.
-  await page.locator('[data-testid="top-list"] button.row').first().click();
-  const seeAll = page.getByTestId('see-owner-parcels');
-  await expect(seeAll).toBeVisible({ timeout: DB });
-  await seeAll.click();
-
-  await expect(page.getByTestId('filter-count')).toContainText('match', { timeout: DB });
+  // The map jumps to the tower (center moves to its coordinate).
+  await expect.poll(center, { timeout: MAP }).not.toEqual(before);
 });

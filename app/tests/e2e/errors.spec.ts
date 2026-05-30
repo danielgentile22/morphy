@@ -13,7 +13,7 @@ test('a failed layer fetch disables its toggle, the app still loads', async ({ p
 
   // The app still boots — a single missing layer is tolerated.
   await expect(page.locator('h1')).toHaveText('Arkansas');
-  await expect(page.getByTestId('top-list')).toBeVisible();
+  await expect(page.getByTestId('summary-card')).toBeVisible();
 
   // The distress-overlays toggle is disabled and marked unavailable.
   const toggle = page.getByTestId('layer-toggle-distress_overlays');

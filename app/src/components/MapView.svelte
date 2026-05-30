@@ -18,7 +18,8 @@
   import { detectGeometryClasses } from '../lib/geo';
   import { layerColor, TOWER_MARKER_SVG, WONG } from '../lib/palette';
   import type { Props } from '../lib/schema';
-  import { towerHoverHtml, resolveTowerLeadKey, type TowerProps } from '../lib/towers';
+  import { towerHoverHtml, resolveTowerLeadKey, filterTowers, type TowerProps } from '../lib/towers';
+  import { filterModel } from '../lib/filter-model.svelte';
 
   maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
@@ -503,11 +504,11 @@
     });
   }
 
-  function addTowerLayers(): void {
-    if (!map || towerLayersAdded || !app.towerPoints) return;
+  function addTowerLayers(data: FeatureCollection<Point, TowerProps>): void {
+    if (!map || towerLayersAdded) return;
     map.addSource(TOWERS_SRC, {
       type: 'geojson',
-      data: app.towerPoints,
+      data,
       cluster: true,
       clusterRadius: 50,
       // Split into individual towers at high zoom (acceptance criterion).
@@ -577,11 +578,15 @@
    *  honour the `towers` visibility toggle. */
   function syncTowerLayers(): void {
     if (!map || !app.towerPoints) return;
+    // The shared FilterModel narrows the tower layer to matching owners
+    // (null = no filter active → every tower). Same model as the Candidates
+    // list, so the two surfaces stay consistent (Slice 6 / #52).
+    const data = filterTowers(app.towerPoints, filterModel.matchingClusterIds);
     if (!towerLayersAdded) {
-      addTowerLayers();
+      addTowerLayers(data);
     } else {
       const src = map.getSource(TOWERS_SRC) as maplibregl.GeoJSONSource | undefined;
-      src?.setData(app.towerPoints);
+      src?.setData(data);
     }
     ensureTowersOnTop();
     applyTowerVisibility();
@@ -863,8 +868,16 @@
   // rebuilds it — the structures-first layer is global.
   $effect(() => {
     void app.towerPoints;
+    void filterModel.matchingClusterIds; // re-narrow towers on a filter change
     if (!map || !ready) return;
     untrack(() => syncTowerLayers());
+  });
+
+  // One-shot fly to a tower matched by the top-bar ASR search.
+  $effect(() => {
+    const t = app.flyTarget;
+    if (!map || !ready || !t) return;
+    map.flyTo({ center: t.center, zoom: t.zoom, duration: 700 });
   });
 
   // Fade non-matching parcels once per *settled* filter result. Driven by

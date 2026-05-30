@@ -6,7 +6,7 @@ import { test, expect, type Page } from '@playwright/test';
 /** Wait until the app is ready (so the store has pointed the engine at
  *  the state's parquet) and the engine handle exists. */
 async function waitForEngine(page: Page): Promise<void> {
-  await page.getByTestId('top-list').waitFor({ state: 'visible', timeout: 25_000 });
+  await page.getByTestId('summary-card').waitFor({ state: 'visible', timeout: 25_000 });
   await page.waitForFunction(() => !!(window as any).__duckDb, undefined, { timeout: 20_000 });
 }
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   rowsToFeatureCollection,
+  filterTowers,
   heightFeet,
   towerOwnerLabel,
   resolveTowerLeadKey,
@@ -33,10 +34,17 @@ describe('rowsToFeatureCollection', () => {
     expect(f.properties).toEqual({
       asr: '080946',
       owner: 'MITCHELL VICKI',
+      cid: ownerNameToClusterId('MITCHELL VICKI'),
       height_m: 79.248,
       state: 'AR',
       active: true,
     });
+  });
+
+  it('bakes the owner cluster id onto each tower for filter joins', () => {
+    const fc = rowsToFeatureCollection([row(), row({ owner: '' })]);
+    expect(fc.features[0].properties.cid).toBe('209af3ad593f'); // MITCHELL VICKI
+    expect(fc.features[1].properties.cid).toBe(''); // un-clusterable owner
   });
 
   it('drops rows without finite coordinates', () => {
@@ -57,6 +65,28 @@ describe('rowsToFeatureCollection', () => {
   it('coerces a non-true active flag to false', () => {
     const fc = rowsToFeatureCollection([row({ active: null })]);
     expect(fc.features[0].properties.active).toBe(false);
+  });
+});
+
+describe('filterTowers', () => {
+  const fc = rowsToFeatureCollection([
+    row({ asr: 'a', owner: 'MITCHELL VICKI' }),
+    row({ asr: 'b', owner: 'WEYERHAEUSER COMPANY' }),
+    row({ asr: 'c', owner: 'MITCHELL VICKI' }),
+  ]);
+
+  it('returns the collection unchanged when no filter is active (null)', () => {
+    expect(filterTowers(fc, null)).toBe(fc);
+  });
+
+  it('keeps only towers whose owner cluster id is in the set', () => {
+    const keep = new Set([ownerNameToClusterId('MITCHELL VICKI')]);
+    const out = filterTowers(fc, keep);
+    expect(out.features.map((f) => f.properties.asr)).toEqual(['a', 'c']);
+  });
+
+  it('an empty set drops every tower', () => {
+    expect(filterTowers(fc, new Set()).features).toHaveLength(0);
   });
 });
 
@@ -99,6 +129,7 @@ describe('towerHoverHtml', () => {
   const props: TowerProps = {
     asr: '080946',
     owner: 'MITCHELL VICKI',
+    cid: '209af3ad593f',
     height_m: 79.248,
     state: 'AR',
     active: true,

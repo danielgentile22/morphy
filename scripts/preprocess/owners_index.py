@@ -42,7 +42,15 @@ OWNERS_INDEX_FILENAME = "owners_index.json"
 # v2 (Slice 3 / #49): each owner gains ``holdings`` (per-parcel detail +
 # structures + footprint geometry), ``mailing_address`` (read-only source
 # contact), and ``tallest_tower_height_m`` for the full Lead page.
-OWNERS_INDEX_SCHEMA_VERSION = 2
+# v3 (Slice 6 / #52): owner-level filter rollups the shared top-bar
+# FilterModel needs — ``counties`` (distinct county FIPS across holdings),
+# ``active_tower_count``, ``structure_count`` (towers + solar), and
+# ``structure_types`` (which of {tower, solar} the owner hosts). A slim
+# companion ``owners_filter.json`` (filter+search fields only, no holdings)
+# is emitted alongside for the client map's tower-narrowing.
+OWNERS_INDEX_SCHEMA_VERSION = 3
+
+OWNERS_FILTER_FILENAME = "owners_filter.json"
 
 # Best-parcel-anchored cluster score, with a modest portfolio-size bonus
 # (ADR-056): score = max(parcel_scores) + ALPHA * ln(parcel_count).
@@ -274,6 +282,9 @@ class CrossStateOwnerResolver:
             df["state_fips"] = ""
         if "owner_kind" not in df.columns:
             df["owner_kind"] = ""
+        # county_fips backs the (long-tail) county filter rollup; optional.
+        if "county_fips" not in df.columns:
+            df["county_fips"] = ""
 
         g = df.groupby("_cluster", sort=False)
         out = g.agg(
@@ -290,17 +301,30 @@ class CrossStateOwnerResolver:
             in_qct=("_in_qct", "any"),
             persistent_poverty=("_persistent_poverty", "any"),
             _fips=("state_fips", lambda s: sorted({str(v).zfill(2) for v in s.dropna()})),
+            _counties=(
+                "county_fips",
+                lambda s: sorted({str(v).strip() for v in s.dropna() if str(v).strip()}),
+            ),
         ).reset_index(names="display_cluster_id")
 
         out["states"] = out["_fips"].map(lambda fl: [self._abbr(f) for f in fl])
         out["n_states"] = out["states"].map(len)
         out["cross_state"] = out["n_states"] >= 2
+        out["counties"] = out["_counties"]
         out["distress_tier"] = out["_tier_rank"].map(_RANK_TIER)
         out["score"] = (
             out["max_parcel_score"] + self.alpha * out["parcel_count"].map(lambda n: math.log(n))
         ).round(4)
         out["max_parcel_score"] = out["max_parcel_score"].round(4)
         out["total_assessed_value"] = out["total_assessed_value"].round(2)
+        # Structure rollups for the filter set (#52). structure_count is the
+        # owner's total asset count; structure_types is which of {tower, solar}
+        # they host (drives the top-bar Structure chips).
+        out["structure_count"] = (out["tower_count"] + out["solar_count"]).astype(int)
+        out["structure_types"] = [
+            [t for t, n in (("tower", tc), ("solar", sc)) if n > 0]
+            for tc, sc in zip(out["tower_count"], out["solar_count"])
+        ]
 
         # Per-owner holdings + mailing + tallest tower (Slice 3 / #49). A
         # second pass over the same clusters keeps the rollup ``agg`` above
@@ -310,29 +334,29 @@ class CrossStateOwnerResolver:
         out["holdings"] = out["display_cluster_id"].map(lambda c: detail[c][0])
         out["mailing_address"] = out["display_cluster_id"].map(lambda c: detail[c][1])
         out["tallest_tower_height_m"] = out["display_cluster_id"].map(lambda c: detail[c][2])
+        out["active_tower_count"] = out["display_cluster_id"].map(lambda c: detail[c][3])
 
-        out = out.drop(columns=["_fips", "_tier_rank"])
+        out = out.drop(columns=["_fips", "_tier_rank", "_counties"])
         return out.sort_values("score", ascending=False, ignore_index=True)
 
     # ── per-owner holdings detail ────────────────────────────────────────────
     def _build_detail(
         self, df: pd.DataFrame, towers_by_asr: dict[str, dict]
-    ) -> dict[str, tuple[list[dict], dict | None, float | None]]:
-        """``display_cluster_id`` → (holdings, mailing_address, tallest_m)."""
-        detail: dict[str, tuple[list[dict], dict | None, float | None]] = {}
+    ) -> dict[str, tuple[list[dict], dict | None, float | None, int]]:
+        """``display_cluster_id`` → (holdings, mailing_address, tallest_m, active_towers)."""
+        detail: dict[str, tuple[list[dict], dict | None, float | None, int]] = {}
         for cid, group in df.groupby("_cluster", sort=False):
             recs = group.to_dict("records")
             holdings = [self._holding(r, towers_by_asr) for r in recs]
+            towers = [s for h in holdings for s in h["structures"] if s.get("type") == "tower"]
             tallest = max(
-                (
-                    s["height_m"]
-                    for h in holdings
-                    for s in h["structures"]
-                    if s.get("type") == "tower" and s.get("height_m") is not None
-                ),
+                (s["height_m"] for s in towers if s.get("height_m") is not None),
                 default=None,
             )
-            detail[str(cid)] = (holdings, self._pick_mailing(recs), tallest)
+            # Active towers drive the "active-only" filter; a tower with an
+            # unknown active flag (no tower-attr match) is not counted active.
+            active = sum(1 for s in towers if s.get("active") is True)
+            detail[str(cid)] = (holdings, self._pick_mailing(recs), tallest, active)
         return detail
 
     def _holding(self, rec: dict, towers_by_asr: dict[str, dict]) -> dict:
@@ -434,8 +458,12 @@ class CrossStateOwnerResolver:
                 "states": pd.Series(dtype="object"),
                 "n_states": pd.Series(dtype="int64"),
                 "cross_state": pd.Series(dtype="bool"),
+                "counties": pd.Series(dtype="object"),
                 "distress_tier": pd.Series(dtype="object"),
                 "score": pd.Series(dtype="float64"),
+                "structure_count": pd.Series(dtype="int64"),
+                "structure_types": pd.Series(dtype="object"),
+                "active_tower_count": pd.Series(dtype="int64"),
                 "holdings": pd.Series(dtype="object"),
                 "mailing_address": pd.Series(dtype="object"),
                 "tallest_tower_height_m": pd.Series(dtype="float64"),
@@ -555,6 +583,11 @@ def _owner_to_json(row: dict) -> dict:
         "in_oz": bool(row["in_oz"]),
         "in_qct": bool(row["in_qct"]),
         "persistent_poverty": bool(row["persistent_poverty"]),
+        # Slice 6 / #52 — owner-level filter rollups (schema v3).
+        "counties": list(row.get("counties") or []),
+        "structure_count": int(row.get("structure_count") or 0),
+        "structure_types": list(row.get("structure_types") or []),
+        "active_tower_count": int(row.get("active_tower_count") or 0),
         # Slice 3 / #49 — full Lead page detail (schema v2).
         "holdings": list(row.get("holdings") or []),
         "mailing_address": row.get("mailing_address") or None,
@@ -562,34 +595,78 @@ def _owner_to_json(row: dict) -> dict:
     }
 
 
-def write_owners_index(
-    composite_root: Path | None = None,
-    index_path: Path | None = None,
-    alpha: float = DEFAULT_ALPHA,
-) -> Path:
-    """Build and write ``composite/owners_index.json`` atomically.
+# Slim per-owner record served to the client (``owners_filter.json``): the
+# filter + search fields the shared top-bar FilterModel reads, minus the heavy
+# ``holdings`` the full index carries. Keeps the client download small (the
+# full index is tens of MB once holdings are included).
+FILTER_INDEX_FIELDS = (
+    "display_cluster_id",
+    "owner_name",
+    "owner_kind",
+    "states",
+    "n_states",
+    "cross_state",
+    "counties",
+    "score",
+    "distress_tier",
+    "in_oz",
+    "in_qct",
+    "persistent_poverty",
+    "parcel_count",
+    "tower_count",
+    "solar_count",
+    "structure_count",
+    "structure_types",
+    "active_tower_count",
+    "total_assessed_value",
+    "tallest_tower_height_m",
+)
 
-    Temp file + ``os.replace`` so the backend never reads a half-written
-    index (the repo-wide atomic-write convention). Returns the path.
-    """
-    root = composite_root if composite_root is not None else COMPOSITE_ROOT
-    if index_path is None:
-        index_path = root / OWNERS_INDEX_FILENAME
-    index = build_owners_index(root, alpha=alpha)
-    index_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_fd, tmp_path = tempfile.mkstemp(
-        dir=index_path.parent, prefix=".owners_index.", suffix=".tmp"
-    )
+
+def build_owners_filter_index(index: dict) -> dict:
+    """Project the full owners index to the slim client filter+search index."""
+    owners = [{k: o.get(k) for k in FILTER_INDEX_FIELDS} for o in index.get("owners", [])]
+    return {
+        "schema_version": OWNERS_INDEX_SCHEMA_VERSION,
+        "generated_at": index.get("generated_at"),
+        "states": index.get("states", []),
+        "count": len(owners),
+        "owners": owners,
+    }
+
+
+def _atomic_write_json(path: Path, payload: dict) -> None:
+    """Write ``payload`` as JSON to ``path`` via temp-file + ``os.replace`` so
+    a reader never sees a half-written file (the repo-wide convention)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}.", suffix=".tmp")
     try:
         with os.fdopen(tmp_fd, "w") as f:
-            json.dump(index, f, indent=2, sort_keys=True)
-        os.replace(tmp_path, index_path)
+            json.dump(payload, f, indent=2, sort_keys=True)
+        os.replace(tmp_path, path)
     except Exception:
         try:
             os.unlink(tmp_path)
         except OSError:
             pass
         raise
+
+
+def write_owners_index(
+    composite_root: Path | None = None,
+    index_path: Path | None = None,
+    alpha: float = DEFAULT_ALPHA,
+) -> Path:
+    """Build and write ``composite/owners_index.json`` (full, backend-served)
+    plus the slim ``composite/owners_filter.json`` (client filter+search index),
+    both atomically. Returns the full index path.
+    """
+    root = composite_root if composite_root is not None else COMPOSITE_ROOT
+    if index_path is None:
+        index_path = root / OWNERS_INDEX_FILENAME
+    index = build_owners_index(root, alpha=alpha)
+    _atomic_write_json(index_path, index)
+    _atomic_write_json(index_path.parent / OWNERS_FILTER_FILENAME, build_owners_filter_index(index))
     return index_path
 
 
@@ -607,6 +684,7 @@ def run_owners_index(progress_callback=None) -> dict:
         )
     return {
         "index_path": str(index_path),
+        "filter_index_path": str(index_path.parent / OWNERS_FILTER_FILENAME),
         "owners": n_owners,
         "cross_state_owners": n_cross,
         "states": index.get("states", []),

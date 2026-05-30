@@ -132,6 +132,9 @@ export class AppStore {
   towersError = $state<string | null>(null);
   /** How the map is framed (all anchors by default; a state on explicit pick). */
   mapFocus = $state<MapFocus>({ kind: 'anchors' });
+  /** A one-shot fly request — the top-bar ASR search sets it to jump the map
+   *  to a matched tower (Slice 6 / #52); MapView consumes it. */
+  flyTarget = $state<{ center: [number, number]; zoom: number } | null>(null);
 
   activeState = $derived<StateEntry | null>(
     this.index && this.activeFips
@@ -183,6 +186,11 @@ export class AppStore {
   }
   clearSelection(): void {
     this.setSelection(null);
+  }
+
+  /** Jump the map to a coordinate (top-bar ASR search). */
+  flyTo(center: [number, number], zoom = 12): void {
+    this.flyTarget = { center, zoom };
   }
 
   async #enrichParcel(parcelId: string, token: number): Promise<void> {
