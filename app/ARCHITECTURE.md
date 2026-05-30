@@ -13,7 +13,8 @@ that composes appears with zero app changes.
 | Framework | Svelte 5 (runes) + Vite 8 + TypeScript |
 | Map | MapLibre GL JS 5 + a keyless raster basemap (Carto Positron) |
 | Parcel base layer | PMTiles vector tiles (tippecanoe-built) |
-| Filter / search | DuckDB-WASM over a slim per-state parquet |
+| Lead filter / search | One shared lead-centric `FilterModel` over the slim owners index (top bar + "More" popover + owner/ASR search — Slice 6 / #52) |
+| Parcel base-layer filter | DuckDB-WASM over a slim per-state parquet (now UI-less — see below) |
 | Tests | Vitest (unit) + Playwright (E2E, Chromium + WebKit) |
 
 ## Data contract
@@ -42,18 +43,40 @@ drift is caught in CI, not as a blank detail panel.
 3. **County choropleth** — `<fips>/county_boundaries.geojson`, shaded by
    ARC distress tier at low zoom; parcels fade in and take over at z ≥ 10.
 
-## Filter & search engine
+## Lead filter & search (the primary triage surface — Slice 6 / #52)
 
-DuckDB-WASM range-queries `<fips>/parcels_attr.parquet` — the slim
-attribute-only parquet (geometry + internal columns dropped, sorted by
-interestingness score). `<fips>/facets.json` (precomputed distinct values
-+ ranges) renders the filter controls without a query.
+Triage filtering is **lead-centric**: one shared `FilterModel` narrows **both**
+the structures-first map's tower layer **and** the Candidates list from the same
+state. The cluttered parcel-centric sidebar (acreage, raw "has tower", per-parcel
+ranking) is retired in favour of a slim **top filter bar + "More" popover** + an
+**owner-name/ASR search box**.
 
-- `src/lib/query.ts` — `composeWhere` turns the filter state into SQL
+- `src/lib/filter-model.ts` — the deep module. A `FILTER_FIELDS` registry
+  projects two ways from one source of truth: `composeOwnerWhere()` (a
+  deterministic SQL string, **unit-tested byte-for-byte** — the query contract)
+  and `matchesOwner()` (the runtime predicate both surfaces use). Filter set:
+  State (multi, **OR**), distress (ARC tier + OZ/QCT/persistent-poverty),
+  structure type, score (**min threshold**), owner kind, portfolio size, total
+  assessed value (range), county, tower height, active-only, structure count.
+- `src/lib/filter-model.svelte.ts` — the single live `model` + the slim owners
+  index (`owners_filter.json`), deriving `matchingClusterIds` (the owner-id set
+  the map narrows towers by) + the control options/extents + owner search.
+- **Map**: each tower carries its owner's `display_cluster_id` (`cid`, baked in
+  `towers.ts`); `filterTowers()` keeps only towers whose `cid ∈ matchingClusterIds`,
+  then `setData`. **Candidates**: filters the same slim index (minus owners
+  advanced off New) with the same predicate, ranked by score.
+- Owner-name search opens the matching Lead; ASR search flies the map to the tower.
+
+### Parcel base-layer filter (now UI-less)
+
+The original DuckDB-WASM parcel filter still backs the parcel base layer but no
+longer has a UI surface (the parcel-centric `FilterPanel`/`SearchPanel`/`TopList`
+were removed in Slice 6). It range-queries `<fips>/parcels_attr.parquet`:
+
+- `src/lib/query.ts` — `composeWhere` turns the parcel filter state into SQL
   (unit-tested byte-for-byte; string literals escaped, numbers validated).
-- A filter → DuckDB count + matching parcel ids → batched
-  `setFeatureState` → the parcels layer fades non-matches.
-- Owner search (`ILIKE`) and APN lookup hit the same parquet.
+- A filter → DuckDB count + matching parcel ids → batched `setFeatureState`
+  → the parcels layer fades non-matches.
 - Clicking any parcel fetches its full row from DuckDB to fill the panel.
 
 ## Serving
@@ -93,11 +116,15 @@ app/
 ├── ARCHITECTURE.md          this file
 ├── index.html
 ├── src/
-│   ├── App.svelte           layout, boot, URL sync, keyboard shortcuts
-│   ├── components/          MapView + the sidebar panels + DetailsPanel
+│   ├── App.svelte           shell + hash router, boot, URL sync, shortcuts
+│   ├── components/          MapView + TopFilterBar + DetailsPanel + the
+│                            map-layer panels + the Lead surfaces
+│                            (Candidates / MyLeads / LeadPage / SignIn)
 │   └── lib/                 catalog, schema, data, stores (Svelte state),
 │                            duckdb, query, filters, facets, url, geo,
-│                            format, palette
+│                            format, palette, towers, owner-cluster,
+│                            filter-model (+ .svelte store), owners-filter-index,
+│                            leads-api, leads-store, auth-store, lead-status
 └── tests/
     ├── unit/                Vitest — pure logic
     └── e2e/                 Playwright — against the built app
