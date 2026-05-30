@@ -30,8 +30,8 @@ backend/tests/              LeadStore + auth + tenant-isolation (testcontainers 
 
 ## Schema (tenant-shaped, ADR-055)
 
-- `lead(tenant_id, display_cluster_id, status, notes, created_at, updated_at)` — PK `(tenant_id, display_cluster_id)`.
-- `contact_attempt(id, tenant_id, display_cluster_id, occurred_on, channel, outcome, note, created_at)` — also receives auto-logged status-transition rows (`channel='status'`).
+- `lead(tenant_id, display_cluster_id, status, notes, contact_name, contact_phone, contact_email, best_channel, created_at, updated_at)` — PK `(tenant_id, display_cluster_id)`. The `contact_*` columns (Slice 3 / #49) are the team's **editable** outreach record, distinct from the read-only mailing address served from source parcel data. Added to an existing DB by the additive `init_db` migration (`db._migrate_added_columns`; a stand-in until Alembic).
+- `contact_attempt(id, tenant_id, display_cluster_id, occurred_on, channel, outcome, note, created_at)` — manual outreach events **and** auto-logged status-transition rows (`channel='status'`) share this one activity stream.
 - `app_user(id, tenant_id, email UNIQUE, created_at)` — a person who can sign in, bound to one tenant.
 - `magic_link_token(id, tenant_id, user_id, email, token_hash, expires_at, used_at, created_at)` — sign-in tokens **hashed at rest** (only the SHA-256 hash is stored), one-time (`used_at`), short expiry.
 
@@ -55,8 +55,16 @@ are rejected (HTTP 409).
 | GET | `/api/auth/me` | the authenticated tenant + email |
 | GET | `/api/health` | liveness + owners-indexed count (public) |
 | GET | `/api/candidates?limit=` | owners at New, ranked by interestingness |
-| GET | `/api/leads/{display_cluster_id}` | owner rollup + lead state + attempts |
-| PUT | `/api/leads/{display_cluster_id}` | set status and/or notes (validates the ladder) |
+| GET | `/api/leads/{display_cluster_id}` | full Lead: owner rollup + **holdings** (per-parcel structures + EPSG:4326 footprint) + read-only **mailing address** + tallest tower + lead state + editable contact fields + attempts |
+| PUT | `/api/leads/{display_cluster_id}` | set status, notes, and/or contact fields (validates the ladder) |
+| POST | `/api/leads/{display_cluster_id}/attempts` | append a manual contact attempt (date · channel · outcome) |
+
+The read half of the full Lead page (holdings / mailing / tallest tower) is
+served from the precomputed **owners index** (schema **v2**, Slice 3 / #49 —
+`scripts/preprocess/owners_index.py` now emits per-owner `holdings`,
+`mailing_address`, and `tallest_tower_height_m`); only the lead state is
+per-tenant. Rebuild it after composing states: `python scripts/preprocess.py
+--owners-index`.
 
 Every data route resolves the tenant from the `Authorization: Bearer <jwt>`
 (`current_tenant_id`, now JWT-derived) and is tenant-scoped; an

@@ -71,3 +71,28 @@ def test_tenant_b_write_does_not_leak_into_tenant_a(
 
     # A's lead is untouched by B's write.
     assert store_factory(TENANT_A).get_lead(CID).status == "researching"
+
+
+@pytest.mark.tenant_isolation
+def test_contact_edits_are_tenant_scoped(
+    store_factory: Callable[[int], LeadStore],
+) -> None:
+    # Slice 3 / #49: a tenant's editable contact record must not leak.
+    store_factory(TENANT_A).upsert(
+        CID, contact={"contact_name": "A's contact", "contact_phone": "555-A"}
+    )
+    b = store_factory(TENANT_B)
+    assert b.get_lead(CID) is None  # B has no lead for this cluster at all
+
+    b.upsert(CID, contact={"contact_name": "B's contact"})
+    assert store_factory(TENANT_A).get_lead(CID).contact_name == "A's contact"
+    assert store_factory(TENANT_B).get_lead(CID).contact_name == "B's contact"
+
+
+@pytest.mark.tenant_isolation
+def test_manual_attempts_are_tenant_scoped(
+    store_factory: Callable[[int], LeadStore],
+) -> None:
+    store_factory(TENANT_A).append_attempt(CID, channel="phone", outcome="left voicemail")
+    assert store_factory(TENANT_B).list_attempts(CID) == []
+    assert len(store_factory(TENANT_A).list_attempts(CID)) == 1

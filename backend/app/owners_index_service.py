@@ -63,9 +63,12 @@ class OwnersIndexService:
         return out
 
     def lead_view(self, store: LeadStore, display_cluster_id: str) -> dict | None:
-        """Owner rollup + this tenant's lead state + contact attempts.
+        """Owner rollup + holdings + this tenant's lead state + attempts.
 
-        Returns ``None`` if the owner is unknown to the index.
+        The static side (rollup, holdings, mailing address, tallest tower)
+        comes from the precomputed owners index; the per-tenant side
+        (status, notes, editable contact fields, attempts) comes from
+        ``LeadStore``. Returns ``None`` if the owner is unknown to the index.
         """
         owner = self.get_owner(display_cluster_id)
         if owner is None:
@@ -77,6 +80,14 @@ class OwnersIndexService:
             "status": lead.status if lead else INITIAL_STATUS,
             "notes": lead.notes if lead else "",
             "updated_at": lead.updated_at.isoformat() if lead else None,
+            "contact_name": lead.contact_name if lead else "",
+            "contact_phone": lead.contact_phone if lead else "",
+            "contact_email": lead.contact_email if lead else "",
+            "best_channel": lead.best_channel if lead else "",
+            # Read-only source detail (absent on a pre-v2 index → safe defaults).
+            "mailing_address": owner.get("mailing_address"),
+            "tallest_tower_height_m": owner.get("tallest_tower_height_m"),
+            "holdings": owner.get("holdings", []),
             "attempts": [
                 {
                     "id": a.id,

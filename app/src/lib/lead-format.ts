@@ -8,6 +8,18 @@ export function money(n: number): string {
   return `$${Math.round(n)}`;
 }
 
+/** Metres → whole feet (tower heights are stored in metres; the team
+ *  thinks in feet). Returns '—' for a missing height. */
+export function feet(metres: number | null | undefined): string {
+  if (metres == null) return '—';
+  return `${Math.round(metres * 3.28084)} ft`;
+}
+
+/** A channel/best-channel value for display ('' → '—'). */
+export function channelLabel(channel: string): string {
+  return channel || '—';
+}
+
 export const KIND_LABELS: Record<string, string> = {
   individual: 'Individual',
   llc: 'LLC',
