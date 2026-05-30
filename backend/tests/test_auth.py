@@ -132,6 +132,40 @@ def test_exchange_unknown_token_fails(auth_service: AuthService) -> None:
         auth_service.exchange("not-a-real-token")
 
 
+def test_exchange_rejects_an_already_claimed_token(auth_service: AuthService) -> None:
+    # The atomic claim is the one-time gate: a token whose used_at is already
+    # set (as if a concurrent redemption won the race) must fail even though
+    # it still exists and hasn't expired.
+    raw = auth_service.request_link(EMAIL)
+    token = auth_service.session.scalars(
+        select(MagicLinkToken).where(MagicLinkToken.token_hash == hash_token(raw))
+    ).one()
+    token.used_at = datetime.now(UTC)
+    auth_service.session.commit()
+    with pytest.raises(InvalidToken):
+        auth_service.exchange(raw)
+
+
+# ── rate limit + cleanup ──────────────────────────────────────────────────────
+def test_request_link_throttles_per_email(auth_service: AuthService) -> None:
+    for _ in range(settings.link_rate_max):
+        assert auth_service.request_link(EMAIL) is not None
+    before = len(list(auth_service.session.scalars(select(MagicLinkToken))))
+    # The next request within the window is dropped: no token, no new row.
+    assert auth_service.request_link(EMAIL) is None
+    after = len(list(auth_service.session.scalars(select(MagicLinkToken))))
+    assert after == before
+
+
+def test_request_link_prunes_redeemed_tokens(auth_service: AuthService) -> None:
+    raw = auth_service.request_link(EMAIL)
+    auth_service.exchange(raw)  # marks used_at
+    auth_service.request_link(EMAIL)  # a fresh request prunes the redeemed one
+    rows = list(auth_service.session.scalars(select(MagicLinkToken)))
+    assert len(rows) == 1
+    assert rows[0].used_at is None  # only the new, unused token remains
+
+
 def test_allowlist_blocks_unlisted_email(monkeypatch, auth_service: AuthService) -> None:
     # Settings is a frozen dataclass — patch the module binding with a copy.
     patched = replace(settings, allowed_emails=frozenset({"allowed@example.com"}))
@@ -196,3 +230,18 @@ def test_malformed_bearer_is_rejected() -> None:
 def test_health_is_public() -> None:
     with api(SAMPLE) as (client, _eng, _sender):
         assert client.get("/api/health").status_code == 200
+
+
+def test_prod_boot_rejects_console_sender(monkeypatch) -> None:
+    # The fail-closed boot guard: with AUTH_DEV_MODE off, starting on the dev
+    # ConsoleEmailSender (which prints tokens to stdout) must abort startup.
+    from fastapi.testclient import TestClient
+
+    from backend.app import main
+    from backend.app.email_sender import ConsoleEmailSender
+
+    monkeypatch.setattr(main, "settings", replace(settings, dev_mode=False))
+    monkeypatch.setattr(main, "_email_sender", ConsoleEmailSender())
+    with pytest.raises(RuntimeError, match="ConsoleEmailSender"):  # noqa: SIM117
+        with TestClient(main.app):
+            pass

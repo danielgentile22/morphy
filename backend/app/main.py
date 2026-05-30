@@ -47,6 +47,14 @@ from .schemas import (
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    # Fail closed: the console sender prints raw tokens to stdout — fine for
+    # the dev loop, never in prod. (The secret + allowlist gates live in
+    # config.from_env; this covers the one auth surface config can't see.)
+    if not settings.dev_mode and isinstance(_email_sender, ConsoleEmailSender):
+        raise RuntimeError(
+            "Refusing to start with AUTH_DEV_MODE off and the dev ConsoleEmailSender "
+            "(it prints magic-link tokens to stdout). Wire a real EmailSender (#16)."
+        )
     init_db()
     yield
 

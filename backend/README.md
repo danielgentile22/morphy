@@ -68,24 +68,58 @@ unauthenticated data request is rejected with **401**.
    default tenant (`DEFAULT_TENANT_ID`, `1`), a 256-bit random token is
    generated, its **SHA-256 hash** is stored (the raw token is never
    persisted or logged), and a link is handed to the pluggable
-   `EmailSender`. Always responds `200` (no email enumeration). In dev
-   (`AUTH_EXPOSE_TOKEN=1`) the raw token is echoed as `dev_token` so the SPA
-   can finish the exchange without a real inbox.
-2. `POST /api/auth/exchange {token}` — a still-valid token is redeemed
-   **once** (marked `used_at`) for an HS256 JWT carrying `tid`/`sub`/`email`.
-   Reused, expired, or unknown tokens all fail identically (`400`).
+   `EmailSender`. Always responds `200` (no email enumeration), and is
+   per-email rate-limited. In dev (`AUTH_DEV_MODE=1`) the raw token is echoed
+   as `dev_token` so the SPA can finish the exchange without a real inbox.
+2. `POST /api/auth/exchange {token}` — a still-valid token is **atomically**
+   redeemed **once** (a conditional `UPDATE … WHERE used_at IS NULL`, so two
+   concurrent redemptions can't both win) for an HS256 JWT carrying
+   `tid`/`sub`/`email`. Reused, expired, or unknown tokens all fail
+   identically (`400`).
 3. Send the JWT as `Authorization: Bearer <jwt>` on every data route.
+
+### Posture: fail closed (`AUTH_DEV_MODE`)
+
+A single switch gates the auth posture. It is **off by default** (the safe,
+prod state). With it off, the app **refuses to start** unless `AUTH_JWT_SECRET`
+is set and a sign-in gate exists (`AUTH_ALLOWED_EMAILS`, or an explicit
+`AUTH_ALLOW_OPEN_SIGNUP=1`); the raw-token echo is forced off regardless of
+`AUTH_EXPOSE_TOKEN`; and booting with the dev `ConsoleEmailSender` is rejected.
+Set `AUTH_DEV_MODE=1` for the zero-config local loop (ephemeral secret, token
+echo, open sign-up), so the dev convenience never leaks into prod by accident.
 
 Auth environment variables:
 
 | Var | Default | Purpose |
 |---|---|---|
-| `AUTH_JWT_SECRET` | ephemeral random (dev) | HS256 signing secret — **set from the host secret store in prod (#16); never commit** |
-| `AUTH_SESSION_TTL_DAYS` | `7` | session JWT lifetime |
+| `AUTH_DEV_MODE` | `0` (prod) | **master safety switch.** `1` = local dev (ephemeral secret + token echo + open sign-up). Off ⇒ the prereqs below are enforced at boot. |
+| `AUTH_JWT_SECRET` | _(required off-dev)_ | HS256 signing secret — **set from the host secret store in prod (#16); never commit.** Ephemeral per-process value in dev. |
+| `AUTH_SESSION_TTL_DAYS` | `2` | session JWT lifetime (no revocation, so kept short — see trade-offs) |
 | `AUTH_LINK_TTL_MINUTES` | `15` | magic-link token lifetime |
 | `DEFAULT_TENANT_ID` | `1` | tenant new sign-ins land in (ADR-055 "reads 1 for now") |
-| `AUTH_ALLOWED_EMAILS` | _(empty = open)_ | optional comma-separated sign-in allowlist |
-| `AUTH_EXPOSE_TOKEN` | `1` (dev) | echo the raw token in the request-link response — **set `0` in prod** |
+| `AUTH_ALLOWED_EMAILS` | _(empty)_ | comma-separated sign-in allowlist. **Required off-dev** unless `AUTH_ALLOW_OPEN_SIGNUP=1`. |
+| `AUTH_ALLOW_OPEN_SIGNUP` | `0` | explicit opt-in to open auto-provisioning when off-dev (else an allowlist is required) |
+| `AUTH_EXPOSE_TOKEN` | `1` (dev) | echo the raw token in the request-link response — **honored only when `AUTH_DEV_MODE=1`; always off in prod** |
+| `AUTH_LINK_RATE_MAX` | `5` | max request-link tokens per email per window |
+| `AUTH_LINK_RATE_WINDOW_MINUTES` | `15` | rolling rate-limit window |
+
+### Security model & trade-offs (Slice 2)
+
+- **JWT in `localStorage` (SPA).** An XSS could read it and exfiltrate the
+  session. Accepted for an internal, single-tenant tool, and mitigated by
+  Svelte's default escaping of all rendered PII (owner names, notes). The more
+  secure alternative — an httpOnly + SameSite cookie with CSRF handling — is
+  deliberately deferred (a larger change touching CORS + the SPA fetch layer).
+- **No server-side revocation / logout.** Sessions are stateless JWTs valid
+  until `exp`; `signOut()` only clears the client. The blast radius of a leaked
+  token is bounded by the (now 2-day) TTL. A `jti`/token-version denylist is a
+  future option if revocation becomes a requirement.
+- **No `aud`/`iss` claims.** Fine while one secret signs for one audience; add
+  them if this secret is ever shared across services.
+- **Prod deploy checklist (ties to #16).** Set `AUTH_DEV_MODE=0`,
+  `AUTH_JWT_SECRET` (host secret store), a non-empty `AUTH_ALLOWED_EMAILS` (or
+  `AUTH_ALLOW_OPEN_SIGNUP=1` only if open sign-up is truly intended), and wire a
+  real `EmailSender`. The app now refuses to boot if any of these is missing.
 
 ## Run
 
@@ -97,8 +131,10 @@ pip install -r backend/requirements.txt          # fastapi, sqlalchemy, uvicorn,
 python scripts/preprocess.py --app-assets         # ensures parcels_attr.parquet exists
 python scripts/preprocess.py --owners-index        # writes composite/owners_index.json
 
-# 2. run the API (SQLite dev DB at data/processed/lead_state.sqlite3 by default)
-uvicorn backend.app.main:app --reload --port 8000
+# 2. run the API (SQLite dev DB at data/processed/lead_state.sqlite3 by default).
+#    AUTH_DEV_MODE=1 opts into the local loop; without it the app fails closed
+#    (it requires a real AUTH_JWT_SECRET + a sign-in gate — see "fail closed").
+AUTH_DEV_MODE=1 uvicorn backend.app.main:app --reload --port 8000
 # health check (public):
 curl localhost:8000/api/health
 
@@ -113,9 +149,10 @@ curl localhost:8000/api/candidates -H "authorization: Bearer $JWT"   # 200; with
 ```
 
 Point at Postgres instead of SQLite with
-`DATABASE_URL=postgresql+psycopg://user:pass@host/db`. In prod set
-`AUTH_JWT_SECRET` (from the host secret store) and `AUTH_EXPOSE_TOKEN=0`,
-and wire a real `EmailSender` (#16).
+`DATABASE_URL=postgresql+psycopg://user:pass@host/db`. In prod leave
+`AUTH_DEV_MODE` off and follow the deploy checklist above (set
+`AUTH_JWT_SECRET` from the host secret store, a sign-in gate, and a real
+`EmailSender`, #16) — the app refuses to boot otherwise.
 
 ## Test
 
