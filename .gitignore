@@ -65,3 +65,7 @@ backups/
 # ─── User-config persisted by puller ─────────────────────────────────
 # (Section 3 adds ~/.config/pilot/puller_state.json — outside repo, ignored
 # anyway, but documented here)
+
+# ─── Throwaway UI verification artifacts (slice screenshots, MCP logs) ─
+screenshots/
+.playwright-mcp/
