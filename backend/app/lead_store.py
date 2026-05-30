@@ -65,18 +65,24 @@ class LeadStore:
             self.session.flush()
         return lead
 
+    # Editable contact fields (Slice 3 / #49) — applied verbatim when present.
+    CONTACT_FIELDS = ("contact_name", "contact_phone", "contact_email", "best_channel")
+
     def upsert(
         self,
         display_cluster_id: str,
         *,
         status: str | None = None,
         notes: str | None = None,
+        contact: dict[str, str] | None = None,
     ) -> Lead:
-        """Set status and/or notes for a Lead, creating it at New if needed.
+        """Set status, notes, and/or contact fields for a Lead, creating it
+        at New if needed.
 
         A status change is validated against the ladder
         (``InvalidTransition`` on an illegal move) and auto-logs an
-        activity row. Persists in one transaction.
+        activity row. ``contact`` is a partial dict over ``CONTACT_FIELDS``;
+        unknown keys are ignored. Persists in one transaction.
         """
         lead = self.get_or_create(display_cluster_id)
         if status is not None and status != lead.status:
@@ -85,6 +91,10 @@ class LeadStore:
             lead.status = status
         if notes is not None:
             lead.notes = notes
+        if contact:
+            for field in self.CONTACT_FIELDS:
+                if field in contact and contact[field] is not None:
+                    setattr(lead, field, contact[field])
         self.session.commit()
         self.session.refresh(lead)
         return lead

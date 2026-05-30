@@ -37,12 +37,66 @@ export interface ContactAttempt {
   note: string;
 }
 
-export interface LeadDetail {
+export interface Structure {
+  type: 'tower' | 'solar';
+  asr?: string | null;
+  id?: string | null;
+  height_m?: number | null;
+  lat?: number | null;
+  lon?: number | null;
+  active?: boolean | null;
+  structure_kind?: string | null;
+  owner?: string | null;
+}
+
+export interface Holding {
+  parcel_id: string;
+  state: string;
+  county_fips: string;
+  land_use: string;
+  assessed_value: number;
+  acreage: number | null;
+  tower_count: number;
+  solar_count: number;
+  // [minlng, minlat, maxlng, maxlat] and [lng, lat], EPSG:4326.
+  bbox: [number, number, number, number] | null;
+  point: [number, number] | null;
+  structures: Structure[];
+}
+
+export interface MailingAddress {
+  addr: string;
+  city: string;
+  state: string;
+  zip: string;
+}
+
+/** Fields the co-founder edits on a Lead (kept in lockstep with the
+ *  backend `LeadUpdate` contact fields). */
+export interface ContactFields {
+  contact_name: string;
+  contact_phone: string;
+  contact_email: string;
+  best_channel: string;
+}
+
+export interface LeadDetail extends ContactFields {
   owner: OwnerSummary;
   status: LeadStatus;
   notes: string;
   updated_at: string | null;
   attempts: ContactAttempt[];
+  mailing_address: MailingAddress | null;
+  tallest_tower_height_m: number | null;
+  holdings: Holding[];
+}
+
+/** The body POSTed to log a manual contact attempt. */
+export interface AttemptPayload {
+  channel: string;
+  outcome: string;
+  note: string;
+  occurred_on: string | null;
 }
 
 export interface CandidatesResponse {
@@ -116,11 +170,21 @@ export function fetchLead(displayClusterId: string): Promise<LeadDetail> {
 
 export function updateLead(
   displayClusterId: string,
-  patch: { status?: LeadStatus; notes?: string },
+  patch: { status?: LeadStatus; notes?: string } & Partial<ContactFields>,
 ): Promise<LeadDetail> {
   return request<LeadDetail>(`/leads/${encodeURIComponent(displayClusterId)}`, {
     method: 'PUT',
     body: JSON.stringify(patch),
+  });
+}
+
+export function appendAttempt(
+  displayClusterId: string,
+  payload: AttemptPayload,
+): Promise<LeadDetail> {
+  return request<LeadDetail>(`/leads/${encodeURIComponent(displayClusterId)}/attempts`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 

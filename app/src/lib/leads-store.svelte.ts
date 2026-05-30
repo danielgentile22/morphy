@@ -3,9 +3,12 @@
 
 import {
   ApiError,
+  appendAttempt,
   fetchCandidates,
   fetchLead,
   updateLead,
+  type AttemptPayload,
+  type ContactFields,
   type LeadDetail,
   type OwnerSummary,
 } from './leads-api';
@@ -61,11 +64,11 @@ class LeadsStore {
     }
   }
 
-  /** Persist status and/or notes; refreshes the in-memory lead on success.
-   *  Returns true on success, false if the API rejected the change. */
+  /** Persist status, notes, and/or contact fields; refreshes the in-memory
+   *  lead on success. Returns true on success, false if the API rejected it. */
   async saveLead(
     displayClusterId: string,
-    patch: { status?: LeadStatus; notes?: string },
+    patch: { status?: LeadStatus; notes?: string } & Partial<ContactFields>,
   ): Promise<boolean> {
     this.saving = true;
     this.saveError = null;
@@ -74,6 +77,22 @@ class LeadsStore {
       return true;
     } catch (e) {
       // A 409 means an illegal ladder move; a 401 signs out (see handle()).
+      this.saveError = handle(e);
+      return false;
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  /** Log a manual contact attempt; refreshes the lead (the new row appears
+   *  in the activity stream alongside any auto-logged status rows). */
+  async addAttempt(displayClusterId: string, payload: AttemptPayload): Promise<boolean> {
+    this.saving = true;
+    this.saveError = null;
+    try {
+      this.lead = await appendAttempt(displayClusterId, payload);
+      return true;
+    } catch (e) {
       this.saveError = handle(e);
       return false;
     } finally {

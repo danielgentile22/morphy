@@ -39,7 +39,10 @@ from .cluster import normalize_owner_name
 OWNERS_INDEX_FILENAME = "owners_index.json"
 
 # owners_index.json shape version — bump when the structure changes.
-OWNERS_INDEX_SCHEMA_VERSION = 1
+# v2 (Slice 3 / #49): each owner gains ``holdings`` (per-parcel detail +
+# structures + footprint geometry), ``mailing_address`` (read-only source
+# contact), and ``tallest_tower_height_m`` for the full Lead page.
+OWNERS_INDEX_SCHEMA_VERSION = 2
 
 # Best-parcel-anchored cluster score, with a modest portfolio-size bonus
 # (ADR-056): score = max(parcel_scores) + ALPHA * ln(parcel_count).
@@ -51,7 +54,10 @@ _TIER_RANK = {"": 0, "transitional": 1, "at-risk": 2, "distressed": 3}
 _RANK_TIER = {v: k for k, v in _TIER_RANK.items()}
 
 # Columns the resolver reads. Only these are pulled from the (large)
-# per-state parquet so the precompute stays cheap.
+# per-state parquet so the precompute stays cheap. The trailing block
+# (parcel_id … infrastructure_summary) feeds the per-owner ``holdings``
+# + read-only mailing address the full Lead page needs (Slice 3 / #49);
+# all are optional — a state missing one still rolls up.
 INDEX_INPUT_COLUMNS = (
     "owner_name",
     "owner_name_norm",
@@ -67,7 +73,33 @@ INDEX_INPUT_COLUMNS = (
     "in_oz",
     "in_qct",
     "persistent_poverty",
+    "parcel_id",
+    "county_fips",
+    "acreage",
+    "land_use_desc",
+    "geom_bbox",
+    "infrastructure_summary",
+    "mailing_addr",
+    "mailing_city",
+    "mailing_state",
+    "mailing_zip",
 )
+
+# Tower-attribute columns joined onto a parcel's structures by ASR number
+# (the ``infrastructure_summary`` tower ``id`` is the ASR number).
+TOWER_ATTR_COLUMNS = (
+    "asr_number",
+    "height_m",
+    "lat",
+    "lon",
+    "is_active",
+    "structure_type_desc",
+)
+
+# Mailing-address placeholders that several state sources emit for "no
+# address on file" — treated as empty so they never become a Lead's
+# read-only contact.
+_MAILING_JUNK = {"", "0", "0.0", "none", "null", "n/a", "unknown"}
 
 
 def display_cluster_id(owner_name_norm: str) -> str:
@@ -89,6 +121,57 @@ def _mode_or_empty(s: pd.Series) -> str:
         return ""
     m = s.mode()
     return str(m.iat[0]) if not m.empty else ""
+
+
+def _to_float(value) -> float | None:
+    """Best-effort float, tolerant of nulls / blank strings (returns None)."""
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(f) else f
+
+
+def _parse_json_list(raw) -> list[dict]:
+    """Parse a JSON-array string column (e.g. ``infrastructure_summary``).
+
+    Tolerant: a null, blank, or malformed value yields ``[]`` so a single
+    bad row never breaks the holdings rollup. Accepts an already-parsed
+    list too (the column can arrive pre-decoded).
+    """
+    if isinstance(raw, list):
+        return [x for x in raw if isinstance(x, dict)]
+    if not isinstance(raw, str) or not raw.strip():
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    return [x for x in parsed if isinstance(x, dict)] if isinstance(parsed, list) else []
+
+
+def _parse_bbox(raw) -> list[float] | None:
+    """Parse a ``geom_bbox`` ``[minlng, minlat, maxlng, maxlat]`` (EPSG:4326).
+
+    The preprocess pipeline reprojects every spatial output to WGS84, so
+    the bbox is already lat/lon — usable directly as the mini-map footprint.
+    Returns rounded floats, or None when absent/malformed.
+    """
+    if isinstance(raw, str):
+        if not raw.strip():
+            return None
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(raw, (list, tuple)) or len(raw) != 4:
+        return None
+    out = [_to_float(v) for v in raw]
+    if any(v is None for v in out):
+        return None
+    return [round(v, 6) for v in out]  # type: ignore[arg-type]
 
 
 class CrossStateOwnerResolver:
@@ -124,12 +207,20 @@ class CrossStateOwnerResolver:
         except Exception:
             return f
 
-    def resolve(self, parcels: pd.DataFrame) -> pd.DataFrame:
+    def resolve(
+        self, parcels: pd.DataFrame, towers_by_asr: dict[str, dict] | None = None
+    ) -> pd.DataFrame:
         """Cluster parcels by normalized owner name → owners index.
 
         Rows with a blank normalized name are dropped (un-clusterable —
         can't be a Lead). Returns a DataFrame sorted by rolled-up score
         descending; empty input yields an empty, correctly-typed frame.
+
+        ``towers_by_asr`` (optional) maps an ASR number → tower attributes
+        (height/lat/lon/active); it enriches each parcel's structures so
+        the per-owner ``holdings`` + ``tallest_tower_height_m`` carry real
+        tower detail. Absent ⇒ structures still list their ASR ids, just
+        without height/coordinates.
         """
         df = parcels.copy()
         if df.empty:
@@ -211,8 +302,118 @@ class CrossStateOwnerResolver:
         out["max_parcel_score"] = out["max_parcel_score"].round(4)
         out["total_assessed_value"] = out["total_assessed_value"].round(2)
 
+        # Per-owner holdings + mailing + tallest tower (Slice 3 / #49). A
+        # second pass over the same clusters keeps the rollup ``agg`` above
+        # untouched; the cluster count (a few thousand) makes the python
+        # loop cheap.
+        detail = self._build_detail(df, towers_by_asr or {})
+        out["holdings"] = out["display_cluster_id"].map(lambda c: detail[c][0])
+        out["mailing_address"] = out["display_cluster_id"].map(lambda c: detail[c][1])
+        out["tallest_tower_height_m"] = out["display_cluster_id"].map(lambda c: detail[c][2])
+
         out = out.drop(columns=["_fips", "_tier_rank"])
         return out.sort_values("score", ascending=False, ignore_index=True)
+
+    # ── per-owner holdings detail ────────────────────────────────────────────
+    def _build_detail(
+        self, df: pd.DataFrame, towers_by_asr: dict[str, dict]
+    ) -> dict[str, tuple[list[dict], dict | None, float | None]]:
+        """``display_cluster_id`` → (holdings, mailing_address, tallest_m)."""
+        detail: dict[str, tuple[list[dict], dict | None, float | None]] = {}
+        for cid, group in df.groupby("_cluster", sort=False):
+            recs = group.to_dict("records")
+            holdings = [self._holding(r, towers_by_asr) for r in recs]
+            tallest = max(
+                (
+                    s["height_m"]
+                    for h in holdings
+                    for s in h["structures"]
+                    if s.get("type") == "tower" and s.get("height_m") is not None
+                ),
+                default=None,
+            )
+            detail[str(cid)] = (holdings, self._pick_mailing(recs), tallest)
+        return detail
+
+    def _holding(self, rec: dict, towers_by_asr: dict[str, dict]) -> dict:
+        bbox = _parse_bbox(rec.get("geom_bbox"))
+        structures = self._structures(rec.get("infrastructure_summary"), towers_by_asr)
+        return {
+            "parcel_id": str(rec.get("parcel_id") or ""),
+            "state": self._abbr(rec.get("state_fips", "")),
+            "county_fips": str(rec.get("county_fips") or ""),
+            "land_use": str(rec.get("land_use_desc") or ""),
+            "assessed_value": round(float(rec.get("_assessed", 0.0) or 0.0), 2),
+            "acreage": _to_float(rec.get("acreage")),
+            "tower_count": int(rec.get("_towers", 0) or 0),
+            "solar_count": int(rec.get("_solar", 0) or 0),
+            "bbox": bbox,
+            "point": self._holding_point(structures, bbox),
+            "structures": structures,
+        }
+
+    @staticmethod
+    def _structures(raw, towers_by_asr: dict[str, dict]) -> list[dict]:
+        out: list[dict] = []
+        for item in _parse_json_list(raw):
+            kind = str(item.get("type", ""))
+            sid = str(item.get("id", ""))
+            if kind == "tower":
+                t = towers_by_asr.get(sid, {})
+                out.append(
+                    {
+                        "type": "tower",
+                        "asr": sid,
+                        "height_m": _to_float(t.get("height_m")),
+                        "lat": _to_float(t.get("lat")),
+                        "lon": _to_float(t.get("lon")),
+                        "active": (
+                            None if t.get("is_active") is None else bool(t.get("is_active"))
+                        ),
+                        "structure_kind": str(t.get("structure_type_desc") or ""),
+                    }
+                )
+            elif kind == "solar":
+                out.append({"type": "solar", "id": sid, "owner": str(item.get("owner", "") or "")})
+        return out
+
+    @staticmethod
+    def _holding_point(structures: list[dict], bbox: list[float] | None) -> list[float] | None:
+        """A representative [lng, lat] for the mini-map. Prefer the parcel
+        bbox centroid (the parcel's own, self-consistent footprint) over a
+        tower coordinate — the ASR→parcel join is occasionally noisy, so a
+        tower's lat/lon can land off its parcel. Exact tower coordinates
+        still ride on each structure for callers that want them."""
+        if bbox is not None:
+            return [round((bbox[0] + bbox[2]) / 2, 6), round((bbox[1] + bbox[3]) / 2, 6)]
+        for s in structures:
+            if s.get("type") == "tower" and s.get("lat") is not None and s.get("lon") is not None:
+                return [round(float(s["lon"]), 6), round(float(s["lat"]), 6)]
+        return None
+
+    @staticmethod
+    def _pick_mailing(recs: list[dict]) -> dict | None:
+        """The owner's read-only mailing address: the modal non-junk address
+        across their parcels (a portfolio owner's canonical office)."""
+        from collections import Counter
+
+        counts: Counter[tuple[str, str, str, str]] = Counter()
+        for r in recs:
+            addr = str(r.get("mailing_addr") or "").strip()
+            if addr.lower() in _MAILING_JUNK:
+                continue
+            counts[
+                (
+                    addr,
+                    str(r.get("mailing_city") or "").strip(),
+                    str(r.get("mailing_state") or "").strip(),
+                    str(r.get("mailing_zip") or "").strip(),
+                )
+            ] += 1
+        if not counts:
+            return None
+        addr, city, state, zip_ = counts.most_common(1)[0][0]
+        return {"addr": addr, "city": city, "state": state, "zip": zip_}
 
     @staticmethod
     def _empty_index() -> pd.DataFrame:
@@ -235,6 +436,9 @@ class CrossStateOwnerResolver:
                 "cross_state": pd.Series(dtype="bool"),
                 "distress_tier": pd.Series(dtype="object"),
                 "score": pd.Series(dtype="float64"),
+                "holdings": pd.Series(dtype="object"),
+                "mailing_address": pd.Series(dtype="object"),
+                "tallest_tower_height_m": pd.Series(dtype="float64"),
             }
         )
 
@@ -270,11 +474,32 @@ def pq_columns(path: Path) -> set[str]:
     return set(pq.read_schema(path).names)
 
 
+def _read_state_towers(state_dir: Path) -> dict[str, dict]:
+    """Map ``asr_number → {height_m, lat, lon, is_active, structure_type_desc}``
+    for one state, used to enrich a parcel's structures with real tower
+    detail. Missing file ⇒ empty map (structures keep only their ASR ids)."""
+    towers = state_dir / "towers.parquet"
+    if not towers.exists():
+        return {}
+    cols = pq_columns(towers)
+    wanted = [c for c in TOWER_ATTR_COLUMNS if c in cols]
+    if "asr_number" not in wanted:
+        return {}
+    df = pd.read_parquet(towers, columns=wanted)
+    out: dict[str, dict] = {}
+    for rec in df.to_dict("records"):
+        asr = str(rec.get("asr_number") or "").strip()
+        if asr:
+            out[asr] = rec
+    return out
+
+
 def build_owners_index(composite_root: Path | None = None, alpha: float = DEFAULT_ALPHA) -> dict:
     """Read every composed anchor state and assemble the owners index dict.
 
-    Reads only ``parcels_attr.parquet`` per state (the facets output), so
-    ``--app-assets`` must have run first. States without it are skipped.
+    Reads ``parcels_attr.parquet`` (the facets output) plus ``towers.parquet``
+    per state, so ``--app-assets`` must have run first. States without the
+    parcel attributes are skipped.
     """
     root = composite_root if composite_root is not None else COMPOSITE_ROOT
 
@@ -283,15 +508,19 @@ def build_owners_index(composite_root: Path | None = None, alpha: float = DEFAUL
 
     frames: list[pd.DataFrame] = []
     states_used: list[str] = []
+    towers_by_asr: dict[str, dict] = {}
     for fips in iter_composed_states(root, predicate=_has_attr):
         part = _read_state_parcels(root / fips)
         if not part.empty:
             frames.append(part)
             states_used.append(fips)
+            towers_by_asr.update(_read_state_towers(root / fips))
 
     resolver = CrossStateOwnerResolver(alpha=alpha)
     if frames:
-        index_df = resolver.resolve(pd.concat(frames, ignore_index=True))
+        index_df = resolver.resolve(
+            pd.concat(frames, ignore_index=True), towers_by_asr=towers_by_asr
+        )
     else:
         index_df = resolver._empty_index()
 
@@ -326,6 +555,10 @@ def _owner_to_json(row: dict) -> dict:
         "in_oz": bool(row["in_oz"]),
         "in_qct": bool(row["in_qct"]),
         "persistent_poverty": bool(row["persistent_poverty"]),
+        # Slice 3 / #49 — full Lead page detail (schema v2).
+        "holdings": list(row.get("holdings") or []),
+        "mailing_address": row.get("mailing_address") or None,
+        "tallest_tower_height_m": _to_float(row.get("tallest_tower_height_m")),
     }
 
 

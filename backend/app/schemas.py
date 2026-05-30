@@ -33,12 +33,71 @@ class ContactAttemptOut(BaseModel):
     note: str
 
 
+class ContactAttemptIn(BaseModel):
+    """A manually-logged outreach attempt (date · channel · outcome)."""
+
+    channel: str
+    outcome: str = ""
+    note: str = ""
+    occurred_on: str | None = None  # ISO date; defaults to today server-side
+
+
+# ── full Lead page detail (Slice 3 / #49) ───────────────────────────────────
+class Structure(BaseModel):
+    """A tower or solar facility hosted on a holding. Tower fields
+    (asr/height/lat/lon) are absent on solar entries and vice-versa."""
+
+    type: str
+    asr: str | None = None
+    id: str | None = None
+    height_m: float | None = None
+    lat: float | None = None
+    lon: float | None = None
+    active: bool | None = None
+    structure_kind: str | None = None
+    owner: str | None = None
+
+
+class Holding(BaseModel):
+    """One parcel in a Lead's cross-state footprint."""
+
+    parcel_id: str
+    state: str
+    county_fips: str = ""
+    land_use: str = ""
+    assessed_value: float = 0.0
+    acreage: float | None = None
+    tower_count: int = 0
+    solar_count: int = 0
+    # [minlng, minlat, maxlng, maxlat] and [lng, lat], EPSG:4326 — the
+    # mini-map footprint. Either may be null when geometry is unavailable.
+    bbox: list[float] | None = None
+    point: list[float] | None = None
+    structures: list[Structure] = Field(default_factory=list)
+
+
+class MailingAddress(BaseModel):
+    addr: str = ""
+    city: str = ""
+    state: str = ""
+    zip: str = ""
+
+
 class LeadDetail(BaseModel):
     owner: OwnerSummary
     status: str
     notes: str
     updated_at: str | None
     attempts: list[ContactAttemptOut]
+    # Editable contact record (distinct from the read-only mailing address).
+    contact_name: str = ""
+    contact_phone: str = ""
+    contact_email: str = ""
+    best_channel: str = ""
+    # Read-only source detail for the "why this lead" + holdings halves.
+    mailing_address: MailingAddress | None = None
+    tallest_tower_height_m: float | None = None
+    holdings: list[Holding] = Field(default_factory=list)
 
 
 class LeadUpdate(BaseModel):
@@ -46,6 +105,10 @@ class LeadUpdate(BaseModel):
 
     status: str | None = Field(default=None)
     notes: str | None = Field(default=None)
+    contact_name: str | None = Field(default=None)
+    contact_phone: str | None = Field(default=None)
+    contact_email: str | None = Field(default=None)
+    best_channel: str | None = Field(default=None)
 
 
 class CandidatesResponse(BaseModel):

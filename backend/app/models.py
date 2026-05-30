@@ -27,7 +27,12 @@ def _utcnow() -> datetime:
 
 
 class Lead(Base):
-    """One cross-state landowner's outreach state for one tenant."""
+    """One cross-state landowner's outreach state for one tenant.
+
+    The ``contact_*`` columns (Slice 3 / #49) are the team's *editable*
+    record of who they actually reach — distinct from the read-only
+    mailing address served from the source parcel data.
+    """
 
     __tablename__ = "lead"
 
@@ -35,6 +40,10 @@ class Lead(Base):
     display_cluster_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=INITIAL_STATUS)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    contact_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    contact_phone: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    contact_email: Mapped[str] = mapped_column(String(320), nullable=False, default="")
+    best_channel: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow

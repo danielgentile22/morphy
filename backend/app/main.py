@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+from datetime import date
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,6 +35,7 @@ from .lead_store import LeadStore
 from .owners_index_service import OwnersIndexService
 from .schemas import (
     CandidatesResponse,
+    ContactAttemptIn,
     ExchangeBody,
     LeadDetail,
     LeadUpdate,
@@ -160,14 +162,58 @@ def update_lead(
 ) -> LeadDetail:
     if owners_index.get_owner(display_cluster_id) is None:
         raise HTTPException(status_code=404, detail="owner not found in index")
+    contact = {
+        f: getattr(body, f) for f in LeadStore.CONTACT_FIELDS if getattr(body, f) is not None
+    }
     try:
-        store.upsert(display_cluster_id, status=body.status, notes=body.notes)
+        store.upsert(
+            display_cluster_id,
+            status=body.status,
+            notes=body.notes,
+            contact=contact or None,
+        )
     except InvalidTransition as exc:
         # 409 Conflict — the request is well-formed but illegal for this Lead's state.
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     view = owners_index.lead_view(store, display_cluster_id)
     assert view is not None  # owner existence checked above
     return _to_detail(view)
+
+
+@app.post("/api/leads/{display_cluster_id}/attempts", response_model=LeadDetail)
+def log_attempt(
+    display_cluster_id: str,
+    body: ContactAttemptIn,
+    store: LeadStore = Depends(get_store),
+) -> LeadDetail:
+    """Append a manual contact attempt (date · channel · outcome) to the log.
+
+    Status-transition rows are auto-logged on ``PUT`` instead; this is the
+    co-founder explicitly recording an outreach event."""
+    if owners_index.get_owner(display_cluster_id) is None:
+        raise HTTPException(status_code=404, detail="owner not found in index")
+    if not body.channel.strip():
+        raise HTTPException(status_code=422, detail="channel is required")
+    occurred_on = _parse_iso_date(body.occurred_on)
+    store.append_attempt(
+        display_cluster_id,
+        channel=body.channel,
+        outcome=body.outcome,
+        note=body.note,
+        occurred_on=occurred_on,
+    )
+    view = owners_index.lead_view(store, display_cluster_id)
+    assert view is not None
+    return _to_detail(view)
+
+
+def _parse_iso_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="occurred_on must be ISO date") from exc
 
 
 def _to_detail(view: dict) -> LeadDetail:
@@ -178,4 +224,11 @@ def _to_detail(view: dict) -> LeadDetail:
         notes=view["notes"],
         updated_at=view["updated_at"],
         attempts=view["attempts"],
+        contact_name=view["contact_name"],
+        contact_phone=view["contact_phone"],
+        contact_email=view["contact_email"],
+        best_channel=view["best_channel"],
+        mailing_address=view["mailing_address"],
+        tallest_tower_height_m=view["tallest_tower_height_m"],
+        holdings=view["holdings"],
     )

@@ -4,7 +4,7 @@ Orientation for Claude Code sessions working in this repo. Read this
 first; then dip into the relevant doc under [docs/](docs/) when you
 need depth.
 
-**Last updated:** 2026-05-30 (**the first backend code landed** — the Slice 1 lead-triage write-layer tracer: cross-state owners index + tenant-scoped FastAPI/SQLAlchemy Lead backend + Candidates/Lead UI, #47 / PR #54; `backend/` is no longer design-only). Prior: 2026-05-29 audit remediation (NC demoted from the anchor set; doc drift swept; **WV (54) added + elevated to a committed Phase-1 anchor — ADR-060**); see docs/STATUS.md.
+**Last updated:** 2026-05-30 (**the Lead write-layer grew past the tracer** — Slice 2 **magic-link auth merged** (#48 / PR #56: HS256 JWT + route-level tenant-from-JWT, the `tenant_id=1` stub is gone, fail-closed `AUTH_DEV_MODE`), and the Slice 3 **full Lead page** is in review (#49 / PR #57: cross-state holdings + EPSG:4326 mini-map + editable contact + contact-attempts log + auto-logged status; owners index bumped to **schema v2**). Prior 2026-05-30: Slice 1 write-layer tracer (#47 / PR #54) — the first backend code on disk. See docs/STATUS.md.
 
 > **🔀 2026-05-25 phase shift:** The project pivoted from "v1 pitch
 > demo" to **Phase 1 of a co-founder-facing product** — see
@@ -109,7 +109,7 @@ pilot/
 │   └── archive/              Historical (preprocess v1, original v3 plan)
 ├── app/                      Svelte 5 + MapLibre map app (see app/ARCHITECTURE.md)
 ├── app_puller/               PySide6 desktop puller
-├── backend/                  FastAPI + SQLAlchemy lead-triage write-layer (Slice 1 tracer, #47 — tenant-scoped Lead state; SQLite dev / Postgres). S3 + Claude API + magic-link auth still planned. See backend/README.md
+├── backend/                  FastAPI + SQLAlchemy lead-triage write-layer (tenant-scoped Lead state; SQLite dev / Postgres). Magic-link auth merged (#48); full Lead page — holdings + contact + attempts (#49). S3 lease-doc storage + Claude API still planned. See backend/README.md
 ├── scripts/
 │   ├── fetch/                Headless puller library
 │   ├── preprocess/           Normalizer/Join/View framework + Composer
@@ -233,7 +233,7 @@ State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). Ph
   add status / validity columns; let Joins and Views filter.
 - **Use `safe_merge`** when a Join adds columns that a Normalizer
   initializes as placeholders ([ADR-020](docs/adr/0020-safe-merge-helper.md)).
-- **Backend — `tenant_id` everywhere** (implemented in the Slice 1 write-layer tracer, #47; [ADR-055](docs/adr/0055-hosted-private-backend.md)). Every table has it; every route filters by it. SQLAlchemy ORM, SQLite dev / Postgres via `DATABASE_URL`; auth stubbed to tenant `1` until magic-link (next slice). See `backend/README.md`.
+- **Backend — `tenant_id` everywhere** ([ADR-055](docs/adr/0055-hosted-private-backend.md)). Every table has it; every route filters by it. SQLAlchemy ORM, SQLite dev / Postgres via `DATABASE_URL`. The tenant is now **derived from the magic-link JWT** (`current_tenant_id`, #48) — do not reintroduce the `tenant_id=1` stub; respect the fail-closed `AUTH_DEV_MODE` posture. Schema changes ride an additive `init_db` migration until Alembic (e.g. the Slice 3 `lead.contact_*` columns, #49). See `backend/README.md`.
 
 ---
 
