@@ -51,11 +51,21 @@ def database_url() -> Iterator[str]:
 
     if container is not None:
         try:
-            yield container.get_connection_url()
+            yield _force_psycopg3(container.get_connection_url())
         finally:
             container.stop()
     else:  # Docker-free fallback (e.g. local dev without a daemon)
         yield "sqlite+pysqlite:///:memory:"
+
+
+def _force_psycopg3(url: str) -> str:
+    """testcontainers defaults to the psycopg2 driver, but we install
+    psycopg (v3); rewrite the URL so SQLAlchemy loads the driver we have."""
+    if "+psycopg2://" in url:
+        return url.replace("+psycopg2://", "+psycopg://")
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return url
 
 
 @pytest.fixture
