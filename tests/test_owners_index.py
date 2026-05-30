@@ -340,15 +340,19 @@ def test_counties_rollup_is_distinct_sorted_across_holdings():
     idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(
         pd.DataFrame(
             [
-                _parcel_with_holding("DELTA LAND LLC", "05", score=0.5, parcel_id="P1",
-                                     county_fips="05119"),
-                _parcel_with_holding("DELTA LAND LLC", "12", score=0.5, parcel_id="P2",
-                                     county_fips="12099"),
+                _parcel_with_holding(
+                    "DELTA LAND LLC", "05", score=0.5, parcel_id="P1", county_fips="05119"
+                ),
+                _parcel_with_holding(
+                    "DELTA LAND LLC", "12", score=0.5, parcel_id="P2", county_fips="12099"
+                ),
                 # a duplicate county must collapse; a blank one must be dropped
-                _parcel_with_holding("DELTA LAND LLC", "05", score=0.5, parcel_id="P3",
-                                     county_fips="05119"),
-                _parcel_with_holding("DELTA LAND LLC", "05", score=0.5, parcel_id="P4",
-                                     county_fips=""),
+                _parcel_with_holding(
+                    "DELTA LAND LLC", "05", score=0.5, parcel_id="P3", county_fips="05119"
+                ),
+                _parcel_with_holding(
+                    "DELTA LAND LLC", "05", score=0.5, parcel_id="P4", county_fips=""
+                ),
             ]
         )
     )
@@ -383,10 +387,12 @@ def test_active_tower_count_counts_only_active_towers():
     idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(
         pd.DataFrame(
             [
-                _parcel_with_holding("GRID TOWERS LLC", "05", score=0.6, parcel_id="P1",
-                                     towers_asr=("A1", "A2")),
-                _parcel_with_holding("GRID TOWERS LLC", "54", score=0.6, parcel_id="P2",
-                                     towers_asr=("A3", "A4")),
+                _parcel_with_holding(
+                    "GRID TOWERS LLC", "05", score=0.6, parcel_id="P1", towers_asr=("A1", "A2")
+                ),
+                _parcel_with_holding(
+                    "GRID TOWERS LLC", "54", score=0.6, parcel_id="P2", towers_asr=("A3", "A4")
+                ),
             ]
         ),
         towers_by_asr=towers,

@@ -348,9 +348,7 @@ class CrossStateOwnerResolver:
         for cid, group in df.groupby("_cluster", sort=False):
             recs = group.to_dict("records")
             holdings = [self._holding(r, towers_by_asr) for r in recs]
-            towers = [
-                s for h in holdings for s in h["structures"] if s.get("type") == "tower"
-            ]
+            towers = [s for h in holdings for s in h["structures"] if s.get("type") == "tower"]
             tallest = max(
                 (s["height_m"] for s in towers if s.get("height_m") is not None),
                 default=None,
