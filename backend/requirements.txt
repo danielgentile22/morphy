@@ -1,0 +1,19 @@
+# Lead-triage write-layer backend (ADR-055). Install into the repo .venv:
+#   source .venv/bin/activate && pip install -r backend/requirements.txt
+#
+# Runtime. The backend is DB-agnostic via SQLAlchemy: SQLite by default
+# (zero external services for local dev), Postgres in deploy/CI via
+# DATABASE_URL=postgresql+psycopg://...
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0
+# pydantic is already a repo dependency (used by the preprocess typed
+# artifacts); FastAPI uses it for request/response models.
+
+# ── Postgres path (deploy + the testcontainers isolation test) ─────────────
+# Only needed when DATABASE_URL points at Postgres or to run the
+# multi-tenancy isolation test against a real Postgres in CI/Docker. The
+# test fixture falls back to SQLite when these (or Docker) are absent, so
+# they are optional for a local SQLite dev loop.
+psycopg[binary]>=3.1
+testcontainers[postgres]>=4.0

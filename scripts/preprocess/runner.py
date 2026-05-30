@@ -236,6 +236,7 @@ def run_all(
         AppAssetsStep,
         ComposeStatesStep,
         NormalizeAllStep,
+        OwnersIndexStep,
         Pipeline,
         TilesStep,
     )
@@ -249,6 +250,7 @@ def run_all(
             NormalizeAllStep(force_rebuild=force_rebuild),
             ComposeStatesStep(states=states),
             AppAssetsStep(),
+            OwnersIndexStep(),
             TilesStep(),
         ]
     )
