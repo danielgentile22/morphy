@@ -163,9 +163,7 @@ def update_lead(
     if owners_index.get_owner(display_cluster_id) is None:
         raise HTTPException(status_code=404, detail="owner not found in index")
     contact = {
-        f: getattr(body, f)
-        for f in LeadStore.CONTACT_FIELDS
-        if getattr(body, f) is not None
+        f: getattr(body, f) for f in LeadStore.CONTACT_FIELDS if getattr(body, f) is not None
     }
     try:
         store.upsert(

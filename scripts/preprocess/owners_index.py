@@ -367,7 +367,9 @@ class CrossStateOwnerResolver:
                         "height_m": _to_float(t.get("height_m")),
                         "lat": _to_float(t.get("lat")),
                         "lon": _to_float(t.get("lon")),
-                        "active": (None if t.get("is_active") is None else bool(t.get("is_active"))),
+                        "active": (
+                            None if t.get("is_active") is None else bool(t.get("is_active"))
+                        ),
                         "structure_kind": str(t.get("structure_type_desc") or ""),
                     }
                 )

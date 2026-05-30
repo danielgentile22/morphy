@@ -71,9 +71,7 @@ def _migrate_added_columns(eng: Engine) -> None:
         return
     with eng.begin() as conn:
         for name, col_type in missing.items():
-            conn.execute(
-                text(f"ALTER TABLE lead ADD COLUMN {name} {col_type} NOT NULL DEFAULT ''")
-            )
+            conn.execute(text(f"ALTER TABLE lead ADD COLUMN {name} {col_type} NOT NULL DEFAULT ''"))
 
 
 def get_db() -> Iterator[Session]:

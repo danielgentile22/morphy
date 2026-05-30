@@ -35,7 +35,9 @@ def _legacy_engine():
     with eng.begin() as conn:
         conn.execute(text(_LEGACY_LEAD_DDL))
         conn.execute(
-            text("INSERT INTO lead (tenant_id, display_cluster_id, status) VALUES (1, 'old1', 'researching')")
+            text(
+                "INSERT INTO lead (tenant_id, display_cluster_id, status) VALUES (1, 'old1', 'researching')"
+            )
         )
     return eng
 

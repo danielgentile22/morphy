@@ -36,7 +36,12 @@ SAMPLE = {
             "in_qct": True,
             "persistent_poverty": False,
             "tallest_tower_height_m": 120.0,
-            "mailing_address": {"addr": "10 MAIN ST", "city": "BOSTON", "state": "MA", "zip": "02101"},
+            "mailing_address": {
+                "addr": "10 MAIN ST",
+                "city": "BOSTON",
+                "state": "MA",
+                "zip": "02101",
+            },
             "holdings": [
                 {
                     "parcel_id": "P1",
@@ -139,12 +144,16 @@ def test_status_change_and_manual_attempt_share_one_stream(client: TestClient) -
 
 
 def test_attempt_requires_a_channel(client: TestClient) -> None:
-    assert client.post(f"/api/leads/{CID}/attempts", json={"channel": "", "outcome": "x"}).status_code == 422
+    assert (
+        client.post(f"/api/leads/{CID}/attempts", json={"channel": "", "outcome": "x"}).status_code
+        == 422
+    )
 
 
 def test_attempt_rejects_a_bad_date(client: TestClient) -> None:
     r = client.post(
-        f"/api/leads/{CID}/attempts", json={"channel": "phone", "outcome": "x", "occurred_on": "not-a-date"}
+        f"/api/leads/{CID}/attempts",
+        json={"channel": "phone", "outcome": "x", "occurred_on": "not-a-date"},
     )
     assert r.status_code == 422
 

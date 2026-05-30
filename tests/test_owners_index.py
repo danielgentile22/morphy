@@ -235,19 +235,41 @@ def _parcel_with_holding(
 
 def test_holdings_aggregate_per_parcel_across_states():
     towers = {
-        "T1": {"height_m": 120.0, "lat": 35.0, "lon": -90.0, "is_active": True, "structure_type_desc": "TOWER"},
-        "T2": {"height_m": 80.0, "lat": 38.0, "lon": -81.0, "is_active": False, "structure_type_desc": "MAST"},
+        "T1": {
+            "height_m": 120.0,
+            "lat": 35.0,
+            "lon": -90.0,
+            "is_active": True,
+            "structure_type_desc": "TOWER",
+        },
+        "T2": {
+            "height_m": 80.0,
+            "lat": 38.0,
+            "lon": -81.0,
+            "is_active": False,
+            "structure_type_desc": "MAST",
+        },
     }
     idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(
         pd.DataFrame(
             [
                 _parcel_with_holding(
-                    "AMERICAN TOWERS LLC", "05", score=0.9, parcel_id="P1",
-                    towers_asr=("T1",), bbox=[-90.1, 34.9, -90.0, 35.0], county_fips="05123",
+                    "AMERICAN TOWERS LLC",
+                    "05",
+                    score=0.9,
+                    parcel_id="P1",
+                    towers_asr=("T1",),
+                    bbox=[-90.1, 34.9, -90.0, 35.0],
+                    county_fips="05123",
                 ),
                 _parcel_with_holding(
-                    "AMERICAN TOWERS LLC", "54", score=0.8, parcel_id="P2",
-                    towers_asr=("T2",), solar_ids=("S1",), bbox=[-81.1, 37.9, -81.0, 38.0],
+                    "AMERICAN TOWERS LLC",
+                    "54",
+                    score=0.8,
+                    parcel_id="P2",
+                    towers_asr=("T2",),
+                    solar_ids=("S1",),
+                    bbox=[-81.1, 37.9, -81.0, 38.0],
                 ),
             ]
         ),
@@ -276,7 +298,10 @@ def test_mailing_address_is_the_modal_non_junk_address():
                 _parcel_with_holding("BIG SKY LLC", "30", score=0.5, parcel_id="B", mailing=real),
                 # a junk placeholder must never win the mode
                 _parcel_with_holding(
-                    "BIG SKY LLC", "30", score=0.4, parcel_id="C",
+                    "BIG SKY LLC",
+                    "30",
+                    score=0.4,
+                    parcel_id="C",
                     mailing={"addr": "0", "city": "", "state": "", "zip": ""},
                 ),
             ]
@@ -290,7 +315,11 @@ def test_holdings_present_without_a_tower_map_have_null_heights():
     # No towers_by_asr → structures still list their ASR ids, height None.
     idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(
         pd.DataFrame(
-            [_parcel_with_holding("LONE PINE TRUST", "30", score=0.5, parcel_id="P", towers_asr=("X1",))]
+            [
+                _parcel_with_holding(
+                    "LONE PINE TRUST", "30", score=0.5, parcel_id="P", towers_asr=("X1",)
+                )
+            ]
         )
     )
     row = _row_for(idx, "LONE PINE")
