@@ -62,11 +62,17 @@ are rejected (HTTP 409).
 | POST | `/api/leads/{display_cluster_id}/attempts` | append a manual contact attempt (date · channel · outcome) |
 
 The read half of the full Lead page (holdings / mailing / tallest tower) is
-served from the precomputed **owners index** (schema **v2**, Slice 3 / #49 —
-`scripts/preprocess/owners_index.py` now emits per-owner `holdings`,
-`mailing_address`, and `tallest_tower_height_m`); only the lead state is
-per-tenant. Rebuild it after composing states: `python scripts/preprocess.py
---owners-index`.
+served from the precomputed **owners index** (schema **v3** —
+`scripts/preprocess/owners_index.py`). v2 (Slice 3 / #49) added per-owner
+`holdings`, `mailing_address`, and `tallest_tower_height_m`; **v3 (Slice 6 /
+#52)** added the owner-level filter rollups the shared top-bar `FilterModel`
+reads — `counties`, `active_tower_count`, `structure_count`, `structure_types`
+— surfaced on `OwnerSummary` (`/api/candidates`, `/api/my-leads`) and also
+written to a slim client companion `owners_filter.json` (filter+search fields
+only, no holdings) the map loads to narrow towers. Only the lead state is
+per-tenant. Rebuild both after composing states: `python scripts/preprocess.py
+--owners-index` (writes `owners_index.json` + `owners_filter.json`). New
+`OwnerSummary` fields are **defaulted** so a pre-v3 index still validates.
 
 Every data route resolves the tenant from the `Authorization: Bearer <jwt>`
 (`current_tenant_id`, now JWT-derived) and is tenant-scoped; an
@@ -139,7 +145,7 @@ pip install -r backend/requirements.txt          # fastapi, sqlalchemy, uvicorn,
 
 # 1. precompute the owners index (reads the composed anchor states on disk)
 python scripts/preprocess.py --app-assets         # ensures parcels_attr.parquet exists
-python scripts/preprocess.py --owners-index        # writes composite/owners_index.json
+python scripts/preprocess.py --owners-index        # writes composite/owners_index.json (+ owners_filter.json)
 
 # 2. run the API (SQLite dev DB at data/processed/lead_state.sqlite3 by default).
 #    AUTH_DEV_MODE=1 opts into the local loop; without it the app fails closed

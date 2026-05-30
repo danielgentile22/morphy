@@ -4,7 +4,7 @@ Orientation for Claude Code sessions working in this repo. Read this
 first; then dip into the relevant doc under [docs/](docs/) when you
 need depth.
 
-**Last updated:** 2026-05-30 (**the Lead write-layer grew past the tracer** — Slice 2 **magic-link auth merged** (#48 / PR #56: HS256 JWT + route-level tenant-from-JWT, the `tenant_id=1` stub is gone, fail-closed `AUTH_DEV_MODE`), and the Slice 3 **full Lead page** is in review (#49 / PR #57: cross-state holdings + EPSG:4326 mini-map + editable contact + contact-attempts log + auto-logged status; owners index bumped to **schema v2**). Prior 2026-05-30: Slice 1 write-layer tracer (#47 / PR #54) — the first backend code on disk. See docs/STATUS.md.
+**Last updated:** 2026-05-30 (**the lead-centric triage redesign is largely shipped** — the ADR-055/056 write-layer + redesigned UI have landed through Slice 6: Slice 1 tracer (#47), **magic-link auth** (#48: HS256 JWT + route-level tenant-from-JWT, fail-closed `AUTH_DEV_MODE`), **full Lead page** (#49: cross-state holdings + EPSG:4326 mini-map + editable contact + attempts + auto-logged status; owners index **schema v2**), **structures-first map** (#50: clustered towers across all four anchors, click → landowner Lead), **My-Leads kanban** (#51: drag-to-change-status worklist + live nav counts), and **top-bar filters + owner/ASR search** (#52 / PR #63: one shared lead-centric `FilterModel` narrows the map's towers + the Candidates list; owners index **→ schema v3** + slim client `owners_filter.json`; the parcel-centric sidebar is retired). Remaining redesign UI: **manual owner merge/split (#53)**. Lease-doc upload + LLM extraction (the rest of D+E) still unimplemented. See docs/STATUS.md.
 
 > **🔀 2026-05-25 phase shift:** The project pivoted from "v1 pitch
 > demo" to **Phase 1 of a co-founder-facing product** — see
@@ -109,7 +109,7 @@ pilot/
 │   └── archive/              Historical (preprocess v1, original v3 plan)
 ├── app/                      Svelte 5 + MapLibre map app (see app/ARCHITECTURE.md)
 ├── app_puller/               PySide6 desktop puller
-├── backend/                  FastAPI + SQLAlchemy lead-triage write-layer (tenant-scoped Lead state; SQLite dev / Postgres). Magic-link auth merged (#48); full Lead page — holdings + contact + attempts (#49). S3 lease-doc storage + Claude API still planned. See backend/README.md
+├── backend/                  FastAPI + SQLAlchemy lead-triage write-layer (tenant-scoped Lead state; SQLite dev / Postgres). Magic-link auth (#48); full Lead page — holdings + contact + attempts (#49); My-Leads kanban reads — /api/my-leads + /api/counts (#51); owners index serves the v3 filter rollups the shared top-bar FilterModel reads (#52). S3 lease-doc storage + Claude API still planned. See backend/README.md
 ├── scripts/
 │   ├── fetch/                Headless puller library
 │   ├── preprocess/           Normalizer/Join/View framework + Composer
@@ -128,7 +128,7 @@ The full repository layout + system diagram is in
 
 Phase 1 slice plan (untimed, goal-driven): **F → A → C → D+E → B**. After Slice B, the **4-week outcome-bar clock** starts (cofounder uses the product as his primary daily triage tool for 4 consecutive weeks).
 
-> **Update (2026-05-30):** the ADR-055/056 write-layer (originally part of D+E) was pulled ahead via the lead-centric triage redesign, and its end-to-end **tracer is merged** (#47 / PR #54) — a cross-state owners-index precompute + a tenant-scoped FastAPI/Postgres Lead backend + a Candidates/Lead UI. Lease-doc upload + LLM extraction (the rest of D+E) remain unimplemented; see docs/STATUS.md §6.
+> **Update (2026-05-30):** the ADR-055/056 write-layer (originally part of D+E) was pulled ahead via the lead-centric triage redesign and is largely shipped — tracer (#47) → magic-link auth (#48) → full Lead page (#49) → structures-first map (#50) → My-Leads kanban (#51) → top-bar filters + owner/ASR search (#52). Remaining: manual owner merge/split (#53), then lease-doc upload + LLM extraction (the rest of D+E). See docs/STATUS.md §6.
 
 Per-slice "shipped" gates in [docs/GOALS.md §3](docs/GOALS.md). Current slice + blockers in [docs/STATUS.md](docs/STATUS.md) — always check it before starting a new task.
 
@@ -233,7 +233,7 @@ State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). Ph
   add status / validity columns; let Joins and Views filter.
 - **Use `safe_merge`** when a Join adds columns that a Normalizer
   initializes as placeholders ([ADR-020](docs/adr/0020-safe-merge-helper.md)).
-- **Backend — `tenant_id` everywhere** ([ADR-055](docs/adr/0055-hosted-private-backend.md)). Every table has it; every route filters by it. SQLAlchemy ORM, SQLite dev / Postgres via `DATABASE_URL`. The tenant is now **derived from the magic-link JWT** (`current_tenant_id`, #48) — do not reintroduce the `tenant_id=1` stub; respect the fail-closed `AUTH_DEV_MODE` posture. Schema changes ride an additive `init_db` migration until Alembic (e.g. the Slice 3 `lead.contact_*` columns, #49). See `backend/README.md`.
+- **Backend — `tenant_id` everywhere** ([ADR-055](docs/adr/0055-hosted-private-backend.md)). Every table has it; every route filters by it. SQLAlchemy ORM, SQLite dev / Postgres via `DATABASE_URL`. The tenant is now **derived from the magic-link JWT** (`current_tenant_id`, #48) — do not reintroduce the `tenant_id=1` stub; respect the fail-closed `AUTH_DEV_MODE` posture. Schema changes ride an additive `init_db` migration until Alembic (e.g. the Slice 3 `lead.contact_*` columns, #49). The static read-side **owners index** (`scripts/preprocess/owners_index.py`, served read-only by `OwnersIndexService`) is at **schema v3** — Slice 6 (#52) added the per-owner filter rollups (`counties` / `active_tower_count` / `structure_count` / `structure_types`) the shared top-bar `FilterModel` reads, and a slim client companion `owners_filter.json`; bump `OWNERS_INDEX_SCHEMA_VERSION` + give new `OwnerSummary` fields safe defaults when you extend it (a stale index must still serve). See `backend/README.md`.
 
 ---
 
