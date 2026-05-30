@@ -111,7 +111,26 @@ def test_candidates_list_is_per_tenant(two_tenants) -> None:
 
 
 @pytest.mark.tenant_isolation
+def test_my_leads_board_and_counts_are_per_tenant(two_tenants) -> None:
+    client, a, b = two_tenants
+    # A advances the owner off New → onto A's kanban board only.
+    client.put(f"/api/leads/{CID}", headers=a, json={"status": "researching"})
+
+    a_board = client.get("/api/my-leads", headers=a).json()
+    b_board = client.get("/api/my-leads", headers=b).json()
+    assert [le["display_cluster_id"] for le in a_board["leads"]] == [CID]
+    assert b_board["leads"] == []  # B never sees A's advanced lead
+
+    # Nav counts are likewise scoped: the same owner is a My-Lead for A but
+    # still a Candidate for B.
+    assert client.get("/api/counts", headers=a).json() == {"candidates": 0, "my_leads": 1}
+    assert client.get("/api/counts", headers=b).json() == {"candidates": 1, "my_leads": 0}
+
+
+@pytest.mark.tenant_isolation
 def test_unauthenticated_request_is_rejected(two_tenants) -> None:
     client, _a, _b = two_tenants
     assert client.get("/api/candidates").status_code == 401
+    assert client.get("/api/my-leads").status_code == 401
+    assert client.get("/api/counts").status_code == 401
     assert client.put(f"/api/leads/{CID}", json={"status": "researching"}).status_code == 401

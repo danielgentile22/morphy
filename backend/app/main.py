@@ -6,6 +6,8 @@ Surface:
   GET  /api/auth/me              the authenticated tenant + email
   GET  /api/health               liveness (public)
   GET  /api/candidates           owners at New, ranked by interestingness
+  GET  /api/my-leads             owners advanced off New (the kanban worklist)
+  GET  /api/counts               live nav counts (candidates + my-leads)
   GET  /api/leads/{cluster_id}   owner rollup + lead state + attempts
   PUT  /api/leads/{cluster_id}   set status and/or notes (validates ladder)
 
@@ -36,10 +38,12 @@ from .owners_index_service import OwnersIndexService
 from .schemas import (
     CandidatesResponse,
     ContactAttemptIn,
+    CountsResponse,
     ExchangeBody,
     LeadDetail,
     LeadUpdate,
     MeResponse,
+    MyLeadsResponse,
     OwnerSummary,
     RequestLinkBody,
     RequestLinkResponse,
@@ -144,6 +148,20 @@ def candidates(
         count=len(rows),
         candidates=[OwnerSummary(**r) for r in rows],
     )
+
+
+@app.get("/api/my-leads", response_model=MyLeadsResponse)
+def my_leads(
+    store: LeadStore = Depends(get_store),
+    limit: int = Query(default=2000, ge=1, le=20000),
+) -> MyLeadsResponse:
+    rows = owners_index.list_my_leads(store, limit=limit)
+    return MyLeadsResponse(count=len(rows), leads=[OwnerSummary(**r) for r in rows])
+
+
+@app.get("/api/counts", response_model=CountsResponse)
+def counts(store: LeadStore = Depends(get_store)) -> CountsResponse:
+    return CountsResponse(**owners_index.counts(store))
 
 
 @app.get("/api/leads/{display_cluster_id}", response_model=LeadDetail)

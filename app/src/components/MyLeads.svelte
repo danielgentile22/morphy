@@ -1,0 +1,286 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { leads } from '../lib/leads-store.svelte';
+  import {
+    KANBAN_LANES,
+    STATUS_LABELS,
+    TERMINAL_STATUSES,
+    canTransition,
+    type LeadStatus,
+  } from '../lib/lead-status';
+  import { kindLabel, statusVar } from '../lib/lead-format';
+  import type { OwnerSummary } from '../lib/leads-api';
+
+  onMount(() => {
+    void leads.loadMyLeads();
+    void leads.loadCounts();
+  });
+
+  // Bucket the worklist into lanes. Reactive on leads.myLeads (and each
+  // owner's .status), so an optimistic drag re-renders both lanes at once.
+  const byLane = $derived.by(() => {
+    const m: Record<string, OwnerSummary[]> = {};
+    for (const lane of KANBAN_LANES) m[lane] = [];
+    for (const o of leads.myLeads) (m[o.status] ??= []).push(o);
+    return m;
+  });
+
+  // Native HTML5 drag-and-drop (no library). The card being dragged + the
+  // lane currently hovered drive the legal/illegal drop affordance.
+  let draggingId = $state<string | null>(null);
+  let draggingFrom = $state<LeadStatus | null>(null);
+  let overLane = $state<string | null>(null);
+
+  function onDragStart(e: DragEvent, o: OwnerSummary): void {
+    draggingId = o.display_cluster_id;
+    draggingFrom = o.status;
+    if (e.dataTransfer) {
+      e.dataTransfer.setData('text/plain', o.display_cluster_id);
+      e.dataTransfer.effectAllowed = 'move';
+    }
+  }
+  function onDragEnd(): void {
+    draggingId = null;
+    draggingFrom = null;
+    overLane = null;
+  }
+  function legalInto(lane: LeadStatus): boolean {
+    return draggingFrom !== null && canTransition(draggingFrom, lane);
+  }
+  function onDragOver(e: DragEvent, lane: LeadStatus): void {
+    overLane = lane;
+    if (legalInto(lane)) {
+      e.preventDefault(); // allow the drop
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    } else if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'none';
+    }
+  }
+  function onDragLeave(lane: LeadStatus): void {
+    if (overLane === lane) overLane = null;
+  }
+  async function onDrop(e: DragEvent, lane: LeadStatus): Promise<void> {
+    e.preventDefault();
+    const id = e.dataTransfer?.getData('text/plain') || draggingId;
+    overLane = null;
+    if (id) await leads.moveLead(id, lane); // server is authoritative; reverts on reject
+  }
+
+  function open(id: string): void {
+    location.hash = `#/lead/${encodeURIComponent(id)}`;
+  }
+</script>
+
+<div class="myleads" data-testid="my-leads">
+  <header class="head">
+    <h2>My Leads</h2>
+    <p class="sub">
+      Owners you’ve advanced off “New”. Drag a card between lanes to change its status — the change
+      is auto-logged and persists. New owners live in
+      <button class="link" onclick={() => (location.hash = '#/candidates')}>Candidates</button>.
+    </p>
+  </header>
+
+  {#if leads.myLeadsError}
+    <p class="state-msg err" data-testid="my-leads-error">{leads.myLeadsError}</p>
+  {/if}
+
+  {#if leads.myLeadsStatus === 'loading'}
+    <p class="state-msg">Loading worklist…</p>
+  {:else if leads.myLeadsStatus === 'error'}
+    <p class="state-msg err">{leads.myLeadsError}</p>
+  {:else}
+    <div class="kanban" data-testid="kanban">
+      {#each KANBAN_LANES as lane (lane)}
+        {@const cards = byLane[lane] ?? []}
+        <section
+          class="lane"
+          class:closed={TERMINAL_STATUSES.has(lane)}
+          class:dragover={overLane === lane}
+          class:legal={overLane === lane && draggingId !== null && legalInto(lane)}
+          class:illegal={overLane === lane && draggingId !== null && !legalInto(lane)}
+          data-testid="lane"
+          data-lane={lane}
+          role="group"
+          aria-label="{STATUS_LABELS[lane]} lane"
+          ondragover={(e) => onDragOver(e, lane)}
+          ondragleave={() => onDragLeave(lane)}
+          ondrop={(e) => onDrop(e, lane)}
+        >
+          <div class="lane-head" style="border-color:{statusVar(lane)}">
+            <span class="dot" style="background:{statusVar(lane)}"></span>
+            {STATUS_LABELS[lane]}
+            <span class="count" data-testid="lane-count">{cards.length}</span>
+          </div>
+          <div class="lane-body">
+            {#each cards as o (o.display_cluster_id)}
+              <div
+                class="card"
+                data-testid="lead-card"
+                data-key={o.display_cluster_id}
+                data-status={o.status}
+                draggable="true"
+                role="button"
+                tabindex="0"
+                aria-label="Open lead {o.owner_name}"
+                ondragstart={(e) => onDragStart(e, o)}
+                ondragend={onDragEnd}
+                onclick={() => open(o.display_cluster_id)}
+                onkeydown={(e) => e.key === 'Enter' && open(o.display_cluster_id)}
+              >
+                <div class="cname">{o.owner_name}</div>
+                <div class="cmeta">
+                  <span>{kindLabel(o.owner_kind)}</span>
+                  <span>{o.states.join('/')}</span>
+                  <span>{o.tower_count} twr</span>
+                  {#if o.cross_state}<span class="x">multi-state</span>{/if}
+                  {#if o.distress_tier === 'distressed'}
+                    <span class="distress-high">high distress</span>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+            {#if cards.length === 0}
+              <p class="empty">—</p>
+            {/if}
+          </div>
+        </section>
+      {/each}
+    </div>
+  {/if}
+</div>
+
+<style>
+  .myleads {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 18px 22px 0;
+  }
+  .head {
+    flex-shrink: 0;
+  }
+  h2 {
+    font-size: 18px;
+  }
+  .sub {
+    margin: 4px 0 14px;
+    font-size: 12.5px;
+    color: var(--text-2);
+    max-width: 760px;
+  }
+  .link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--accent);
+    font: inherit;
+  }
+  .state-msg {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .state-msg.err {
+    color: var(--danger);
+  }
+
+  /* Board: a row of lanes, horizontally scrollable, filling the surface. */
+  .kanban {
+    display: flex;
+    gap: 12px;
+    flex: 1;
+    min-height: 0;
+    overflow-x: auto;
+    padding-bottom: 18px;
+  }
+  .lane {
+    width: 250px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    max-height: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .lane.closed {
+    background: #fbeeec;
+  }
+  /* Drop affordance while dragging. */
+  .lane.dragover.legal {
+    outline: 2px dashed var(--accent);
+    outline-offset: -4px;
+  }
+  .lane.dragover.illegal {
+    outline: 2px dashed var(--danger);
+    outline-offset: -4px;
+    cursor: not-allowed;
+  }
+  .lane-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 10px 12px;
+    font-weight: 650;
+    font-size: 13px;
+    border-bottom: 2px solid;
+  }
+  .lane-head .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+  }
+  .lane-head .count {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0 7px;
+    color: var(--text-2);
+  }
+  .lane-body {
+    flex: 1;
+    min-height: 48px;
+    overflow-y: auto;
+    padding: 8px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 9px 10px;
+    margin-bottom: 8px;
+    box-shadow: var(--shadow);
+    cursor: grab;
+  }
+  .card:active {
+    cursor: grabbing;
+  }
+  .card .cname {
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .card .cmeta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .card .cmeta .x {
+    color: #5a3aa8;
+  }
+  .distress-high {
+    color: var(--danger);
+    font-weight: 600;
+  }
+  .empty {
+    margin: 4px 0 0;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+</style>

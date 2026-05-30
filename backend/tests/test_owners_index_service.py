@@ -156,6 +156,33 @@ def test_unknown_owner_yields_none(
     assert service.lead_view(store_factory(1), "doesnotexist") is None
 
 
+# ── My-Leads worklist + nav counts (Slice 5 / #51) ──────────────────────────
+def test_list_my_leads_excludes_owners_at_new(
+    service: OwnersIndexService, store_factory: Callable[[int], LeadStore]
+) -> None:
+    # An owner with no persisted Lead is implicitly New → not on the board.
+    assert service.list_my_leads(store_factory(1)) == []
+
+
+def test_list_my_leads_includes_advanced_owner_with_status(
+    service: OwnersIndexService, store_factory: Callable[[int], LeadStore]
+) -> None:
+    store_factory(1).upsert(CID, status="researching")
+    rows = service.list_my_leads(store_factory(1))
+    assert [r["display_cluster_id"] for r in rows] == [CID]
+    assert rows[0]["status"] == "researching"  # lane bucket comes from here
+
+
+def test_my_leads_and_candidates_partition_the_index(
+    service: OwnersIndexService, store_factory: Callable[[int], LeadStore]
+) -> None:
+    # Before any work: the lone owner is a Candidate, the board is empty.
+    assert service.counts(store_factory(1)) == {"candidates": 1, "my_leads": 0}
+    # Advancing it off New flips it from Candidates to My-Leads.
+    store_factory(1).upsert(CID, status="researching")
+    assert service.counts(store_factory(1)) == {"candidates": 0, "my_leads": 1}
+
+
 def test_pre_v2_index_without_holdings_degrades_safely(
     tmp_path: Path, store_factory: Callable[[int], LeadStore]
 ) -> None:

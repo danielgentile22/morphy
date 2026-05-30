@@ -5,6 +5,7 @@
 
   onMount(() => {
     void leads.loadCandidates();
+    void leads.loadCounts();
   });
 
   function open(id: string): void {

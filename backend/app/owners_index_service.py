@@ -62,6 +62,40 @@ class OwnersIndexService:
                 break
         return out
 
+    def list_my_leads(self, store: LeadStore, limit: int | None = None) -> list[dict]:
+        """Owners advanced *off* New — the My-Leads worklist (Slice 5 / #51).
+
+        The complement of ``list_candidates``: every index owner whose Lead
+        is at a non-New status, each with its ``status`` attached so the
+        kanban can bucket it into a lane. Kept in score order; the client
+        groups by status.
+        """
+        status_by_id = store.status_map()
+        out: list[dict] = []
+        for owner in self._owners:  # already score-sorted
+            status = status_by_id.get(owner["display_cluster_id"], INITIAL_STATUS)
+            if status == INITIAL_STATUS:
+                continue
+            out.append({**owner, "status": status})
+            if limit is not None and len(out) >= limit:
+                break
+        return out
+
+    def counts(self, store: LeadStore) -> dict[str, int]:
+        """Nav counts: ``{candidates, my_leads}`` over this tenant's view.
+
+        Every index owner is either a Candidate (New) or a My-Lead (off
+        New), so the two partition the index. Counts the *true* totals
+        (uncapped by any list ``limit``) in one pass.
+        """
+        status_by_id = store.status_map()
+        my_leads = sum(
+            1
+            for owner in self._owners
+            if status_by_id.get(owner["display_cluster_id"], INITIAL_STATUS) != INITIAL_STATUS
+        )
+        return {"candidates": len(self._owners) - my_leads, "my_leads": my_leads}
+
     def lead_view(self, store: LeadStore, display_cluster_id: str) -> dict | None:
         """Owner rollup + holdings + this tenant's lead state + attempts.
 
