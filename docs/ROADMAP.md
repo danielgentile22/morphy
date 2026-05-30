@@ -1,6 +1,6 @@
 # ROADMAP — Past, Present, Future
 
-**Last updated:** 2026-05-25
+**Last updated:** 2026-05-30 (lead-centric triage redesign shipped — PRD #46 / ADR-061, Slices #47–#53)
 **Pairs with:** [SCOPE.md](./SCOPE.md), [STATUS.md](./STATUS.md), [GOALS.md](./GOALS.md), [DECISIONS.md](./DECISIONS.md) + new ADRs under `docs/adr/`.
 
 This document traces the project arc: what's been built, what's being built now, what's planned next. Updated at the start of every new slice / phase and after every material strategic conversation.
@@ -50,8 +50,10 @@ Slice plan (untimed, goal-driven):
 1. **F** — Committed-anchor composes (AR + MT + FL + WV); FL recomposed 2026-05-29, county-score gap closed (chunked compose ADR-051); WV added + committed as the 4th anchor 2026-05-29 (ADR-060, PR #44). NC re-fetch + compose **deferred** (Phase-1 stretch).
 2. **A** — FCC ULS carrier identification (Cellular + PCS + AWS / 700)
 3. **C** — Asset enrichment (billboards + solar on parcel) + tunable scoring UI
-4. **D + E** — Lease doc upload + LLM extraction + triage state / write layer / CSV exports (backend stands up here per [ADR-055](./adr/0055-hosted-private-backend.md))
+4. **D + E** — Lease doc upload + LLM extraction + triage state / write layer / CSV exports (backend stands up here per [ADR-055](./adr/0055-hosted-private-backend.md)). **Reordered 2026-05-30:** the write-layer + lead-centric triage UI redesign were pulled forward ahead of A and C and **shipped** ([ADR-061](./adr/0061-lead-centric-triage-redesign.md), PRD #46, Slices #47–#53); the remaining D+E work is lease-doc upload + LLM extraction.
 5. **B** — Vendor (tower-co) inference
+
+> **Update 2026-05-30 — redesign shipped.** The lead-centric triage redesign is complete (PRD #46 / [ADR-061](./adr/0061-lead-centric-triage-redesign.md), Slices #47–#53): cross-state Lead identity, magic-link auth + tenant-from-JWT, structures-first map, full Lead page, My-Leads kanban, top-bar filters + owner/ASR search, and manual owner merge/split. This stood the ADR-055/056 backend up and pulled D+E's write-layer ahead of A and C. **Next:** the rest of D+E (lease-doc upload + LLM extraction), then **Slice A** (carriers). The 4-week outcome-bar clock starts after Slice B.
 
 Per-slice gates in [GOALS.md §3](./GOALS.md). Outcome bar: co-founder uses the product as his primary daily triage tool for 4 consecutive weeks.
 

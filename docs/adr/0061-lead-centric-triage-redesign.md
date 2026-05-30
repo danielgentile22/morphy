@@ -1,6 +1,6 @@
 # ADR-061: Lead-centric triage UI redesign — cross-state leads, structures-first map, write-layer pulled forward
 
-**Status:** Accepted (architectural core) — UI *layout* details (filter placement, list/detail composition) are being validated via a throwaway prototype before the real build.
+**Status:** Accepted — **Shipped** via PRD #46 (Slices #47–#53, merged 2026-05-30). The UI layout question the original status flagged is resolved: a slim **top filter bar + "More" popover** (chosen over the collapsible left drawer, #52); the throwaway prototype was folded into `app/` and deleted.
 **Date:** 2026-05-30
 **Realizes / extends:** [ADR-056](0056-lead-equals-owner-cluster.md) (Lead = owner-cluster). **Pairs with:** [ADR-055](0055-hosted-private-backend.md) (backend), [ADR-053](0053-product-phase-shift.md) (phase shift), [ADR-058](0058-tunable-transparent-scoring.md) (scoring), [ADR-030](0030-map-app-v2-stack.md) (map stack). **Follow-up to:** [ADR-024](0024-owner-clustering-sha1.md) (cross-state clustering).
 
