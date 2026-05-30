@@ -5,7 +5,9 @@ import {
   ApiError,
   appendAttempt,
   fetchCandidates,
+  fetchCounts,
   fetchLead,
+  fetchMyLeads,
   updateLead,
   type AttemptPayload,
   type ContactFields,
@@ -13,7 +15,7 @@ import {
   type OwnerSummary,
 } from './leads-api';
 import { auth } from './auth-store.svelte';
-import type { LeadStatus } from './lead-status';
+import { canTransition, type LeadStatus } from './lead-status';
 
 type Loadable = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -29,6 +31,16 @@ class LeadsStore {
   candidatesCount = $state(0);
   candidatesStatus = $state<Loadable>('idle');
   candidatesError = $state<string | null>(null);
+
+  // My-Leads kanban worklist (Slice 5 / #51): owners advanced off New.
+  myLeads = $state<OwnerSummary[]>([]);
+  myLeadsCount = $state(0);
+  myLeadsStatus = $state<Loadable>('idle');
+  myLeadsError = $state<string | null>(null);
+
+  // Live nav counts — loaded once a session is signed in and refreshed on
+  // every status change, so both badges stay current on any surface.
+  countsStatus = $state<Loadable>('idle');
 
   lead = $state<LeadDetail | null>(null);
   leadStatus = $state<Loadable>('idle');
@@ -47,6 +59,62 @@ class LeadsStore {
     } catch (e) {
       this.candidatesError = handle(e);
       this.candidatesStatus = 'error';
+    }
+  }
+
+  async loadMyLeads(): Promise<void> {
+    this.myLeadsStatus = 'loading';
+    this.myLeadsError = null;
+    try {
+      const res = await fetchMyLeads();
+      this.myLeads = res.leads;
+      this.myLeadsCount = res.count;
+      this.myLeadsStatus = 'ready';
+    } catch (e) {
+      this.myLeadsError = handle(e);
+      this.myLeadsStatus = 'error';
+    }
+  }
+
+  /** Refresh both nav counts. Best-effort: a failure leaves the last known
+   *  counts in place (the badges are informational). */
+  async loadCounts(): Promise<void> {
+    this.countsStatus = 'loading';
+    try {
+      const res = await fetchCounts();
+      this.candidatesCount = res.candidates;
+      this.myLeadsCount = res.my_leads;
+      this.countsStatus = 'ready';
+    } catch (e) {
+      handle(e); // still signs out on a 401
+      this.countsStatus = 'error';
+    }
+  }
+
+  /** Drag a card to a new lane: change its status and persist. Optimistically
+   *  moves the card, then reverts it if the server rejects the transition
+   *  (the server is authoritative). The client-side ladder check gives
+   *  immediate feedback for an illegal drop without a round-trip. Returns
+   *  true if the move persisted. */
+  async moveLead(displayClusterId: string, to: LeadStatus): Promise<boolean> {
+    const i = this.myLeads.findIndex((o) => o.display_cluster_id === displayClusterId);
+    if (i === -1) return false;
+    const from = this.myLeads[i].status;
+    if (from === to) return true;
+    if (!canTransition(from, to)) {
+      this.myLeadsError = `Illegal move: ${from} → ${to}`;
+      return false;
+    }
+    this.myLeadsError = null;
+    this.myLeads[i].status = to; // optimistic — the card jumps lanes now
+    try {
+      await updateLead(displayClusterId, { status: to });
+      void this.loadCounts();
+      return true;
+    } catch (e) {
+      this.myLeads[i].status = from; // server said no → snap back
+      this.myLeadsError = handle(e);
+      return false;
     }
   }
 
@@ -74,6 +142,9 @@ class LeadsStore {
     this.saveError = null;
     try {
       this.lead = await updateLead(displayClusterId, patch);
+      // A status change moves the owner between Candidates and My-Leads —
+      // refresh the nav counts so both badges stay live.
+      if (patch.status !== undefined) void this.loadCounts();
       return true;
     } catch (e) {
       // A 409 means an illegal ladder move; a 401 signs out (see handle()).

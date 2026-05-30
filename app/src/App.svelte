@@ -11,6 +11,7 @@
   import TopList from './components/TopList.svelte';
   import DetailsPanel from './components/DetailsPanel.svelte';
   import Candidates from './components/Candidates.svelte';
+  import MyLeads from './components/MyLeads.svelte';
   import LeadPage from './components/LeadPage.svelte';
   import SignIn from './components/SignIn.svelte';
   import { leads } from './lib/leads-store.svelte';
@@ -26,10 +27,15 @@
   // (`.layout`) stays mounted; the Lead surfaces render as an overlay on
   // top for #/candidates and #/lead/:key, so switching never tears down
   // MapLibre/DuckDB (ADR-061: the map instance persists across routes).
-  type Route = { name: 'map' } | { name: 'candidates' } | { name: 'lead'; key: string };
+  type Route =
+    | { name: 'map' }
+    | { name: 'candidates' }
+    | { name: 'leads' }
+    | { name: 'lead'; key: string };
   function parseRoute(): Route {
     const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
     if (parts[0] === 'lead' && parts[1]) return { name: 'lead', key: decodeURIComponent(parts[1]) };
+    if (parts[0] === 'leads') return { name: 'leads' };
     if (parts[0] === 'candidates') return { name: 'candidates' };
     return { name: 'map' };
   }
@@ -40,6 +46,9 @@
   function goCandidates(): void {
     location.hash = '#/candidates';
   }
+  function goLeads(): void {
+    location.hash = '#/leads';
+  }
 
   // Keep the Candidates count badge fresh once we're on a Lead surface
   // (covers a deep link straight to #/lead/:key without visiting the list).
@@ -48,6 +57,13 @@
     if (route.name !== 'map' && auth.signedIn && leads.candidatesStatus === 'idle') {
       void leads.loadCandidates();
     }
+  });
+
+  // Live nav counts — load once signed in and on every sign-in transition, so
+  // the Candidates / My-Leads badges are correct on every surface (incl. the
+  // map launchers) before either list is opened.
+  $effect(() => {
+    if (auth.signedIn) void leads.loadCounts();
   });
 
   /** True when the event originates from a text-entry control — keyboard
@@ -164,11 +180,18 @@
     {:else}
       <MapView />
       <DetailsPanel />
-      <button class="candidates-launcher" data-testid="open-candidates" onclick={goCandidates}>
-        Candidates{#if leads.candidatesCount}
-          <span class="lc-badge">{leads.candidatesCount}</span>
-        {/if}
-      </button>
+      <div class="launchers">
+        <button class="launcher" data-testid="open-candidates" onclick={goCandidates}>
+          Candidates{#if leads.candidatesCount}
+            <span class="lc-badge">{leads.candidatesCount}</span>
+          {/if}
+        </button>
+        <button class="launcher" data-testid="open-my-leads-map" onclick={goLeads}>
+          My Leads{#if leads.myLeadsCount}
+            <span class="lc-badge">{leads.myLeadsCount}</span>
+          {/if}
+        </button>
+      </div>
       {#if app.status === 'loading'}
         <div class="loading-pill" data-testid="loading">Loading…</div>
       {/if}
@@ -180,9 +203,18 @@
       <nav class="lead-nav">
         <span class="brand">Ground-Lease Triage</span>
         <button class="navtab" onclick={goMap}>Map</button>
-        <button class="navtab on" onclick={goCandidates}>
+        <button class="navtab" class:on={route.name === 'candidates'} onclick={goCandidates}>
           Candidates
           {#if leads.candidatesCount}<span class="lc-badge">{leads.candidatesCount}</span>{/if}
+        </button>
+        <button
+          class="navtab"
+          class:on={route.name === 'leads'}
+          data-testid="open-my-leads"
+          onclick={goLeads}
+        >
+          My Leads
+          {#if leads.myLeadsCount}<span class="lc-badge">{leads.myLeadsCount}</span>{/if}
         </button>
         {#if auth.signedIn}
           <span class="nav-user" data-testid="nav-user">{auth.email ?? 'signed in'}</span>
@@ -198,6 +230,8 @@
           <SignIn />
         {:else if route.name === 'candidates'}
           <Candidates />
+        {:else if route.name === 'leads'}
+          <MyLeads />
         {:else if route.name === 'lead'}
           <LeadPage displayClusterId={route.key} />
         {/if}
@@ -310,13 +344,17 @@
     box-shadow: var(--shadow);
   }
 
-  /* Entry point into the Lead surfaces. Top-left of the map stage, clear
+  /* Entry points into the Lead surfaces. Top-left of the map stage, clear
      of the sidebar and the top-right details panel. */
-  .candidates-launcher {
+  .launchers {
     position: absolute;
     top: 12px;
     left: 12px;
     z-index: 20;
+    display: flex;
+    gap: 8px;
+  }
+  .launcher {
     display: inline-flex;
     align-items: center;
     gap: 6px;

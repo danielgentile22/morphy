@@ -3,6 +3,7 @@ import {
   STATUSES,
   INITIAL_STATUS,
   TERMINAL_STATUSES,
+  KANBAN_LANES,
   canTransition,
   nextStatuses,
   isValidStatus,
@@ -77,5 +78,45 @@ describe('lead status ladder', () => {
     expect(() => validateTransition('new', 'researching')).not.toThrow();
     expect(() => validateTransition('new', 'in_business')).toThrow(InvalidTransition);
     expect(() => validateTransition('new', 'bogus')).toThrow(InvalidTransition);
+  });
+});
+
+// The My-Leads kanban (Slice 5 / #51) drives status changes by dragging a
+// card between lanes. The lanes are exactly the non-New statuses, and a drop
+// is just a transition validated by the same ladder above.
+describe('kanban lanes + drag transitions', () => {
+  it('has one lane per status except New, in ladder order', () => {
+    expect(KANBAN_LANES).toEqual([
+      'researching',
+      'contacted',
+      'interested',
+      'in_business',
+      'uninterested',
+    ]);
+    expect(KANBAN_LANES).not.toContain(INITIAL_STATUS); // New lives in Candidates
+  });
+
+  it('allows dragging forward one lane at a time', () => {
+    expect(canTransition('researching', 'contacted')).toBe(true);
+    expect(canTransition('contacted', 'interested')).toBe(true);
+    expect(canTransition('interested', 'in_business')).toBe(true);
+  });
+
+  it('allows dragging any worked lane into the closed Uninterested lane', () => {
+    for (const lane of ['researching', 'contacted', 'interested'] as const) {
+      expect(canTransition(lane, 'uninterested')).toBe(true);
+    }
+  });
+
+  it('rejects dragging a Contacted card straight into In Business', () => {
+    // The headline illegal drop from the issue — only reachable via Interested.
+    expect(canTransition('contacted', 'in_business')).toBe(false);
+  });
+
+  it('rejects dragging backward or out of a closed lane', () => {
+    expect(canTransition('contacted', 'researching')).toBe(false);
+    expect(canTransition('interested', 'contacted')).toBe(false);
+    expect(canTransition('uninterested', 'researching')).toBe(false);
+    expect(canTransition('in_business', 'interested')).toBe(false);
   });
 });

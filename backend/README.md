@@ -55,8 +55,10 @@ are rejected (HTTP 409).
 | GET | `/api/auth/me` | the authenticated tenant + email |
 | GET | `/api/health` | liveness + owners-indexed count (public) |
 | GET | `/api/candidates?limit=` | owners at New, ranked by interestingness |
+| GET | `/api/my-leads` | owners advanced **off** New — the My-Leads kanban worklist (Slice 5 / #51); each carries its status so the client buckets it into a lane |
+| GET | `/api/counts` | live nav counts `{candidates, my_leads}` (the index partitions into the two surfaces) |
 | GET | `/api/leads/{display_cluster_id}` | full Lead: owner rollup + **holdings** (per-parcel structures + EPSG:4326 footprint) + read-only **mailing address** + tallest tower + lead state + editable contact fields + attempts |
-| PUT | `/api/leads/{display_cluster_id}` | set status, notes, and/or contact fields (validates the ladder) |
+| PUT | `/api/leads/{display_cluster_id}` | set status, notes, and/or contact fields (validates the ladder; a drag on the kanban is just a status PUT) |
 | POST | `/api/leads/{display_cluster_id}/attempts` | append a manual contact attempt (date · channel · outcome) |
 
 The read half of the full Lead page (holdings / mailing / tallest tower) is

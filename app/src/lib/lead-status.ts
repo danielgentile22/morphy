@@ -39,6 +39,11 @@ export const TERMINAL_STATUSES: ReadonlySet<LeadStatus> = new Set([
   'uninterested',
 ]);
 
+// The My-Leads kanban lanes (Slice 5 / #51): every status *except* New, in
+// ladder order. New owners live in Candidates, not the worklist;
+// `uninterested` is rendered as a closed/terminal lane.
+export const KANBAN_LANES: readonly LeadStatus[] = STATUSES.filter((s) => s !== INITIAL_STATUS);
+
 // Allowed *forward* transitions (identity handled separately).
 const ALLOWED_TRANSITIONS: Record<LeadStatus, readonly LeadStatus[]> = {
   new: ['researching'],

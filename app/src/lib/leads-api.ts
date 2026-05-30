@@ -104,6 +104,18 @@ export interface CandidatesResponse {
   candidates: OwnerSummary[];
 }
 
+/** The My-Leads worklist — owners advanced off New (Slice 5 / #51). */
+export interface MyLeadsResponse {
+  count: number;
+  leads: OwnerSummary[];
+}
+
+/** Live nav counts for the two list surfaces. */
+export interface CountsResponse {
+  candidates: number;
+  my_leads: number;
+}
+
 export interface RequestLinkResponse {
   ok: boolean;
   // Present only in dev (AUTH_EXPOSE_TOKEN on) so the SPA can finish the
@@ -162,6 +174,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function fetchCandidates(limit = 200): Promise<CandidatesResponse> {
   return request<CandidatesResponse>(`/candidates?limit=${limit}`);
+}
+
+export function fetchMyLeads(): Promise<MyLeadsResponse> {
+  return request<MyLeadsResponse>('/my-leads');
+}
+
+export function fetchCounts(): Promise<CountsResponse> {
+  return request<CountsResponse>('/counts');
 }
 
 export function fetchLead(displayClusterId: string): Promise<LeadDetail> {

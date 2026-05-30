@@ -116,6 +116,21 @@ class CandidatesResponse(BaseModel):
     candidates: list[OwnerSummary]
 
 
+class MyLeadsResponse(BaseModel):
+    """The My-Leads worklist (Slice 5 / #51) — owners advanced off New, each
+    carrying its status so the client buckets it into a kanban lane."""
+
+    count: int
+    leads: list[OwnerSummary]
+
+
+class CountsResponse(BaseModel):
+    """Live nav counts for the two list surfaces."""
+
+    candidates: int
+    my_leads: int
+
+
 # ── auth (Slice 2 / #48) ────────────────────────────────────────────────────
 # Email is a plain ``str`` (lightly validated server-side) to avoid pulling
 # in pydantic's optional ``email-validator`` dependency.
