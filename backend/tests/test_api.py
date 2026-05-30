@@ -1,25 +1,18 @@
 """End-to-end API smoke test — the tracer spine through the real stack.
 
 Drives the FastAPI app over HTTP (TestClient) against a tiny owners index
-and the app's default (temp) SQLite DB set up in conftest, proving:
-candidates → open lead → set status + note → persists → reload reflects it,
-and that an illegal transition is rejected.
+and a fresh in-memory SQLite DB, authenticated with a real magic-link JWT
+(``login`` runs request-link → exchange), proving: candidates → open lead →
+set status + note → persists → reload reflects it, and that an illegal
+transition is rejected.
 """
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-from sqlalchemy.pool import StaticPool
 
-from backend.app import main
-from backend.app.config import settings
-from backend.app.db import Base, get_db
+from ._helpers import api, auth_header, login
 
 SAMPLE = {
     "schema_version": 1,
@@ -71,34 +64,12 @@ SAMPLE = {
 
 @pytest.fixture
 def client() -> TestClient:
-    Path(settings.owners_index_path).write_text(json.dumps(SAMPLE))
-    main.owners_index.reload()
-
-    # A fresh in-memory DB per test (shared connection via StaticPool so
-    # separate requests see the same data) injected through the get_db
-    # dependency — keeps each test hermetic without touching the dev DB.
-    eng = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-        future=True,
-    )
-    Base.metadata.create_all(eng)
-
-    def _override_db():
-        db = Session(bind=eng, future=True)
-        try:
-            yield db
-        finally:
-            db.close()
-
-    main.app.dependency_overrides[get_db] = _override_db
-    try:
-        with TestClient(main.app) as c:
-            yield c
-    finally:
-        main.app.dependency_overrides.clear()
-        eng.dispose()
+    # A fresh in-memory DB per test, authenticated with a real JWT so the
+    # tracer runs exactly as the SPA does (the Bearer header is attached to
+    # every request via the client's default headers).
+    with api(SAMPLE) as (c, _eng, _sender):
+        c.headers.update(auth_header(login(c)))
+        yield c
 
 
 def test_candidates_lists_owners_at_new_ranked(client: TestClient) -> None:

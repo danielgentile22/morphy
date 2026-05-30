@@ -1,0 +1,117 @@
+"""Route-level multi-tenancy isolation — the ADR-055 Day-1 requirement,
+driven through real auth (Slice 2 / #48).
+
+Two synthetic tenants, each authenticated with its *own* magic-link JWT
+(tenant A auto-provisioned into the default tenant; tenant B provisioned
+into tenant 2). Every data route asserts "tenant A cannot read / write /
+list tenant B's data" — even though only one tenant exists in production.
+The store-level twin of these checks lives in ``test_tenant_isolation.py``.
+
+Run with ``pytest -k tenant_isolation``.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from backend.app.auth_service import AuthService
+
+from .._helpers import api, auth_header, login
+
+CID = "nat0000aaaa"
+
+SAMPLE = {
+    "schema_version": 1,
+    "count": 1,
+    "owners": [
+        {
+            "display_cluster_id": CID,
+            "owner_name": "AMERICAN TOWERS LLC",
+            "owner_name_norm": "AMERICAN TOWERS",
+            "owner_kind": "llc",
+            "states": ["AR"],
+            "n_states": 1,
+            "cross_state": False,
+            "parcel_count": 1,
+            "tower_count": 3,
+            "solar_count": 0,
+            "total_assessed_value": 1.0,
+            "max_parcel_score": 0.5,
+            "score": 0.5,
+            "distress_tier": "at-risk",
+            "in_oz": False,
+            "in_qct": False,
+            "persistent_poverty": False,
+        }
+    ],
+}
+
+
+@pytest.fixture
+def two_tenants() -> Iterator[tuple[TestClient, dict, dict]]:
+    """A client plus per-tenant auth headers for two distinct tenants."""
+    with api(SAMPLE) as (client, eng, _sender):
+        # Provision tenant B into tenant 2 *before* its first sign-in, so the
+        # issued JWT is scoped to tenant 2 (tenant A defaults to tenant 1).
+        with Session(bind=eng, future=True) as s:
+            AuthService(s).provision_user("tenant-b@example.com", tenant_id=2)
+        header_a = auth_header(login(client, "tenant-a@example.com"))
+        header_b = auth_header(login(client, "tenant-b@example.com"))
+        yield client, header_a, header_b
+
+
+@pytest.mark.tenant_isolation
+def test_jwts_resolve_to_distinct_tenants(two_tenants) -> None:
+    client, a, b = two_tenants
+    assert client.get("/api/auth/me", headers=a).json()["tenant_id"] == 1
+    assert client.get("/api/auth/me", headers=b).json()["tenant_id"] == 2
+
+
+@pytest.mark.tenant_isolation
+def test_b_cannot_read_a_lead_state(two_tenants) -> None:
+    client, a, b = two_tenants
+    client.put(f"/api/leads/{CID}", headers=a, json={"status": "researching", "notes": "A only"})
+
+    b_view = client.get(f"/api/leads/{CID}", headers=b).json()
+    assert b_view["status"] == "new"  # B sees the default, not A's advance
+    assert b_view["notes"] == ""  # B never sees A's private note
+    assert b_view["attempts"] == []  # nor A's auto-logged status row
+
+
+@pytest.mark.tenant_isolation
+def test_b_write_does_not_leak_into_a(two_tenants) -> None:
+    client, a, b = two_tenants
+    client.put(f"/api/leads/{CID}", headers=a, json={"status": "researching"})
+    client.put(f"/api/leads/{CID}", headers=b, json={"status": "researching"})
+    client.put(f"/api/leads/{CID}", headers=b, json={"status": "contacted"})  # B advances past A
+
+    a_view = client.get(f"/api/leads/{CID}", headers=a).json()
+    assert a_view["status"] == "researching"  # A untouched by B's writes
+
+
+@pytest.mark.tenant_isolation
+def test_candidates_list_is_per_tenant(two_tenants) -> None:
+    client, a, b = two_tenants
+    # A advances the owner off New → it leaves A's Candidates...
+    client.put(f"/api/leads/{CID}", headers=a, json={"status": "researching"})
+    a_ids = [
+        c["display_cluster_id"]
+        for c in client.get("/api/candidates", headers=a).json()["candidates"]
+    ]
+    b_ids = [
+        c["display_cluster_id"]
+        for c in client.get("/api/candidates", headers=b).json()["candidates"]
+    ]
+    assert CID not in a_ids  # ...but is still New for B, so still B's candidate
+    assert CID in b_ids
+
+
+@pytest.mark.tenant_isolation
+def test_unauthenticated_request_is_rejected(two_tenants) -> None:
+    client, _a, _b = two_tenants
+    assert client.get("/api/candidates").status_code == 401
+    assert client.put(f"/api/leads/{CID}", json={"status": "researching"}).status_code == 401

@@ -22,13 +22,22 @@ import pytest
 _TMP = tempfile.mkdtemp(prefix="pilot-leadtest-")
 os.environ.setdefault("DATABASE_URL", f"sqlite+pysqlite:///{_TMP}/lead_state.sqlite3")
 os.environ.setdefault("OWNERS_INDEX_PATH", f"{_TMP}/owners_index.json")
+# Deterministic auth in tests: dev posture (so the token echo + zero-config
+# loop are available), a fixed (non-prod) signing secret, and the raw
+# magic-link token echoed in the request-link response so HTTP tests can
+# complete the exchange without a real inbox.
+os.environ.setdefault("AUTH_DEV_MODE", "1")
+os.environ.setdefault("AUTH_JWT_SECRET", "test-secret-not-for-prod-but-long-enough-for-hs256")
+os.environ.setdefault("AUTH_EXPOSE_TOKEN", "1")
 
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.engine import Engine  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
+from backend.app.auth_service import AuthService  # noqa: E402
 from backend.app.db import Base  # noqa: E402
+from backend.app.email_sender import RecordingEmailSender  # noqa: E402
 from backend.app.lead_store import LeadStore  # noqa: E402
 
 
@@ -119,3 +128,17 @@ def store_factory(new_session: Callable[[], Session]) -> Callable[[int], LeadSto
         return LeadStore(new_session(), tenant_id)
 
     return _make
+
+
+@pytest.fixture
+def recording_sender() -> RecordingEmailSender:
+    """An in-memory email sender so auth tests can read the delivered link."""
+    return RecordingEmailSender()
+
+
+@pytest.fixture
+def auth_service(
+    new_session: Callable[[], Session], recording_sender: RecordingEmailSender
+) -> AuthService:
+    """An AuthService on a fresh session wired to the recording sender."""
+    return AuthService(new_session(), recording_sender)

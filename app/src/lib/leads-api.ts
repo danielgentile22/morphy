@@ -5,6 +5,7 @@
 // Override the base for other setups with `VITE_API_BASE`.
 
 import type { LeadStatus } from './lead-status';
+import { authHeader } from './auth-token';
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api';
 
@@ -49,6 +50,24 @@ export interface CandidatesResponse {
   candidates: OwnerSummary[];
 }
 
+export interface RequestLinkResponse {
+  ok: boolean;
+  // Present only in dev (AUTH_EXPOSE_TOKEN on) so the SPA can finish the
+  // exchange without a real inbox; null in prod.
+  dev_token: string | null;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+}
+
+export interface MeResponse {
+  tenant_id: number;
+  email: string;
+}
+
 /** Error carrying the HTTP status so callers can branch (e.g. 409 illegal). */
 export class ApiError extends Error {
   constructor(
@@ -63,8 +82,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
       ...init,
+      // Attach the Bearer JWT to every call; an explicit init.headers wins.
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeader(),
+        ...(init?.headers as Record<string, string> | undefined),
+      },
     });
   } catch (e) {
     throw new ApiError(
@@ -98,4 +122,23 @@ export function updateLead(
     method: 'PUT',
     body: JSON.stringify(patch),
   });
+}
+
+// ── auth (Slice 2 / #48) ────────────────────────────────────────────────────
+export function requestLink(email: string): Promise<RequestLinkResponse> {
+  return request<RequestLinkResponse>('/auth/request-link', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function exchangeToken(token: string): Promise<TokenResponse> {
+  return request<TokenResponse>('/auth/exchange', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+}
+
+export function fetchMe(): Promise<MeResponse> {
+  return request<MeResponse>('/auth/me');
 }
