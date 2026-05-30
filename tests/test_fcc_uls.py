@@ -54,49 +54,127 @@ def _cellular_fixture(raw_dir):
     """A minimal l_cell: two CL licenses, three locations, mixed coords/asr."""
     dat_dir = raw_dir / "fcc_uls_cellular" / "current" / "l_cell"
     hd = [
-        dict(record_type="HD", unique_system_identifier="100", call_sign="KAAA111",
-             license_status="A", radio_service_code="CL",
-             grant_date="01/15/2010", expired_date="01/15/2030"),
-        dict(record_type="HD", unique_system_identifier="101", call_sign="KAAA222",
-             license_status="C", radio_service_code="CL",
-             cancellation_date="02/07/1997"),
+        dict(
+            record_type="HD",
+            unique_system_identifier="100",
+            call_sign="KAAA111",
+            license_status="A",
+            radio_service_code="CL",
+            grant_date="01/15/2010",
+            expired_date="01/15/2030",
+        ),
+        dict(
+            record_type="HD",
+            unique_system_identifier="101",
+            call_sign="KAAA222",
+            license_status="C",
+            radio_service_code="CL",
+            cancellation_date="02/07/1997",
+        ),
     ]
     en = [
-        dict(record_type="EN", unique_system_identifier="100", call_sign="KAAA111",
-             entity_type="L", entity_name="ALPHA CELLULAR LLC", frn="0001112223",
-             street_address="1 MAIN ST", city="LITTLE ROCK", state="AR", zip_code="72201"),
-        dict(record_type="EN", unique_system_identifier="100", call_sign="KAAA111",
-             entity_type="CL", first_name="John", last_name="Doe",
-             street_address="1 MAIN ST", city="LITTLE ROCK", state="AR"),
-        dict(record_type="EN", unique_system_identifier="101", call_sign="KAAA222",
-             entity_type="L", entity_name="BETA TELECOM INC", frn="0009998887",
-             city="BOZEMAN", state="MT"),
+        dict(
+            record_type="EN",
+            unique_system_identifier="100",
+            call_sign="KAAA111",
+            entity_type="L",
+            entity_name="ALPHA CELLULAR LLC",
+            frn="0001112223",
+            street_address="1 MAIN ST",
+            city="LITTLE ROCK",
+            state="AR",
+            zip_code="72201",
+        ),
+        dict(
+            record_type="EN",
+            unique_system_identifier="100",
+            call_sign="KAAA111",
+            entity_type="CL",
+            first_name="John",
+            last_name="Doe",
+            street_address="1 MAIN ST",
+            city="LITTLE ROCK",
+            state="AR",
+        ),
+        dict(
+            record_type="EN",
+            unique_system_identifier="101",
+            call_sign="KAAA222",
+            entity_type="L",
+            entity_name="BETA TELECOM INC",
+            frn="0009998887",
+            city="BOZEMAN",
+            state="MT",
+        ),
     ]
     lo = [
         # usi 100 / loc 1: good AR coords + an ASR number.
-        dict(record_type="LO", unique_system_identifier="100", call_sign="KAAA111",
-             location_number="1", location_address="HILLTOP", location_city="LITTLE ROCK",
-             location_county="PULASKI", location_state="AR", ground_elevation="100.0",
-             lat_degrees="34", lat_minutes="30", lat_seconds="0", lat_direction="N",
-             long_degrees="92", long_minutes="15", long_seconds="0", long_direction="W",
-             tower_registration_number="1234567", structure_type="GTOWER",
-             height_of_support_structure="60.0", overall_height_of_structure="62.0"),
+        dict(
+            record_type="LO",
+            unique_system_identifier="100",
+            call_sign="KAAA111",
+            location_number="1",
+            location_address="HILLTOP",
+            location_city="LITTLE ROCK",
+            location_county="PULASKI",
+            location_state="AR",
+            ground_elevation="100.0",
+            lat_degrees="34",
+            lat_minutes="30",
+            lat_seconds="0",
+            lat_direction="N",
+            long_degrees="92",
+            long_minutes="15",
+            long_seconds="0",
+            long_direction="W",
+            tower_registration_number="1234567",
+            structure_type="GTOWER",
+            height_of_support_structure="60.0",
+            overall_height_of_structure="62.0",
+        ),
         # usi 100 / loc 2: no coordinates, no ASR.
-        dict(record_type="LO", unique_system_identifier="100", call_sign="KAAA111",
-             location_number="2", location_city="CONWAY", location_state="AR",
-             structure_type="LTOWER"),
+        dict(
+            record_type="LO",
+            unique_system_identifier="100",
+            call_sign="KAAA111",
+            location_number="2",
+            location_city="CONWAY",
+            location_state="AR",
+            structure_type="LTOWER",
+        ),
         # usi 101 / loc 1: good MT coords + ASR.
-        dict(record_type="LO", unique_system_identifier="101", call_sign="KAAA222",
-             location_number="1", location_state="MT",
-             lat_degrees="45", lat_minutes="0", lat_seconds="0", lat_direction="N",
-             long_degrees="110", long_minutes="0", long_seconds="0", long_direction="W",
-             tower_registration_number="7654321", structure_type="MTOWER"),
+        dict(
+            record_type="LO",
+            unique_system_identifier="101",
+            call_sign="KAAA222",
+            location_number="1",
+            location_state="MT",
+            lat_degrees="45",
+            lat_minutes="0",
+            lat_seconds="0",
+            lat_direction="N",
+            long_degrees="110",
+            long_minutes="0",
+            long_seconds="0",
+            long_direction="W",
+            tower_registration_number="7654321",
+            structure_type="MTOWER",
+        ),
     ]
     fr = [
-        dict(record_type="FR", unique_system_identifier="100", call_sign="KAAA111",
-             frequency_assigned="824.04000000", frequency_upper_band="834.99000000"),
-        dict(record_type="FR", unique_system_identifier="101", call_sign="KAAA222",
-             frequency_assigned="1900.00000000"),
+        dict(
+            record_type="FR",
+            unique_system_identifier="100",
+            call_sign="KAAA111",
+            frequency_assigned="824.04000000",
+            frequency_upper_band="834.99000000",
+        ),
+        dict(
+            record_type="FR",
+            unique_system_identifier="101",
+            call_sign="KAAA222",
+            frequency_assigned="1900.00000000",
+        ),
     ]
     _write_band_files(dat_dir, hd=hd, en=en, lo=lo, fr=fr)
     return raw_dir / "fcc_uls_cellular" / "current"
@@ -106,48 +184,132 @@ def _market_fixture(raw_dir):
     """A minimal l_market: in-scope PCS/AWS/700 plus out-of-scope WCS/600/NB-PCS."""
     dat_dir = raw_dir / "fcc_uls_market" / "current" / "l_market"
     hd = [
-        dict(record_type="HD", unique_system_identifier="200", call_sign="WPCS001",
-             license_status="A", radio_service_code="CW"),   # PCS
-        dict(record_type="HD", unique_system_identifier="201", call_sign="WAWS001",
-             license_status="A", radio_service_code="AW"),   # AWS-1
-        dict(record_type="HD", unique_system_identifier="202", call_sign="W700001",
-             license_status="A", radio_service_code="WY"),   # 700 Lower
-        dict(record_type="HD", unique_system_identifier="203", call_sign="WWCS001",
-             license_status="A", radio_service_code="WS"),   # WCS — deferred
-        dict(record_type="HD", unique_system_identifier="204", call_sign="WNBP001",
-             license_status="A", radio_service_code="CN"),   # Narrowband PCS — excluded
-        dict(record_type="HD", unique_system_identifier="205", call_sign="W600001",
-             license_status="A", radio_service_code="WT"),   # 600 MHz — excluded
-        dict(record_type="HD", unique_system_identifier="206", call_sign="WAWS002",
-             license_status="A", radio_service_code="AH"),   # AWS H-block
+        dict(
+            record_type="HD",
+            unique_system_identifier="200",
+            call_sign="WPCS001",
+            license_status="A",
+            radio_service_code="CW",
+        ),  # PCS
+        dict(
+            record_type="HD",
+            unique_system_identifier="201",
+            call_sign="WAWS001",
+            license_status="A",
+            radio_service_code="AW",
+        ),  # AWS-1
+        dict(
+            record_type="HD",
+            unique_system_identifier="202",
+            call_sign="W700001",
+            license_status="A",
+            radio_service_code="WY",
+        ),  # 700 Lower
+        dict(
+            record_type="HD",
+            unique_system_identifier="203",
+            call_sign="WWCS001",
+            license_status="A",
+            radio_service_code="WS",
+        ),  # WCS — deferred
+        dict(
+            record_type="HD",
+            unique_system_identifier="204",
+            call_sign="WNBP001",
+            license_status="A",
+            radio_service_code="CN",
+        ),  # Narrowband PCS — excluded
+        dict(
+            record_type="HD",
+            unique_system_identifier="205",
+            call_sign="W600001",
+            license_status="A",
+            radio_service_code="WT",
+        ),  # 600 MHz — excluded
+        dict(
+            record_type="HD",
+            unique_system_identifier="206",
+            call_sign="WAWS002",
+            license_status="A",
+            radio_service_code="AH",
+        ),  # AWS H-block
     ]
     en = [
-        dict(record_type="EN", unique_system_identifier=u, call_sign=f"W{u}",
-             entity_type="L", entity_name=f"CARRIER {u} LLC", frn=f"000000{u}",
-             state="FL")
+        dict(
+            record_type="EN",
+            unique_system_identifier=u,
+            call_sign=f"W{u}",
+            entity_type="L",
+            entity_name=f"CARRIER {u} LLC",
+            frn=f"000000{u}",
+            state="FL",
+        )
         for u in ("200", "201", "202", "203", "204", "205", "206")
     ]
     lo = [
-        dict(record_type="LO", unique_system_identifier="200", call_sign="WPCS001",
-             location_number="1", location_state="FL",
-             lat_degrees="28", lat_minutes="0", lat_seconds="0", lat_direction="N",
-             long_degrees="81", long_minutes="0", long_seconds="0", long_direction="W",
-             tower_registration_number="2000001"),
-        dict(record_type="LO", unique_system_identifier="201", call_sign="WAWS001",
-             location_number="1", location_state="FL"),  # no coords/asr
-        dict(record_type="LO", unique_system_identifier="202", call_sign="W700001",
-             location_number="1", location_state="WV",
-             lat_degrees="38", lat_minutes="0", lat_seconds="0", lat_direction="N",
-             long_degrees="80", long_minutes="0", long_seconds="0", long_direction="W"),
+        dict(
+            record_type="LO",
+            unique_system_identifier="200",
+            call_sign="WPCS001",
+            location_number="1",
+            location_state="FL",
+            lat_degrees="28",
+            lat_minutes="0",
+            lat_seconds="0",
+            lat_direction="N",
+            long_degrees="81",
+            long_minutes="0",
+            long_seconds="0",
+            long_direction="W",
+            tower_registration_number="2000001",
+        ),
+        dict(
+            record_type="LO",
+            unique_system_identifier="201",
+            call_sign="WAWS001",
+            location_number="1",
+            location_state="FL",
+        ),  # no coords/asr
+        dict(
+            record_type="LO",
+            unique_system_identifier="202",
+            call_sign="W700001",
+            location_number="1",
+            location_state="WV",
+            lat_degrees="38",
+            lat_minutes="0",
+            lat_seconds="0",
+            lat_direction="N",
+            long_degrees="80",
+            long_minutes="0",
+            long_seconds="0",
+            long_direction="W",
+        ),
         # locations for the excluded services should never surface:
-        dict(record_type="LO", unique_system_identifier="203", call_sign="WWCS001",
-             location_number="1", location_state="FL", tower_registration_number="9999999"),
-        dict(record_type="LO", unique_system_identifier="206", call_sign="WAWS002",
-             location_number="1", location_state="FL"),
+        dict(
+            record_type="LO",
+            unique_system_identifier="203",
+            call_sign="WWCS001",
+            location_number="1",
+            location_state="FL",
+            tower_registration_number="9999999",
+        ),
+        dict(
+            record_type="LO",
+            unique_system_identifier="206",
+            call_sign="WAWS002",
+            location_number="1",
+            location_state="FL",
+        ),
     ]
     fr = [
-        dict(record_type="FR", unique_system_identifier="200", call_sign="WPCS001",
-             frequency_assigned="1850.00000000", frequency_upper_band="1990.00000000"),
+        dict(
+            record_type="FR",
+            unique_system_identifier="200",
+            call_sign="WPCS001",
+            frequency_assigned="1850.00000000",
+            frequency_upper_band="1990.00000000",
+        ),
     ]
     _write_band_files(dat_dir, hd=hd, en=en, lo=lo, fr=fr)
     return raw_dir / "fcc_uls_market" / "current"
@@ -212,8 +374,8 @@ def test_dms_conversion_and_coord_status(tmp_path):
 
     good = loc[(loc["usi"] == "100") & (loc["location_number"] == "1")].iloc[0]
     assert good["coord_status"] == "ok"
-    assert abs(good["lat"] - 34.5) < 1e-9          # 34°30' N
-    assert abs(good["lon"] - (-92.25)) < 1e-9      # 92°15' W → negative
+    assert abs(good["lat"] - 34.5) < 1e-9  # 34°30' N
+    assert abs(good["lon"] - (-92.25)) < 1e-9  # 92°15' W → negative
 
     missing = loc[(loc["usi"] == "100") & (loc["location_number"] == "2")].iloc[0]
     assert missing["coord_status"] == "missing"
@@ -223,19 +385,53 @@ def test_dms_conversion_and_coord_status(tmp_path):
 def test_dms_south_east_and_null_island(tmp_path):
     """S/W go negative, E/N positive, and (0,0) is treated as missing."""
     dat_dir = tmp_path / "raw" / "fcc_uls_cellular" / "current" / "l_cell"
-    hd = [dict(record_type="HD", unique_system_identifier="1", call_sign="K1",
-               license_status="A", radio_service_code="CL")]
-    en = [dict(record_type="EN", unique_system_identifier="1", call_sign="K1",
-               entity_type="L", entity_name="X")]
+    hd = [
+        dict(
+            record_type="HD",
+            unique_system_identifier="1",
+            call_sign="K1",
+            license_status="A",
+            radio_service_code="CL",
+        )
+    ]
+    en = [
+        dict(
+            record_type="EN",
+            unique_system_identifier="1",
+            call_sign="K1",
+            entity_type="L",
+            entity_name="X",
+        )
+    ]
     lo = [
-        dict(record_type="LO", unique_system_identifier="1", call_sign="K1",
-             location_number="1",
-             lat_degrees="10", lat_minutes="30", lat_seconds="0", lat_direction="S",
-             long_degrees="20", long_minutes="0", long_seconds="0", long_direction="E"),
-        dict(record_type="LO", unique_system_identifier="1", call_sign="K1",
-             location_number="2",
-             lat_degrees="0", lat_minutes="0", lat_seconds="0", lat_direction="N",
-             long_degrees="0", long_minutes="0", long_seconds="0", long_direction="W"),
+        dict(
+            record_type="LO",
+            unique_system_identifier="1",
+            call_sign="K1",
+            location_number="1",
+            lat_degrees="10",
+            lat_minutes="30",
+            lat_seconds="0",
+            lat_direction="S",
+            long_degrees="20",
+            long_minutes="0",
+            long_seconds="0",
+            long_direction="E",
+        ),
+        dict(
+            record_type="LO",
+            unique_system_identifier="1",
+            call_sign="K1",
+            location_number="2",
+            lat_degrees="0",
+            lat_minutes="0",
+            lat_seconds="0",
+            lat_direction="N",
+            long_degrees="0",
+            long_minutes="0",
+            long_seconds="0",
+            long_direction="W",
+        ),
     ]
     fr = []
     _write_band_files(dat_dir, hd=hd, en=en, lo=lo, fr=fr)
@@ -245,8 +441,8 @@ def test_dms_south_east_and_null_island(tmp_path):
     loc = _read(out / "location.parquet")
 
     south = loc[loc["location_number"] == "1"].iloc[0]
-    assert abs(south["lat"] - (-10.5)) < 1e-9   # 10°30' S → negative
-    assert abs(south["lon"] - 20.0) < 1e-9      # 20° E → positive
+    assert abs(south["lat"] - (-10.5)) < 1e-9  # 10°30' S → negative
+    assert abs(south["lon"] - 20.0) < 1e-9  # 20° E → positive
     assert south["coord_status"] == "ok"
 
     null_island = loc[loc["location_number"] == "2"].iloc[0]
@@ -285,7 +481,7 @@ def test_market_band_classification(tmp_path):
 
     assert sorted(pcs["usi"]) == ["200"]
     assert set(pcs["band"]) == {"pcs"}
-    assert sorted(aws["usi"]) == ["201", "206"]   # AW + AH both → aws
+    assert sorted(aws["usi"]) == ["201", "206"]  # AW + AH both → aws
     assert set(aws["band"]) == {"aws"}
     assert sorted(band700["usi"]) == ["202"]
 

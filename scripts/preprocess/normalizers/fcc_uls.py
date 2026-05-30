@@ -330,16 +330,24 @@ def _find_dat_dir(raw_dir: Path) -> Path | None:
     return None
 
 
-def _build_license(hd_band: pd.DataFrame, en: pd.DataFrame, fr: pd.DataFrame, band: str) -> pd.DataFrame:
+def _build_license(
+    hd_band: pd.DataFrame, en: pd.DataFrame, fr: pd.DataFrame, band: str
+) -> pd.DataFrame:
     """One row per license (HD), enriched with the licensee name/FRN (EN
     entity_type 'L') and the assigned frequency range (FR)."""
     lic = hd_band[_LICENSE_HD_COLS].copy()
     lic = lic.rename(columns={"unique_system_identifier": "usi", "call_sign": "callsign"})
     lic["band"] = band
-    lic["license_status_desc"] = (
-        lic["license_status"].map(lambda s: LICENSE_STATUS_DESC.get(safe_str(s), safe_str(s)))
+    lic["license_status_desc"] = lic["license_status"].map(
+        lambda s: LICENSE_STATUS_DESC.get(safe_str(s), safe_str(s))
     )
-    for col in ("grant_date", "expired_date", "cancellation_date", "effective_date", "last_action_date"):
+    for col in (
+        "grant_date",
+        "expired_date",
+        "cancellation_date",
+        "effective_date",
+        "last_action_date",
+    ):
         lic[col] = lic[col].map(_parse_date)
 
     # Licensee (entity_type 'L') name + FRN, one per usi.
@@ -388,10 +396,23 @@ def _build_location(lo_band: pd.DataFrame, band: str) -> pd.DataFrame:
     if lo_band.empty:
         return pd.DataFrame(
             columns=[
-                "usi", "callsign", "band", "location_number", "location_address",
-                "location_city", "location_county", "location_state", "state_fips",
-                "lat", "lon", "coord_status", "asr_number", "structure_type",
-                "ground_elevation_m", "support_height_m", "overall_height_m",
+                "usi",
+                "callsign",
+                "band",
+                "location_number",
+                "location_address",
+                "location_city",
+                "location_county",
+                "location_state",
+                "state_fips",
+                "lat",
+                "lon",
+                "coord_status",
+                "asr_number",
+                "structure_type",
+                "ground_elevation_m",
+                "support_height_m",
+                "overall_height_m",
                 "_source_row_id",
             ]
         )
@@ -447,9 +468,21 @@ def _build_entity(en_band: pd.DataFrame, band: str) -> pd.DataFrame:
     if en_band.empty:
         return pd.DataFrame(
             columns=[
-                "usi", "callsign", "band", "entity_type", "entity_name",
-                "first_name", "last_name", "street_address", "city", "state",
-                "state_fips", "zip_code", "frn", "phone", "_source_row_id",
+                "usi",
+                "callsign",
+                "band",
+                "entity_type",
+                "entity_name",
+                "first_name",
+                "last_name",
+                "street_address",
+                "city",
+                "state",
+                "state_fips",
+                "zip_code",
+                "frn",
+                "phone",
+                "_source_row_id",
             ]
         )
     en = en_band.copy()
@@ -481,15 +514,13 @@ def _band_extras(band: str, codes, license_df, location_df, entity_df) -> dict:
     and usable-coordinate rate — alongside row counts + the service codes that
     landed in this band."""
     n_loc = len(location_df)
-    asr_rate = (
-        round(float(location_df["asr_number"].notna().mean()), 4) if n_loc else None
-    )
-    coord_rate = (
-        round(float((location_df["coord_status"] == "ok").mean()), 4) if n_loc else None
-    )
+    asr_rate = round(float(location_df["asr_number"].notna().mean()), 4) if n_loc else None
+    coord_rate = round(float((location_df["coord_status"] == "ok").mean()), 4) if n_loc else None
     return {
         "band": band,
-        "service_codes": sorted(codes) if codes else sorted(set(license_df["radio_service_code"].map(safe_str))),
+        "service_codes": sorted(codes)
+        if codes
+        else sorted(set(license_df["radio_service_code"].map(safe_str))),
         "license_count": len(license_df),
         "location_count": n_loc,
         "entity_count": len(entity_df),
@@ -580,7 +611,9 @@ def _normalize(
     en = read_pipe_dat(dat_dir / "EN.dat", EN_COLS, "EN")
     lo = read_pipe_dat(dat_dir / "LO.dat", LO_COLS, "LO")
     fr_path = dat_dir / "FR.dat"
-    fr = read_pipe_dat(fr_path, FR_COLS, "FR") if fr_path.exists() else pd.DataFrame(columns=FR_COLS)
+    fr = (
+        read_pipe_dat(fr_path, FR_COLS, "FR") if fr_path.exists() else pd.DataFrame(columns=FR_COLS)
+    )
     log.info(
         "fcc_uls[%s]: read HD=%d EN=%d LO=%d FR=%d", source_id, len(hd), len(en), len(lo), len(fr)
     )

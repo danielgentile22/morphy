@@ -79,7 +79,6 @@ _ACTIVE: list[DataSource] = [
     FCC_ASR,
     FAA_OEAAA,
     *FCC_ULS_ACTIVE,  # FCC ULS Cellular + Market-Based (PCS/AWS/700) — Slice A
-
     # Solar
     EIA_860,
     EIA_860M,
