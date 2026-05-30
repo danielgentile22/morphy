@@ -51,3 +51,32 @@ class LeadUpdate(BaseModel):
 class CandidatesResponse(BaseModel):
     count: int
     candidates: list[OwnerSummary]
+
+
+# ── auth (Slice 2 / #48) ────────────────────────────────────────────────────
+# Email is a plain ``str`` (lightly validated server-side) to avoid pulling
+# in pydantic's optional ``email-validator`` dependency.
+class RequestLinkBody(BaseModel):
+    email: str
+
+
+class RequestLinkResponse(BaseModel):
+    ok: bool
+    # Present only when AUTH_EXPOSE_TOKEN is on (dev) so the SPA can complete
+    # the exchange without a real inbox. Never set in prod.
+    dev_token: str | None = None
+
+
+class ExchangeBody(BaseModel):
+    token: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int  # seconds
+
+
+class MeResponse(BaseModel):
+    tenant_id: int
+    email: str

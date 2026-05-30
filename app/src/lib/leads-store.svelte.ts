@@ -9,9 +9,17 @@ import {
   type LeadDetail,
   type OwnerSummary,
 } from './leads-api';
+import { auth } from './auth-store.svelte';
 import type { LeadStatus } from './lead-status';
 
 type Loadable = 'idle' | 'loading' | 'ready' | 'error';
+
+/** Sign out on a 401 so the UI falls back to the sign-in surface, and
+ *  return the message to display for any error. */
+function handle(e: unknown): string {
+  if (e instanceof ApiError && e.status === 401) auth.signOut();
+  return e instanceof Error ? e.message : String(e);
+}
 
 class LeadsStore {
   candidates = $state<OwnerSummary[]>([]);
@@ -34,7 +42,7 @@ class LeadsStore {
       this.candidatesCount = res.count;
       this.candidatesStatus = 'ready';
     } catch (e) {
-      this.candidatesError = e instanceof Error ? e.message : String(e);
+      this.candidatesError = handle(e);
       this.candidatesStatus = 'error';
     }
   }
@@ -48,7 +56,7 @@ class LeadsStore {
       this.lead = await fetchLead(displayClusterId);
       this.leadStatus = 'ready';
     } catch (e) {
-      this.leadError = e instanceof Error ? e.message : String(e);
+      this.leadError = handle(e);
       this.leadStatus = 'error';
     }
   }
@@ -65,9 +73,8 @@ class LeadsStore {
       this.lead = await updateLead(displayClusterId, patch);
       return true;
     } catch (e) {
-      // A 409 means an illegal ladder move; surface the server's message.
-      this.saveError =
-        e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
+      // A 409 means an illegal ladder move; a 401 signs out (see handle()).
+      this.saveError = handle(e);
       return false;
     } finally {
       this.saving = false;

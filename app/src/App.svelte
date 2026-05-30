@@ -12,7 +12,9 @@
   import DetailsPanel from './components/DetailsPanel.svelte';
   import Candidates from './components/Candidates.svelte';
   import LeadPage from './components/LeadPage.svelte';
+  import SignIn from './components/SignIn.svelte';
   import { leads } from './lib/leads-store.svelte';
+  import { auth } from './lib/auth-store.svelte';
   import { buildUrl } from './lib/url';
 
   // Captured synchronously, before any effect can rewrite the URL.
@@ -41,8 +43,9 @@
 
   // Keep the Candidates count badge fresh once we're on a Lead surface
   // (covers a deep link straight to #/lead/:key without visiting the list).
+  // Gated on auth — the Lead routes require a signed-in session.
   $effect(() => {
-    if (route.name !== 'map' && leads.candidatesStatus === 'idle') {
+    if (route.name !== 'map' && auth.signedIn && leads.candidatesStatus === 'idle') {
       void leads.loadCandidates();
     }
   });
@@ -81,6 +84,9 @@
 
   onMount(() => {
     void app.boot(initialSearch);
+    // Validate any persisted JWT (populates the signed-in email; a stale
+    // token is dropped via a 401, falling back to the sign-in surface).
+    void auth.loadMe();
     window.addEventListener('keydown', onKeydown);
     window.addEventListener('hashchange', onHashChange);
     return () => {
@@ -178,10 +184,19 @@
           Candidates
           {#if leads.candidatesCount}<span class="lc-badge">{leads.candidatesCount}</span>{/if}
         </button>
-        <span class="nav-note">Lead = one cross-state landowner · ADR-061</span>
+        {#if auth.signedIn}
+          <span class="nav-user" data-testid="nav-user">{auth.email ?? 'signed in'}</span>
+          <button class="navtab signout" data-testid="signout" onclick={() => auth.signOut()}>
+            Sign out
+          </button>
+        {:else}
+          <span class="nav-note">Lead = one cross-state landowner · ADR-061</span>
+        {/if}
       </nav>
       <div class="lead-content">
-        {#if route.name === 'candidates'}
+        {#if !auth.signedIn}
+          <SignIn />
+        {:else if route.name === 'candidates'}
           <Candidates />
         {:else if route.name === 'lead'}
           <LeadPage displayClusterId={route.key} />
@@ -362,6 +377,14 @@
     margin-left: auto;
     font-size: 11px;
     color: var(--muted);
+  }
+  .nav-user {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .navtab.signout {
+    color: var(--text-2);
   }
   .lead-content {
     flex: 1;
