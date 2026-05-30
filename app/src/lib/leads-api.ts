@@ -115,6 +115,12 @@ export interface ContactFields {
   best_channel: string;
 }
 
+/** A raw owner-cluster merged into this Lead (Slice 7 / #53). */
+export interface MergedMember {
+  display_cluster_id: string;
+  owner_name: string;
+}
+
 export interface LeadDetail extends ContactFields {
   owner: OwnerSummary;
   status: LeadStatus;
@@ -124,6 +130,8 @@ export interface LeadDetail extends ContactFields {
   mailing_address: MailingAddress | null;
   tallest_tower_height_m: number | null;
   holdings: Holding[];
+  // Owner-clusters merged into this Lead via a manual override; empty when none.
+  merged_members: MergedMember[];
 }
 
 /** The body POSTed to log a manual contact attempt. */
@@ -240,6 +248,30 @@ export function appendAttempt(
   return request<LeadDetail>(`/leads/${encodeURIComponent(displayClusterId)}/attempts`, {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+/** Merge `sourceClusterId` into this Lead (the survivor). Afterward the source
+ *  resolves to this Lead everywhere (Slice 7 / #53). Returns the merged Lead. */
+export function mergeCluster(
+  displayClusterId: string,
+  sourceClusterId: string,
+): Promise<LeadDetail> {
+  return request<LeadDetail>(`/leads/${encodeURIComponent(displayClusterId)}/merge`, {
+    method: 'POST',
+    body: JSON.stringify({ source_cluster_id: sourceClusterId }),
+  });
+}
+
+/** Split `sourceClusterId` back out of this Lead — it returns to its own raw
+ *  cluster. Reverses a prior merge. Returns the updated (target) Lead. */
+export function splitCluster(
+  displayClusterId: string,
+  sourceClusterId: string,
+): Promise<LeadDetail> {
+  return request<LeadDetail>(`/leads/${encodeURIComponent(displayClusterId)}/split`, {
+    method: 'POST',
+    body: JSON.stringify({ source_cluster_id: sourceClusterId }),
   });
 }
 

@@ -10,6 +10,8 @@ Surface:
   GET  /api/counts               live nav counts (candidates + my-leads)
   GET  /api/leads/{cluster_id}   owner rollup + lead state + attempts
   PUT  /api/leads/{cluster_id}   set status and/or notes (validates ladder)
+  POST /api/leads/{cluster_id}/merge   merge another owner-cluster into this Lead
+  POST /api/leads/{cluster_id}/split   split a merged-in cluster back out
 
 Every data route resolves a tenant via ``current_tenant_id`` (now derived
 from the bearer JWT — Slice 2 / #48) and goes through ``LeadStore`` /
@@ -34,6 +36,7 @@ from .db import get_db, init_db
 from .email_sender import ConsoleEmailSender, EmailSender
 from .lead_status import InvalidTransition
 from .lead_store import LeadStore
+from .owner_merge_service import MergeError, OwnerMergeService
 from .owners_index_service import OwnersIndexService
 from .schemas import (
     CandidatesResponse,
@@ -44,6 +47,7 @@ from .schemas import (
     LeadUpdate,
     MeResponse,
     MyLeadsResponse,
+    OverrideBody,
     OwnerSummary,
     RequestLinkBody,
     RequestLinkResponse,
@@ -99,6 +103,15 @@ def get_store(
     yield LeadStore(db, tenant_id)
 
 
+def get_merges(
+    tenant_id: int = Depends(current_tenant_id),
+    db: Session = Depends(get_db),
+) -> OwnerMergeService:
+    # Shares the request-scoped session with get_store (FastAPI caches the
+    # get_db dependency per request), so a write + its read are one transaction.
+    return OwnerMergeService(db, tenant_id)
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True, "owners_indexed": owners_index.count}
@@ -141,9 +154,10 @@ def me(principal: Principal = Depends(current_principal)) -> MeResponse:
 @app.get("/api/candidates", response_model=CandidatesResponse)
 def candidates(
     store: LeadStore = Depends(get_store),
+    merges: OwnerMergeService = Depends(get_merges),
     limit: int = Query(default=200, ge=1, le=2000),
 ) -> CandidatesResponse:
-    rows = owners_index.list_candidates(store, limit=limit)
+    rows = owners_index.list_candidates(store, limit=limit, merges=merges)
     return CandidatesResponse(
         count=len(rows),
         candidates=[OwnerSummary(**r) for r in rows],
@@ -153,20 +167,28 @@ def candidates(
 @app.get("/api/my-leads", response_model=MyLeadsResponse)
 def my_leads(
     store: LeadStore = Depends(get_store),
+    merges: OwnerMergeService = Depends(get_merges),
     limit: int = Query(default=2000, ge=1, le=20000),
 ) -> MyLeadsResponse:
-    rows = owners_index.list_my_leads(store, limit=limit)
+    rows = owners_index.list_my_leads(store, limit=limit, merges=merges)
     return MyLeadsResponse(count=len(rows), leads=[OwnerSummary(**r) for r in rows])
 
 
 @app.get("/api/counts", response_model=CountsResponse)
-def counts(store: LeadStore = Depends(get_store)) -> CountsResponse:
-    return CountsResponse(**owners_index.counts(store))
+def counts(
+    store: LeadStore = Depends(get_store),
+    merges: OwnerMergeService = Depends(get_merges),
+) -> CountsResponse:
+    return CountsResponse(**owners_index.counts(store, merges=merges))
 
 
 @app.get("/api/leads/{display_cluster_id}", response_model=LeadDetail)
-def get_lead(display_cluster_id: str, store: LeadStore = Depends(get_store)) -> LeadDetail:
-    view = owners_index.lead_view(store, display_cluster_id)
+def get_lead(
+    display_cluster_id: str,
+    store: LeadStore = Depends(get_store),
+    merges: OwnerMergeService = Depends(get_merges),
+) -> LeadDetail:
+    view = owners_index.lead_view(store, display_cluster_id, merges=merges)
     if view is None:
         raise HTTPException(status_code=404, detail="owner not found in index")
     return _to_detail(view)
@@ -177,15 +199,19 @@ def update_lead(
     display_cluster_id: str,
     body: LeadUpdate,
     store: LeadStore = Depends(get_store),
+    merges: OwnerMergeService = Depends(get_merges),
 ) -> LeadDetail:
-    if owners_index.get_owner(display_cluster_id) is None:
+    if owners_index.get_owner(display_cluster_id, merges) is None:
         raise HTTPException(status_code=404, detail="owner not found in index")
+    # Honor coalesce on writes too: a merged-away source id persists onto the
+    # surviving target row, so what the user sees is what they edit.
+    target = merges.resolve(display_cluster_id)
     contact = {
         f: getattr(body, f) for f in LeadStore.CONTACT_FIELDS if getattr(body, f) is not None
     }
     try:
         store.upsert(
-            display_cluster_id,
+            target,
             status=body.status,
             notes=body.notes,
             contact=contact or None,
@@ -193,7 +219,7 @@ def update_lead(
     except InvalidTransition as exc:
         # 409 Conflict — the request is well-formed but illegal for this Lead's state.
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    view = owners_index.lead_view(store, display_cluster_id)
+    view = owners_index.lead_view(store, display_cluster_id, merges=merges)
     assert view is not None  # owner existence checked above
     return _to_detail(view)
 
@@ -203,24 +229,71 @@ def log_attempt(
     display_cluster_id: str,
     body: ContactAttemptIn,
     store: LeadStore = Depends(get_store),
+    merges: OwnerMergeService = Depends(get_merges),
 ) -> LeadDetail:
     """Append a manual contact attempt (date · channel · outcome) to the log.
 
     Status-transition rows are auto-logged on ``PUT`` instead; this is the
     co-founder explicitly recording an outreach event."""
-    if owners_index.get_owner(display_cluster_id) is None:
+    if owners_index.get_owner(display_cluster_id, merges) is None:
         raise HTTPException(status_code=404, detail="owner not found in index")
     if not body.channel.strip():
         raise HTTPException(status_code=422, detail="channel is required")
     occurred_on = _parse_iso_date(body.occurred_on)
     store.append_attempt(
-        display_cluster_id,
+        merges.resolve(display_cluster_id),
         channel=body.channel,
         outcome=body.outcome,
         note=body.note,
         occurred_on=occurred_on,
     )
-    view = owners_index.lead_view(store, display_cluster_id)
+    view = owners_index.lead_view(store, display_cluster_id, merges=merges)
+    assert view is not None
+    return _to_detail(view)
+
+
+@app.post("/api/leads/{display_cluster_id}/merge", response_model=LeadDetail)
+def merge_cluster(
+    display_cluster_id: str,
+    body: OverrideBody,
+    store: LeadStore = Depends(get_store),
+    merges: OwnerMergeService = Depends(get_merges),
+) -> LeadDetail:
+    """Merge ``source_cluster_id`` into this Lead (the path id is the survivor).
+
+    Both clusters must exist in the owners index. Afterward the source resolves
+    to this Lead everywhere (map, Candidates, kanban, Lead page). Overrides live
+    in Postgres keyed on raw cluster ids, so they survive an index recompute."""
+    target = merges.resolve(display_cluster_id)
+    if owners_index.get_owner(target) is None:
+        raise HTTPException(status_code=404, detail="owner not found in index")
+    if owners_index.get_owner(body.source_cluster_id) is None:
+        raise HTTPException(status_code=404, detail="source owner not found in index")
+    try:
+        merges.merge(source=body.source_cluster_id, target=target)
+    except MergeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    view = owners_index.lead_view(store, target, merges=merges)
+    assert view is not None
+    return _to_detail(view)
+
+
+@app.post("/api/leads/{display_cluster_id}/split", response_model=LeadDetail)
+def split_cluster(
+    display_cluster_id: str,
+    body: OverrideBody,
+    store: LeadStore = Depends(get_store),
+    merges: OwnerMergeService = Depends(get_merges),
+) -> LeadDetail:
+    """Split ``source_cluster_id`` back out of this Lead — it returns to its own
+    raw cluster as an independent Lead. Reverses a prior merge (no lead state
+    was ever moved, so the source's own status/notes/attempts are intact)."""
+    target = merges.resolve(display_cluster_id)
+    if owners_index.get_owner(target) is None:
+        raise HTTPException(status_code=404, detail="owner not found in index")
+    if not merges.split(source=body.source_cluster_id):
+        raise HTTPException(status_code=404, detail="no merge override to split")
+    view = owners_index.lead_view(store, target, merges=merges)
     assert view is not None
     return _to_detail(view)
 
@@ -249,4 +322,5 @@ def _to_detail(view: dict) -> LeadDetail:
         mailing_address=view["mailing_address"],
         tallest_tower_height_m=view["tallest_tower_height_m"],
         holdings=view["holdings"],
+        merged_members=view.get("merged_members", []),
     )

@@ -90,6 +90,14 @@ class MailingAddress(BaseModel):
     zip: str = ""
 
 
+class MergedMember(BaseModel):
+    """A raw owner-cluster folded into this Lead by a manual merge (Slice 7 /
+    #53). The Lead page lists these so the user can split one back out."""
+
+    display_cluster_id: str
+    owner_name: str
+
+
 class LeadDetail(BaseModel):
     owner: OwnerSummary
     status: str
@@ -105,6 +113,8 @@ class LeadDetail(BaseModel):
     mailing_address: MailingAddress | None = None
     tallest_tower_height_m: float | None = None
     holdings: list[Holding] = Field(default_factory=list)
+    # Owner-clusters merged into this Lead (Slice 7 / #53); empty when none.
+    merged_members: list[MergedMember] = Field(default_factory=list)
 
 
 class LeadUpdate(BaseModel):
@@ -116,6 +126,14 @@ class LeadUpdate(BaseModel):
     contact_phone: str | None = Field(default=None)
     contact_email: str | None = Field(default=None)
     best_channel: str | None = Field(default=None)
+
+
+class OverrideBody(BaseModel):
+    """The other owner-cluster in a manual merge/split (Slice 7 / #53). The
+    Lead being acted on is the path ``display_cluster_id`` (the survivor on
+    merge); ``source_cluster_id`` is the cluster folded in / split back out."""
+
+    source_cluster_id: str
 
 
 class CandidatesResponse(BaseModel):
