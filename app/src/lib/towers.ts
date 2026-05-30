@@ -25,6 +25,11 @@ export interface TowerProps {
   asr: string;
   /** Landowner name (the parcel's owner) — drives hover + Lead resolution. */
   owner: string;
+  /** Landowner's cross-state Lead key (`display_cluster_id`), precomputed once
+   *  so the shared FilterModel can narrow towers by an owner-id set lookup
+   *  (Slice 6 / #52) without re-hashing every owner name on each filter change.
+   *  '' when the owner can't be clustered (blank name). */
+  cid: string;
   height_m: number | null;
   state: string;
   active: boolean;
@@ -74,12 +79,14 @@ export function rowsToFeatureCollection(rows: TowerRow[]): FeatureCollection<Poi
   const features: TowerFeature[] = [];
   for (const r of rows) {
     if (!Number.isFinite(r.lon) || !Number.isFinite(r.lat)) continue;
+    const owner = (r.owner ?? '').trim();
     features.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [r.lon, r.lat] },
       properties: {
         asr: String(r.asr ?? ''),
-        owner: (r.owner ?? '').trim(),
+        owner,
+        cid: ownerNameToClusterId(owner),
         height_m: r.height_m ?? null,
         state: String(r.state ?? ''),
         active: r.active === true,
@@ -87,6 +94,17 @@ export function rowsToFeatureCollection(rows: TowerRow[]): FeatureCollection<Poi
     });
   }
   return { type: 'FeatureCollection', features };
+}
+
+/** Narrow a tower collection to owners in `clusterIds`. `null` (no filter
+ *  active) returns the collection unchanged. Pure — unit-tested; the map
+ *  feeds the result straight to the tower source's `setData`. */
+export function filterTowers(
+  fc: FeatureCollection<Point, TowerProps>,
+  clusterIds: ReadonlySet<string> | null,
+): FeatureCollection<Point, TowerProps> {
+  if (clusterIds === null) return fc;
+  return { type: 'FeatureCollection', features: fc.features.filter((f) => clusterIds.has(f.properties.cid)) };
 }
 
 /**

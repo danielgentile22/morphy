@@ -5,6 +5,7 @@
 // Override the base for other setups with `VITE_API_BASE`.
 
 import type { LeadStatus } from './lead-status';
+import type { FilterableOwner } from './filter-model';
 import { authHeader } from './auth-token';
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api';
@@ -27,6 +28,40 @@ export interface OwnerSummary {
   in_qct: boolean;
   persistent_poverty: boolean;
   status: LeadStatus;
+  // Owner-level filter rollups (Slice 6 / #52) — let the shared FilterModel
+  // narrow the Candidates list with the same predicate the map uses. Optional
+  // so an older backend/index still parses (the filters they back no-op then).
+  counties?: string[];
+  structure_count?: number;
+  structure_types?: string[];
+  active_tower_count?: number;
+  tallest_tower_height_m?: number | null;
+}
+
+/** Adapt an OwnerSummary to the shape the shared FilterModel predicate reads,
+ *  filling the v3 rollups (which an older backend may omit) from what's
+ *  present — so the Candidates list and the map narrow by the same logic. */
+export function ownerSummaryToFilterable(o: OwnerSummary): FilterableOwner {
+  return {
+    states: o.states,
+    counties: o.counties ?? [],
+    owner_kind: o.owner_kind,
+    distress_tier: o.distress_tier,
+    in_oz: o.in_oz,
+    in_qct: o.in_qct,
+    persistent_poverty: o.persistent_poverty,
+    score: o.score,
+    parcel_count: o.parcel_count,
+    total_assessed_value: o.total_assessed_value,
+    tower_count: o.tower_count,
+    solar_count: o.solar_count,
+    structure_count: o.structure_count ?? o.tower_count + o.solar_count,
+    structure_types:
+      o.structure_types ??
+      [...(o.tower_count > 0 ? ['tower'] : []), ...(o.solar_count > 0 ? ['solar'] : [])],
+    active_tower_count: o.active_tower_count ?? 0,
+    tallest_tower_height_m: o.tallest_tower_height_m ?? null,
+  };
 }
 
 export interface ContactAttempt {

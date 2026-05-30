@@ -23,6 +23,13 @@ class OwnerSummary(BaseModel):
     in_qct: bool
     persistent_poverty: bool
     status: str
+    # Owner-level filter rollups (Slice 6 / #52, index schema v3). Defaulted so
+    # a pre-v3 index still validates — the filters they back simply no-op then.
+    counties: list[str] = Field(default_factory=list)
+    structure_count: int = 0
+    structure_types: list[str] = Field(default_factory=list)
+    active_tower_count: int = 0
+    tallest_tower_height_m: float | None = None
 
 
 class ContactAttemptOut(BaseModel):

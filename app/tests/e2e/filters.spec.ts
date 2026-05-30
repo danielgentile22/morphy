@@ -1,93 +1,65 @@
 import { test, expect, type Page } from '@playwright/test';
 
-// Phase C — the DuckDB-backed filter UI: live count, the map fade, reset.
-// The first filter query pays the DuckDB-WASM cold-start cost (a few
-// seconds), so query-gated assertions get a generous timeout.
-const DB = 25_000;
+// Slice 6 (#52) — the top filter bar narrows the structures-first tower layer.
+// Runs against the static read-layer only (towers + owners_filter.json); the
+// Candidates-list side of the same shared FilterModel needs the backend and is
+// covered by the FilterModel unit tests + manual verification.
+const MAP = 25_000;
 
 async function waitReady(page: Page): Promise<void> {
-  await page.getByTestId('filter-panel').waitFor({ state: 'visible', timeout: DB });
+  await page.getByTestId('top-filter-bar').first().waitFor({ state: 'visible', timeout: MAP });
+  await page.waitForFunction(() => !!(window as any).__pilotMap, null, { timeout: MAP });
 }
 
-function countNumber(text: string): number {
-  const m = text.match(/([\d,]+)/);
-  return m ? Number(m[1].replace(/,/g, '')) : NaN;
+/** Approximate towers currently on the map: individual points + cluster sums. */
+function towerCount(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const m = (window as any).__pilotMap;
+    const r = m.queryRenderedFeatures({ layers: ['towers-point', 'towers-clusters'] });
+    let n = 0;
+    for (const f of r) n += f.properties.point_count || 1;
+    return n;
+  });
 }
 
-test('an owner-kind filter updates the live count badge', async ({ page }) => {
-  await page.goto('/?state=05');
+test('the slim top filter bar shows the high-use filters + search', async ({ page }) => {
+  await page.goto('/');
   await waitReady(page);
-
-  const badge = page.getByTestId('filter-count');
-  await expect(badge).toContainText('no filter');
-  const total = countNumber((await badge.textContent())!);
-
-  await page.locator('[data-testid="filter-panel"] .chip', { hasText: 'LLC' }).click();
-  await expect(badge).toContainText('match', { timeout: DB });
-
-  const matched = countNumber((await badge.textContent())!);
-  expect(matched).toBeGreaterThan(0);
-  expect(matched).toBeLessThan(total);
+  const bar = page.getByRole('main').getByTestId('top-filter-bar');
+  for (const name of ['State', 'Distress', 'Structure', 'Score', 'More filters']) {
+    await expect(bar.getByRole('button', { name: new RegExp(name) })).toBeVisible();
+  }
+  await expect(bar.getByTestId('owner-search')).toBeVisible();
+  // The dropped parcel-noise filters are gone from the UI entirely.
+  await expect(page.getByTestId('filter-panel')).toHaveCount(0);
 });
 
-test('compound filters narrow the count further', async ({ page }) => {
-  await page.goto('/?state=05');
+test('a state filter narrows the tower layer (shared FilterModel)', async ({ page }) => {
+  await page.goto('/');
   await waitReady(page);
-  const badge = page.getByTestId('filter-count');
+  await page.waitForFunction(() => (window as any).__pilotMap.isStyleLoaded());
+  await expect.poll(() => towerCount(page), { timeout: MAP }).toBeGreaterThan(0);
+  const before = await towerCount(page);
 
-  await page.locator('[data-testid="filter-panel"] .chip', { hasText: 'LLC' }).click();
-  await expect(badge).toContainText('match', { timeout: DB });
-  const llcOnly = countNumber((await badge.textContent())!);
+  const bar = page.getByRole('main').getByTestId('top-filter-bar');
+  await bar.getByRole('button', { name: /State/ }).click();
+  await page.getByRole('button', { name: 'MT', exact: true }).click();
 
-  await page.locator('[data-testid="filter-panel"] .chip', { hasText: 'Distressed' }).click();
-  await expect(badge).toContainText('match', { timeout: DB });
-  const llcAndDistressed = countNumber((await badge.textContent())!);
-
-  expect(llcAndDistressed).toBeGreaterThan(0);
-  expect(llcAndDistressed).toBeLessThanOrEqual(llcOnly);
+  // The bar marks State active, and the tower layer shrinks to MT-linked owners.
+  await expect(bar.getByRole('button', { name: /State · 1/ })).toBeVisible();
+  await expect.poll(() => towerCount(page), { timeout: MAP }).toBeLessThan(before);
 });
 
-test('a filter fades non-matching parcels; reset restores them', async ({ page }) => {
-  await page.goto('/?state=05');
+test('reset is disabled until a filter is active, then clears it', async ({ page }) => {
+  await page.goto('/');
   await waitReady(page);
-  const badge = page.getByTestId('filter-count');
+  const bar = page.getByRole('main').getByTestId('top-filter-bar');
 
-  // With a filter active the parcels fill gains a feature-state branch
-  // (matches bright, the rest faded); 'missing' until the layer exists.
-  const fadeMode = () =>
-    page.evaluate(() => {
-      const m = (window as any).__pilotMap;
-      if (!m || !m.getLayer('parcels:fill')) return 'missing';
-      const expr = m.getPaintProperty('parcels:fill', 'fill-opacity');
-      return JSON.stringify(expr).includes('feature-state') ? 'filtered' : 'plain';
-    });
-  await expect.poll(fadeMode, { timeout: DB }).toBe('plain');
+  await expect(bar.getByTestId('reset-filters')).toBeDisabled();
+  await bar.getByRole('button', { name: /Score/ }).click();
+  await bar.getByTestId('score-slider').fill('0.8');
+  await expect(bar.getByTestId('reset-filters')).toBeEnabled();
 
-  await page.locator('[data-testid="filter-panel"] .chip', { hasText: 'LLC' }).click();
-  await expect(badge).toContainText('match', { timeout: DB });
-  await expect.poll(fadeMode, { timeout: DB }).toBe('filtered');
-
-  await page.getByTestId('reset-filters').click();
-  await expect(badge).toContainText('no filter', { timeout: DB });
-  await expect.poll(fadeMode, { timeout: DB }).toBe('plain');
-});
-
-test('reset all is disabled until a filter is active', async ({ page }) => {
-  await page.goto('/?state=05');
-  await waitReady(page);
-
-  await expect(page.getByTestId('reset-filters')).toBeDisabled();
-  await page.locator('[data-testid="filter-panel"] .chip', { hasText: 'LLC' }).click();
-  await expect(page.getByTestId('reset-filters')).toBeEnabled();
-});
-
-test('the score slider filters by interestingness', async ({ page }) => {
-  await page.goto('/?state=05');
-  await waitReady(page);
-  const badge = page.getByTestId('filter-count');
-
-  await page.getByTestId('score-slider').fill('0.8');
-  await expect(badge).toContainText('match', { timeout: DB });
-  const matched = countNumber((await badge.textContent())!);
-  expect(matched).toBeGreaterThan(0);
+  await bar.getByTestId('reset-filters').click();
+  await expect(bar.getByTestId('reset-filters')).toBeDisabled();
 });
