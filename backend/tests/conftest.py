@@ -34,28 +34,44 @@ from backend.app.lead_store import LeadStore  # noqa: E402
 
 @pytest.fixture(scope="session")
 def database_url() -> Iterator[str]:
-    """A DB URL for the test engine: Postgres if reachable, else SQLite."""
+    """A DB URL for the test engine.
+
+    Defaults to **SQLite** — fast, reliable, and behaviorally equivalent
+    for Slice 1, whose tenant isolation is application-level (every query
+    filters by ``tenant_id``; no JSONB/FTS/RLS). Opt into real Postgres
+    (TESTING.md §11.1) two ways:
+
+    - ``PILOT_TEST_DATABASE_URL=postgresql://…`` — point at a running
+      Postgres (e.g. a CI ``services: postgres`` container); or
+    - ``PILOT_TEST_TESTCONTAINERS=1`` — spin one via testcontainers when a
+      Docker daemon is available.
+
+    (Auto-starting testcontainers by default was dropped: it is slow and
+    flaky on the CI runner — the container starts but the run never
+    settles.)
+    """
     explicit = os.environ.get("PILOT_TEST_DATABASE_URL")
     if explicit:
-        yield explicit
+        yield _force_psycopg3(explicit)
         return
 
-    container = None
-    try:  # testcontainers + Docker — the TESTING.md §11.1 path
-        from testcontainers.postgres import PostgresContainer
-
-        container = PostgresContainer("postgres:16-alpine")
-        container.start()
-    except Exception:  # noqa: BLE001 — no testcontainers or no Docker daemon
+    if os.environ.get("PILOT_TEST_TESTCONTAINERS"):
         container = None
-
-    if container is not None:
         try:
-            yield _force_psycopg3(container.get_connection_url())
-        finally:
-            container.stop()
-    else:  # Docker-free fallback (e.g. local dev without a daemon)
-        yield "sqlite+pysqlite:///:memory:"
+            from testcontainers.postgres import PostgresContainer
+
+            container = PostgresContainer("postgres:16-alpine")
+            container.start()
+        except Exception:  # noqa: BLE001 — no testcontainers or no Docker daemon
+            container = None
+        if container is not None:
+            try:
+                yield _force_psycopg3(container.get_connection_url())
+            finally:
+                container.stop()
+            return
+
+    yield "sqlite+pysqlite:///:memory:"
 
 
 def _force_psycopg3(url: str) -> str:

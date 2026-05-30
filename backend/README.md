@@ -80,6 +80,11 @@ source .venv/bin/activate
 pytest backend/tests -v          # or just `pytest` (testpaths includes backend/tests)
 ```
 
-The multi-tenancy isolation test uses **testcontainers Postgres** when
-Docker is available (TESTING.md §11.1); it falls back to SQLite when Docker
-is absent (set `PILOT_TEST_DATABASE_URL` to force a specific Postgres).
+The tests default to **SQLite** (fast, reliable; Slice 1's tenant isolation
+is application-level, so SQLite exercises the same behavior). Opt into real
+Postgres (TESTING.md §11.1) either way:
+
+```bash
+PILOT_TEST_DATABASE_URL=postgresql://user:pass@localhost/test pytest backend/tests   # a running Postgres
+PILOT_TEST_TESTCONTAINERS=1 pytest backend/tests                                      # spin one via Docker
+```
