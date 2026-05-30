@@ -50,5 +50,18 @@ An antenna or DAS installation on a commercial building. Usually under the 200 f
 _Avoid_: Site (ambiguous), DAS (a subset).
 
 **Triage** (workflow):
-The co-founder's working session inside the product — filter parcels/towers across anchor states, rank by interestingness, drill into a candidate, mark as "working" / "passed" / "called", and export or persist lead state. The product's primary user-flow once Phase 1 ships.
+The co-founder's working session inside the product — filter parcels/towers across anchor states, rank by interestingness, drill into a **Lead**, mark its progress, and persist lead state. The product's primary user-flow once Phase 1 ships.
 _Avoid_: Outreach (broader — includes the actual email/call layer, which is Phase 2).
+
+**Lead**:
+The unit of outreach tracking in the product — keyed to the **Landowner** (an owner cluster), *not* to a single parcel or antenna, and resolved **across all anchor states** (national grain). Aggregates every parcel a landowner holds across the pilot's anchor states plus every structure (antenna, solar, billboard) on those parcels, and carries the user-entered tracking state: contact info, a progress stage (e.g. new → called → interested), and free-text notes. One landowner = one Lead even when they own many parcels/towers in several states, so a single phone call maps to a single record. The antenna/parcel is the *reason* a Lead is interesting; the Lead is *who you call*. (Decided 2026-05-30: the per-landowner grain won over per-antenna and per-parcel because contact/called/notes are owner-level facts; the cross-state grain won over within-state because a national portfolio owner is genuinely one outreach target. Builds on **ADR-056** (Lead = owner-cluster as the triage primitive) and extends it to the cross-state grain. Consequence: owner identity must be resolved *across* states — the pipeline clusters within a state today, and ADR-024's `SHA1(normalized name + address)` cluster key, while stable across recomposes, would *split* a national owner across their regional mailing addresses; cross-state merge therefore needs name-anchored clustering plus the manual merge/split + `display_cluster_id` override path already specified in ADR-056.)
+_Avoid_: Antenna page, Parcel record (both are narrower — they are *surfaced within* a Lead).
+
+**Candidate**:
+An owner still at **Lead status** = New — i.e. surfaced by the system but not yet worked. Not a separate population from a Lead: every owner has a status (default New), so a Candidate *is* a Lead at its initial state. The **Candidates** surface is the discovery view — owners at New, ranked by interestingness; the millions of untouched owners live here. "Start tracking" a candidate just means advancing its status to Researching (decided 2026-05-30: status is universal, with no separate save/tracked flag).
+_Avoid_: Prospect, Saved lead (a Lead is "saved" the moment its status moves off New).
+
+**Lead status**:
+The single progress state every Lead carries (exactly one at a time). The ladder, which **branches** after Contacted:
+`New → Researching → Contacted →` then either `Interested → In Business` *or* `Uninterested` (terminal). New is the default for all owners; Uninterested is a closed/dead end; In Business is the active-deal end state. Drives the **My Leads** kanban (one lane per status; New owners are excluded — they live in the **Candidates** view; Uninterested is a closed lane). Decided 2026-05-30.
+_Avoid_: Flags/tags for these (progress is a single funnel position, not a set of booleans); "Called" / "Passed" (superseded by Contacted / Uninterested).

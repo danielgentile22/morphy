@@ -1,6 +1,6 @@
 # DECISIONS — Architecture Decision Records (index)
 
-**Last updated:** 2026-05-27
+**Last updated:** 2026-05-30 (ADR-061 — lead-centric triage UI redesign)
 
 Index of every locked-in design choice in the repo. Per-ADR content lives under [`docs/adr/`](./adr/). New ADRs go straight there ([CLAUDE.md §9](../CLAUDE.md)).
 
@@ -67,6 +67,7 @@ The currently-binding decisions.
 | [ADR-058](./adr/0058-tunable-transparent-scoring.md) | Tunable + transparent scoring |
 | [ADR-059](./adr/0059-llm-lease-extraction.md) | LLM extraction approach for leases |
 | [ADR-060](./adr/0060-wv-committed-anchor.md) | West Virginia elevated to a committed Phase-1 anchor |
+| [ADR-061](./adr/0061-lead-centric-triage-redesign.md) | Lead-centric triage UI redesign — cross-state leads, structures-first map, write-layer pulled forward |
 
 ---
 
