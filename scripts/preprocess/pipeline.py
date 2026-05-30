@@ -219,6 +219,31 @@ class AppAssetsStep:
 
 
 @dataclass
+class OwnersIndexStep:
+    """Write the cross-state owners index (composite/owners_index.json)
+    from the slim per-state parcels_attr.parquet that AppAssetsStep
+    produced. Auxiliary: a failure leaves the per-state composites and
+    map app fully usable, only the Lead backend's index is stale."""
+
+    name: str = "owners_index"
+    severity: Severity = Severity.AUXILIARY
+
+    def is_applicable(self, outcome: RunOutcome) -> bool:
+        return bool(outcome.composed_ok)
+
+    def run(
+        self,
+        outcome: RunOutcome,
+        manifest: PreprocessManifest,
+        *,
+        progress_callback: ProgressCallback | None,
+    ) -> None:
+        from .owners_index import run_owners_index
+
+        run_owners_index(progress_callback=progress_callback)
+
+
+@dataclass
 class TilesStep:
     """Build parcels.pmtiles per composed state. Auxiliary: needs an
     external ``tippecanoe`` binary; absent or per-state failures are

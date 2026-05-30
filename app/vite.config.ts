@@ -18,6 +18,11 @@ export default defineConfig({
         target: 'http://localhost:8765',
         changeOrigin: true,
       },
+      // Lead write-layer backend (uvicorn backend.app.main:app on :8000).
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
   // `vite preview` serves the built dist/ — a static server with no HMR
@@ -29,6 +34,10 @@ export default defineConfig({
     proxy: {
       '/data': {
         target: 'http://localhost:8765',
+        changeOrigin: true,
+      },
+      '/api': {
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
     },

@@ -10,12 +10,42 @@
   import FilterPanel from './components/FilterPanel.svelte';
   import TopList from './components/TopList.svelte';
   import DetailsPanel from './components/DetailsPanel.svelte';
+  import Candidates from './components/Candidates.svelte';
+  import LeadPage from './components/LeadPage.svelte';
+  import { leads } from './lib/leads-store.svelte';
   import { buildUrl } from './lib/url';
 
   // Captured synchronously, before any effect can rewrite the URL.
   const initialSearch = location.search;
 
   let showHelp = $state(false);
+
+  // Lightweight hash routing layered over the existing map app. The map
+  // (`.layout`) stays mounted; the Lead surfaces render as an overlay on
+  // top for #/candidates and #/lead/:key, so switching never tears down
+  // MapLibre/DuckDB (ADR-061: the map instance persists across routes).
+  type Route = { name: 'map' } | { name: 'candidates' } | { name: 'lead'; key: string };
+  function parseRoute(): Route {
+    const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+    if (parts[0] === 'lead' && parts[1]) return { name: 'lead', key: decodeURIComponent(parts[1]) };
+    if (parts[0] === 'candidates') return { name: 'candidates' };
+    return { name: 'map' };
+  }
+  let route = $state<Route>(parseRoute());
+  function goMap(): void {
+    location.hash = '';
+  }
+  function goCandidates(): void {
+    location.hash = '#/candidates';
+  }
+
+  // Keep the Candidates count badge fresh once we're on a Lead surface
+  // (covers a deep link straight to #/lead/:key without visiting the list).
+  $effect(() => {
+    if (route.name !== 'map' && leads.candidatesStatus === 'idle') {
+      void leads.loadCandidates();
+    }
+  });
 
   /** True when the event originates from a text-entry control — keyboard
    *  shortcuts (including Escape) stay inert so they don't hijack typing. */
@@ -45,16 +75,25 @@
     }
   }
 
+  function onHashChange(): void {
+    route = parseRoute();
+  }
+
   onMount(() => {
     void app.boot(initialSearch);
     window.addEventListener('keydown', onKeydown);
-    return () => window.removeEventListener('keydown', onKeydown);
+    window.addEventListener('hashchange', onHashChange);
+    return () => {
+      window.removeEventListener('keydown', onKeydown);
+      window.removeEventListener('hashchange', onHashChange);
+    };
   });
 
   // Keep the URL a shareable deep link — state, selected parcel, filters.
   // Gated on urlSyncReady so it cannot erase the deep-link before boot
-  // has restored it.
+  // has restored it. Skipped on the Lead routes so it never strips the hash.
   $effect(() => {
+    if (route.name !== 'map') return;
     if (!app.urlSyncReady) return;
     const sel = app.selection;
     const selectedId =
@@ -119,11 +158,37 @@
     {:else}
       <MapView />
       <DetailsPanel />
+      <button class="candidates-launcher" data-testid="open-candidates" onclick={goCandidates}>
+        Candidates{#if leads.candidatesCount}
+          <span class="lc-badge">{leads.candidatesCount}</span>
+        {/if}
+      </button>
       {#if app.status === 'loading'}
         <div class="loading-pill" data-testid="loading">Loading…</div>
       {/if}
     {/if}
   </main>
+
+  {#if route.name !== 'map'}
+    <div class="lead-overlay" data-testid="lead-overlay">
+      <nav class="lead-nav">
+        <span class="brand">Ground-Lease Triage</span>
+        <button class="navtab" onclick={goMap}>Map</button>
+        <button class="navtab on" onclick={goCandidates}>
+          Candidates
+          {#if leads.candidatesCount}<span class="lc-badge">{leads.candidatesCount}</span>{/if}
+        </button>
+        <span class="nav-note">Lead = one cross-state landowner · ADR-061</span>
+      </nav>
+      <div class="lead-content">
+        {#if route.name === 'candidates'}
+          <Candidates />
+        {:else if route.name === 'lead'}
+          <LeadPage displayClusterId={route.key} />
+        {/if}
+      </div>
+    </div>
+  {/if}
 
   {#if showHelp}
     <div class="help-overlay" role="dialog" aria-label="Keyboard shortcuts" data-testid="help">
@@ -228,6 +293,79 @@
     font-size: 12px;
     color: var(--muted);
     box-shadow: var(--shadow);
+  }
+
+  /* Entry point into the Lead surfaces. Top-left of the map stage, clear
+     of the sidebar and the top-right details panel. */
+  .candidates-launcher {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 20;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 600;
+    box-shadow: var(--shadow);
+  }
+  .lc-badge {
+    background: rgba(255, 255, 255, 0.28);
+    border-radius: 999px;
+    padding: 0 6px;
+    font-size: 11px;
+  }
+
+  .lead-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+  }
+  .lead-nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 18px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .lead-nav .brand {
+    font-weight: 600;
+    font-size: 14px;
+    margin-right: 6px;
+  }
+  .navtab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text-2);
+    border-radius: 999px;
+    font-size: 12.5px;
+  }
+  .navtab.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .nav-note {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .lead-content {
+    flex: 1;
+    overflow-y: auto;
   }
 
   .error-screen {

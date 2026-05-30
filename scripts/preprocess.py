@@ -9,6 +9,7 @@ Usage:
   python scripts/preprocess.py --force-rebuild       # ignore manifest, re-normalize everything
   python scripts/preprocess.py --rebuild-manifest    # rewrite preprocess_manifest.json from on-disk files
   python scripts/preprocess.py --app-assets          # write composite/index.json (no recompose)
+  python scripts/preprocess.py --owners-index         # write composite/owners_index.json (cross-state Leads)
   python scripts/preprocess.py --tiles               # build parcels.pmtiles for all composed states
   python scripts/preprocess.py --tiles --state 05    # build parcels.pmtiles for one state
   python scripts/preprocess.py --list-views          # show registered Views
@@ -96,6 +97,11 @@ def _stream_progress(phase: str, key: str, info: dict) -> None:
         print(f"    ✗ state {key}: {info.get('error', '')}")
     elif phase == "app_assets":
         print(f"\n  → app assets: wrote {key}.json ({info.get('states', 0)} states)")
+    elif phase == "owners_index":
+        print(
+            f"\n  → owners index: {info.get('owners', 0):,} owners "
+            f"({info.get('cross_state', 0)} cross-state)"
+        )
 
 
 def main() -> int:
@@ -136,6 +142,15 @@ def main() -> int:
             "Write app-support assets (composite/index.json) without "
             "re-composing, then exit. Also run automatically at the end "
             "of a normal run so the map app never reads a stale index."
+        ),
+    )
+    parser.add_argument(
+        "--owners-index",
+        action="store_true",
+        help=(
+            "Write the cross-state owners index (composite/owners_index.json) "
+            "from the per-state parcels_attr.parquet, then exit. Run "
+            "--app-assets first so the slim attr parquets exist."
         ),
     )
     parser.add_argument(
@@ -206,6 +221,17 @@ def main() -> int:
         print(
             f"Facets + slim parquet: {len(result['facets_ok'])} built"
             f"{', ' + str(len(result['facets_failed'])) + ' failed' if result['facets_failed'] else ''}."
+        )
+        return 0
+
+    if args.owners_index:
+        from preprocess.owners_index import run_owners_index
+
+        result = run_owners_index(progress_callback=_stream_progress)
+        print(
+            f"Wrote {result['index_path']}: {result['owners']} owner(s) indexed "
+            f"({result['cross_state_owners']} cross-state) across "
+            f"{', '.join(result['states']) or '—'}."
         )
         return 0
 

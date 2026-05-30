@@ -26,6 +26,14 @@
 
   --sidebar-w: 380px;
   --radius: 6px;
+
+  /* Lead status colors (Candidates + Lead page). Mirror prototype/styles.css. */
+  --s-new: #8893a0;
+  --s-researching: #b8860b;
+  --s-contacted: #0072b2;
+  --s-interested: #6f42c1;
+  --s-in_business: #2e7d4f;
+  --s-uninterested: #b0392b;
 }
 
 * {

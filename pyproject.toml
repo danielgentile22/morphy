@@ -36,6 +36,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Tests are allowed to use unused imports (for fixtures), assert, etc.
 "tests/**" = ["F401", "F811", "B011"]
+"backend/tests/**" = ["F401", "F811", "B011"]
 # Schema files have intentional bare `pass` patterns
 "scripts/preprocess/base.py" = ["B027"]
 
@@ -44,7 +45,7 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "backend/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -56,6 +57,7 @@ addopts = [
 markers = [
     "slow: marks tests as slow (deselect with -m 'not slow')",
     "integration: requires real data on disk (deselect with -m 'not integration')",
+    "tenant_isolation: multi-tenancy isolation tests (run with -k tenant_isolation)",
 ]
 
 [tool.coverage.run]

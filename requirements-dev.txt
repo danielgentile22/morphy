@@ -14,3 +14,9 @@ jsonschema>=4.21
 
 # PMTiles reader — verify parcels.pmtiles output (tests/test_tiles.py)
 pmtiles>=3.7
+
+# Backend (Slice 1, #47) — the lead-triage write-layer. Pulled in here so
+# `pip install -r requirements-dev.txt && pytest` collects backend/tests
+# (fastapi + sqlalchemy app code; the testcontainers/psycopg Postgres path
+# is optional and falls back to SQLite when Docker is absent).
+-r backend/requirements.txt
