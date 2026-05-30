@@ -20,7 +20,8 @@ backend/app/
   models.py                 ORM: lead, contact_attempt, app_user, magic_link_token (tenant_id on every table)
   lead_status.py            status ladder + transition rules (parity w/ app/src/lib/lead-status.ts)
   lead_store.py             LeadStore — tenant-scoped CRUD + auto-logged status transitions
-  owners_index_service.py   serves the static index left-joined with the tenant's lead state
+  owner_merge_service.py    OwnerMergeService — manual merge/split overrides (display_cluster_id = coalesce(override, raw))
+  owners_index_service.py   serves the static index (override-aware) left-joined with the tenant's lead state
   auth.py                   token hashing + JWT issue/verify + current_tenant_id (JWT-derived)
   auth_service.py           AuthService — magic-link request → exchange (hashed one-time tokens)
   email_sender.py           pluggable link delivery (ConsoleEmailSender dev / RecordingEmailSender tests)
@@ -34,6 +35,40 @@ backend/tests/              LeadStore + auth + tenant-isolation (testcontainers 
 - `contact_attempt(id, tenant_id, display_cluster_id, occurred_on, channel, outcome, note, created_at)` — manual outreach events **and** auto-logged status-transition rows (`channel='status'`) share this one activity stream.
 - `app_user(id, tenant_id, email UNIQUE, created_at)` — a person who can sign in, bound to one tenant.
 - `magic_link_token(id, tenant_id, user_id, email, token_hash, expires_at, used_at, created_at)` — sign-in tokens **hashed at rest** (only the SHA-256 hash is stored), one-time (`used_at`), short expiry.
+- `owner_cluster_override(tenant_id, source_cluster_id, target_cluster_id, created_at)` — manual merge overrides (Slice 7 / #53). PK `(tenant_id, source_cluster_id)`. Keyed on **raw** cluster ids, so overrides survive an owners-index recompute (raw ids in the parquet are never mutated).
+
+## Manual owner merge/split (Slice 7 / #53, ADR-056)
+
+The conservative cross-state resolver errs toward *not* merging (a false merge
+= a wrong-person call). `OwnerMergeService` is the manual net: it lets a tenant
+**merge** two owner-clusters or **split** one apart via the
+`owner_cluster_override` table. The whole contract is the resolution rule
+
+```
+display_cluster_id = coalesce(override_target, raw_cluster_id)
+```
+
+— `OwnerMergeService.resolve()` follows the override chain (A→B→C) to a fixed
+point. The read layer (`OwnersIndexService.effective()`) applies it in **one
+place**, so a merge/split shows up identically on every served surface (the
+map's tower→landowner resolution, Candidates, My-Leads, counts, the Lead page)
+— resolution is never forked per surface. With no overrides (the common case)
+the static index is returned untouched.
+
+**Lead-state reconciliation (target-wins).** Merge/split write **only** the
+override table — never the `lead` / `contact_attempt` tables. A merged owner is
+served under the surviving **target** id, and its lead state reconciles across
+the member clusters by *target-wins*: the target's own row is authoritative for
+the scalar fields (status / notes / contact_*), while contact-attempt streams
+**concatenate** across all members (so the full outreach history stays visible).
+Writes resolve the requested id → target and persist on the target row, so what
+you see is what you validate and write. **Split** deletes the source's override
+row; because no lead state was ever moved, the source re-emerges with its own
+state intact and the target keeps its own — the operation is perfectly
+reversible. (Consequence: merging adopts the *target's* status, not the
+source's; the source's history remains visible in the merged stream and is
+fully restored on split. A merge-time "inherit the furthest-along status" seed
+was considered and rejected to keep merge/split non-destructive and reversible.)
 
 ## Lead status ladder
 
@@ -60,6 +95,8 @@ are rejected (HTTP 409).
 | GET | `/api/leads/{display_cluster_id}` | full Lead: owner rollup + **holdings** (per-parcel structures + EPSG:4326 footprint) + read-only **mailing address** + tallest tower + lead state + editable contact fields + attempts |
 | PUT | `/api/leads/{display_cluster_id}` | set status, notes, and/or contact fields (validates the ladder; a drag on the kanban is just a status PUT) |
 | POST | `/api/leads/{display_cluster_id}/attempts` | append a manual contact attempt (date · channel · outcome) |
+| POST | `/api/leads/{display_cluster_id}/merge` | merge another owner-cluster (`source_cluster_id`) into this Lead — the path id is the survivor (Slice 7 / #53) |
+| POST | `/api/leads/{display_cluster_id}/split` | split a merged-in cluster (`source_cluster_id`) back out to its own raw cluster |
 
 The read half of the full Lead page (holdings / mailing / tallest tower) is
 served from the precomputed **owners index** (schema **v3** —

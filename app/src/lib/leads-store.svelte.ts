@@ -8,6 +8,8 @@ import {
   fetchCounts,
   fetchLead,
   fetchMyLeads,
+  mergeCluster,
+  splitCluster,
   updateLead,
   type AttemptPayload,
   type ContactFields,
@@ -162,6 +164,32 @@ class LeadsStore {
     this.saveError = null;
     try {
       this.lead = await appendAttempt(displayClusterId, payload);
+      return true;
+    } catch (e) {
+      this.saveError = handle(e);
+      return false;
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  /** Merge another owner-cluster into this Lead, or split a merged-in one back
+   *  out (Slice 7 / #53). Both refresh the in-memory lead (now the merged/split
+   *  result) and the nav counts, since the effective owner population changed. */
+  async mergeOwner(displayClusterId: string, sourceClusterId: string): Promise<boolean> {
+    return this.#override(() => mergeCluster(displayClusterId, sourceClusterId));
+  }
+
+  async splitOwner(displayClusterId: string, sourceClusterId: string): Promise<boolean> {
+    return this.#override(() => splitCluster(displayClusterId, sourceClusterId));
+  }
+
+  async #override(call: () => Promise<LeadDetail>): Promise<boolean> {
+    this.saving = true;
+    this.saveError = null;
+    try {
+      this.lead = await call();
+      void this.loadCounts(); // merge/split changes the Candidates / My-Leads totals
       return true;
     } catch (e) {
       this.saveError = handle(e);

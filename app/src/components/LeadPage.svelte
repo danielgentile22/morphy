@@ -1,9 +1,11 @@
 <script lang="ts">
   import { leads } from '../lib/leads-store.svelte';
+  import { filterModel } from '../lib/filter-model.svelte';
   import { STATUSES, STATUS_LABELS, canTransition, type LeadStatus } from '../lib/lead-status';
   import { kindLabel, money, distressText, statusVar, feet } from '../lib/lead-format';
   import { CHANNELS, OUTCOMES, buildAttemptPayload } from '../lib/lead-attempt';
   import type { ContactAttempt, Holding, Structure } from '../lib/leads-api';
+  import type { OwnerFilterRecord } from '../lib/owners-filter-index';
   import MiniMap from './MiniMap.svelte';
 
   let { displayClusterId }: { displayClusterId: string } = $props();
@@ -12,6 +14,32 @@
   $effect(() => {
     void leads.loadLead(displayClusterId);
   });
+
+  // The slim owners index powers the merge picker's owner search (idempotent).
+  $effect(() => {
+    void filterModel.load();
+  });
+
+  // ── merge / split (Slice 7 / #53) ───────────────────────────────────────
+  let mergeTerm = $state('');
+  // Search hits, minus this owner and any already-merged-in cluster.
+  let mergeHits = $derived.by((): OwnerFilterRecord[] => {
+    const l = leads.lead;
+    if (!l || mergeTerm.trim().length < 2) return [];
+    const exclude = new Set([
+      l.owner.display_cluster_id,
+      ...l.merged_members.map((m) => m.display_cluster_id),
+    ]);
+    return filterModel.searchOwners(mergeTerm, 8).filter((o) => !exclude.has(o.display_cluster_id));
+  });
+
+  async function mergeIn(sourceClusterId: string): Promise<void> {
+    const ok = await leads.mergeOwner(displayClusterId, sourceClusterId);
+    if (ok) mergeTerm = '';
+  }
+  async function splitOut(sourceClusterId: string): Promise<void> {
+    await leads.splitOwner(displayClusterId, sourceClusterId);
+  }
 
   // Local drafts, seeded once per loaded lead so in-flight edits survive a
   // background refresh (same cluster id ⇒ keep what the user typed).
@@ -268,6 +296,65 @@
           <button class="save" data-testid="save-note" onclick={saveNote} disabled={leads.saving}>
             {leads.saving ? 'Saving…' : 'Save note'}
           </button>
+        </section>
+
+        <!-- ── Owner identity: manual merge / split (Slice 7 / #53) ──────── -->
+        <section class="card" data-testid="merge-card">
+          <h3>Owner identity</h3>
+          <p class="muted small">
+            Auto-clustering errs toward <em>not</em> merging. If this landowner is
+            split across clusters, merge them; if two distinct owners were grouped,
+            split one off.
+          </p>
+
+          {#if l.merged_members.length}
+            <ul class="merged" data-testid="merged-members">
+              {#each l.merged_members as mm (mm.display_cluster_id)}
+                <li>
+                  <span class="readonly">{mm.owner_name || mm.display_cluster_id}</span>
+                  <button
+                    class="sbtn"
+                    data-testid="split-{mm.display_cluster_id}"
+                    onclick={() => splitOut(mm.display_cluster_id)}
+                    disabled={leads.saving}
+                  >
+                    split off
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+
+          <label class="field mt">
+            <span class="flabel">Merge another owner into this lead</span>
+            <input
+              data-testid="merge-search"
+              bind:value={mergeTerm}
+              placeholder="Search owner name…"
+              autocomplete="off"
+            />
+          </label>
+          {#if mergeHits.length}
+            <ul class="merge-hits" data-testid="merge-hits">
+              {#each mergeHits as h (h.display_cluster_id)}
+                <li>
+                  <button
+                    class="hit"
+                    data-testid="merge-pick-{h.display_cluster_id}"
+                    onclick={() => mergeIn(h.display_cluster_id)}
+                    disabled={leads.saving}
+                  >
+                    <b>{h.owner_name}</b>
+                    <span class="readonly small">
+                      {h.states.join(', ')} · {h.tower_count} tower{h.tower_count === 1 ? '' : 's'}
+                    </span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {:else if mergeTerm.trim().length >= 2}
+            <p class="muted small mt">No other owners match “{mergeTerm}”.</p>
+          {/if}
         </section>
       </div>
     </div>
@@ -536,5 +623,49 @@
     padding: 8px 10px;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
+  }
+  /* merge / split */
+  .merged {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+    font-size: 12.5px;
+  }
+  .merged li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .merge-hits {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .merge-hits li + li {
+    border-top: 1px solid var(--border);
+  }
+  .hit {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    width: 100%;
+    text-align: left;
+    background: var(--panel);
+    border: none;
+    padding: 7px 10px;
+    font-size: 12.5px;
+  }
+  .hit:hover:not(:disabled) {
+    background: var(--panel-2);
+  }
+  .hit:disabled {
+    opacity: 0.5;
   }
 </style>

@@ -70,6 +70,29 @@ class ContactAttempt(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class OwnerClusterOverride(Base):
+    """A manual merge override (Slice 7 / #53, ADR-056).
+
+    One row says ``source_cluster_id`` should resolve to ``target_cluster_id``
+    for this tenant — the safety net when the conservative auto-clustering
+    splits one landowner into several (or merges two distinct ones). Raw
+    cluster ids stay untouched in the parquet/owners index; the backend
+    computes ``display_cluster_id = coalesce(override_target, raw_cluster_id)``
+    by following these rows, so overrides survive an owners-index recompute.
+
+    PK ``(tenant_id, source_cluster_id)`` — a source merges into at most one
+    target; a *split* simply deletes the row, returning the source to its raw
+    cluster. Overrides are per-tenant (one team's merge is invisible to others).
+    """
+
+    __tablename__ = "owner_cluster_override"
+
+    tenant_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_cluster_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    target_cluster_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class User(Base):
     """A person who can sign in, bound to exactly one tenant.
 
