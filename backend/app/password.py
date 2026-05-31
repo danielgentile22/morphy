@@ -15,6 +15,7 @@ Print an encoded hash for an ``APP_USERS`` entry with:
 
     cd backend && python -m app.password <password>
 """
+
 from __future__ import annotations
 
 import base64

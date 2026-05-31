@@ -59,8 +59,12 @@ def two_tenants() -> Iterator[tuple[TestClient, dict, dict]]:
     tenant from the token, which is exactly the isolation under test.
     """
     with api(SAMPLE) as (client, _eng, _sender):
-        header_a = auth_header(create_access_token(Principal(tenant_id=1, user_id=1, email="tenant-a")))
-        header_b = auth_header(create_access_token(Principal(tenant_id=2, user_id=2, email="tenant-b")))
+        header_a = auth_header(
+            create_access_token(Principal(tenant_id=1, user_id=1, email="tenant-a"))
+        )
+        header_b = auth_header(
+            create_access_token(Principal(tenant_id=2, user_id=2, email="tenant-b"))
+        )
         yield client, header_a, header_b
 
 

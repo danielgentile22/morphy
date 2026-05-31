@@ -12,11 +12,12 @@ vs success — because the product wants a *specific* sign-in error. That
 trades a little username-enumeration exposure for usability; throttling that
 exposure is a separate slice (#77).
 """
+
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Mapping
 
 from .password import verify_password
 

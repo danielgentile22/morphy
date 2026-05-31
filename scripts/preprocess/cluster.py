@@ -125,9 +125,7 @@ def cross_state_owner_key(owner_name_norm: str) -> str:
     return hashlib.sha1(owner_name_norm.encode("utf-8")).hexdigest()[:12]
 
 
-def _prefer_precomputed_norm(
-    df: pd.DataFrame, norm_col: str, raw_col: str, normalize
-) -> pd.Series:
+def _prefer_precomputed_norm(df: pd.DataFrame, norm_col: str, raw_col: str, normalize) -> pd.Series:
     """One normalized-identity column, preferring a precomputed ``*_norm``
     column and re-normalizing the raw column only where it's absent or blank.
 
