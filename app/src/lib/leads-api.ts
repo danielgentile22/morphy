@@ -164,13 +164,6 @@ export interface CountsResponse {
   my_leads: number;
 }
 
-export interface RequestLinkResponse {
-  ok: boolean;
-  // Present only in dev (AUTH_EXPOSE_TOKEN on) so the SPA can finish the
-  // exchange without a real inbox; null in prod.
-  dev_token: string | null;
-}
-
 export interface TokenResponse {
   access_token: string;
   token_type: string;
@@ -280,18 +273,11 @@ export function splitCluster(
   });
 }
 
-// ── auth (Slice 2 / #48) ────────────────────────────────────────────────────
-export function requestLink(email: string): Promise<RequestLinkResponse> {
-  return request<RequestLinkResponse>('/auth/request-link', {
+// ── auth (Slice 1 / #76) ────────────────────────────────────────────────────
+export function login(username: string, password: string): Promise<TokenResponse> {
+  return request<TokenResponse>('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email }),
-  });
-}
-
-export function exchangeToken(token: string): Promise<TokenResponse> {
-  return request<TokenResponse>('/auth/exchange', {
-    method: 'POST',
-    body: JSON.stringify({ token }),
+    body: JSON.stringify({ username, password }),
   });
 }
 

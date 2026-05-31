@@ -1,35 +1,24 @@
-"""Magic-link auth: token hashing/one-time/expiry, exchange, route guards.
+"""Username/password login over HTTP (Slice 1 / #76).
 
-Service-level tests inspect the stored token directly (proving it's hashed,
-expiring, one-time); JWT tests round-trip the session token; route tests
-prove every data route rejects an unauthenticated request and accepts a
-valid JWT resolving to the right tenant.
+Pins the externally observable auth behavior: a wrong password and an unknown
+username are *distinguishable* 401s, a valid credential mints a usable JWT,
+every data route rejects an unauthenticated caller, and two distinct usernames
+share the one tenant. The reused JWT seam (create/decode) is checked directly.
 """
 
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import select
 
-from backend.app import auth
-from backend.app.auth import (
-    Principal,
-    create_access_token,
-    decode_access_token,
-    hash_token,
-)
-from backend.app.auth_service import AuthService, InvalidToken
+from backend.app.auth import Principal, create_access_token, decode_access_token
 from backend.app.config import settings
-from backend.app.models import MagicLinkToken
+from backend.app.password import hash_password
 
 from ._helpers import api, auth_header, login
-
-EMAIL = "owner@example.com"
 
 # A tiny owners index so the data routes resolve (one owner, status New).
 SAMPLE = {
@@ -59,166 +48,54 @@ SAMPLE = {
 }
 
 
-# ── request_link ────────────────────────────────────────────────────────────
-def test_request_link_stores_hashed_expiring_token_and_sends(
-    auth_service: AuthService, recording_sender
-) -> None:
-    raw = auth_service.request_link(EMAIL)
-    assert raw  # the raw token is returned to the caller (echoed only in dev)
-
-    rows = list(auth_service.session.scalars(select(MagicLinkToken)))
-    assert len(rows) == 1
-    token = rows[0]
-
-    # hashed at rest — the raw token is nowhere in the row
-    assert token.token_hash == hash_token(raw)
-    assert token.token_hash != raw
-    # expiring, in the future, and bounded by the configured TTL
-    assert token.used_at is None
-    expires = (
-        token.expires_at.replace(tzinfo=UTC)
-        if token.expires_at.tzinfo is None
-        else token.expires_at
-    )
-    delta = expires - datetime.now(UTC)
-    assert timedelta(0) < delta <= timedelta(minutes=settings.link_ttl_minutes + 1)
-
-    # the sender was triggered with a link carrying the raw token
-    assert len(recording_sender.sent) == 1
-    sent_email, link = recording_sender.sent[0]
-    assert sent_email == EMAIL
-    assert raw in link
+# ── login route ───────────────────────────────────────────────────────────────
+def test_wrong_password_is_a_specific_401() -> None:
+    with api(SAMPLE) as (client, _eng, _sender):
+        r = client.post("/api/auth/login", json={"username": "dev", "password": "nope"})
+        assert r.status_code == 401
+        assert r.json()["detail"] == "Incorrect password"
 
 
-def test_request_link_normalizes_email(auth_service: AuthService) -> None:
-    auth_service.request_link("  Owner@Example.COM ")
-    user = auth_service.get_user_by_email(EMAIL)
-    assert user is not None and user.email == EMAIL
-    assert user.tenant_id == settings.default_tenant_id
+def test_unknown_username_is_a_specific_401() -> None:
+    with api(SAMPLE) as (client, _eng, _sender):
+        r = client.post("/api/auth/login", json={"username": "ghost", "password": "x"})
+        assert r.status_code == 401
+        assert r.json()["detail"] == "Unknown username"
 
 
-# ── exchange ────────────────────────────────────────────────────────────────
-def test_exchange_valid_token_returns_principal_for_right_tenant(
-    auth_service: AuthService,
-) -> None:
-    raw = auth_service.request_link(EMAIL)
-    principal = auth_service.exchange(raw)
-    assert principal.tenant_id == settings.default_tenant_id
-    assert principal.email == EMAIL
+def test_valid_credentials_return_a_jwt_and_grant_access() -> None:
+    with api(SAMPLE) as (client, _eng, _sender):
+        r = client.post("/api/auth/login", json={"username": "dev", "password": "dev"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["access_token"]
+        assert body["expires_in"] > 0  # ~30 days, in seconds
+
+        headers = auth_header(body["access_token"])
+        assert client.get("/api/candidates", headers=headers).status_code == 200
+        me = client.get("/api/auth/me", headers=headers).json()
+        assert me["email"] == "dev"  # the username is the opaque identity
+        assert me["tenant_id"] == settings.default_tenant_id
 
 
-def test_exchange_is_one_time(auth_service: AuthService) -> None:
-    raw = auth_service.request_link(EMAIL)
-    auth_service.exchange(raw)  # first use succeeds
-    with pytest.raises(InvalidToken):
-        auth_service.exchange(raw)  # reuse fails
+def test_username_is_case_insensitive_and_trimmed() -> None:
+    with api(SAMPLE) as (client, _eng, _sender):
+        r = client.post("/api/auth/login", json={"username": "  DEV  ", "password": "dev"})
+        assert r.status_code == 200
 
 
-def test_exchange_expired_token_fails(auth_service: AuthService) -> None:
-    raw = auth_service.request_link(EMAIL)
-    # Backdate the stored token past its expiry.
-    token = auth_service.session.scalars(
-        select(MagicLinkToken).where(MagicLinkToken.token_hash == hash_token(raw))
-    ).one()
-    token.expires_at = datetime.now(UTC) - timedelta(minutes=1)
-    auth_service.session.commit()
-
-    with pytest.raises(InvalidToken):
-        auth_service.exchange(raw)
-
-
-def test_exchange_unknown_token_fails(auth_service: AuthService) -> None:
-    with pytest.raises(InvalidToken):
-        auth_service.exchange("not-a-real-token")
-
-
-def test_exchange_rejects_an_already_claimed_token(auth_service: AuthService) -> None:
-    # The atomic claim is the one-time gate: a token whose used_at is already
-    # set (as if a concurrent redemption won the race) must fail even though
-    # it still exists and hasn't expired.
-    raw = auth_service.request_link(EMAIL)
-    token = auth_service.session.scalars(
-        select(MagicLinkToken).where(MagicLinkToken.token_hash == hash_token(raw))
-    ).one()
-    token.used_at = datetime.now(UTC)
-    auth_service.session.commit()
-    with pytest.raises(InvalidToken):
-        auth_service.exchange(raw)
-
-
-# ── rate limit + cleanup ──────────────────────────────────────────────────────
-def test_request_link_throttles_per_email(auth_service: AuthService) -> None:
-    for _ in range(settings.link_rate_max):
-        assert auth_service.request_link(EMAIL) is not None
-    before = len(list(auth_service.session.scalars(select(MagicLinkToken))))
-    # The next request within the window is dropped: no token, no new row.
-    assert auth_service.request_link(EMAIL) is None
-    after = len(list(auth_service.session.scalars(select(MagicLinkToken))))
-    assert after == before
-
-
-def test_request_link_prunes_redeemed_tokens(auth_service: AuthService) -> None:
-    raw = auth_service.request_link(EMAIL)
-    auth_service.exchange(raw)  # marks used_at
-    auth_service.request_link(EMAIL)  # a fresh request prunes the redeemed one
-    rows = list(auth_service.session.scalars(select(MagicLinkToken)))
-    assert len(rows) == 1
-    assert rows[0].used_at is None  # only the new, unused token remains
-
-
-def test_allowlist_blocks_unlisted_email(monkeypatch, auth_service: AuthService) -> None:
-    # Settings is a frozen dataclass — patch the module binding with a copy.
-    patched = replace(settings, allowed_emails=frozenset({"allowed@example.com"}))
-    monkeypatch.setattr("backend.app.auth_service.settings", patched)
-    # An unlisted email: no token stored, nothing sent, generic None return.
-    assert auth_service.request_link("stranger@example.com") is None
-    assert list(auth_service.session.scalars(select(MagicLinkToken))) == []
-
-
-# ── JWT mechanics ───────────────────────────────────────────────────────────
-def test_jwt_round_trip_carries_tenant_and_email() -> None:
-    principal = Principal(tenant_id=3, user_id=9, email="x@y.com")
-    decoded = decode_access_token(create_access_token(principal))
-    assert (decoded.tenant_id, decoded.user_id, decoded.email) == (3, 9, "x@y.com")
-
-
-def test_expired_jwt_is_rejected() -> None:
-    principal = Principal(tenant_id=1, user_id=1, email="x@y.com")
-    stale = create_access_token(principal, now=datetime.now(UTC) - timedelta(days=999))
-    with pytest.raises(HTTPException) as exc:
-        decode_access_token(stale)
-    assert exc.value.status_code == 401
-
-
-def test_tampered_jwt_is_rejected() -> None:
-    forged = jwt.encode(
-        {"sub": "1", "tid": 1, "email": "x@y.com"},
-        "a-different-secret-also-long-enough-for-hs256",
-        algorithm="HS256",
-    )
-    with pytest.raises(HTTPException) as exc:
-        decode_access_token(forged)
-    assert exc.value.status_code == 401
-
-
-# ── route guards ────────────────────────────────────────────────────────────
+# ── route guards ──────────────────────────────────────────────────────────────
 def test_data_routes_reject_unauthenticated_requests() -> None:
     with api(SAMPLE) as (client, _eng, _sender):
         assert client.get("/api/candidates").status_code == 401
-        assert client.get("/api/leads/nat0000aaaa").status_code == 401
-        assert (
-            client.put("/api/leads/nat0000aaaa", json={"status": "researching"}).status_code == 401
-        )
+        assert client.get("/api/my-leads").status_code == 401
+        assert client.get("/api/counts").status_code == 401
         assert client.get("/api/auth/me").status_code == 401
 
 
-def test_data_routes_accept_a_valid_jwt() -> None:
+def test_login_helper_grants_access() -> None:
     with api(SAMPLE) as (client, _eng, _sender):
-        headers = auth_header(login(client))
-        assert client.get("/api/candidates", headers=headers).status_code == 200
-        me = client.get("/api/auth/me", headers=headers).json()
-        assert me["tenant_id"] == settings.default_tenant_id
-        assert me["email"] == "dev@example.com"
+        assert client.get("/api/candidates", headers=auth_header(login(client))).status_code == 200
 
 
 def test_malformed_bearer_is_rejected() -> None:
@@ -232,16 +109,57 @@ def test_health_is_public() -> None:
         assert client.get("/api/health").status_code == 200
 
 
-def test_prod_boot_rejects_console_sender(monkeypatch) -> None:
-    # The fail-closed boot guard: with AUTH_DEV_MODE off, starting on the dev
-    # ConsoleEmailSender (which prints tokens to stdout) must abort startup.
-    from fastapi.testclient import TestClient
+# ── two users, one tenant ─────────────────────────────────────────────────────
+def test_two_usernames_share_one_tenant() -> None:
+    # Seed a second credential alongside the built-in dev login (the app_users
+    # dict is mutable even though Settings is frozen); restore it afterward.
+    settings.app_users["alice"] = hash_password("wonderland")
+    try:
+        with api(SAMPLE) as (client, _eng, _sender):
 
-    from backend.app import main
-    from backend.app.email_sender import ConsoleEmailSender
+            def identity(username: str, password: str) -> tuple[dict, str]:
+                token = client.post(
+                    "/api/auth/login", json={"username": username, "password": password}
+                ).json()["access_token"]
+                me = client.get("/api/auth/me", headers=auth_header(token)).json()
+                return me, token
 
-    monkeypatch.setattr(main, "settings", replace(settings, dev_mode=False))
-    monkeypatch.setattr(main, "_email_sender", ConsoleEmailSender())
-    with pytest.raises(RuntimeError, match="ConsoleEmailSender"):  # noqa: SIM117
-        with TestClient(main.app):
-            pass
+            dev_me, dev_token = identity("dev", "dev")
+            alice_me, alice_token = identity("alice", "wonderland")
+
+            # Distinct identities, one shared tenant.
+            assert dev_me["email"] != alice_me["email"]
+            assert dev_me["tenant_id"] == alice_me["tenant_id"] == settings.default_tenant_id
+
+            # Same tenant → identical candidate view.
+            dev_c = client.get("/api/candidates", headers=auth_header(dev_token)).json()
+            alice_c = client.get("/api/candidates", headers=auth_header(alice_token)).json()
+            assert dev_c == alice_c
+    finally:
+        settings.app_users.pop("alice", None)
+
+
+# ── JWT seam (reused verbatim) ────────────────────────────────────────────────
+def test_jwt_round_trip_carries_tenant_and_identity() -> None:
+    principal = Principal(tenant_id=3, user_id=9, email="alice")
+    decoded = decode_access_token(create_access_token(principal))
+    assert (decoded.tenant_id, decoded.user_id, decoded.email) == (3, 9, "alice")
+
+
+def test_expired_jwt_is_rejected() -> None:
+    principal = Principal(tenant_id=1, user_id=1, email="dev")
+    stale = create_access_token(principal, now=datetime.now(UTC) - timedelta(days=999))
+    with pytest.raises(HTTPException) as exc:
+        decode_access_token(stale)
+    assert exc.value.status_code == 401
+
+
+def test_tampered_jwt_is_rejected() -> None:
+    forged = jwt.encode(
+        {"sub": "1", "tid": 1, "email": "dev"},
+        "a-different-secret-also-long-enough-for-hs256",
+        algorithm="HS256",
+    )
+    with pytest.raises(HTTPException) as exc:
+        decode_access_token(forged)
+    assert exc.value.status_code == 401

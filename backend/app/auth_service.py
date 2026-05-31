@@ -15,15 +15,41 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
-from . import auth
+from . import auth, credentials
 from .auth import Principal
 from .config import settings
+from .credentials import AuthOutcome
 from .email_sender import ConsoleEmailSender, EmailSender
 from .models import MagicLinkToken, User
 
 
 class InvalidToken(ValueError):
     """Raised when a magic-link token is unknown, already used, or expired."""
+
+
+class InvalidCredentials(ValueError):
+    """Login failed. The message distinguishes unknown-user vs wrong-password
+    (the chosen *specific*-error UX), and the route maps it to a 401."""
+
+
+def login(session: Session, *, username: str, password: str) -> Principal:
+    """Username/password sign-in: verify against ``settings.app_users``,
+    find-or-create the ``User`` in the default tenant, and return a
+    ``Principal`` the route turns into a JWT.
+
+    Every credential shares the one default tenant; each username is its own
+    identity, stored opaquely in ``User.email`` (no schema change). Raises
+    ``InvalidCredentials`` with a specific message on failure.
+    """
+    result = credentials.authenticate(settings.app_users, username, password)
+    if result.outcome is AuthOutcome.UNKNOWN_USER:
+        raise InvalidCredentials("Unknown username")
+    if result.outcome is AuthOutcome.WRONG_PASSWORD:
+        raise InvalidCredentials("Incorrect password")
+
+    # Reuse the magic-link find-or-create; the sender is never touched here.
+    user = AuthService(session).provision_user(result.username, settings.default_tenant_id)
+    return Principal(tenant_id=user.tenant_id, user_id=user.id, email=user.email)
 
 
 def _normalize_email(email: str) -> str:

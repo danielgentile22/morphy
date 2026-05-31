@@ -19,10 +19,19 @@ from __future__ import annotations
 import logging
 import os
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import credentials
+from .password import hash_password
+
 _log = logging.getLogger(__name__)
+
+# Zero-config dev credential, seeded into the parsed APP_USERS map when
+# AUTH_DEV_MODE is on so local runs and CI need no env setup. Not a secret —
+# it only unlocks the ephemeral, dev-only JWT secret.
+DEV_USERNAME = "dev"
+DEV_PASSWORD = "dev"
 
 # repo root = backend/app/config.py → parents[2]
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -69,6 +78,10 @@ class Settings:
     # the endpoint against email-bombing and token-grinding.
     link_rate_max: int
     link_rate_window_minutes: int
+    # Username/password credentials (Slice 1 / #76): {username -> encoded hash},
+    # parsed from APP_USERS at load. The username/password login route checks
+    # against this; in dev a built-in ``dev``/``dev`` entry is seeded.
+    app_users: dict[str, str] = field(default_factory=dict)
 
     @staticmethod
     def from_env() -> Settings:
@@ -111,6 +124,11 @@ class Settings:
                 "ephemeral JWT secret," if not explicit_secret else "fixed dev secret,",
             )
 
+        app_users = credentials.parse(os.environ.get("APP_USERS"))
+        if dev_mode:
+            # Seed the built-in dev login without clobbering an explicit entry.
+            app_users.setdefault(DEV_USERNAME, hash_password(DEV_PASSWORD))
+
         return Settings(
             database_url=os.environ.get("DATABASE_URL", default_db),
             owners_index_path=Path(
@@ -128,7 +146,7 @@ class Settings:
             # the ephemeral fallback only ever fires in dev. Never log it.
             jwt_secret=explicit_secret or secrets.token_urlsafe(32),
             jwt_algorithm="HS256",
-            session_ttl_days=int(os.environ.get("AUTH_SESSION_TTL_DAYS", "2")),
+            session_ttl_days=int(os.environ.get("AUTH_SESSION_TTL_DAYS", "30")),
             link_ttl_minutes=int(os.environ.get("AUTH_LINK_TTL_MINUTES", "15")),
             default_tenant_id=int(os.environ.get("DEFAULT_TENANT_ID", "1")),
             allowed_emails=allowed_emails,
@@ -139,6 +157,7 @@ class Settings:
             allow_open_signup=allow_open_signup,
             link_rate_max=int(os.environ.get("AUTH_LINK_RATE_MAX", "5")),
             link_rate_window_minutes=int(os.environ.get("AUTH_LINK_RATE_WINDOW_MINUTES", "15")),
+            app_users=app_users,
         )
 
 

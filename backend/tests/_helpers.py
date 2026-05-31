@@ -1,10 +1,10 @@
 """Shared HTTP-test scaffolding (not collected — no ``test_`` prefix).
 
-``api(sample)`` yields a ``TestClient`` over a fresh in-memory SQLite DB
-with a seeded owners index, the ``get_db`` + email-sender dependencies
-overridden, plus the engine + recording sender for inspection. ``login``
-drives the real request-link → exchange flow and returns a session JWT, so
-tests authenticate exactly the way the SPA does.
+``api(sample)`` yields a ``TestClient`` over a fresh in-memory SQLite DB with
+a seeded owners index and the ``get_db`` dependency overridden, plus the
+engine for inspection. ``login`` drives the real ``POST /api/auth/login`` with
+the AUTH_DEV_MODE built-in ``dev``/``dev`` credential and returns a session
+JWT, so tests authenticate exactly the way the SPA does.
 """
 
 from __future__ import annotations
@@ -23,11 +23,10 @@ from sqlalchemy.pool import StaticPool
 from backend.app import main
 from backend.app.config import settings
 from backend.app.db import Base, get_db
-from backend.app.email_sender import RecordingEmailSender
 
 
 @contextlib.contextmanager
-def api(sample: dict) -> Iterator[tuple[TestClient, Engine, RecordingEmailSender]]:
+def api(sample: dict) -> Iterator[tuple[TestClient, Engine, None]]:
     Path(settings.owners_index_path).write_text(json.dumps(sample))
     main.owners_index.reload()
 
@@ -46,26 +45,25 @@ def api(sample: dict) -> Iterator[tuple[TestClient, Engine, RecordingEmailSender
         finally:
             db.close()
 
-    sender = RecordingEmailSender()
     main.app.dependency_overrides[get_db] = _override_db
-    main.app.dependency_overrides[main.get_email_sender] = lambda: sender
     try:
         with TestClient(main.app) as client:
-            yield client, eng, sender
+            # 3-tuple kept for call-site stability; the 3rd slot (the magic-link
+            # email sender) is unused now that login is username/password.
+            yield client, eng, None
     finally:
         main.app.dependency_overrides.clear()
         eng.dispose()
 
 
-def login(client: TestClient, email: str = "dev@example.com") -> str:
-    """Full request-link → exchange; returns the session JWT."""
-    r = client.post("/api/auth/request-link", json={"email": email})
+def login(client: TestClient, username: str = "dev", password: str = "dev") -> str:
+    """Sign in via ``POST /api/auth/login``; returns the session JWT.
+
+    Defaults to the AUTH_DEV_MODE built-in ``dev``/``dev`` credential.
+    """
+    r = client.post("/api/auth/login", json={"username": username, "password": password})
     r.raise_for_status()
-    token = r.json()["dev_token"]
-    assert token, "AUTH_EXPOSE_TOKEN must be on in tests"
-    r2 = client.post("/api/auth/exchange", json={"token": token})
-    r2.raise_for_status()
-    return r2.json()["access_token"]
+    return r.json()["access_token"]
 
 
 def auth_header(jwt: str) -> dict[str, str]:

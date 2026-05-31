@@ -74,7 +74,9 @@ def test_dev_mode_is_zero_config(monkeypatch) -> None:
     assert s.expose_token_in_response is True
 
 
-def test_session_ttl_default_is_two_days(monkeypatch) -> None:
+def test_session_ttl_default_is_thirty_days(monkeypatch) -> None:
+    # Bumped from 2 → 30 with the username/password front door (Slice 1 / #76):
+    # a daily-use tool shouldn't force re-auth constantly.
     monkeypatch.setenv("AUTH_DEV_MODE", "1")
     monkeypatch.delenv("AUTH_SESSION_TTL_DAYS", raising=False)
-    assert Settings.from_env().session_ttl_days == 2
+    assert Settings.from_env().session_ttl_days == 30

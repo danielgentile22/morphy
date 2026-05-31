@@ -1,63 +1,29 @@
-// Reactive sign-in state for the magic-link flow (Slice 2 / #48). Wraps the
-// plain `auth-token.ts` storage and the `leads-api` auth endpoints. Mirrors
-// the singleton-class + $state pattern of leads-store.svelte.ts.
+// Reactive sign-in state for the username/password flow (Slice 1 / #76).
+// Wraps the plain `auth-token.ts` storage and the `leads-api` auth endpoints.
+// Mirrors the singleton-class + $state pattern of leads-store.svelte.ts.
 
-import { exchangeToken, fetchMe, requestLink, ApiError } from './leads-api';
+import { login as apiLogin, fetchMe, ApiError } from './leads-api';
 import { clearToken, getToken, setToken } from './auth-token';
-
-type Phase = 'idle' | 'requesting' | 'link-sent' | 'exchanging' | 'error';
-
-function message(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
 
 class AuthStore {
   token = $state<string | null>(getToken());
   email = $state<string | null>(null);
-  // In dev the backend echoes the token so we can prefill the exchange field.
-  devToken = $state<string | null>(null);
-  phase = $state<Phase>('idle');
-  error = $state<string | null>(null);
 
   get signedIn(): boolean {
     return this.token !== null;
   }
 
-  /** Step 1: ask the backend to email a magic link. Always "succeeds" server
-   *  side (no email enumeration); in dev we capture the returned token. */
-  async requestLink(email: string): Promise<void> {
-    this.phase = 'requesting';
-    this.error = null;
-    this.devToken = null;
-    try {
-      const res = await requestLink(email.trim());
-      this.devToken = res.dev_token;
-      this.phase = 'link-sent';
-    } catch (e) {
-      this.error = message(e);
-      this.phase = 'error';
-    }
+  /** Verify username/password, persist the session JWT, and load the
+   *  signed-in identity. Throws (with the backend's specific message) on a
+   *  failed login so the sign-in form can surface it. */
+  async login(username: string, password: string): Promise<void> {
+    const { access_token } = await apiLogin(username.trim(), password);
+    setToken(access_token);
+    this.token = access_token;
+    await this.loadMe();
   }
 
-  /** Step 2: exchange the token for a session JWT and persist it. */
-  async exchange(token: string): Promise<boolean> {
-    this.phase = 'exchanging';
-    this.error = null;
-    try {
-      const res = await exchangeToken(token.trim());
-      setToken(res.access_token);
-      this.token = res.access_token;
-      this.phase = 'idle';
-      void this.loadMe();
-      return true;
-    } catch (e) {
-      this.error = message(e);
-      this.phase = 'error';
-      return false;
-    }
-  }
-
-  /** Validate a persisted token on boot + populate the signed-in email. */
+  /** Validate a persisted token on boot + populate the signed-in username. */
   async loadMe(): Promise<void> {
     if (!this.token) return;
     try {
@@ -72,9 +38,6 @@ class AuthStore {
     clearToken();
     this.token = null;
     this.email = null;
-    this.devToken = null;
-    this.phase = 'idle';
-    this.error = null;
   }
 }
 

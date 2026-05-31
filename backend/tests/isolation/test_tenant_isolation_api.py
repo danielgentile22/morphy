@@ -16,11 +16,10 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
 
-from backend.app.auth_service import AuthService
+from backend.app.auth import Principal, create_access_token
 
-from .._helpers import api, auth_header, login
+from .._helpers import api, auth_header
 
 CID = "nat0000aaaa"
 
@@ -53,14 +52,15 @@ SAMPLE = {
 
 @pytest.fixture
 def two_tenants() -> Iterator[tuple[TestClient, dict, dict]]:
-    """A client plus per-tenant auth headers for two distinct tenants."""
-    with api(SAMPLE) as (client, eng, _sender):
-        # Provision tenant B into tenant 2 *before* its first sign-in, so the
-        # issued JWT is scoped to tenant 2 (tenant A defaults to tenant 1).
-        with Session(bind=eng, future=True) as s:
-            AuthService(s).provision_user("tenant-b@example.com", tenant_id=2)
-        header_a = auth_header(login(client, "tenant-a@example.com"))
-        header_b = auth_header(login(client, "tenant-b@example.com"))
+    """A client plus per-tenant auth headers for two distinct tenants.
+
+    Username/password login always issues the default tenant (Slice 1 / #76),
+    so the two JWTs are minted directly via the seam — the routes resolve the
+    tenant from the token, which is exactly the isolation under test.
+    """
+    with api(SAMPLE) as (client, _eng, _sender):
+        header_a = auth_header(create_access_token(Principal(tenant_id=1, user_id=1, email="tenant-a")))
+        header_b = auth_header(create_access_token(Principal(tenant_id=2, user_id=2, email="tenant-b")))
         yield client, header_a, header_b
 
 

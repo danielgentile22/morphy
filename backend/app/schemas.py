@@ -171,7 +171,14 @@ class CountsResponse(BaseModel):
     my_leads: int
 
 
-# ── auth (Slice 2 / #48) ────────────────────────────────────────────────────
+# ── auth ─────────────────────────────────────────────────────────────────────
+# Username/password login (Slice 1 / #76). The magic-link bodies below are
+# kept for the dormant request-link/exchange routes (removed in a later slice).
+class LoginBody(BaseModel):
+    username: str
+    password: str
+
+
 # Email is a plain ``str`` (lightly validated server-side) to avoid pulling
 # in pydantic's optional ``email-validator`` dependency.
 class RequestLinkBody(BaseModel):

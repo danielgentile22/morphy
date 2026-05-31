@@ -30,7 +30,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from .auth import Principal, create_access_token, current_principal, current_tenant_id
-from .auth_service import AuthService, InvalidToken
+from .auth_service import AuthService, InvalidCredentials, InvalidToken
+from .auth_service import login as login_user
 from .config import settings
 from .db import get_db, init_db
 from .email_sender import ConsoleEmailSender, EmailSender
@@ -45,6 +46,7 @@ from .schemas import (
     ExchangeBody,
     LeadDetail,
     LeadUpdate,
+    LoginBody,
     MeResponse,
     MyLeadsResponse,
     OverrideBody,
@@ -117,6 +119,23 @@ def health() -> dict:
     return {"ok": True, "owners_indexed": owners_index.count}
 
 
+@app.post("/api/auth/login", response_model=TokenResponse)
+def login(
+    body: LoginBody,
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    """Username/password sign-in: a session JWT on success, a specific 401 otherwise."""
+    try:
+        principal = login_user(db, username=body.username, password=body.password)
+    except InvalidCredentials as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    return TokenResponse(
+        access_token=create_access_token(principal),
+        expires_in=settings.session_ttl_days * 86400,
+    )
+
+
+# ── magic-link (dormant: unused by the UI, removed in a later slice) ──────────
 @app.post("/api/auth/request-link", response_model=RequestLinkResponse)
 def request_link(
     body: RequestLinkBody,

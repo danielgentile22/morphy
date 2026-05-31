@@ -1,21 +1,26 @@
 <script lang="ts">
   import { auth } from '../lib/auth-store.svelte';
 
-  // Two-step magic-link sign-in: request a link, then exchange the token.
-  // In dev the backend echoes the token (auth.devToken) so we prefill it;
-  // in prod the user pastes it from their email.
-  let email = $state('');
-  let token = $state('');
+  // Single-step username + password sign-in (Slice 1 / #76). The backend
+  // checks the credentials and mints the same session JWT the app already
+  // uses; tenant + identity are derived from that token downstream.
+  let username = $state('');
+  let password = $state('');
+  let error = $state<string | null>(null);
+  let busy = $state(false);
 
-  async function request(e: Event): Promise<void> {
+  async function submit(e: Event): Promise<void> {
     e.preventDefault();
-    await auth.requestLink(email);
-    if (auth.devToken) token = auth.devToken;
-  }
-
-  async function exchange(e: Event): Promise<void> {
-    e.preventDefault();
-    await auth.exchange(token);
+    error = null;
+    busy = true;
+    try {
+      await auth.login(username, password);
+    } catch (err) {
+      // The backend returns a specific message (unknown user vs wrong password).
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
   }
 </script>
 
@@ -23,51 +28,36 @@
   <div class="card">
     <h2>Sign in</h2>
     <p class="sub">
-      Lead state is private to your team (tenant-isolated, ADR-055). Enter your email to get a
-      one-time sign-in link.
+      Lead state is private to your team (tenant-isolated, ADR-055). Enter your username and
+      password.
     </p>
 
-    {#if auth.phase !== 'link-sent' && auth.phase !== 'exchanging'}
-      <form onsubmit={request}>
-        <label for="email">Email</label>
-        <input
-          id="email"
-          type="email"
-          data-testid="signin-email"
-          bind:value={email}
-          placeholder="you@example.com"
-          required
-        />
-        <button type="submit" data-testid="signin-request" disabled={auth.phase === 'requesting'}>
-          {auth.phase === 'requesting' ? 'Sending…' : 'Send magic link'}
-        </button>
-      </form>
-    {:else}
-      <form onsubmit={exchange}>
-        <p class="sent">
-          Link sent to <b>{email}</b>.
-          {#if auth.devToken}
-            <span class="dev">Dev mode: token prefilled below.</span>
-          {:else}
-            Paste the token from your email.
-          {/if}
-        </p>
-        <label for="token">Sign-in token</label>
-        <input
-          id="token"
-          type="text"
-          data-testid="signin-token"
-          bind:value={token}
-          placeholder="one-time token"
-          required
-        />
-        <button type="submit" data-testid="signin-exchange">Sign in</button>
-        <button type="button" class="link" onclick={() => auth.signOut()}>Use a different email</button>
-      </form>
-    {/if}
+    <form onsubmit={submit}>
+      <label for="username">Username</label>
+      <input
+        id="username"
+        type="text"
+        data-testid="signin-username"
+        bind:value={username}
+        autocomplete="username"
+        required
+      />
+      <label for="password">Password</label>
+      <input
+        id="password"
+        type="password"
+        data-testid="signin-password"
+        bind:value={password}
+        autocomplete="current-password"
+        required
+      />
+      <button type="submit" data-testid="signin-submit" disabled={busy}>
+        {busy ? 'Signing in…' : 'Sign in'}
+      </button>
+    </form>
 
-    {#if auth.error}
-      <p class="err" data-testid="signin-error">{auth.error}</p>
+    {#if error}
+      <p class="err" data-testid="signin-error">{error}</p>
     {/if}
   </div>
 </div>
@@ -122,21 +112,8 @@
     color: #fff;
     border-radius: var(--radius);
   }
-  button.link {
-    margin-top: 4px;
-    background: none;
-    border: none;
-    color: var(--accent);
-    font-size: 12px;
-    align-self: flex-start;
-    padding: 0;
-  }
-  .sent {
-    font-size: 12.5px;
-    color: var(--text-2);
-  }
-  .dev {
-    color: var(--muted);
+  button[type='submit']:disabled {
+    opacity: 0.6;
   }
   .err {
     margin-top: 10px;
