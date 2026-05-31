@@ -47,7 +47,7 @@ Untimed — goal-driven, not calendar-driven. Each slice has a "shipped" gate be
 | # | Slice | Cost (rough) |
 |---|---|---|
 | **F** | Committed anchors (AR + MT + FL + WV) composed — FL recomposed 2026-05-29, county-score gap closed (chunked compose ADR-051); WV added + committed 2026-05-29 (ADR-060). NC re-fetch + compose **deferred** to a Phase-1 stretch — not gating this slice. | ~2 wks |
-| **A** | FCC ULS carrier identification (Cellular + PCS + AWS/700) — **landed:** data merged (#11/#12/#22/#24), carrier-list UI in review (#28 / PR #71); coverage ~6–17% of ASR towers (high-precision / low-recall) | 2–3 wks |
+| **A** | FCC ULS carrier identification (Cellular + PCS + AWS/700) — **landed:** data merged (#11/#12/#22/#24), carrier-list UI merged (#28 / PR #71); coverage ~6–17% of ASR towers (high-precision / low-recall) | 2–3 wks |
 | **C** | Asset enrichment (billboards + solar on parcel) + **tunable scoring UI** | 1-2 wks normalizers + 1-2 wks UI |
 | **D + E** | Lease doc upload + LLM extraction + triage state / write layer / CSV exports. **Backend stands up here** (ADR-055). | 4-6 wks |
 | **B** | Vendor (tower-co) inference — ASR registrant + portfolio roll-up heuristic | 1-2 wks |
@@ -68,7 +68,7 @@ After Slice B, the **4-week outcome-bar clock** starts.
 
 ### Phase 1 additions (flipped from previous deferrals)
 
-- **FCC ULS** — Cellular (Part 22) + PCS (Part 24) + AWS / 700 MHz (Part 27) for carrier identification. ~5 GB raw on disk; ADR-013 reverses for these bands. (Slice A — **shipped:** normalized + joined to ASR (#11/#12/#22/#24), `carriers` on every tower; carrier-list UI in review #28.)
+- **FCC ULS** — Cellular (Part 22) + PCS (Part 24) + AWS / 700 MHz (Part 27) for carrier identification. ~5 GB raw on disk; ADR-013 reverses for these bands. (Slice A — **shipped:** normalized + joined to ASR (#11/#12/#22/#24), `carriers` on every tower; carrier-list UI merged #28.)
 - **State DOT billboard permits** (FL, NC raw on disk); ADR-014 partially reverses. (Slice C.)
 - **Steel-in-the-Air free county-level lease-rent benchmarks** — bootstraps the comparables feature; ~3000 counties seed. Paid tier deferred to Phase 2 per ADR-057. (Slice D.)
 - **Secretary of State business-entity records** (per state, free) — one-click LLC officer disclosure in lead-detail panel. ADR-057 narrows ADR-041 to allow this. (Slice D.)
