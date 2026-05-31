@@ -72,6 +72,7 @@ from .io import (
     write_json,
     write_parquet,
 )
+from .joins.uls_to_asr import carrier_coverage_summary
 from .per_chunk_joins import (
     apply_county_score,
     apply_interestingness_score,
@@ -531,6 +532,22 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
     write_json(catalog, catalog_path)
     output_files.append(catalog_path)
 
+    # Slice A (#24): carrier-identification coverage — share of FCC ASR towers
+    # carrying ≥ 1 ULS carrier. ctx still holds the in-memory tower table with
+    # `carriers` as Python lists (write_geoparquet JSON-encodes a copy, not ctx).
+    carrier_coverage = carrier_coverage_summary(ctx.get("tower"))
+    if carrier_coverage.get("computed"):
+        log.info(
+            "carrier coverage %s: %.1f%% of FCC ASR towers (%d/%d) — verified=%d likely=%d possible=%d",
+            state.fips,
+            carrier_coverage["coverage_pct"],
+            carrier_coverage["asr_towers_with_carrier"],
+            carrier_coverage["asr_towers"],
+            carrier_coverage["by_confidence"]["verified"],
+            carrier_coverage["by_confidence"]["likely"],
+            carrier_coverage["by_confidence"]["possible"],
+        )
+
     summary = {
         "state_fips": state.fips,
         "state_name": state.name,
@@ -541,6 +558,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
         "joins_skipped": joins_skipped,
         "views_built": views_built,
         "counts": counts,
+        "carrier_coverage": carrier_coverage,
         "warnings": ctx.warnings,
         "chunked": True,
         "parcel_shards": shard_count,
