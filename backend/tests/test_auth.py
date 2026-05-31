@@ -14,11 +14,13 @@ import jwt
 import pytest
 from fastapi import HTTPException
 
+from backend.app import main
 from backend.app.auth import Principal, create_access_token, decode_access_token
 from backend.app.config import settings
+from backend.app.login_throttle import LoginThrottle
 from backend.app.password import hash_password
 
-from ._helpers import api, auth_header, login
+from ._helpers import FakeClock, api, auth_header, login
 
 # A tiny owners index so the data routes resolve (one owner, status New).
 SAMPLE = {
@@ -107,6 +109,69 @@ def test_malformed_bearer_is_rejected() -> None:
 def test_health_is_public() -> None:
     with api(SAMPLE) as (client, _eng, _sender):
         assert client.get("/api/health").status_code == 200
+
+
+# ── brute-force throttle (#77) ────────────────────────────────────────────────
+def test_login_throttle_trips_then_recovers() -> None:
+    clock = FakeClock()
+    throttle = LoginThrottle(max_failures=3, window_seconds=60.0, clock=clock)
+    with api(SAMPLE) as (client, _eng, _sender):
+        main._login_throttle = throttle  # api() restores the original afterward
+        bad = {"username": "dev", "password": "nope"}
+        for _ in range(3):  # N failures are 401s, not yet throttled
+            assert client.post("/api/auth/login", json=bad).status_code == 401
+        # Over the limit → 429; even a *correct* password is refused while blocked.
+        assert client.post("/api/auth/login", json=bad).status_code == 429
+        blocked = client.post("/api/auth/login", json={"username": "dev", "password": "dev"})
+        assert blocked.status_code == 429
+        assert "Retry-After" in blocked.headers
+        # Window rolls forward → the block self-clears (no hard lockout).
+        clock.advance(61)
+        ok = client.post("/api/auth/login", json={"username": "dev", "password": "dev"})
+        assert ok.status_code == 200
+        assert ok.json()["access_token"]
+
+
+def test_throttle_keys_are_independent_by_username() -> None:
+    clock = FakeClock()
+    throttle = LoginThrottle(max_failures=2, window_seconds=60.0, clock=clock)
+    with api(SAMPLE) as (client, _eng, _sender):
+        main._login_throttle = throttle  # api() restores the original afterward
+        for _ in range(2):
+            client.post("/api/auth/login", json={"username": "dev", "password": "nope"})
+        # 'dev' is now blocked from this client...
+        assert (
+            client.post("/api/auth/login", json={"username": "dev", "password": "dev"}).status_code
+            == 429
+        )
+        # ...but a different username from the same client is unaffected
+        # (unknown user → 401, not throttled).
+        assert (
+            client.post("/api/auth/login", json={"username": "ghost", "password": "x"}).status_code
+            == 401
+        )
+
+
+def test_successful_login_resets_the_throttle() -> None:
+    clock = FakeClock()
+    throttle = LoginThrottle(max_failures=3, window_seconds=60.0, clock=clock)
+    with api(SAMPLE) as (client, _eng, _sender):
+        main._login_throttle = throttle  # api() restores the original afterward
+        for _ in range(2):  # two failures, still under the limit of 3
+            client.post("/api/auth/login", json={"username": "dev", "password": "nope"})
+        # A correct password succeeds and clears the counter...
+        assert (
+            client.post("/api/auth/login", json={"username": "dev", "password": "dev"}).status_code
+            == 200
+        )
+        # ...so the next two failures don't immediately trip the limit.
+        for _ in range(2):
+            assert (
+                client.post(
+                    "/api/auth/login", json={"username": "dev", "password": "nope"}
+                ).status_code
+                == 401
+            )
 
 
 # ── two users, one tenant ─────────────────────────────────────────────────────

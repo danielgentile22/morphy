@@ -7,11 +7,13 @@ SQLite file so the backend runs with zero external services; point
 
 Auth posture is gated on a single switch, ``AUTH_DEV_MODE`` (default
 **off** — the safe state). With it off (prod), ``from_env`` refuses to
-build without a real ``AUTH_JWT_SECRET`` and a sign-in gate, and the
-dev-only conveniences (raw-token echo, ephemeral secret) are forced off.
-With it on, the zero-config local loop is preserved: an ephemeral
-per-process secret, the raw magic-link token echoed to the SPA, and open
-auto-provisioning. The real email sender + secret store land with #16.
+build without a real ``AUTH_JWT_SECRET`` **and** at least one login
+credential (``APP_USERS``) — so a deploy can be neither open nor impossible
+to log into — and the dev-only token echo is forced off. With it on, the
+zero-config local loop is preserved: an ephemeral per-process secret and a
+built-in ``dev``/``dev`` login. The real secret store lands with #16; the
+fail-closed guard is now expressed in terms of the credential set rather
+than the dormant magic-link allowlist (Slice 2 / #77).
 """
 
 from __future__ import annotations
@@ -78,6 +80,14 @@ class Settings:
     # the endpoint against email-bombing and token-grinding.
     link_rate_max: int
     link_rate_window_minutes: int
+    # Login brute-force throttle (Slice 2 / #77): after ``login_throttle_max``
+    # failed sign-ins for one (ip, username) within
+    # ``login_throttle_window_seconds``, further attempts get 429 until the
+    # sliding window rolls forward. No hard lockout — the block self-clears, so
+    # a known username can't be weaponized to lock a real user out. Per-process
+    # state; resets on restart.
+    login_throttle_max: int
+    login_throttle_window_seconds: float
     # Username/password credentials (Slice 1 / #76): {username -> encoded hash},
     # parsed from APP_USERS at load. The username/password login route checks
     # against this; in dev a built-in ``dev``/``dev`` entry is seeded.
@@ -90,6 +100,13 @@ class Settings:
         )
         dev_mode = _env_bool("AUTH_DEV_MODE", default=False)
         explicit_secret = os.environ.get("AUTH_JWT_SECRET")
+        # The login credential set (Slice 1 / #76). The fail-closed guard below
+        # is expressed in terms of *this* — an instance with no credential is
+        # un-loginnable and must not boot.
+        app_users = credentials.parse(os.environ.get("APP_USERS"))
+        # Dormant magic-link knobs (the front door is now username/password; the
+        # magic-link routes are removed in #78). Still read so those routes keep
+        # working, but no longer part of the boot guard (#77 retired them here).
         allowed_emails = frozenset(
             e.strip().lower()
             for e in os.environ.get("AUTH_ALLOWED_EMAILS", "").split(",")
@@ -98,15 +115,16 @@ class Settings:
         allow_open_signup = _env_bool("AUTH_ALLOW_OPEN_SIGNUP", default=False)
 
         if not dev_mode:
-            # Fail closed: refuse to build a prod config that can't authenticate
-            # safely, rather than silently papering over it with dev defaults.
+            # Fail closed: an instance that can't authenticate safely must never
+            # boot. Require BOTH a real signing secret and >=1 login credential,
+            # so a deploy can be neither open nor impossible to log into.
             problems = []
             if not explicit_secret:
                 problems.append("AUTH_JWT_SECRET must be set (no ephemeral secret outside dev)")
-            if not allowed_emails and not allow_open_signup:
+            if not app_users:
                 problems.append(
-                    "AUTH_ALLOWED_EMAILS must be non-empty "
-                    "(or set AUTH_ALLOW_OPEN_SIGNUP=1 to intentionally allow open sign-up)"
+                    "APP_USERS must define at least one 'username:hash' credential "
+                    "(generate a hash with `python -m app.password`)"
                 )
             if problems:
                 raise RuntimeError(
@@ -116,16 +134,13 @@ class Settings:
                     "AUTH_DEV_MODE=1 for the local dev loop."
                 )
         else:
-            # Loud once, on the secret only if it's the ephemeral fallback —
-            # never log the secret value itself.
+            # Never log the secret value itself — note only whether it's the
+            # ephemeral fallback.
             _log.warning(
-                "AUTH_DEV_MODE is on: dev auth active (%s raw-token echo, open "
-                "sign-up unless allowlisted). Never run this in production.",
-                "ephemeral JWT secret," if not explicit_secret else "fixed dev secret,",
+                "AUTH_DEV_MODE is on: dev auth active (built-in dev/dev login, %s). "
+                "Never run this in production.",
+                "ephemeral JWT secret" if not explicit_secret else "fixed dev secret",
             )
-
-        app_users = credentials.parse(os.environ.get("APP_USERS"))
-        if dev_mode:
             # Seed the built-in dev login without clobbering an explicit entry.
             app_users.setdefault(DEV_USERNAME, hash_password(DEV_PASSWORD))
 
@@ -157,6 +172,10 @@ class Settings:
             allow_open_signup=allow_open_signup,
             link_rate_max=int(os.environ.get("AUTH_LINK_RATE_MAX", "5")),
             link_rate_window_minutes=int(os.environ.get("AUTH_LINK_RATE_WINDOW_MINUTES", "15")),
+            login_throttle_max=int(os.environ.get("AUTH_LOGIN_THROTTLE_MAX", "5")),
+            login_throttle_window_seconds=float(
+                os.environ.get("AUTH_LOGIN_THROTTLE_WINDOW_SECONDS", "300")
+            ),
             app_users=app_users,
         )
 

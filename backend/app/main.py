@@ -25,7 +25,7 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import date
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -33,10 +33,12 @@ from .auth import Principal, create_access_token, current_principal, current_ten
 from .auth_service import AuthService, InvalidCredentials, InvalidToken
 from .auth_service import login as login_user
 from .config import settings
+from .credentials import normalize_username
 from .db import get_db, init_db
 from .email_sender import ConsoleEmailSender, EmailSender
 from .lead_status import InvalidTransition
 from .lead_store import LeadStore
+from .login_throttle import LoginThrottle
 from .owner_merge_service import MergeError, OwnerMergeService
 from .owners_index_service import OwnersIndexService
 from .schemas import (
@@ -91,6 +93,19 @@ def get_email_sender() -> EmailSender:
     return _email_sender
 
 
+# In-process login brute-force throttle (Slice 2 / #77). One shared instance —
+# its sliding-window state is the whole point, so it must outlive a request.
+# Tests override ``get_login_throttle`` with a clock-injected instance.
+_login_throttle = LoginThrottle(
+    max_failures=settings.login_throttle_max,
+    window_seconds=settings.login_throttle_window_seconds,
+)
+
+
+def get_login_throttle() -> LoginThrottle:
+    return _login_throttle
+
+
 def get_auth_service(
     db: Session = Depends(get_db),
     sender: EmailSender = Depends(get_email_sender),
@@ -122,13 +137,31 @@ def health() -> dict:
 @app.post("/api/auth/login", response_model=TokenResponse)
 def login(
     body: LoginBody,
+    request: Request,
     db: Session = Depends(get_db),
+    throttle: LoginThrottle = Depends(get_login_throttle),
 ) -> TokenResponse:
-    """Username/password sign-in: a session JWT on success, a specific 401 otherwise."""
+    """Username/password sign-in: a session JWT on success, a specific 401 otherwise.
+
+    A brute-force throttle (#77) keyed by ``(ip, username)`` short-circuits with
+    429 once failures pass the limit within the window — even a correct password
+    is refused while blocked. The block self-clears as the window rolls forward
+    (no hard lockout), and a successful login resets the key.
+    """
+    ip = request.client.host if request.client else "unknown"
+    key = (ip, normalize_username(body.username))
+    if throttle.is_blocked(key):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed login attempts; try again later.",
+            headers={"Retry-After": str(int(throttle.retry_after(key)) + 1)},
+        )
     try:
         principal = login_user(db, username=body.username, password=body.password)
     except InvalidCredentials as exc:
+        throttle.record_failure(key)
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    throttle.reset(key)  # a real sign-in clears the counter for this key
     return TokenResponse(
         access_token=create_access_token(principal),
         expires_in=settings.session_ttl_days * 86400,

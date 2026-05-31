@@ -23,7 +23,10 @@ backend/app/
   owner_merge_service.py    OwnerMergeService — manual merge/split overrides (display_cluster_id = coalesce(override, raw))
   owners_index_service.py   serves the static index (override-aware) left-joined with the tenant's lead state
   auth.py                   token hashing + JWT issue/verify + current_tenant_id (JWT-derived)
-  auth_service.py           AuthService — magic-link request → exchange (hashed one-time tokens)
+  password.py               stdlib PBKDF2-HMAC-SHA256 hashing (no third-party dep; `python -m app.password`)
+  credentials.py            parse APP_USERS + authenticate username/password (Slice 1 / #76)
+  login_throttle.py         in-process (ip, username) brute-force throttle (Slice 2 / #77)
+  auth_service.py           login() (username/password) + AuthService (dormant magic-link request → exchange)
   email_sender.py           pluggable link delivery (ConsoleEmailSender dev / RecordingEmailSender tests)
   main.py                   FastAPI routes
 backend/tests/              LeadStore + auth + tenant-isolation (testcontainers Postgres → SQLite fallback)
@@ -85,8 +88,9 @@ are rejected (HTTP 409).
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/auth/request-link` | email → store a hashed one-time token + send a link |
-| POST | `/api/auth/exchange` | valid token → short-lived session JWT |
+| POST | `/api/auth/login` | **username/password → session JWT** (the live front door, Slice 1 / #76); brute-force throttled (#77) |
+| POST | `/api/auth/request-link` | _(dormant magic-link)_ email → store a hashed one-time token + send a link |
+| POST | `/api/auth/exchange` | _(dormant magic-link)_ valid token → short-lived session JWT |
 | GET | `/api/auth/me` | the authenticated tenant + email |
 | GET | `/api/health` | liveness + owners-indexed count (public) |
 | GET | `/api/candidates?limit=` | owners at New, ranked by interestingness |
@@ -121,7 +125,37 @@ Every data route resolves the tenant from the `Authorization: Bearer <jwt>`
 (`current_tenant_id`, now JWT-derived) and is tenant-scoped; an
 unauthenticated data request is rejected with **401**.
 
-## Auth (magic-link, Slice 2 / #48 — ADR-055)
+## Auth (username/password, Slice 1 / #76 — supersedes magic-link)
+
+The live front door is `POST /api/auth/login {username, password}`. Credentials
+live in the `APP_USERS` env var (`username:<encoded-hash>,…`, comma-separated;
+generate a hash with `cd backend && python -m app.password <password>`).
+Usernames are case-insensitive (trimmed + lowercased); the password is verified
+constant-time against a stdlib PBKDF2-HMAC-SHA256 hash (`app/password.py`, no
+third-party dependency). On success the route mints the same HS256 session JWT
+(`tid`/`sub`/`email`) the routes below already consume; a wrong password and an
+unknown username are *distinguishable* 401s (a deliberate usability-over-
+enumeration call, with the enumeration exposure bounded by the throttle). All
+credentials map to the one `DEFAULT_TENANT_ID`. In dev (`AUTH_DEV_MODE=1`) a
+built-in `dev`/`dev` credential is seeded so the loop needs zero config.
+
+### Brute-force throttle (#77)
+
+`POST /api/auth/login` is guarded by an in-process sliding-window failure
+counter (`app/login_throttle.py`) keyed by `(client IP, username)`. After
+`AUTH_LOGIN_THROTTLE_MAX` failed attempts within
+`AUTH_LOGIN_THROTTLE_WINDOW_SECONDS`, further attempts for that key get **429**
+(with a `Retry-After` header) — even a correct password is refused while
+blocked. There is **no hard lockout**: the block self-clears as the window rolls
+forward, and a successful login resets the key. Because the IP is part of the
+key, an attacker who knows a username can't weaponize it to lock a real user out
+(no lockout-DoS). State is per-process (fine on the single VM; it resets on
+restart, and is not shared across replicas).
+
+### Magic-link (dormant, Slice 2 / #48 — ADR-055)
+
+The magic-link request/exchange flow below is retained but unused by the SPA;
+its routes are removed in #78.
 
 1. `POST /api/auth/request-link {email}` — the user is provisioned into the
    default tenant (`DEFAULT_TENANT_ID`, `1`), a 256-bit random token is
@@ -140,27 +174,45 @@ unauthenticated data request is rejected with **401**.
 ### Posture: fail closed (`AUTH_DEV_MODE`)
 
 A single switch gates the auth posture. It is **off by default** (the safe,
-prod state). With it off, the app **refuses to start** unless `AUTH_JWT_SECRET`
-is set and a sign-in gate exists (`AUTH_ALLOWED_EMAILS`, or an explicit
-`AUTH_ALLOW_OPEN_SIGNUP=1`); the raw-token echo is forced off regardless of
-`AUTH_EXPOSE_TOKEN`; and booting with the dev `ConsoleEmailSender` is rejected.
-Set `AUTH_DEV_MODE=1` for the zero-config local loop (ephemeral secret, token
-echo, open sign-up), so the dev convenience never leaks into prod by accident.
+prod state). With it off, the app **refuses to start** unless **both**
+`AUTH_JWT_SECRET` is set **and** at least one login credential is configured in
+`APP_USERS` — so a deploy can be neither open (no secret) nor impossible to log
+into (no credential). The guard is keyed on the credential set, not the dormant
+magic-link allowlist (#77 retired the allowlist from the boot guard). The
+raw-token echo is forced off regardless of `AUTH_EXPOSE_TOKEN`, and booting with
+the dev `ConsoleEmailSender` is rejected. Set `AUTH_DEV_MODE=1` for the
+zero-config local loop (ephemeral secret + built-in `dev`/`dev` login), so the
+dev convenience never leaks into prod by accident.
+
+#### Secret rotation & the kill switch
+
+Two operational levers, both immediate (no extra tooling):
+
+- **Revoke one user:** remove their entry from `APP_USERS` and restart. New
+  logins for that username fail immediately (unknown user). Their *existing*
+  JWTs remain valid until they expire (sessions are stateless — see trade-offs).
+- **Kill every session at once:** rotate `AUTH_JWT_SECRET`. Every already-issued
+  JWT was signed by the old secret, so all of them fail verification at once and
+  every user must log in again. This is the global panic button for a suspected
+  token leak.
 
 Auth environment variables:
 
 | Var | Default | Purpose |
 |---|---|---|
-| `AUTH_DEV_MODE` | `0` (prod) | **master safety switch.** `1` = local dev (ephemeral secret + token echo + open sign-up). Off ⇒ the prereqs below are enforced at boot. |
-| `AUTH_JWT_SECRET` | _(required off-dev)_ | HS256 signing secret — **set from the host secret store in prod (#16); never commit.** Ephemeral per-process value in dev. |
-| `AUTH_SESSION_TTL_DAYS` | `2` | session JWT lifetime (no revocation, so kept short — see trade-offs) |
-| `AUTH_LINK_TTL_MINUTES` | `15` | magic-link token lifetime |
+| `AUTH_DEV_MODE` | `0` (prod) | **master safety switch.** `1` = local dev (ephemeral secret + built-in `dev`/`dev` login). Off ⇒ the prereqs below are enforced at boot. |
+| `AUTH_JWT_SECRET` | _(required off-dev)_ | HS256 signing secret — **set from the host secret store in prod (#16); never commit.** Ephemeral per-process value in dev. Rotating it invalidates every active session (kill switch). |
+| `APP_USERS` | _(required off-dev)_ | login credentials, `username:<encoded-hash>,…` (hash via `python -m app.password`). **Never commit.** Removing an entry blocks that user's new logins. In dev a `dev`/`dev` entry is seeded. |
+| `AUTH_LOGIN_THROTTLE_MAX` | `5` | failed logins per `(ip, username)` before 429 within the window |
+| `AUTH_LOGIN_THROTTLE_WINDOW_SECONDS` | `300` | sliding throttle window (block self-clears as it rolls forward; no hard lockout) |
+| `AUTH_SESSION_TTL_DAYS` | `30` | session JWT lifetime (no revocation except secret rotation, so a daily-use balance — see trade-offs) |
 | `DEFAULT_TENANT_ID` | `1` | tenant new sign-ins land in (ADR-055 "reads 1 for now") |
-| `AUTH_ALLOWED_EMAILS` | _(empty)_ | comma-separated sign-in allowlist. **Required off-dev** unless `AUTH_ALLOW_OPEN_SIGNUP=1`. |
-| `AUTH_ALLOW_OPEN_SIGNUP` | `0` | explicit opt-in to open auto-provisioning when off-dev (else an allowlist is required) |
-| `AUTH_EXPOSE_TOKEN` | `1` (dev) | echo the raw token in the request-link response — **honored only when `AUTH_DEV_MODE=1`; always off in prod** |
-| `AUTH_LINK_RATE_MAX` | `5` | max request-link tokens per email per window |
-| `AUTH_LINK_RATE_WINDOW_MINUTES` | `15` | rolling rate-limit window |
+| `AUTH_LINK_TTL_MINUTES` | `15` | _(dormant magic-link)_ token lifetime |
+| `AUTH_ALLOWED_EMAILS` | _(empty)_ | _(dormant magic-link)_ sign-in allowlist. No longer part of the boot guard (#77). |
+| `AUTH_ALLOW_OPEN_SIGNUP` | `0` | _(dormant magic-link)_ open auto-provisioning opt-in. No longer part of the boot guard (#77). |
+| `AUTH_EXPOSE_TOKEN` | `1` (dev) | _(dormant magic-link)_ echo the raw token in the request-link response — **honored only when `AUTH_DEV_MODE=1`; always off in prod** |
+| `AUTH_LINK_RATE_MAX` | `5` | _(dormant magic-link)_ max request-link tokens per email per window |
+| `AUTH_LINK_RATE_WINDOW_MINUTES` | `15` | _(dormant magic-link)_ rolling rate-limit window |
 
 ### Security model & trade-offs (Slice 2)
 
@@ -171,14 +223,19 @@ Auth environment variables:
   deliberately deferred (a larger change touching CORS + the SPA fetch layer).
 - **No server-side revocation / logout.** Sessions are stateless JWTs valid
   until `exp`; `signOut()` only clears the client. The blast radius of a leaked
-  token is bounded by the (now 2-day) TTL. A `jti`/token-version denylist is a
-  future option if revocation becomes a requirement.
+  token is bounded by the (30-day) TTL, or cut to zero immediately by rotating
+  `AUTH_JWT_SECRET` (the kill switch above). A `jti`/token-version denylist is a
+  future option if per-session revocation becomes a requirement.
 - **No `aud`/`iss` claims.** Fine while one secret signs for one audience; add
   them if this secret is ever shared across services.
+- **Login throttle is per-process.** The brute-force counter lives in memory on
+  one VM; it resets on restart and isn't shared across replicas. Acceptable for
+  the single-VM deployment — a shared store (Redis) is the move if it ever scales
+  horizontally.
 - **Prod deploy checklist (ties to #16).** Set `AUTH_DEV_MODE=0`,
-  `AUTH_JWT_SECRET` (host secret store), a non-empty `AUTH_ALLOWED_EMAILS` (or
-  `AUTH_ALLOW_OPEN_SIGNUP=1` only if open sign-up is truly intended), and wire a
-  real `EmailSender`. The app now refuses to boot if any of these is missing.
+  `AUTH_JWT_SECRET` (host secret store), and a non-empty `APP_USERS`
+  (`username:hash`, hash via `python -m app.password`). The app refuses to boot
+  if the secret or any credential is missing.
 
 ## Run
 
@@ -197,12 +254,9 @@ AUTH_DEV_MODE=1 uvicorn backend.app.main:app --reload --port 8000
 # health check (public):
 curl localhost:8000/api/health
 
-# 3. sign in (dev: the raw token is echoed in the response)
-TOKEN=$(curl -s localhost:8000/api/auth/request-link \
-  -H 'content-type: application/json' -d '{"email":"you@example.com"}' \
-  | python -c 'import sys,json;print(json.load(sys.stdin)["dev_token"])')
-JWT=$(curl -s localhost:8000/api/auth/exchange \
-  -H 'content-type: application/json' -d "{\"token\":\"$TOKEN\"}" \
+# 3. sign in (dev: the built-in dev/dev credential)
+JWT=$(curl -s localhost:8000/api/auth/login \
+  -H 'content-type: application/json' -d '{"username":"dev","password":"dev"}' \
   | python -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
 curl localhost:8000/api/candidates -H "authorization: Bearer $JWT"   # 200; without the header → 401
 ```
@@ -210,8 +264,8 @@ curl localhost:8000/api/candidates -H "authorization: Bearer $JWT"   # 200; with
 Point at Postgres instead of SQLite with
 `DATABASE_URL=postgresql+psycopg://user:pass@host/db`. In prod leave
 `AUTH_DEV_MODE` off and follow the deploy checklist above (set
-`AUTH_JWT_SECRET` from the host secret store, a sign-in gate, and a real
-`EmailSender`, #16) — the app refuses to boot otherwise.
+`AUTH_JWT_SECRET` from the host secret store and a non-empty `APP_USERS`,
+#16) — the app refuses to boot otherwise.
 
 ## Test
 

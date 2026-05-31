@@ -46,6 +46,11 @@ def api(sample: dict) -> Iterator[tuple[TestClient, Engine, None]]:
             db.close()
 
     main.app.dependency_overrides[get_db] = _override_db
+    # Reset the shared login-throttle singleton so its sliding-window state can't
+    # bleed across tests; restore it afterward (a throttle test swaps in a
+    # clock-injected one via ``main._login_throttle = ...``).
+    _orig_throttle = main._login_throttle
+    main._login_throttle.clear()
     try:
         with TestClient(main.app) as client:
             # 3-tuple kept for call-site stability; the 3rd slot (the magic-link
@@ -53,6 +58,7 @@ def api(sample: dict) -> Iterator[tuple[TestClient, Engine, None]]:
             yield client, eng, None
     finally:
         main.app.dependency_overrides.clear()
+        main._login_throttle = _orig_throttle
         eng.dispose()
 
 
@@ -68,3 +74,18 @@ def login(client: TestClient, username: str = "dev", password: str = "dev") -> s
 
 def auth_header(jwt: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {jwt}"}
+
+
+class FakeClock:
+    """A manually-advanced monotonic clock for time-dependent tests (e.g. the
+    login throttle's sliding window). Call it to read the time; ``advance`` to
+    move it forward."""
+
+    def __init__(self, t: float = 1000.0) -> None:
+        self.t = t
+
+    def __call__(self) -> float:
+        return self.t
+
+    def advance(self, dt: float) -> None:
+        self.t += dt
