@@ -15,11 +15,9 @@ import pytest
 # touches the registry. The county-score lookup module registers three
 # instances at import time.
 from preprocess import registry  # noqa: F401
+from preprocess.annotators.county_score import prepare as _aggregate_county_score
 from preprocess.base import ComposeContext, all_joins
-from preprocess.joins.county_score_lookup import (
-    CountyScoreLookupJoin,
-    _aggregate_county_score,
-)
+from preprocess.joins.county_score_lookup import CountyScoreLookupJoin
 from shapely.geometry import Point, Polygon
 
 

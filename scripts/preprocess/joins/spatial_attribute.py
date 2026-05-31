@@ -1,57 +1,39 @@
-"""Parametric spatial-attribute Join.
+"""Parametric spatial-attribute Join (whole-layer feed).
 
-Pattern: for each row in `target`, find rows of `source` it spatially
-hits (under a configurable predicate), bucket the hits by a category
-column, then derive new annotation columns from the per-row set of
-category values.
+Registers spec-driven instances that annotate an in-memory target layer
+with columns derived from spatial hits against a source layer. The actual
+computation lives in the shared annotator
+(``preprocess.annotators.spatial_attribute``); this is the whole-layer
+feed over it. The streaming Composer feeds the *same* annotator per parcel
+chunk, so there is one implementation, not two.
 
-Replaces hand-written per-target distress joins (ParcelToDistressJoin /
-TowerToDistressJoin). Future spatial annotators (FEMA flood zones,
-broadband-served polygons, etc.) follow the same shape — one
-`SpatialAttributeSpec` declaration + one `register_join_instance` call.
+Live registrations: ``TowerToDistressJoin`` (runs via the registry on the
+tower layer). ``ParcelToDistressJoin`` is registered for name/manifest
+continuity but skipped by the Composer, which annotates parcels per chunk.
+
+``SpatialAttributeSpec`` is re-exported here from the annotator so the
+long-standing ``from preprocess.joins.spatial_attribute import …`` surface
+stays stable.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
-import geopandas as gpd
-
+from ..annotators.spatial_attribute import SpatialAttributeSpec, annotate
 from ..base import ComposeContext, Join, register_join_instance
 
-Predicate = Literal["intersects", "within", "contains"]
-
-
-@dataclass(frozen=True)
-class SpatialAttributeSpec:
-    """Declarative description of a spatial-attribute annotation.
-
-    Fields:
-      target            — canonical type to annotate (e.g. "parcel").
-      source            — canonical type carrying the categorical attribute
-                          (e.g. "distress_overlay").
-      predicate         — sjoin predicate. Parcels typically `intersects`
-                          an overlay polygon; point-like targets (towers)
-                          are `within` an overlay polygon.
-      category_column   — column on `source` whose distinct values become
-                          the per-target set buckets (e.g. "overlay_type").
-                          When None, every source row contributes a single
-                          sentinel; useful for boolean "any hit?" annotations.
-      derived_columns   — map column-name → fn(set_of_categories) → value.
-                          Each entry becomes one new column on `target`.
-    """
-
-    target: str
-    source: str
-    predicate: Predicate
-    category_column: str | None
-    derived_columns: dict[str, Callable[[set[str]], Any]]
+__all__ = [
+    "SpatialAttributeSpec",
+    "SpatialAttributeJoin",
+    "PARCEL_TO_DISTRESS_SPEC",
+    "TOWER_TO_DISTRESS_SPEC",
+]
 
 
 class SpatialAttributeJoin(Join):
-    """Generic Join driven by a `SpatialAttributeSpec`."""
+    """Whole-layer Join driven by a `SpatialAttributeSpec`."""
 
     def __init__(self, spec: SpatialAttributeSpec, name: str):
         self.spec = spec
@@ -63,38 +45,11 @@ class SpatialAttributeJoin(Join):
     def apply(self, ctx: ComposeContext) -> None:
         tgt = ctx.get(self.spec.target)
         src = ctx.get(self.spec.source)
+        # Guard here (not just in annotate) so an absent/empty source is a
+        # true no-op: no columns added, nothing appended to join_log.
         if tgt is None or src is None or len(src) == 0:
             return
-
-        per_target: dict[int, set[str]] = {}
-        cats: list[Any]
-        if self.spec.category_column is not None:
-            cats = list(src[self.spec.category_column].dropna().unique())
-        else:
-            cats = [None]
-
-        for cat in cats:
-            subset = src[src[self.spec.category_column] == cat] if cat is not None else src
-            try:
-                hit = gpd.sjoin(
-                    tgt[["geometry"]].reset_index(),
-                    subset[["geometry"]],
-                    how="inner",
-                    predicate=self.spec.predicate,
-                )
-            except Exception:
-                # Spatial-join failures (mixed CRS, empty geom column on
-                # one side) are recoverable per-category — keep going so
-                # one bad overlay_type doesn't suppress the others.
-                continue
-            for idx in hit["index"].unique():
-                per_target.setdefault(int(idx), set()).add(cat if cat is not None else "_hit_")
-
-        tgt = tgt.copy()
-        for col_name, fn in self.spec.derived_columns.items():
-            # bind fn per-iteration (lambda is consumed immediately by .map)
-            tgt[col_name] = tgt.index.map(lambda i, fn=fn: fn(per_target.get(int(i), set())))
-        ctx.set(self.spec.target, tgt)
+        ctx.set(self.spec.target, annotate(tgt, src, self.spec))
         ctx.join_log.append(self.name)
 
 

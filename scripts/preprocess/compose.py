@@ -46,6 +46,7 @@ import geopandas as gpd
 import pandas as pd
 
 from . import COMPOSITE_ROOT
+from .annotators import owner_cluster
 from .base import (
     OUTPUT_BASENAMES,
     SPATIAL_TYPES,
@@ -58,7 +59,6 @@ from .base import (
 )
 from .catalog_builder import build_catalog, geom_type, schema_summary
 from .catalog_schema import validate_catalog
-from .cluster import cluster_id, normalize_address, normalize_owner_name
 from .compose_helpers import (
     aggregator_for_view,
     iter_state_parcel_shards,
@@ -97,74 +97,21 @@ class ComposeConfig:
 def _build_owner_cluster_lookup(state_fips: str) -> pd.DataFrame:
     """Scan every parcel shard for owner columns; emit cluster-keyed totals.
 
-    Returns a DataFrame indexed by ``owner_cluster_id`` with columns
-    ``owner_cluster_size`` and ``owner_cluster_value_total`` — one row
-    per distinct cluster (so the index is always unique, even when the
-    underlying parcel_id_full has duplicates across shards — FL FDOR NAL
-    has these because PARCEL_ID is county-unique, not state-unique).
+    Thin streaming feed over ``owner_cluster.prepare``: it yields one
+    shard's owner columns at a time (memory bounded to one shard — ADR-050,
+    ~tens of MB for an 11 M-parcel state) and the annotator accumulates
+    the cluster-keyed aggregate. Returns a DataFrame indexed by
+    ``owner_cluster_id`` (always unique, so safe to ``.map`` against even
+    when parcel_id_full duplicates across shards — FL FDOR NAL).
 
-    Per-row ``owner_cluster_id`` is recomputed by ``attach_owner_cluster``
-    on the chunk itself (the same per-row formula `OwnerClusterJoin`
-    uses) — this lookup only supplies the global aggregates that need
-    a whole-state pass.
-
-    Memory bounded to one shard's owner columns at any time (~tens of MB
-    for an 11 M-parcel state, vs the full ~13 GB if loaded whole).
+    The per-row ``owner_cluster_id`` is recomputed on each chunk by
+    ``owner_cluster.annotate``; this only supplies the global aggregates
+    that need a whole-state pass.
     """
-    cluster_rows: list[pd.DataFrame] = []
-    owner_cols = [
-        "owner_name_norm",
-        "mailing_addr_norm",
-        "owner_name",
-        "mailing_addr",
-        "assessed_value",
-    ]
-    for _label, df in iter_state_parcel_shards_columns(state_fips, owner_cols):
-        # Some shards may not carry the *_norm columns — fall back to
-        # normalising on the fly so we never crash a state because one
-        # source skipped normalisation.
-        owner_norm = (
-            df["owner_name_norm"]
-            if "owner_name_norm" in df.columns
-            else df.get("owner_name", "").map(normalize_owner_name)
-        )
-        addr_norm = (
-            df["mailing_addr_norm"]
-            if "mailing_addr_norm" in df.columns
-            else df.get("mailing_addr", "").map(normalize_address)
-        )
-        cluster_rows.append(
-            pd.DataFrame(
-                {
-                    "owner_cluster_id": [cluster_id(o, a) for o, a in zip(owner_norm, addr_norm)],
-                    "assessed_value": pd.to_numeric(
-                        df.get("assessed_value", 0), errors="coerce"
-                    ).fillna(0.0),
-                }
-            )
-        )
-    if not cluster_rows:
-        return pd.DataFrame(
-            columns=["owner_cluster_size", "owner_cluster_value_total"],
-            index=pd.Index([], name="owner_cluster_id"),
-        )
-    all_owners = pd.concat(cluster_rows, ignore_index=True)
-    # Cluster size / value totals across the whole state. Parcels with no
-    # clusterable owner/address (cluster_id == "") are excluded from the
-    # aggregate but still default to size=1, value=0 when attached.
-    non_empty = all_owners[all_owners["owner_cluster_id"] != ""]
-    if len(non_empty) == 0:
-        return pd.DataFrame(
-            columns=["owner_cluster_size", "owner_cluster_value_total"],
-            index=pd.Index([], name="owner_cluster_id"),
-        )
-    agg = non_empty.groupby("owner_cluster_id").agg(
-        owner_cluster_size=("owner_cluster_id", "size"),
-        owner_cluster_value_total=("assessed_value", "sum"),
+    frames = (
+        df for _label, df in iter_state_parcel_shards_columns(state_fips, owner_cluster.OWNER_COLS)
     )
-    agg["owner_cluster_size"] = agg["owner_cluster_size"].astype(int)
-    agg["owner_cluster_value_total"] = agg["owner_cluster_value_total"].astype(float)
-    return agg  # index = owner_cluster_id (unique)
+    return owner_cluster.prepare(frames)
 
 
 # ── Tower / solar / billboard pre-pass (sjoin against parcel shards) ──────

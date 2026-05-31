@@ -1,14 +1,24 @@
-"""Owner clustering helpers.
+"""Owner identity — the single home for the normalize → hash recipe.
 
-We group parcels by (normalized owner name + normalized mailing address)
-to detect multi-parcel owners. This is the foundation for portfolio
-outreach features and for owner-unmasking (combining with FCC ULS
-ownership data later).
+This module owns *all* owner-key derivation so callers never re-derive it:
 
-Conservative by default: two parcels join only if both the normalized
-name AND the normalized mailing address match exactly. Address-only or
-name-only matches would create false positives (different people with
-the same address; same person with multiple business addresses).
+- ``normalize_owner_name`` / ``normalize_address`` — the normalization recipe.
+- ``normalized_owner_cols`` — the "prefer the precomputed ``*_norm`` column,
+  else re-normalize the raw column" fallback every parcel-frame consumer used
+  to repeat.
+- Two named hash grains, chosen explicitly rather than ad hoc:
+    * ``cluster_id(name_norm, addr_norm)`` — **within-state**: name *and*
+      mailing address. Conservative — two parcels join only if both match, so
+      different people who share a name don't merge (ADR-024).
+    * ``cross_state_owner_key(name_norm)`` — **cross-state / national**: name
+      *only*. The address is dropped so a national portfolio owner filing
+      under many regional addresses collapses to one Lead (ADR-061 / ADR-056).
+  The two grains are intentionally different and must stay that way — do not
+  add the address to the cross-state key or remove it from the within-state
+  key.
+
+``infer_owner_kind`` (owner-name → entity class) is a separate concern kept
+here for proximity but is not part of the key recipe.
 """
 
 from __future__ import annotations
@@ -85,14 +95,76 @@ def normalize_address(addr) -> str:
 
 
 def cluster_id(owner_norm: str, addr_norm: str) -> str:
-    """Deterministic short ID for a (normalized name, normalized address) pair.
+    """Within-state owner key: SHA1 of ``name_norm + '|' + addr_norm`` (12 hex).
 
-    Returns empty string if both are empty (un-clusterable).
+    The address is folded in *by design* — two parcels join only if both the
+    normalized name AND address match, so different people who share a name
+    don't merge (conservative; ADR-024). Contrast ``cross_state_owner_key``,
+    the name-only grain. Returns empty string if both inputs are empty
+    (un-clusterable).
     """
     if not owner_norm and not addr_norm:
         return ""
     key = f"{owner_norm}|{addr_norm}"
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+
+
+def cross_state_owner_key(owner_name_norm: str) -> str:
+    """Cross-state (national) Lead key: SHA1 of the normalized name (12 hex).
+
+    Name-anchored *only* — the mailing address is deliberately dropped so a
+    national portfolio owner filing parcels under different regional mailing
+    addresses collapses to ONE Lead instead of splitting per address / per
+    state (ADR-061 / ADR-056 / CONTEXT.md "Lead"). This is the *other* grain
+    from ``cluster_id`` (within-state, name+address): same recipe, one fewer
+    input. Deterministic across recomputes (no address, no randomness), so a
+    landowner keeps the same Lead key every rebuild. Empty for a blank name.
+    """
+    if not owner_name_norm:
+        return ""
+    return hashlib.sha1(owner_name_norm.encode("utf-8")).hexdigest()[:12]
+
+
+def _prefer_precomputed_norm(
+    df: pd.DataFrame, norm_col: str, raw_col: str, normalize
+) -> pd.Series:
+    """One normalized-identity column, preferring a precomputed ``*_norm``
+    column and re-normalizing the raw column only where it's absent or blank.
+
+    The single home for the "column-else-map" dance the Composer consumers
+    used to each repeat: a frame that already carries the pipeline's
+    precomputed column uses it verbatim (keeps the key identical to the
+    analytical layers); a raw frame, or any individual row missing the
+    precomputed value, falls back to ``normalize`` on the raw column. Returns
+    a ``string``-dtype Series aligned to ``df.index`` — empty string where
+    neither column is available (so a malformed frame degrades, never crashes).
+    """
+    if norm_col in df.columns:
+        s = df[norm_col].astype("string").fillna("")
+        blank = s.str.strip() == ""
+        if blank.any() and raw_col in df.columns:
+            s = s.mask(blank, df.loc[blank, raw_col].map(normalize))
+        return s.astype("string").fillna("")
+    if raw_col in df.columns:
+        return df[raw_col].map(normalize).astype("string").fillna("")
+    return pd.Series([""] * len(df), index=df.index, dtype="string")
+
+
+def normalized_owner_cols(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """``(owner_name_norm, mailing_addr_norm)`` for a parcel frame.
+
+    Prefers the pipeline's precomputed ``owner_name_norm`` / ``mailing_addr_norm``
+    columns, falling back to ``normalize_owner_name`` / ``normalize_address`` on
+    the raw ``owner_name`` / ``mailing_addr`` columns. The single place the
+    column-fallback recipe lives: every owner-key consumer (the owner-cluster
+    pre-pass, the per-chunk join, the registered join, the cross-state
+    resolver) asks here instead of re-deriving it. The *producer* — the
+    normalizer's ``_map_unique`` per-distinct-value path — stays where it is.
+    """
+    return (
+        _prefer_precomputed_norm(df, "owner_name_norm", "owner_name", normalize_owner_name),
+        _prefer_precomputed_norm(df, "mailing_addr_norm", "mailing_addr", normalize_address),
+    )
 
 
 # Unambiguous government / public-entity markers. Matched against the

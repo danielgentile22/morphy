@@ -21,7 +21,6 @@ wrote and emits ``composite/owners_index.json``. No recompose.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import os
@@ -34,7 +33,7 @@ import pandas as pd
 
 from . import COMPOSITE_ROOT
 from .app_assets import iter_composed_states
-from .cluster import normalize_owner_name
+from .cluster import cross_state_owner_key, normalized_owner_cols
 
 OWNERS_INDEX_FILENAME = "owners_index.json"
 
@@ -133,16 +132,11 @@ def _normalize_carriers(raw) -> list[dict]:
 _MAILING_JUNK = {"", "0", "0.0", "none", "null", "n/a", "unknown"}
 
 
-def display_cluster_id(owner_name_norm: str) -> str:
-    """Stable, name-anchored Lead id: first 12 hex of ``sha1(name_norm)``.
-
-    Deterministic across recomputes (no address, no randomness) so a
-    landowner keeps the same Lead key — and the same ``lead`` row — every
-    time the index is rebuilt. Empty for an un-clusterable (blank) name.
-    """
-    if not owner_name_norm:
-        return ""
-    return hashlib.sha1(owner_name_norm.encode("utf-8")).hexdigest()[:12]
+# Back-compat alias. The cross-state Lead key now lives in ``cluster.py`` as
+# ``cross_state_owner_key`` — the grain made explicit alongside the within-state
+# ``cluster_id``. Re-exported here under its original name so existing importers
+# (and the ``display_cluster_id`` *column* it stamps on the index) are unchanged.
+display_cluster_id = cross_state_owner_key
 
 
 def _mode_or_empty(s: pd.Series) -> str:
@@ -257,22 +251,18 @@ class CrossStateOwnerResolver:
         if df.empty:
             return self._empty_index()
 
-        # Prefer the pipeline's precomputed owner_name_norm (keeps the key
-        # identical to the analytical layers); recompute from owner_name
-        # for any row missing it so the resolver also works on raw rows.
-        if "owner_name_norm" in df.columns:
-            norm = df["owner_name_norm"].astype("string").fillna("")
-            blank = norm.str.strip() == ""
-            if blank.any():
-                norm = norm.mask(blank, df.loc[blank, "owner_name"].map(normalize_owner_name))
-        else:
-            norm = df["owner_name"].map(normalize_owner_name)
-        df["_norm"] = norm.astype(str).str.strip()
+        # The cross-state Lead grain is name-anchored only. Take the normalized
+        # owner name (precomputed column where present, else re-normalized raw —
+        # the shared cluster.normalized_owner_cols fallback) and key it with
+        # cross_state_owner_key: name only, no address (ADR-061 / ADR-056). The
+        # address column the helper also returns is intentionally unused here.
+        name_norm, _ = normalized_owner_cols(df)
+        df["_norm"] = name_norm.astype(str).str.strip()
         df = df[df["_norm"] != ""]
         if df.empty:
             return self._empty_index()
 
-        df["_cluster"] = df["_norm"].map(display_cluster_id)
+        df["_cluster"] = df["_norm"].map(cross_state_owner_key)
 
         # Numeric/boolean coercions — nulls never reach the rollup. ``_col``
         # tolerates a column being absent entirely (returns an aligned
