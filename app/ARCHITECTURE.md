@@ -31,6 +31,16 @@ schema-completeness contract (`tests/unit/schema-completeness.test.ts`)
 fails `npm run test:unit` if a future compose renames or drops a field —
 drift is caught in CI, not as a blank detail panel.
 
+A tower's `carriers` (the ULS spectrum licensee(s) #24 put on every tower —
+a list-of-struct, not a scalar) is special-cased rather than rendered as a
+flat row: one shared `CarrierList.svelte` (confidence badges + tooltips +
+empty state) renders it on **both** tower surfaces — the `LeadPage` holdings
+(where a structures-first tower click lands, backend-served) and the
+schema-driven `DetailsPanel` tower panel (the catalog `towers` layer).
+`carriers` stays under the schema-completeness contract via a `TOWER_SCHEMA`
+entry (Slice A / #28). `parseCarriers` accepts the GeoJSON array, the DuckDB
+JSON-string, and the backend's already-parsed JSON forms.
+
 ## Three map data layers
 
 1. **Catalog GeoJSON** — towers, distress overlays, solar facilities and

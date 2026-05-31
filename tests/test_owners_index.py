@@ -196,7 +196,7 @@ def test_build_owners_index_on_missing_root_is_empty(tmp_path):
     out = build_owners_index(composite_root=tmp_path)
     assert out["count"] == 0
     assert out["owners"] == []
-    assert out["schema_version"] == 3
+    assert out["schema_version"] == 4
 
 
 # ── holdings + mailing + tallest tower (Slice 3 / #49) ───────────────────────
@@ -402,6 +402,76 @@ def test_active_tower_count_counts_only_active_towers():
     assert row.active_tower_count == 2  # A1 + A3; A2 inactive, A4 unknown
 
 
+# ── carriers on tower structures (Slice A / #28, index schema v4) ────────────
+def test_tower_structures_carry_carriers():
+    # The composite stores ``carriers`` as a JSON-array string (parquet
+    # large_string); a solar's tower-attr map has none. Both forms tolerated.
+    towers = {
+        "T1": {
+            "height_m": 100.0,
+            "lat": 35.0,
+            "lon": -90.0,
+            "is_active": True,
+            "carriers": json.dumps(
+                [
+                    {
+                        "carrier_name": "AT&T",
+                        "callsign": "KNKN566",
+                        "license_expiry": "2031-10-01",
+                        "confidence_tag": "verified",
+                    },
+                    {
+                        "carrier_name": "ALLTEL Corporation",
+                        "callsign": "WPOI253",
+                        "license_expiry": "2009-01-25",
+                        "confidence_tag": "likely",
+                    },
+                ]
+            ),
+        },
+        # T2 has a tower-attr match but no carriers column → [].
+        "T2": {"height_m": 80.0, "lat": 35.1, "lon": -90.1, "is_active": True},
+    }
+    idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(
+        pd.DataFrame(
+            [
+                _parcel_with_holding(
+                    "GRID TOWERS LLC", "05", score=0.6, parcel_id="P1", towers_asr=("T1", "T2")
+                )
+            ]
+        ),
+        towers_by_asr=towers,
+    )
+    structures = _row_for(idx, "GRID TOWERS").holdings[0]["structures"]
+    by_asr = {s["asr"]: s for s in structures}
+    c = by_asr["T1"]["carriers"]
+    assert len(c) == 2
+    # order + fields preserved; confidence tag rides through for the badge
+    assert c[0] == {
+        "carrier_name": "AT&T",
+        "callsign": "KNKN566",
+        "license_expiry": "2031-10-01",
+        "confidence_tag": "verified",
+    }
+    assert c[1]["confidence_tag"] == "likely"
+    # a tower with no carriers column degrades to an empty list, not a crash
+    assert by_asr["T2"]["carriers"] == []
+
+
+def test_tower_without_attr_match_has_empty_carriers():
+    # No towers_by_asr at all → structures still list ASR ids, carriers [].
+    idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(
+        pd.DataFrame(
+            [
+                _parcel_with_holding(
+                    "LONE PINE TRUST", "30", score=0.5, parcel_id="P", towers_asr=("X1",)
+                )
+            ]
+        )
+    )
+    assert _row_for(idx, "LONE PINE").holdings[0]["structures"][0]["carriers"] == []
+
+
 def test_filter_index_is_a_slim_projection_without_holdings():
     from preprocess.owners_index import FILTER_INDEX_FIELDS, build_owners_filter_index
 
@@ -439,7 +509,9 @@ def test_filter_index_is_a_slim_projection_without_holdings():
         ],
     }
     slim = build_owners_filter_index(full)
-    assert slim["schema_version"] == 3 and slim["count"] == 1
+    # build_owners_filter_index stamps the *current* index schema version,
+    # regardless of the input dict's (here a stale v3).
+    assert slim["schema_version"] == 4 and slim["count"] == 1
     owner = slim["owners"][0]
     assert set(owner.keys()) == set(FILTER_INDEX_FIELDS)
     assert "holdings" not in owner and "mailing_address" not in owner

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { app } from '../lib/stores.svelte';
-  import { entitySchema, infrastructureItems, scoreComponents, type Props } from '../lib/schema';
+  import { entitySchema, infrastructureItems, scoreComponents, carriers, type Props } from '../lib/schema';
   import { fmtInt, fmtText } from '../lib/format';
+  import CarrierList from './CarrierList.svelte';
 
   const sel = $derived(app.selection);
   const schema = $derived(sel ? entitySchema(sel.kind) : undefined);
@@ -11,6 +12,9 @@
   // can't show: the per-feature infrastructure list and the score factors.
   const infra = $derived(sel?.kind === 'parcel' ? infrastructureItems(props) : []);
   const components = $derived(sel?.kind === 'parcel' ? scoreComponents(props) : []);
+  // Carriers (ULS licensees) on a tower — a list-of-struct rendered with
+  // confidence badges (Slice A / #28), so the flat schema row can't show it.
+  const towerCarriers = $derived(sel?.kind === 'tower' ? carriers(props) : []);
 
   // Owner-cluster portfolio — show "see all parcels by this owner" when
   // the selected parcel's owner holds more than one.
@@ -59,7 +63,9 @@
       {/if}
 
       <div class="body">
-        {#each schema.sections as section (section.title)}
+        <!-- The Carriers section is a list-of-struct, rendered as badges
+             below — exclude it from the flat key/value loop. -->
+        {#each schema.sections.filter((s) => s.title !== 'Carriers') as section (section.title)}
           {@const rows = section.fields.map((f) => ({ label: f.label, value: f.value(props) }))}
           {#if rows.some((r) => r.value !== null)}
             <div class="section">
@@ -73,6 +79,13 @@
             </div>
           {/if}
         {/each}
+
+        {#if sel.kind === 'tower'}
+          <div class="section">
+            <h3>Carriers</h3>
+            <CarrierList carriers={towerCarriers} />
+          </div>
+        {/if}
 
         {#if infra.length > 0}
           <div class="section">

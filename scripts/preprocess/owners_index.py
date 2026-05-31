@@ -48,7 +48,11 @@ OWNERS_INDEX_FILENAME = "owners_index.json"
 # ``structure_types`` (which of {tower, solar} the owner hosts). A slim
 # companion ``owners_filter.json`` (filter+search fields only, no holdings)
 # is emitted alongside for the client map's tower-narrowing.
-OWNERS_INDEX_SCHEMA_VERSION = 3
+# v4 (Slice A / #28): each tower structure gains ``carriers`` — the ULS
+# spectrum licensee(s) on the tower (``carrier_name`` / ``callsign`` /
+# ``license_expiry`` / ``confidence_tag``), carried from #24's composite. A
+# stale (pre-v4) index simply omits the field; readers default it to [].
+OWNERS_INDEX_SCHEMA_VERSION = 4
 
 OWNERS_FILTER_FILENAME = "owners_filter.json"
 
@@ -102,7 +106,26 @@ TOWER_ATTR_COLUMNS = (
     "lon",
     "is_active",
     "structure_type_desc",
+    # ULS spectrum licensee(s) on the tower (Slice A / #28). Stored on the
+    # composite as a JSON-array string; parsed onto each tower structure.
+    "carriers",
 )
+
+# Fields kept from a raw ULS carrier entry (drop anything #24 adds later that
+# the UI doesn't read, so the index stays lean + the contract is explicit).
+_CARRIER_FIELDS = ("carrier_name", "callsign", "license_expiry", "confidence_tag")
+
+
+def _normalize_carriers(raw) -> list[dict]:
+    """Parse a tower's ``carriers`` (a JSON-array string on the composite) into
+    a clean list of ``{carrier_name, callsign, license_expiry, confidence_tag}``.
+    De-dup + ordering were already done in #24 — preserved as-is. Tolerant: a
+    null / blank / malformed value yields ``[]``."""
+    out: list[dict] = []
+    for c in _parse_json_list(raw):
+        out.append({k: ("" if c.get(k) is None else str(c.get(k))) for k in _CARRIER_FIELDS})
+    return out
+
 
 # Mailing-address placeholders that several state sources emit for "no
 # address on file" — treated as empty so they never become a Lead's
@@ -395,6 +418,9 @@ class CrossStateOwnerResolver:
                             None if t.get("is_active") is None else bool(t.get("is_active"))
                         ),
                         "structure_kind": str(t.get("structure_type_desc") or ""),
+                        # ULS licensee(s) on the tower (Slice A / #28); [] when
+                        # the tower has no tower-attr match or no carriers.
+                        "carriers": _normalize_carriers(t.get("carriers")),
                     }
                 )
             elif kind == "solar":

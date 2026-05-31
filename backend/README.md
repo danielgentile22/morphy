@@ -99,17 +99,23 @@ are rejected (HTTP 409).
 | POST | `/api/leads/{display_cluster_id}/split` | split a merged-in cluster (`source_cluster_id`) back out to its own raw cluster |
 
 The read half of the full Lead page (holdings / mailing / tallest tower) is
-served from the precomputed **owners index** (schema **v3** —
+served from the precomputed **owners index** (schema **v4** —
 `scripts/preprocess/owners_index.py`). v2 (Slice 3 / #49) added per-owner
 `holdings`, `mailing_address`, and `tallest_tower_height_m`; **v3 (Slice 6 /
 #52)** added the owner-level filter rollups the shared top-bar `FilterModel`
 reads — `counties`, `active_tower_count`, `structure_count`, `structure_types`
 — surfaced on `OwnerSummary` (`/api/candidates`, `/api/my-leads`) and also
 written to a slim client companion `owners_filter.json` (filter+search fields
-only, no holdings) the map loads to narrow towers. Only the lead state is
+only, no holdings) the map loads to narrow towers; **v4 (Slice A / #28)** adds
+`carriers` (the ULS spectrum licensee(s) — `{carrier_name, callsign,
+license_expiry, confidence_tag}`) onto each tower **structure** inside a
+holding. The `Structure` response model **declares** `carriers` — an
+undeclared field would be silently dropped by `response_model=LeadDetail`, so
+the carrier list would never reach the Lead page. Only the lead state is
 per-tenant. Rebuild both after composing states: `python scripts/preprocess.py
 --owners-index` (writes `owners_index.json` + `owners_filter.json`). New
-`OwnerSummary` fields are **defaulted** so a pre-v3 index still validates.
+`OwnerSummary` / `Structure` fields are **defaulted** so a pre-v4 index still
+validates.
 
 Every data route resolves the tenant from the `Authorization: Bearer <jwt>`
 (`current_tenant_id`, now JWT-derived) and is tenant-scoped; an

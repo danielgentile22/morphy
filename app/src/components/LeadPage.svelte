@@ -7,6 +7,7 @@
   import type { ContactAttempt, Holding, Structure } from '../lib/leads-api';
   import type { OwnerFilterRecord } from '../lib/owners-filter-index';
   import MiniMap from './MiniMap.svelte';
+  import CarrierList from './CarrierList.svelte';
 
   let { displayClusterId }: { displayClusterId: string } = $props();
 
@@ -168,6 +169,9 @@
                   {#each towersOf(h) as t (t.asr)}
                     <div class="twr">
                       ▲ Tower ASR {t.asr} — {feet(t.height_m)}{#if t.structure_kind} {t.structure_kind}{/if}{#if t.active === false} (inactive){/if}
+                    </div>
+                    <div class="carriers-wrap">
+                      <CarrierList carriers={t.carriers ?? []} compact />
                     </div>
                   {/each}
                   {#each solarOf(h) as s (s.id)}
@@ -505,6 +509,10 @@
     margin-top: 3px;
     font-size: 12px;
     color: var(--text-2);
+  }
+  /* Carriers sit indented under their tower row. */
+  .carriers-wrap {
+    margin: 1px 0 4px 14px;
   }
   .readonly {
     color: var(--muted);

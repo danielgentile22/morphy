@@ -6,6 +6,7 @@
 
 import type { LeadStatus } from './lead-status';
 import type { FilterableOwner } from './filter-model';
+import type { Carrier } from './carrier';
 import { authHeader } from './auth-token';
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api';
@@ -82,6 +83,10 @@ export interface Structure {
   active?: boolean | null;
   structure_kind?: string | null;
   owner?: string | null;
+  // ULS spectrum licensee(s) on this tower (Slice A / #28). Absent on solar
+  // entries, and on a pre-carriers index (older backend) — treat as []. Empty
+  // is the common case (most ASR towers carry no matched ULS per-site license).
+  carriers?: Carrier[] | null;
 }
 
 export interface Holding {

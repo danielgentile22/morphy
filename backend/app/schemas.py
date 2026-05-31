@@ -50,6 +50,17 @@ class ContactAttemptIn(BaseModel):
 
 
 # ── full Lead page detail (Slice 3 / #49) ───────────────────────────────────
+class CarrierOut(BaseModel):
+    """A ULS spectrum licensee identified on a tower (Slice A / #28). The
+    confidence tag (verified/likely/possible) describes how the ULS license
+    was tied to the tower in #24 — drives the badge the UI renders."""
+
+    carrier_name: str = ""
+    callsign: str = ""
+    license_expiry: str = ""
+    confidence_tag: str = ""
+
+
 class Structure(BaseModel):
     """A tower or solar facility hosted on a holding. Tower fields
     (asr/height/lat/lon) are absent on solar entries and vice-versa."""
@@ -63,6 +74,10 @@ class Structure(BaseModel):
     active: bool | None = None
     structure_kind: str | None = None
     owner: str | None = None
+    # ULS licensee(s) on a tower (Slice A / #28). Declared here so FastAPI's
+    # response_model passes them through (an undeclared field is dropped).
+    # Defaulted so a pre-v4 owners index (no carriers) still validates.
+    carriers: list[CarrierOut] = Field(default_factory=list)
 
 
 class Holding(BaseModel):

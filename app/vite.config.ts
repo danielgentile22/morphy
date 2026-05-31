@@ -10,6 +10,12 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 // range reads work. (Plain `python -m http.server` is not range-capable.)
 export default defineConfig({
   plugins: [svelte()],
+  // Under Vitest, resolve Svelte's *browser* (client) entry so component
+  // tests can `mount()` in jsdom — Vitest processes modules in SSR mode by
+  // default, which otherwise resolves the server build where `mount` throws.
+  // Scoped to VITEST so the production build is untouched. (Svelte's official
+  // Vitest recipe; avoids adding @testing-library.)
+  resolve: process.env.VITEST ? { conditions: ['browser'] } : {},
   server: {
     port: 5173,
     strictPort: true,
@@ -52,6 +58,9 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['tests/unit/**/*.{test,spec}.ts'],
+    // Polyfills a no-op `Worker` so duckdb-wasm's browser build imports under
+    // jsdom (the browser condition above pulls it in). See tests/setup.ts.
+    setupFiles: ['./tests/setup.ts'],
     coverage: {
       provider: 'v8',
       include: ['src/lib/**/*.ts'],

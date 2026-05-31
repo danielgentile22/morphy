@@ -27,6 +27,7 @@ import {
   joinNonEmpty,
 } from './format';
 import { distressTierLabel, overlayTypeLabel, ownerKindLabel } from './palette';
+import { parseCarriers, type Carrier } from './carrier';
 
 export type Props = Record<string, unknown>;
 
@@ -108,6 +109,20 @@ export function infrastructureItems(p: Props): InfraItem[] {
       id: String(x.id ?? ''),
       owner: String(x.owner ?? ''),
     }));
+}
+
+/** A tower's `carriers` (list of ULS licensees) — Slice A / #28. Accepts the
+ *  GeoJSON array or the DuckDB JSON-string form (parseCarriers handles both). */
+export function carriers(p: Props): Carrier[] {
+  return parseCarriers(p.carriers);
+}
+
+/** A flat summary of a tower's carriers for the schema-completeness contract
+ *  (the rich badge rendering is special-cased in DetailsPanel). Distinct
+ *  licensee names, or null when there are none. */
+function carriersValue(p: Props): string | null {
+  const names = [...new Set(carriers(p).map((c) => c.carrier_name).filter(Boolean))];
+  return names.length ? names.join(', ') : null;
 }
 
 /** Parse `interestingness_components` (a {factor: weight} map) into sorted pairs. */
@@ -197,6 +212,14 @@ export const TOWER_SCHEMA: EntitySchema = {
           value: (p) => fmtText(p.owner_name),
         },
       ],
+    },
+    {
+      // Carriers (ULS spectrum licensees) on the tower — Slice A / #28. A
+      // list-of-struct, so DetailsPanel special-cases the badge rendering;
+      // this flat field keeps the key under the schema-completeness contract
+      // (catalog declares `carriers` post-#24).
+      title: 'Carriers',
+      fields: [{ label: 'Carriers', keys: ['carriers'], value: carriersValue }],
     },
     {
       title: 'Distress context',

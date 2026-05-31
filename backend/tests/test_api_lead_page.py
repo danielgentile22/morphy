@@ -63,6 +63,14 @@ SAMPLE = {
                             "lon": -90.4,
                             "active": True,
                             "structure_kind": "TOWER",
+                            "carriers": [
+                                {
+                                    "carrier_name": "AT&T",
+                                    "callsign": "KNKN566",
+                                    "license_expiry": "2031-10-01",
+                                    "confidence_tag": "verified",
+                                }
+                            ],
                         }
                     ],
                 },
@@ -102,6 +110,14 @@ def test_lead_detail_includes_holdings_mailing_and_tallest(client: TestClient) -
     ar = next(h for h in body["holdings"] if h["state"] == "AR")
     assert ar["structures"][0]["height_m"] == 120.0
     assert ar["point"] == [-90.405, 35.025]
+    # carriers (Slice A / #28) survive the response_model boundary — a field
+    # absent from the Structure schema would be silently dropped here.
+    carriers = ar["structures"][0]["carriers"]
+    assert len(carriers) == 1
+    assert (carriers[0]["carrier_name"], carriers[0]["confidence_tag"]) == ("AT&T", "verified")
+    # the WV holding's solar structure has no carriers → empty list, not absent
+    wv = next(h for h in body["holdings"] if h["state"] == "WV")
+    assert wv["structures"][0]["carriers"] == []
 
 
 def test_contact_fields_persist_via_put_and_reload(client: TestClient) -> None:
