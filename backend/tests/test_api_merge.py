@@ -1,5 +1,5 @@
 """Manual merge/split over HTTP — the Slice 7 (#53) endpoints through the real
-stack (TestClient + magic-link JWT), proving coalesce is honored end-to-end.
+stack (TestClient + a real session JWT), proving coalesce is honored end-to-end.
 """
 
 from __future__ import annotations

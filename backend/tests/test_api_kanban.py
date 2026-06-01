@@ -4,7 +4,7 @@ Exercises the two new reads — ``GET /api/my-leads`` (the worklist) and
 ``GET /api/counts`` (the nav badges) — plus the drag-driven status change,
 which reuses ``PUT /api/leads/{id}``: a legal move persists + auto-logs an
 activity row; an illegal move is rejected server-side (the client reverts
-the card). Authenticated with a real magic-link JWT, like the SPA.
+the card). Authenticated with a real session JWT, like the SPA.
 """
 
 from __future__ import annotations

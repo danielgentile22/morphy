@@ -2,23 +2,19 @@
 
 Replaces Slice 1's hardcoded ``tenant_id=1``. The flow is:
 
-  request-link → a one-time, hashed, expiring token is stored + emailed
-  exchange     → a valid token is redeemed for a short-lived JWT
+  login        → a valid username/password mints a short-lived JWT
   every route  → resolves the tenant from ``Authorization: Bearer <jwt>``
 
-This module holds the stateless crypto (token hashing, JWT issue/verify)
-and the FastAPI dependencies; the DB-backed request/exchange flow lives in
-``auth_service.py``. ``current_tenant_id`` is the single seam the routes
-already depend on — it now derives the tenant from the verified JWT
-instead of returning a constant.
+This module holds the stateless JWT issue/verify crypto and the FastAPI
+dependencies; the DB-backed sign-in flow lives in ``auth_service.py``.
+``current_tenant_id`` is the single seam the routes already depend on — it
+now derives the tenant from the verified JWT instead of returning a constant.
 
-Never log a raw token or a JWT.
+Never log a JWT.
 """
 
 from __future__ import annotations
 
-import hashlib
-import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -47,19 +43,6 @@ class Principal:
     tenant_id: int
     user_id: int
     email: str
-
-
-# ── one-time tokens ─────────────────────────────────────────────────────────
-def generate_token() -> str:
-    """A high-entropy (256-bit) URL-safe magic-link token."""
-    return secrets.token_urlsafe(32)
-
-
-def hash_token(raw: str) -> str:
-    """SHA-256 hex of a token. Tokens are 256-bit random, so a fast hash
-    is appropriate (unlike low-entropy passwords) and the stored hash
-    reveals nothing about the raw token."""
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 # ── session JWTs ────────────────────────────────────────────────────────────

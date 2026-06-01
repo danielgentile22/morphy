@@ -1,8 +1,7 @@
 """FastAPI app — the thin Lead write-layer.
 
 Surface:
-  POST /api/auth/request-link    email → store hashed one-time token + send
-  POST /api/auth/exchange        valid token → short-lived session JWT
+  POST /api/auth/login           username/password → short-lived session JWT
   GET  /api/auth/me              the authenticated tenant + email
   GET  /api/health               liveness (public)
   GET  /api/candidates           owners at New, ranked by interestingness
@@ -30,12 +29,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from .auth import Principal, create_access_token, current_principal, current_tenant_id
-from .auth_service import AuthService, InvalidCredentials, InvalidToken
+from .auth_service import InvalidCredentials
 from .auth_service import login as login_user
 from .config import settings
 from .credentials import normalize_username
 from .db import get_db, init_db
-from .email_sender import ConsoleEmailSender, EmailSender
 from .lead_status import InvalidTransition
 from .lead_store import LeadStore
 from .login_throttle import LoginThrottle
@@ -45,7 +43,6 @@ from .schemas import (
     CandidatesResponse,
     ContactAttemptIn,
     CountsResponse,
-    ExchangeBody,
     LeadDetail,
     LeadUpdate,
     LoginBody,
@@ -53,22 +50,12 @@ from .schemas import (
     MyLeadsResponse,
     OverrideBody,
     OwnerSummary,
-    RequestLinkBody,
-    RequestLinkResponse,
     TokenResponse,
 )
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    # Fail closed: the console sender prints raw tokens to stdout — fine for
-    # the dev loop, never in prod. (The secret + allowlist gates live in
-    # config.from_env; this covers the one auth surface config can't see.)
-    if not settings.dev_mode and isinstance(_email_sender, ConsoleEmailSender):
-        raise RuntimeError(
-            "Refusing to start with AUTH_DEV_MODE off and the dev ConsoleEmailSender "
-            "(it prints magic-link tokens to stdout). Wire a real EmailSender (#16)."
-        )
     init_db()
     yield
 
@@ -84,15 +71,6 @@ app.add_middleware(
 # The owners index is static + shared; load once at import.
 owners_index = OwnersIndexService(settings.owners_index_path)
 
-# Pluggable delivery — the dev stand-in until the real sender lands (#16).
-# Tests override ``get_email_sender`` to capture links in memory.
-_email_sender: EmailSender = ConsoleEmailSender()
-
-
-def get_email_sender() -> EmailSender:
-    return _email_sender
-
-
 # In-process login brute-force throttle (Slice 2 / #77). One shared instance —
 # its sliding-window state is the whole point, so it must outlive a request.
 # Tests override ``get_login_throttle`` with a clock-injected instance.
@@ -104,13 +82,6 @@ _login_throttle = LoginThrottle(
 
 def get_login_throttle() -> LoginThrottle:
     return _login_throttle
-
-
-def get_auth_service(
-    db: Session = Depends(get_db),
-    sender: EmailSender = Depends(get_email_sender),
-) -> AuthService:
-    return AuthService(db, sender)
 
 
 def get_store(
@@ -162,36 +133,6 @@ def login(
         throttle.record_failure(key)
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     throttle.reset(key)  # a real sign-in clears the counter for this key
-    return TokenResponse(
-        access_token=create_access_token(principal),
-        expires_in=settings.session_ttl_days * 86400,
-    )
-
-
-# ── magic-link (dormant: unused by the UI, removed in a later slice) ──────────
-@app.post("/api/auth/request-link", response_model=RequestLinkResponse)
-def request_link(
-    body: RequestLinkBody,
-    auth_service: AuthService = Depends(get_auth_service),
-) -> RequestLinkResponse:
-    if "@" not in body.email or len(body.email) > 320:
-        raise HTTPException(status_code=422, detail="invalid email")
-    raw = auth_service.request_link(body.email)
-    # Always 200 (never reveal whether the email exists / is allowed). The
-    # raw token is echoed only in dev, for the SPA to finish the exchange.
-    dev_token = raw if (raw and settings.expose_token_in_response) else None
-    return RequestLinkResponse(ok=True, dev_token=dev_token)
-
-
-@app.post("/api/auth/exchange", response_model=TokenResponse)
-def exchange(
-    body: ExchangeBody,
-    auth_service: AuthService = Depends(get_auth_service),
-) -> TokenResponse:
-    try:
-        principal = auth_service.exchange(body.token)
-    except InvalidToken as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return TokenResponse(
         access_token=create_access_token(principal),
         expires_in=settings.session_ttl_days * 86400,

@@ -3,10 +3,8 @@
 With ``AUTH_DEV_MODE`` off (the default, prod) the app refuses to build a
 config that can't authenticate safely — it requires **both** a real signing
 secret and at least one login credential (``APP_USERS``), so a deploy can be
-neither open nor impossible to log into — and the dev-only token echo is forced
-off regardless of env. With it on, the zero-config local loop is preserved
-(ephemeral secret + built-in ``dev``/``dev`` login). The boot guard is keyed on
-the credential set, not the dormant magic-link allowlist (#77).
+neither open nor impossible to log into. With it on, the zero-config local loop
+is preserved (ephemeral secret + built-in ``dev``/``dev`` login).
 """
 
 from __future__ import annotations
@@ -25,13 +23,7 @@ _CRED = f"alice:{hash_password('wonderland')}"
 def _prod_env(monkeypatch, **overrides) -> None:
     """Prod posture: AUTH_DEV_MODE off, all auth env cleared, then overrides."""
     monkeypatch.setenv("AUTH_DEV_MODE", "0")
-    for var in (
-        "AUTH_JWT_SECRET",
-        "APP_USERS",
-        "AUTH_ALLOWED_EMAILS",
-        "AUTH_ALLOW_OPEN_SIGNUP",
-        "AUTH_EXPOSE_TOKEN",
-    ):
+    for var in ("AUTH_JWT_SECRET", "APP_USERS"):
         monkeypatch.delenv(var, raising=False)
     for var, val in overrides.items():
         monkeypatch.setenv(var, val)
@@ -56,25 +48,6 @@ def test_prod_boots_with_secret_and_credential(monkeypatch) -> None:
     assert "alice" in s.app_users  # parsed + available to the login route
 
 
-def test_prod_allowlist_alone_no_longer_satisfies_the_guard(monkeypatch) -> None:
-    # The magic-link allowlist is retired from the boot guard (#77): an
-    # allowlisted email without a real credential is still un-loginnable.
-    _prod_env(monkeypatch, AUTH_JWT_SECRET=_SECRET, AUTH_ALLOWED_EMAILS="a@b.com")
-    with pytest.raises(RuntimeError, match="APP_USERS"):
-        Settings.from_env()
-
-
-def test_prod_forces_token_echo_off(monkeypatch) -> None:
-    # Even asked on, the raw-token echo is never honored outside dev.
-    _prod_env(
-        monkeypatch,
-        AUTH_JWT_SECRET=_SECRET,
-        APP_USERS=_CRED,
-        AUTH_EXPOSE_TOKEN="1",
-    )
-    assert Settings.from_env().expose_token_in_response is False
-
-
 def test_prod_uses_the_provided_secret(monkeypatch) -> None:
     _prod_env(monkeypatch, AUTH_JWT_SECRET=_SECRET, APP_USERS=_CRED)
     assert Settings.from_env().jwt_secret == _SECRET
@@ -88,7 +61,6 @@ def test_dev_mode_is_zero_config(monkeypatch) -> None:
     assert s.dev_mode is True
     assert s.jwt_secret  # ephemeral secret generated
     assert "dev" in s.app_users  # built-in dev/dev login seeded
-    assert s.expose_token_in_response is True
 
 
 def test_session_ttl_default_is_thirty_days(monkeypatch) -> None:

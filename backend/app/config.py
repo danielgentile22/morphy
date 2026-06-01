@@ -1,19 +1,18 @@
 """Backend settings — environment-driven, fail-closed outside dev.
 
-A database URL, the path to the static owners index, and the magic-link
-auth knobs (Slice 2 / #48 — ADR-055). The default database is a local
-SQLite file so the backend runs with zero external services; point
-``DATABASE_URL`` at Postgres (``postgresql+psycopg://…``) in deploy/CI.
+A database URL, the path to the static owners index, and the
+username/password auth knobs (Slice 1 / #76 — ADR-055). The default
+database is a local SQLite file so the backend runs with zero external
+services; point ``DATABASE_URL`` at Postgres (``postgresql+psycopg://…``)
+in deploy/CI.
 
 Auth posture is gated on a single switch, ``AUTH_DEV_MODE`` (default
 **off** — the safe state). With it off (prod), ``from_env`` refuses to
 build without a real ``AUTH_JWT_SECRET`` **and** at least one login
 credential (``APP_USERS``) — so a deploy can be neither open nor impossible
-to log into — and the dev-only token echo is forced off. With it on, the
-zero-config local loop is preserved: an ephemeral per-process secret and a
-built-in ``dev``/``dev`` login. The real secret store lands with #16; the
-fail-closed guard is now expressed in terms of the credential set rather
-than the dormant magic-link allowlist (Slice 2 / #77).
+to log into. With it on, the zero-config local loop is preserved: an
+ephemeral per-process secret and a built-in ``dev``/``dev`` login. The real
+secret store lands with #16.
 """
 
 from __future__ import annotations
@@ -56,30 +55,13 @@ class Settings:
     jwt_secret: str
     jwt_algorithm: str
     session_ttl_days: int
-    link_ttl_minutes: int
     # New users land in this tenant — realizes ADR-055's "reads 1 for now"
     # without a hardcoded tenant on the request path (the tenant now rides
     # on the authenticated JWT). A second tenant is a row add, not a refactor.
     default_tenant_id: int
-    # Optional sign-in allowlist (comma-separated emails). Empty = open
-    # auto-provisioning into the default tenant (dev). Production gates
-    # sign-in behind the real sender + an allowlist/invite (#16).
-    allowed_emails: frozenset[str]
-    # Dev convenience: return the raw magic-link token in the request-link
-    # response so the SPA can complete the exchange without a real inbox.
-    # Forced False outside dev (see ``dev_mode``).
-    expose_token_in_response: bool
     # Master safety switch. False (default) = prod posture: fail closed.
-    # True = local dev: ephemeral secret + token echo + open sign-up allowed.
+    # True = local dev: ephemeral secret + built-in dev/dev login.
     dev_mode: bool
-    # Explicit, named opt-in to open auto-provisioning in prod. Without it,
-    # prod requires a non-empty ``allowed_emails`` (else ``from_env`` raises).
-    allow_open_signup: bool
-    # Per-email request-link throttle: at most ``link_rate_max`` links issued
-    # per email within a rolling ``link_rate_window_minutes`` window. Guards
-    # the endpoint against email-bombing and token-grinding.
-    link_rate_max: int
-    link_rate_window_minutes: int
     # Login brute-force throttle (Slice 2 / #77): after ``login_throttle_max``
     # failed sign-ins for one (ip, username) within
     # ``login_throttle_window_seconds``, further attempts get 429 until the
@@ -104,15 +86,6 @@ class Settings:
         # is expressed in terms of *this* — an instance with no credential is
         # un-loginnable and must not boot.
         app_users = credentials.parse(os.environ.get("APP_USERS"))
-        # Dormant magic-link knobs (the front door is now username/password; the
-        # magic-link routes are removed in #78). Still read so those routes keep
-        # working, but no longer part of the boot guard (#77 retired them here).
-        allowed_emails = frozenset(
-            e.strip().lower()
-            for e in os.environ.get("AUTH_ALLOWED_EMAILS", "").split(",")
-            if e.strip()
-        )
-        allow_open_signup = _env_bool("AUTH_ALLOW_OPEN_SIGNUP", default=False)
 
         if not dev_mode:
             # Fail closed: an instance that can't authenticate safely must never
@@ -162,16 +135,8 @@ class Settings:
             jwt_secret=explicit_secret or secrets.token_urlsafe(32),
             jwt_algorithm="HS256",
             session_ttl_days=int(os.environ.get("AUTH_SESSION_TTL_DAYS", "30")),
-            link_ttl_minutes=int(os.environ.get("AUTH_LINK_TTL_MINUTES", "15")),
             default_tenant_id=int(os.environ.get("DEFAULT_TENANT_ID", "1")),
-            allowed_emails=allowed_emails,
-            # The token echo is a dev-only convenience — never honored in prod,
-            # regardless of AUTH_EXPOSE_TOKEN.
-            expose_token_in_response=dev_mode and _env_bool("AUTH_EXPOSE_TOKEN", default=True),
             dev_mode=dev_mode,
-            allow_open_signup=allow_open_signup,
-            link_rate_max=int(os.environ.get("AUTH_LINK_RATE_MAX", "5")),
-            link_rate_window_minutes=int(os.environ.get("AUTH_LINK_RATE_WINDOW_MINUTES", "15")),
             login_throttle_max=int(os.environ.get("AUTH_LOGIN_THROTTLE_MAX", "5")),
             login_throttle_window_seconds=float(
                 os.environ.get("AUTH_LOGIN_THROTTLE_WINDOW_SECONDS", "300")

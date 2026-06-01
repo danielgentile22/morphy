@@ -239,7 +239,7 @@ Slice 4 (D + E) stands up a hosted-private backend ([ADR-055](./adr/0055-hosted-
 
 - **Tool:** `pytest` + **`testcontainers-postgres`** (real Postgres in Docker per test session).
 - **Why real Postgres:** SQLite differs from Postgres on JSON ops, FTS, isolation levels — bugs that hide in SQLite bite in prod.
-- **Coverage:** all routes; auth flow (magic-link request → token → session); lead CRUD; lease CRUD; activity-log append; scoring-profile persistence.
+- **Coverage:** all routes; auth flow (username/password login → session JWT); lead CRUD; lease CRUD; activity-log append; scoring-profile persistence.
 - **Layout:** `backend/tests/api/test_<resource>.py`. Conftest spins one Postgres per session; per-test transaction rolls back.
 
 ### 11.2 Multi-tenancy isolation

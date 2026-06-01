@@ -5,10 +5,9 @@ is keyed ``(tenant_id, display_cluster_id)`` — the cross-state landowner
 identity (ADR-061), never a parcel or tower id. The owners index itself
 is static, read-only, and *not* per-tenant; only the lead state below is.
 
-Identity tables (Slice 2 / #48): ``User`` maps an email to its tenant;
-``MagicLinkToken`` holds hashed, one-time, expiring sign-in tokens (the
-raw token is never persisted). Table name ``app_user`` avoids the
-reserved ``user`` keyword on Postgres.
+Identity table (Slice 2 / #48): ``User`` maps a sign-in identity to its
+tenant. Table name ``app_user`` avoids the reserved ``user`` keyword on
+Postgres.
 """
 
 from __future__ import annotations
@@ -107,24 +106,4 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-
-
-class MagicLinkToken(Base):
-    """A one-time, expiring sign-in token.
-
-    Only the SHA-256 hash of the token is stored — the raw token lives
-    only in the emailed link. One-time use is enforced by ``used_at``
-    (null until redeemed); ``expires_at`` bounds the window.
-    """
-
-    __tablename__ = "magic_link_token"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
-    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

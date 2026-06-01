@@ -1,10 +1,10 @@
 """End-to-end API smoke test — the tracer spine through the real stack.
 
 Drives the FastAPI app over HTTP (TestClient) against a tiny owners index
-and a fresh in-memory SQLite DB, authenticated with a real magic-link JWT
-(``login`` runs request-link → exchange), proving: candidates → open lead →
-set status + note → persists → reload reflects it, and that an illegal
-transition is rejected.
+and a fresh in-memory SQLite DB, authenticated with a real session JWT
+(``login`` posts username/password to ``/api/auth/login``), proving:
+candidates → open lead → set status + note → persists → reload reflects it,
+and that an illegal transition is rejected.
 """
 
 from __future__ import annotations

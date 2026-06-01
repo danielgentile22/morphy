@@ -443,7 +443,7 @@ How to mitigate:
 
 The data pipeline is batch-only. Re-running `python scripts/preprocess.py` overwrites all outputs for any state it touches. There is no streaming ingest, no cron-driven refresh.
 
-**Slice 4 stands up a hosted-private backend** ([ADR-055](./adr/0055-hosted-private-backend.md)) — magic-link auth, multi-user-ready (2-5 users Phase 1), single-tenant from Day 1 but tenant-shaped schema. Lead state, lease docs, activity log live there. The static-site model is preserved for read-only analytical layers (parquet, PMTiles, GeoJSON).
+**Slice 4 stands up a hosted-private backend** ([ADR-055](./adr/0055-hosted-private-backend.md)) — username/password auth ([ADR-062](./adr/0062-username-password-replaces-magic-link.md)), multi-user-ready (2-5 users Phase 1), single-tenant from Day 1 but tenant-shaped schema. Lead state, lease docs, activity log live there. The static-site model is preserved for read-only analytical layers (parquet, PMTiles, GeoJSON).
 
 Implication:
 - The data pipeline still requires the dev to run the puller manually (Phase 1).

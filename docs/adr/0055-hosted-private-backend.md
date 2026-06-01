@@ -1,6 +1,6 @@
 # ADR-055: Hosted-private backend with tenant-shaped schema from Day 1
 
-**Status:** Accepted — **locked design, UNIMPLEMENTED as of 2026-05-29 (Slice 4; no `backend/` code exists yet).**
+**Status:** Accepted — **implemented**: the write-layer + auth landed via the lead-centric triage redesign ([ADR-061](0061-lead-centric-triage-redesign.md), Slices #47–#53); lease upload / LLM extraction / S3 storage remain unbuilt. The **magic-link auth portion is superseded by [ADR-062](0062-username-password-replaces-magic-link.md)** (username/password login); the rest (hosted-private backend, tenant-shaped schema, JWT sessions) stands.
 **Supersedes:** ADR-006 (static-site, no backend) — for write-layer features only; read-only analytical layers stay static.
 **Date:** 2026-05-25
 **Pairs with:** ADR-053

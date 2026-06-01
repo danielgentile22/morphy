@@ -189,16 +189,16 @@ def test_two_usernames_share_one_tenant() -> None:
                 me = client.get("/api/auth/me", headers=auth_header(token)).json()
                 return me, token
 
-            dev_me, dev_token = identity("dev", "dev")
-            alice_me, alice_token = identity("alice", "wonderland")
+            dev_me, dev_jwt = identity("dev", "dev")
+            alice_me, alice_jwt = identity("alice", "wonderland")
 
             # Distinct identities, one shared tenant.
             assert dev_me["email"] != alice_me["email"]
             assert dev_me["tenant_id"] == alice_me["tenant_id"] == settings.default_tenant_id
 
             # Same tenant → identical candidate view.
-            dev_c = client.get("/api/candidates", headers=auth_header(dev_token)).json()
-            alice_c = client.get("/api/candidates", headers=auth_header(alice_token)).json()
+            dev_c = client.get("/api/candidates", headers=auth_header(dev_jwt)).json()
+            alice_c = client.get("/api/candidates", headers=auth_header(alice_jwt)).json()
             assert dev_c == alice_c
     finally:
         settings.app_users.pop("alice", None)

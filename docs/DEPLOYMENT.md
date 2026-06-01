@@ -18,7 +18,7 @@ All four surfaces run locally on a developer's machine:
 | **Map app** | `python scripts/serve.py 8765` + `cd app && npm run dev` | localhost:5173 |
 | **Tests** | `pytest` · `cd app && npm run test:unit && npm run test:e2e` | Terminal |
 
-**Slice 4 (D + E) adds a hosted-private backend** — small VM + Postgres + S3-compatible object store + FastAPI + magic-link auth + Claude API for lease extraction. The map app remains static; it talks to the backend over a thin API for the write-layer features (lead state, lease upload, activity log, scoring profiles per user). See §8 for the deployment shape.
+**Slice 4 (D + E) adds a hosted-private backend** — small VM + Postgres + S3-compatible object store + FastAPI + username/password auth + Claude API for lease extraction. The map app remains static; it talks to the backend over a thin API for the write-layer features (lead state, lease upload, activity log, scoring profiles per user). See §8 for the deployment shape.
 
 ---
 
@@ -200,7 +200,7 @@ Locked in [ADR-055](./adr/0055-hosted-private-backend.md). Supersedes ADR-006 (s
 | App | **FastAPI** (Python) | Same language as preprocess; thin CRUD + auth + extraction-orchestration surface |
 | Database | **Postgres** (managed in prod; testcontainers in CI) | Tenant-shaped schema from Day 1 — every table has `tenant_id` |
 | Object store | **S3-compatible** — Backblaze B2 / Cloudflare R2 / AWS S3 | Lease PDFs; encrypted at rest; signed download URLs only |
-| Auth | **Magic-link over email** | Lowest friction for 2–5 users; short-lived JWTs |
+| Auth | **Username/password** (`APP_USERS`) | Hardcoded credentials for 2–5 users; HS256 session JWTs ([ADR-062](./adr/0062-username-password-replaces-magic-link.md)) |
 | LLM | **Anthropic Claude API** | Sonnet 4.6 default + Opus 4.7 retry for lease extraction ([ADR-059](./adr/0059-llm-lease-extraction.md)); prompt caching on |
 | Address normalization | **libpostal** (preferred) or **`usaddress`** (fallback) | For owner-cluster strengthening — pick at build time per dep-management friction |
 | Transport | **HTTPS only** (HSTS) | TLS terminated at the host platform's edge |
@@ -213,9 +213,9 @@ Locked in [ADR-055](./adr/0055-hosted-private-backend.md). Supersedes ADR-006 (s
 | `DATABASE_URL` | FastAPI app | Managed Postgres connection string |
 | `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | FastAPI app | Lease PDF object store |
 | `ANTHROPIC_API_KEY` | Lease-extraction worker | Claude API |
-| `MAGIC_LINK_FROM_EMAIL`, `SMTP_*` *(or Postmark / SES token)* | Auth surface | Sending magic-link emails |
-| `JWT_SECRET` | Auth surface | Signing user-session JWTs |
-| `BACKEND_BASE_URL` | Map app + magic-link emails | Where the API is reachable |
+| `APP_USERS` | Auth surface | Login credentials, `username:<pbkdf2-hash>,…` (hash via `python -m app.password`) |
+| `AUTH_JWT_SECRET` | Auth surface | Signing user-session JWTs (rotating it revokes every active session) |
+| `BACKEND_BASE_URL` | Map app | Where the API is reachable |
 
 Stored in the host platform's secret store (Fly secrets / Render env vars / Hetzner vault). Never in repo.
 
@@ -245,7 +245,7 @@ fly deploy --app pilot-backend
 - HTTPS everywhere; HSTS.
 - Postgres TLS in transit, encryption at rest, daily backups.
 - S3 bucket private; SSE-S3 or KMS encryption; signed download URLs only.
-- Magic-link tokens short-lived (15 min).
+- Session JWTs expire (30-day TTL); rotating `AUTH_JWT_SECRET` revokes every session at once.
 - Multi-tenancy isolation tests gate every PR.
 
 ## 9. Map-app static deployment (Phase 2+)
@@ -255,7 +255,7 @@ For when the project sells to a third user or you want a hosted demo (Phase 3 pa
 - Map app: static-site hosted bundle (S3 + CloudFront / Cloudflare Pages / Vercel) — no backend changes from Slice 4.
 - Per-state PMTiles served via HTTP range requests.
 - DuckDB-WASM queries parquet directly from object storage.
-- Access controls via Cloudflare Access or magic-link gate on the static bundle.
+- Access controls via Cloudflare Access or a login gate on the static bundle.
 - Parcel data PII never publicly cached / indexed.
 
 Not built. Tracked in [ROADMAP.md](./ROADMAP.md) → Phase 3.

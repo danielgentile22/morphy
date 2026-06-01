@@ -15,7 +15,7 @@
 | **Data Puller** | `app_puller/` | PySide6 desktop UI; fetches raw data into `data/raw/<source_id>/current/`. |
 | **Preprocess pipeline** | `scripts/preprocess/` | Registry-driven Normalizer + Join + View framework; per-state Composer. |
 | **Map app** | `app/` | Svelte 5 + MapLibre analytical SPA — PMTiles parcels + DuckDB-WASM filtering + tunable scoring (Slice 3). See [app/ARCHITECTURE.md](app/ARCHITECTURE.md). |
-| **Backend** *(Slice 4 — design only, NOT YET IMPLEMENTED; no `backend/` code on disk)* | `backend/` *(planned)* | Planned FastAPI + Postgres + S3-compatible + magic-link auth + Claude API. Would hold lead state, lease document PDFs, LLM-extracted lease fields, activity log, scoring profiles, owner-cluster overrides. Per [ADR-055](docs/adr/0055-hosted-private-backend.md). |
+| **Backend** | `backend/` | FastAPI + SQLAlchemy lead-triage write-layer — tenant-scoped lead state, contact attempts, owner merge/split overrides; username/password auth ([ADR-062](docs/adr/0062-username-password-replaces-magic-link.md)). S3 lease-doc storage + Claude API extraction still planned. Per [ADR-055](docs/adr/0055-hosted-private-backend.md). See [backend/README.md](backend/README.md). |
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the full system diagram + data flow.
 
@@ -159,7 +159,7 @@ pilot/
 
 ## License + status
 
-This is a **Phase 1 internal product** for a 2-person team (dev + business co-founder); the co-founder is the daily user. Outputs contain parcel-owner names + mailing addresses (PII when combined) — treat per [docs/SECURITY.md](docs/SECURITY.md). The repo itself is private; backend (Slice 4) deploys hosted-private with magic-link auth per [ADR-055](docs/adr/0055-hosted-private-backend.md).
+This is a **Phase 1 internal product** for a 2-person team (dev + business co-founder); the co-founder is the daily user. Outputs contain parcel-owner names + mailing addresses (PII when combined) — treat per [docs/SECURITY.md](docs/SECURITY.md). The repo itself is private; the backend deploys hosted-private with username/password auth per [ADR-055](docs/adr/0055-hosted-private-backend.md) / [ADR-062](docs/adr/0062-username-password-replaces-magic-link.md).
 
 **Phase 1 slice plan** (untimed, goal-driven):
 

@@ -23,7 +23,7 @@ This doc describes what's *implemented today* plus the Phase 1 Slice 4 backend, 
    data/manifest.json                  ├── normalized/<src>/           │  backend/  (Slice 4)     │
                                        │   ├── <type>.parquet          │   FastAPI + Postgres +   │
                                        │   ├── <type>/*.parquet        │   S3 + Claude API        │
-                                       │   ├── raw.parquet | raw/      │   magic-link auth        │
+                                       │   ├── raw.parquet | raw/      │   username/password auth │
                                        │   └── quality_report.json     │   tenant-shaped Day 1    │
                                        ├── composite/<fips>/           └──────────┬───────────────┘
                                        │   ├── catalog.json                       │
@@ -303,14 +303,14 @@ The v1 Leaflet prototype is retired (preserved in git history). The realized des
 
 ## 5. Subsystem 4 — The backend (Slice 4 — in design, `backend/`)
 
-> **NOTE:** Everything in this section is a **locked DESIGN that is UNIMPLEMENTED** as of 2026-05-29. No `backend/` directory or code exists on disk yet — it stands up in Phase 1 Slice 4 (D + E). The tables, routes, and decisions below describe the intended build, not shipped code.
+> **NOTE:** This section is the original Slice 4 **design**. A substantial part of it is now **implemented** in `backend/` (the lead write-layer + username/password auth + owner merge/split — Slices #47–#53 + PRD #75); lease upload, LLM extraction, and S3 storage remain unbuilt. Where the implemented backend differs from the sketch below, [`backend/README.md`](../backend/README.md) is authoritative for what's on disk.
 
 A small FastAPI + Postgres + S3-compatible + Claude-API service that stands up in Phase 1 Slice 4 (D + E). Holds the **write-layer features** the static map app can't: lead state, uploaded lease PDFs, LLM-extracted lease fields, activity log, per-user scoring profiles, manual owner-cluster merge/split overrides. Lives **alongside** the static map app — the map app reads parquet + PMTiles via HTTP range requests for analytical layers, and hits the backend over a thin API for the write-layer state.
 
 Locked architectural decisions:
 - **Hosted-private** — single small VM (Fly.io / Render / Hetzner class); ~$30-100/mo Phase 1 ([ADR-055](./adr/0055-hosted-private-backend.md), supersedes ADR-006 for write features).
 - **Tenant-shaped schema from Day 1** — every table has a `tenant_id` column, always `1` for now. Adding a second tenant (intern / advisor / second cofounder / paid Phase-3 customer) is a row-add not a refactor.
-- **Magic-link auth** over email — lowest friction for 2–5 users; short-lived JWTs.
+- **Username/password auth** — hardcoded credentials (`APP_USERS` env secret, PBKDF2 hashes) for 2–5 users; HS256 session JWTs. Replaced the original magic-link design ([ADR-062](./adr/0062-username-password-replaces-magic-link.md)).
 - **S3-compatible** object store for lease PDFs (Backblaze B2 / Cloudflare R2 / AWS S3) — encrypted at rest, signed download URLs only.
 - **Postgres** — managed in prod; `testcontainers-postgres` in CI for real-Postgres testing (no SQLite-stub drift).
 - **Claude API** — Sonnet 4.6 default + Opus 4.7 retry for lease extraction; prompt caching on ([ADR-059](./adr/0059-llm-lease-extraction.md)).
@@ -319,7 +319,7 @@ Locked architectural decisions:
 
 ```
 tenant(id, name, created_at)
-user(id, email, magic_link_token_hash, …)
+user(id, email, …)
 user_tenant(user_id, tenant_id, role)
 
 lead(tenant_id, owner_cluster_id, state, priority_score,
@@ -389,7 +389,7 @@ Per [ADR-059](./adr/0059-llm-lease-extraction.md):
 
 ### 5.5 Auth + multi-tenancy
 
-- Magic-link request → backend sends email with short-lived token → user clicks → backend exchanges for session JWT.
+- Username/password login (`POST /api/auth/login`) → backend verifies against the `APP_USERS` credential set (PBKDF2 hashes) → mints an HS256 session JWT ([ADR-062](./adr/0062-username-password-replaces-magic-link.md)).
 - Every API route filters by `tenant_id` derived from the session. Multi-tenancy isolation tests gate every PR (see [TESTING.md §11.2](./TESTING.md)).
 
 ### 5.6 What's not in Slice 4

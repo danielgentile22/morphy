@@ -53,8 +53,8 @@ def api(sample: dict) -> Iterator[tuple[TestClient, Engine, None]]:
     main._login_throttle.clear()
     try:
         with TestClient(main.app) as client:
-            # 3-tuple kept for call-site stability; the 3rd slot (the magic-link
-            # email sender) is unused now that login is username/password.
+            # 3-tuple kept for call-site stability; the 3rd slot is an unused
+            # legacy placeholder (call sites bind it as ``_sender``).
             yield client, eng, None
     finally:
         main.app.dependency_overrides.clear()

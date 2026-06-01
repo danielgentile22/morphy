@@ -17,17 +17,16 @@ never imports the preprocess framework; it only *reads* its JSON output.
 backend/app/
   config.py                 env-driven settings (DATABASE_URL, OWNERS_INDEX_PATH, auth knobs)
   db.py                     SQLAlchemy engine/session (SQLite dev default, Postgres via env)
-  models.py                 ORM: lead, contact_attempt, app_user, magic_link_token (tenant_id on every table)
+  models.py                 ORM: lead, contact_attempt, app_user, owner_cluster_override (tenant_id on every table)
   lead_status.py            status ladder + transition rules (parity w/ app/src/lib/lead-status.ts)
   lead_store.py             LeadStore — tenant-scoped CRUD + auto-logged status transitions
   owner_merge_service.py    OwnerMergeService — manual merge/split overrides (display_cluster_id = coalesce(override, raw))
   owners_index_service.py   serves the static index (override-aware) left-joined with the tenant's lead state
-  auth.py                   token hashing + JWT issue/verify + current_tenant_id (JWT-derived)
+  auth.py                   JWT issue/verify + current_tenant_id (JWT-derived)
   password.py               stdlib PBKDF2-HMAC-SHA256 hashing (no third-party dep; `python -m app.password`)
   credentials.py            parse APP_USERS + authenticate username/password (Slice 1 / #76)
   login_throttle.py         in-process (ip, username) brute-force throttle (Slice 2 / #77)
-  auth_service.py           login() (username/password) + AuthService (dormant magic-link request → exchange)
-  email_sender.py           pluggable link delivery (ConsoleEmailSender dev / RecordingEmailSender tests)
+  auth_service.py           login() (username/password) + user provisioning
   main.py                   FastAPI routes
 backend/tests/              LeadStore + auth + tenant-isolation (testcontainers Postgres → SQLite fallback)
 ```
@@ -37,7 +36,6 @@ backend/tests/              LeadStore + auth + tenant-isolation (testcontainers 
 - `lead(tenant_id, display_cluster_id, status, notes, contact_name, contact_phone, contact_email, best_channel, created_at, updated_at)` — PK `(tenant_id, display_cluster_id)`. The `contact_*` columns (Slice 3 / #49) are the team's **editable** outreach record, distinct from the read-only mailing address served from source parcel data. Added to an existing DB by the additive `init_db` migration (`db._migrate_added_columns`; a stand-in until Alembic).
 - `contact_attempt(id, tenant_id, display_cluster_id, occurred_on, channel, outcome, note, created_at)` — manual outreach events **and** auto-logged status-transition rows (`channel='status'`) share this one activity stream.
 - `app_user(id, tenant_id, email UNIQUE, created_at)` — a person who can sign in, bound to one tenant.
-- `magic_link_token(id, tenant_id, user_id, email, token_hash, expires_at, used_at, created_at)` — sign-in tokens **hashed at rest** (only the SHA-256 hash is stored), one-time (`used_at`), short expiry.
 - `owner_cluster_override(tenant_id, source_cluster_id, target_cluster_id, created_at)` — manual merge overrides (Slice 7 / #53). PK `(tenant_id, source_cluster_id)`. Keyed on **raw** cluster ids, so overrides survive an owners-index recompute (raw ids in the parquet are never mutated).
 
 ## Manual owner merge/split (Slice 7 / #53, ADR-056)
@@ -88,9 +86,7 @@ are rejected (HTTP 409).
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/auth/login` | **username/password → session JWT** (the live front door, Slice 1 / #76); brute-force throttled (#77) |
-| POST | `/api/auth/request-link` | _(dormant magic-link)_ email → store a hashed one-time token + send a link |
-| POST | `/api/auth/exchange` | _(dormant magic-link)_ valid token → short-lived session JWT |
+| POST | `/api/auth/login` | **username/password → session JWT** (the front door, Slice 1 / #76); brute-force throttled (#77) |
 | GET | `/api/auth/me` | the authenticated tenant + email |
 | GET | `/api/health` | liveness + owners-indexed count (public) |
 | GET | `/api/candidates?limit=` | owners at New, ranked by interestingness |
@@ -125,7 +121,7 @@ Every data route resolves the tenant from the `Authorization: Bearer <jwt>`
 (`current_tenant_id`, now JWT-derived) and is tenant-scoped; an
 unauthenticated data request is rejected with **401**.
 
-## Auth (username/password, Slice 1 / #76 — supersedes magic-link)
+## Auth (username/password, Slice 1 / #76)
 
 The live front door is `POST /api/auth/login {username, password}`. Credentials
 live in the `APP_USERS` env var (`username:<encoded-hash>,…`, comma-separated;
@@ -137,7 +133,8 @@ third-party dependency). On success the route mints the same HS256 session JWT
 unknown username are *distinguishable* 401s (a deliberate usability-over-
 enumeration call, with the enumeration exposure bounded by the throttle). All
 credentials map to the one `DEFAULT_TENANT_ID`. In dev (`AUTH_DEV_MODE=1`) a
-built-in `dev`/`dev` credential is seeded so the loop needs zero config.
+built-in `dev`/`dev` credential is seeded so the loop needs zero config. Send the
+resulting JWT as `Authorization: Bearer <jwt>` on every data route.
 
 ### Brute-force throttle (#77)
 
@@ -152,37 +149,15 @@ key, an attacker who knows a username can't weaponize it to lock a real user out
 (no lockout-DoS). State is per-process (fine on the single VM; it resets on
 restart, and is not shared across replicas).
 
-### Magic-link (dormant, Slice 2 / #48 — ADR-055)
-
-The magic-link request/exchange flow below is retained but unused by the SPA;
-its routes are removed in #78.
-
-1. `POST /api/auth/request-link {email}` — the user is provisioned into the
-   default tenant (`DEFAULT_TENANT_ID`, `1`), a 256-bit random token is
-   generated, its **SHA-256 hash** is stored (the raw token is never
-   persisted or logged), and a link is handed to the pluggable
-   `EmailSender`. Always responds `200` (no email enumeration), and is
-   per-email rate-limited. In dev (`AUTH_DEV_MODE=1`) the raw token is echoed
-   as `dev_token` so the SPA can finish the exchange without a real inbox.
-2. `POST /api/auth/exchange {token}` — a still-valid token is **atomically**
-   redeemed **once** (a conditional `UPDATE … WHERE used_at IS NULL`, so two
-   concurrent redemptions can't both win) for an HS256 JWT carrying
-   `tid`/`sub`/`email`. Reused, expired, or unknown tokens all fail
-   identically (`400`).
-3. Send the JWT as `Authorization: Bearer <jwt>` on every data route.
-
 ### Posture: fail closed (`AUTH_DEV_MODE`)
 
 A single switch gates the auth posture. It is **off by default** (the safe,
 prod state). With it off, the app **refuses to start** unless **both**
 `AUTH_JWT_SECRET` is set **and** at least one login credential is configured in
 `APP_USERS` — so a deploy can be neither open (no secret) nor impossible to log
-into (no credential). The guard is keyed on the credential set, not the dormant
-magic-link allowlist (#77 retired the allowlist from the boot guard). The
-raw-token echo is forced off regardless of `AUTH_EXPOSE_TOKEN`, and booting with
-the dev `ConsoleEmailSender` is rejected. Set `AUTH_DEV_MODE=1` for the
-zero-config local loop (ephemeral secret + built-in `dev`/`dev` login), so the
-dev convenience never leaks into prod by accident.
+into (no credential). Set `AUTH_DEV_MODE=1` for the zero-config local loop
+(ephemeral secret + built-in `dev`/`dev` login), so the dev convenience never
+leaks into prod by accident.
 
 #### Secret rotation & the kill switch
 
@@ -207,12 +182,6 @@ Auth environment variables:
 | `AUTH_LOGIN_THROTTLE_WINDOW_SECONDS` | `300` | sliding throttle window (block self-clears as it rolls forward; no hard lockout) |
 | `AUTH_SESSION_TTL_DAYS` | `30` | session JWT lifetime (no revocation except secret rotation, so a daily-use balance — see trade-offs) |
 | `DEFAULT_TENANT_ID` | `1` | tenant new sign-ins land in (ADR-055 "reads 1 for now") |
-| `AUTH_LINK_TTL_MINUTES` | `15` | _(dormant magic-link)_ token lifetime |
-| `AUTH_ALLOWED_EMAILS` | _(empty)_ | _(dormant magic-link)_ sign-in allowlist. No longer part of the boot guard (#77). |
-| `AUTH_ALLOW_OPEN_SIGNUP` | `0` | _(dormant magic-link)_ open auto-provisioning opt-in. No longer part of the boot guard (#77). |
-| `AUTH_EXPOSE_TOKEN` | `1` (dev) | _(dormant magic-link)_ echo the raw token in the request-link response — **honored only when `AUTH_DEV_MODE=1`; always off in prod** |
-| `AUTH_LINK_RATE_MAX` | `5` | _(dormant magic-link)_ max request-link tokens per email per window |
-| `AUTH_LINK_RATE_WINDOW_MINUTES` | `15` | _(dormant magic-link)_ rolling rate-limit window |
 
 ### Security model & trade-offs (Slice 2)
 

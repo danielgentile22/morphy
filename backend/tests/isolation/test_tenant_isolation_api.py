@@ -1,7 +1,7 @@
 """Route-level multi-tenancy isolation — the ADR-055 Day-1 requirement,
 driven through real auth (Slice 2 / #48).
 
-Two synthetic tenants, each authenticated with its *own* magic-link JWT
+Two synthetic tenants, each authenticated with its *own* session JWT
 (tenant A auto-provisioned into the default tenant; tenant B provisioned
 into tenant 2). Every data route asserts "tenant A cannot read / write /
 list tenant B's data" — even though only one tenant exists in production.

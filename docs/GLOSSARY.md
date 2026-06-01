@@ -20,7 +20,7 @@ For the canonical product-language slice (Vendor / Carrier / Registrant / Freest
 
 ## B
 
-- **Backend** — the Slice 4 FastAPI service that stands up alongside the static map app. Holds lead state, lease document references, activity log, scoring profiles. Postgres + S3-compatible object store + magic-link auth + Claude API for lease extraction. See [ADR-055](./adr/0055-hosted-private-backend.md).
+- **Backend** — the Slice 4 FastAPI service that stands up alongside the static map app. Holds lead state, lease document references, activity log, scoring profiles. Postgres + S3-compatible object store + username/password auth ([ADR-062](./adr/0062-username-password-replaces-magic-link.md)) + Claude API for lease extraction. See [ADR-055](./adr/0055-hosted-private-backend.md).
 - **BLM / BIA** — Bureau of Land Management / Bureau of Indian Affairs. Federal landholders whose parcels may not appear in county-level tax rolls.
 
 ## C
@@ -86,7 +86,7 @@ For the canonical product-language slice (Vendor / Carrier / Registrant / Freest
 
 ## M
 
-- **Magic-link auth** — passwordless auth via email-delivered one-time links. Slice 4 default per [ADR-055](./adr/0055-hosted-private-backend.md) — lowest friction for the 2–5 user product.
+- **Magic-link auth** — passwordless auth via email-delivered one-time links; the original Slice 4 sign-in design ([ADR-055](./adr/0055-hosted-private-backend.md), implemented in #48). **Removed** — replaced by **username/password login** ([ADR-062](./adr/0062-username-password-replaces-magic-link.md), PRD #75).
 - **Manifest** — two distinct files in this project:
   - `data/manifest.json` — fetch manifest; what raw data is on disk.
   - `data/processed/preprocess_manifest.json` — preprocess manifest; what's been normalized / composed.
@@ -154,6 +154,7 @@ For the canonical product-language slice (Vendor / Carrier / Registrant / Freest
 - **UCC-1** — Uniform Commercial Code financing statement; secured parties file these. Surfaced in the Slice 4 lead-detail panel as third-party-ownership clues for parcel-attached assets.
 - **ULS** — Universal Licensing System (FCC). Six bulk data bands + meta. **Cellular (Part 22) + PCS (Part 24) + AWS / 700 MHz (Part 27) are in Phase 1 Slice A** for carrier identification ([ADR-053](./adr/0053-product-phase-shift.md) partially reverses ADR-013). Microwave, Ownership, Transfers, Leasing remain deferred.
 - **USDA ERS** — USDA Economic Research Service. Publishes persistent-poverty + county typology data.
+- **Username/password login** — the backend's sign-in front door: hardcoded credentials in the `APP_USERS` env secret (`username:<pbkdf2-hash>`, hash via `python -m app.password`), exchanged at `POST /api/auth/login` for an HS256 session JWT. Replaced magic-link auth ([ADR-062](./adr/0062-username-password-replaces-magic-link.md), PRD #75).
 - **USPVDB** — US Photovoltaic Database. USGS / Berkeley dataset of utility-scale solar facility polygons.
 - **usaddress** — pure-Python US-only address parser. Fallback if libpostal install is painful in Slice 4. Narrower coverage, no native dependencies.
 

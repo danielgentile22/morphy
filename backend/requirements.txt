@@ -9,10 +9,9 @@ uvicorn[standard]>=0.30
 sqlalchemy>=2.0
 # pydantic is already a repo dependency (used by the preprocess typed
 # artifacts); FastAPI uses it for request/response models.
-# Magic-link auth (Slice 2 / #48): a small, vetted pure-Python JWT lib —
-# safer than hand-rolling HS256 sign/verify. Token hashing uses stdlib
-# hashlib/secrets (no extra dep). Email is a plain str (light validation)
-# so pydantic's optional email-validator isn't pulled in.
+# Auth (Slice 2 / #48, reworked to username/password login by PRD #75): a
+# small, vetted pure-Python JWT lib — safer than hand-rolling HS256
+# sign/verify. Password hashing uses stdlib hashlib PBKDF2 (no extra dep).
 PyJWT>=2.8
 
 # ── Postgres path (deploy + the testcontainers isolation test) ─────────────
