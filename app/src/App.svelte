@@ -48,11 +48,23 @@
     location.hash = '#/leads';
   }
 
+  // Boot the data layer only once a *verified* session exists (#85): no data
+  // fetch (index, towers, parcels, counts) may fire before sign-in. Boot runs
+  // once per page load; signing out unmounts the app but keeps loaded state,
+  // and signing back in re-renders from it.
+  let booted = false;
+  $effect(() => {
+    if (auth.verified && !booted) {
+      booted = true;
+      void app.boot(initialSearch);
+    }
+  });
+
   // Keep the Candidates count badge fresh once we're on a Lead surface
   // (covers a deep link straight to #/lead/:key without visiting the list).
-  // Gated on auth — the Lead routes require a signed-in session.
+  // Gated on the verified session — the Lead routes require sign-in.
   $effect(() => {
-    if (route.name !== 'map' && auth.signedIn && leads.candidatesStatus === 'idle') {
+    if (route.name !== 'map' && auth.verified && leads.candidatesStatus === 'idle') {
       void leads.loadCandidates();
     }
   });
@@ -61,7 +73,7 @@
   // the Candidates / My-Leads badges are correct on every surface (incl. the
   // map launchers) before either list is opened.
   $effect(() => {
-    if (auth.signedIn) void leads.loadCounts();
+    if (auth.verified) void leads.loadCounts();
   });
 
   /** True when the event originates from a text-entry control — keyboard
@@ -78,6 +90,9 @@
   }
 
   function onKeydown(e: KeyboardEvent): void {
+    // Shortcuts only exist inside the app — inert on the sign-in gate (#85),
+    // so e.g. '?' can't queue up a help overlay for after sign-in.
+    if (!auth.verified) return;
     // Inert while typing — e.g. Escape in the owner-search box must clear
     // the field, not the map selection.
     if (isTypingTarget(e)) return;
@@ -97,9 +112,9 @@
   }
 
   onMount(() => {
-    void app.boot(initialSearch);
     // Validate any persisted JWT (populates the signed-in email; a stale
-    // token is dropped via a 401, falling back to the sign-in surface).
+    // token is dropped via a 401, leaving the full-screen sign-in gate up).
+    // The data layer boots from the $effect above only after verification.
     void auth.loadMe();
     window.addEventListener('keydown', onKeydown);
     window.addEventListener('hashchange', onHashChange);
@@ -127,142 +142,186 @@
   });
 </script>
 
-<div class="layout">
-  <aside class="sidebar">
-    <header class="app-header">
-      <h1>{app.activeState?.name ?? 'Pilot Map'}</h1>
-      <p class="subtitle">Parcels &amp; infrastructure — renegotiation candidates</p>
+{#if !auth.verified}
+  <!-- Full-screen sign-in gate (#85): until a verified session exists, nothing
+       else mounts — no map, no navigation, no panels, no data fetches. -->
+  <div class="gate" data-testid="auth-gate">
+    <header class="gate-header">
+      <h1>Ground-Lease Triage</h1>
+      <p class="gate-sub">Parcels &amp; infrastructure — renegotiation candidates</p>
     </header>
-
-    {#if app.notice}
-      <div class="notice" role="status">
-        <span>{app.notice}</span>
-        <button class="notice-close" onclick={() => app.dismissNotice()} aria-label="Dismiss">
-          ×
-        </button>
-      </div>
-    {/if}
-
-    <div class="sidebar-scroll">
-      <section class="panel">
-        <StateSelector />
-      </section>
-      {#if app.status === 'ready'}
-        <SummaryCard />
-        <LayerPanel />
-        <Legend />
-      {/if}
-    </div>
-
-    <footer class="app-footer">
-      Prototype · local use only · data is PII (owner names + addresses)
-    </footer>
-  </aside>
-
-  <main class="stage">
-    {#if app.status === 'error'}
-      <div class="error-screen" data-testid="boot-error">
-        <div class="error-card">
-          <h2>Could not load the map data</h2>
-          <p class="error-detail">{app.errorMessage}</p>
-          <p class="error-hint">
-            Start the range-capable data server from the repo root
-            (<code>python scripts/serve.py 8765</code>), then retry.
-          </p>
-          <button class="retry" onclick={() => app.boot(initialSearch)}>Retry</button>
-        </div>
-      </div>
+    {#if auth.restoring}
+      <p class="gate-checking" data-testid="gate-checking">Checking session…</p>
     {:else}
-      {#if app.status === 'ready'}
-        <TopFilterBar />
-      {/if}
-      <div class="map-wrap">
-        <MapView />
-        <DetailsPanel />
-        <div class="launchers">
-          <button class="launcher" data-testid="open-candidates" onclick={goCandidates}>
-            Candidates{#if leads.candidatesCount}
-              <span class="lc-badge">{leads.candidatesCount}</span>
-            {/if}
+      <SignIn />
+    {/if}
+  </div>
+{:else}
+  <div class="layout">
+    <aside class="sidebar">
+      <header class="app-header">
+        <h1>{app.activeState?.name ?? 'Pilot Map'}</h1>
+        <p class="subtitle">Parcels &amp; infrastructure — renegotiation candidates</p>
+        <p class="signed-in-as">
+          <span data-testid="map-nav-user">{auth.email}</span>
+          <button class="signout-link" data-testid="map-signout" onclick={() => auth.signOut()}>
+            Sign out
           </button>
-          <button class="launcher" data-testid="open-my-leads-map" onclick={goLeads}>
-            My Leads{#if leads.myLeadsCount}
-              <span class="lc-badge">{leads.myLeadsCount}</span>
-            {/if}
+        </p>
+      </header>
+
+      {#if app.notice}
+        <div class="notice" role="status">
+          <span>{app.notice}</span>
+          <button class="notice-close" onclick={() => app.dismissNotice()} aria-label="Dismiss">
+            ×
           </button>
         </div>
-        {#if app.status === 'loading'}
-          <div class="loading-pill" data-testid="loading">Loading…</div>
+      {/if}
+
+      <div class="sidebar-scroll">
+        <section class="panel">
+          <StateSelector />
+        </section>
+        {#if app.status === 'ready'}
+          <SummaryCard />
+          <LayerPanel />
+          <Legend />
         {/if}
       </div>
-    {/if}
-  </main>
 
-  {#if route.name !== 'map'}
-    <div class="lead-overlay" data-testid="lead-overlay">
-      <nav class="lead-nav">
-        <span class="brand">Ground-Lease Triage</span>
-        <button class="navtab" onclick={goMap}>Map</button>
-        <button class="navtab" class:on={route.name === 'candidates'} onclick={goCandidates}>
-          Candidates
-          {#if leads.candidatesCount}<span class="lc-badge">{leads.candidatesCount}</span>{/if}
-        </button>
-        <button
-          class="navtab"
-          class:on={route.name === 'leads'}
-          data-testid="open-my-leads"
-          onclick={goLeads}
-        >
-          My Leads
-          {#if leads.myLeadsCount}<span class="lc-badge">{leads.myLeadsCount}</span>{/if}
-        </button>
-        {#if auth.signedIn}
-          <span class="nav-user" data-testid="nav-user">{auth.email ?? 'signed in'}</span>
+      <footer class="app-footer">
+        Prototype · local use only · data is PII (owner names + addresses)
+      </footer>
+    </aside>
+
+    <main class="stage">
+      {#if app.status === 'error'}
+        <div class="error-screen" data-testid="boot-error">
+          <div class="error-card">
+            <h2>Could not load the map data</h2>
+            <p class="error-detail">{app.errorMessage}</p>
+            <p class="error-hint">
+              Start the range-capable data server from the repo root
+              (<code>python scripts/serve.py 8765</code>), then retry.
+            </p>
+            <button class="retry" onclick={() => app.boot(initialSearch)}>Retry</button>
+          </div>
+        </div>
+      {:else}
+        {#if app.status === 'ready'}
+          <TopFilterBar />
+        {/if}
+        <div class="map-wrap">
+          <MapView />
+          <DetailsPanel />
+          <div class="launchers">
+            <button class="launcher" data-testid="open-candidates" onclick={goCandidates}>
+              Candidates{#if leads.candidatesCount}
+                <span class="lc-badge">{leads.candidatesCount}</span>
+              {/if}
+            </button>
+            <button class="launcher" data-testid="open-my-leads-map" onclick={goLeads}>
+              My Leads{#if leads.myLeadsCount}
+                <span class="lc-badge">{leads.myLeadsCount}</span>
+              {/if}
+            </button>
+          </div>
+          {#if app.status === 'loading'}
+            <div class="loading-pill" data-testid="loading">Loading…</div>
+          {/if}
+        </div>
+      {/if}
+    </main>
+
+    {#if route.name !== 'map'}
+      <div class="lead-overlay" data-testid="lead-overlay">
+        <nav class="lead-nav">
+          <span class="brand">Ground-Lease Triage</span>
+          <button class="navtab" onclick={goMap}>Map</button>
+          <button class="navtab" class:on={route.name === 'candidates'} onclick={goCandidates}>
+            Candidates
+            {#if leads.candidatesCount}<span class="lc-badge">{leads.candidatesCount}</span>{/if}
+          </button>
+          <button
+            class="navtab"
+            class:on={route.name === 'leads'}
+            data-testid="open-my-leads"
+            onclick={goLeads}
+          >
+            My Leads
+            {#if leads.myLeadsCount}<span class="lc-badge">{leads.myLeadsCount}</span>{/if}
+          </button>
+          <span class="nav-user" data-testid="nav-user">{auth.email}</span>
           <button class="navtab signout" data-testid="signout" onclick={() => auth.signOut()}>
             Sign out
           </button>
-        {:else}
-          <span class="nav-note">Lead = one cross-state landowner · ADR-061</span>
+        </nav>
+        {#if route.name === 'candidates'}
+          <TopFilterBar />
         {/if}
-      </nav>
-      {#if auth.signedIn && route.name === 'candidates'}
-        <TopFilterBar />
-      {/if}
-      <div class="lead-content">
-        {#if !auth.signedIn}
-          <SignIn />
-        {:else if route.name === 'candidates'}
-          <Candidates />
-        {:else if route.name === 'leads'}
-          <MyLeads />
-        {:else if route.name === 'lead'}
-          <LeadPage displayClusterId={route.key} />
-        {/if}
+        <div class="lead-content">
+          {#if route.name === 'candidates'}
+            <Candidates />
+          {:else if route.name === 'leads'}
+            <MyLeads />
+          {:else if route.name === 'lead'}
+            <LeadPage displayClusterId={route.key} />
+          {/if}
+        </div>
       </div>
-    </div>
-  {/if}
+    {/if}
 
-  {#if showHelp}
-    <div class="help-overlay" role="dialog" aria-label="Keyboard shortcuts" data-testid="help">
-      <div class="help-card">
-        <button class="help-close" onclick={() => (showHelp = false)} aria-label="Close help">
-          ×
-        </button>
-        <h2>Keyboard shortcuts</h2>
-        <dl>
-          <dt>f</dt>
-          <dd>Focus owner search</dd>
-          <dt>Esc</dt>
-          <dd>Clear the selected parcel</dd>
-          <dt>?</dt>
-          <dd>Toggle this help</dd>
-        </dl>
+    {#if showHelp}
+      <div class="help-overlay" role="dialog" aria-label="Keyboard shortcuts" data-testid="help">
+        <div class="help-card">
+          <button class="help-close" onclick={() => (showHelp = false)} aria-label="Close help">
+            ×
+          </button>
+          <h2>Keyboard shortcuts</h2>
+          <dl>
+            <dt>f</dt>
+            <dd>Focus owner search</dd>
+            <dt>Esc</dt>
+            <dd>Clear the selected parcel</dd>
+            <dt>?</dt>
+            <dd>Toggle this help</dd>
+          </dl>
+        </div>
       </div>
-    </div>
-  {/if}
-</div>
+    {/if}
+  </div>
+{/if}
 
 <style>
+  /* Full-screen sign-in gate (#85): the only surface an unauthenticated
+     visitor ever sees. */
+  .gate {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    background: var(--bg);
+  }
+  .gate-header {
+    text-align: center;
+  }
+  .gate-header h1 {
+    font-size: 22px;
+  }
+  .gate-sub {
+    margin: 4px 0 0;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .gate-checking {
+    margin-top: 24px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
   .layout {
     display: flex;
     height: 100%;
@@ -289,6 +348,25 @@
     margin: 3px 0 0;
     font-size: 12px;
     color: var(--muted);
+  }
+  /* Who's signed in + sign-out, visible on the map view (the lead overlay
+     has its own nav-user) — sign-out works from any view (#85). */
+  .signed-in-as {
+    margin: 8px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .signout-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 12px;
+    color: var(--muted);
+    text-decoration: underline;
+    cursor: pointer;
   }
 
   .notice {
@@ -421,11 +499,6 @@
     background: var(--accent);
     border-color: var(--accent);
     color: #fff;
-  }
-  .nav-note {
-    margin-left: auto;
-    font-size: 11px;
-    color: var(--muted);
   }
   .nav-user {
     margin-left: auto;
