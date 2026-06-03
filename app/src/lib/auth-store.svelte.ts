@@ -12,6 +12,9 @@ import { clearToken, getToken, setToken } from './auth-token';
 class AuthStore {
   token = $state<string | null>(getToken());
   email = $state<string | null>(null);
+  // The signed-in user's team name (#86) — shown next to the username so
+  // it's always clear which identity and board you're working in.
+  team = $state<string | null>(null);
   // True while a persisted token is being validated at app load — the gate
   // shows a "checking session" state instead of flashing the sign-in form
   // at users who are already signed in.
@@ -44,7 +47,9 @@ class AuthStore {
       return;
     }
     try {
-      this.email = (await fetchMe()).email;
+      const me = await fetchMe();
+      this.email = me.email;
+      this.team = me.team ?? null;
     } catch (e) {
       // A stale/expired token surfaces as 401 — drop it so the UI shows sign-in.
       if (e instanceof ApiError && e.status === 401) this.signOut();
@@ -59,6 +64,7 @@ class AuthStore {
     clearToken();
     this.token = null;
     this.email = null;
+    this.team = null;
   }
 }
 

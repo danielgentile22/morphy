@@ -92,13 +92,32 @@ class OwnerClusterOverride(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class Tenant(Base):
+    """A team — the unit of lead-board sharing and isolation (#86, PRD #83).
+
+    Teams ARE tenants: every table already carries ``tenant_id``, so team
+    isolation is the existing tenant isolation — no new machinery. Names are
+    unique and normalized (trimmed + lowercased). Teams are find-or-created
+    in credentials-file order, so the first team in the file receives id 1
+    and thereby inherits the pre-teams lead board. Tenant rows are never
+    deleted — a team whose users are all removed keeps its data.
+    """
+
+    __tablename__ = "tenant"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class User(Base):
-    """A person who can sign in, bound to exactly one tenant.
+    """A person who can sign in, bound to exactly one tenant (= team).
 
     The JWT issued at sign-in carries this user's ``tenant_id``; every
-    route then scopes to it. New users are provisioned into the default
-    tenant (ADR-055's "reads 1 for now"); adding a second tenant is a
-    row add. Email is stored lowercased + unique.
+    route then scopes to it. The tenant is resolved from the user's team in
+    the credentials file at login (#86) and re-synced there on every login,
+    so a team change in the file re-homes the user. Email (the username,
+    stored opaquely) is lowercased + unique.
     """
 
     __tablename__ = "app_user"

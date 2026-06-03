@@ -173,6 +173,9 @@ export interface TokenResponse {
 export interface MeResponse {
   tenant_id: number;
   email: string;
+  // The signed-in user's team name (#86). Optional so an older backend
+  // (pre-teams) still parses; the nav just omits the team then.
+  team?: string;
 }
 
 /** Error carrying the HTTP status so callers can branch (e.g. 409 illegal). */

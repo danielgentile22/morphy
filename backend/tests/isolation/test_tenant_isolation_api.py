@@ -54,9 +54,11 @@ SAMPLE = {
 def two_tenants() -> Iterator[tuple[TestClient, dict, dict]]:
     """A client plus per-tenant auth headers for two distinct tenants.
 
-    Username/password login always issues the default tenant (Slice 1 / #76),
-    so the two JWTs are minted directly via the seam — the routes resolve the
-    tenant from the token, which is exactly the isolation under test.
+    The two JWTs are minted directly via the seam (synthetic tenants 1 and 2,
+    bypassing login + team registration) — the routes resolve the tenant from
+    the token, which is exactly the isolation under test. The login-driven
+    twin of these checks (real teams from the credentials file) lives in
+    ``test_teams.py``.
     """
     with api(SAMPLE) as (client, _eng, _sender):
         header_a = auth_header(

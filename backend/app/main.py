@@ -52,6 +52,7 @@ from .schemas import (
     OwnerSummary,
     TokenResponse,
 )
+from .tenant_service import TenantService
 
 
 @asynccontextmanager
@@ -140,8 +141,17 @@ def login(
 
 
 @app.get("/api/auth/me", response_model=MeResponse)
-def me(principal: Principal = Depends(current_principal)) -> MeResponse:
-    return MeResponse(tenant_id=principal.tenant_id, email=principal.email)
+def me(
+    principal: Principal = Depends(current_principal),
+    db: Session = Depends(get_db),
+) -> MeResponse:
+    return MeResponse(
+        tenant_id=principal.tenant_id,
+        email=principal.email,
+        # The team name lives on the Tenant row (#86), not in the JWT — #88
+        # makes the JWT identity-only, so nothing tenant-shaped is added to it.
+        team=TenantService(db).get_name(principal.tenant_id),
+    )
 
 
 @app.get("/api/candidates", response_model=CandidatesResponse)

@@ -82,10 +82,6 @@ class Settings:
     jwt_secret: str
     jwt_algorithm: str
     session_ttl_days: int
-    # New users land in this tenant — realizes ADR-055's "reads 1 for now"
-    # without a hardcoded tenant on the request path (the tenant now rides
-    # on the authenticated JWT). A second tenant is a row add, not a refactor.
-    default_tenant_id: int
     # Master safety switch. False (default) = prod posture: fail closed.
     # True = local dev: ephemeral secret + built-in dev/dev login.
     dev_mode: bool
@@ -162,7 +158,6 @@ class Settings:
             jwt_secret=explicit_secret or secrets.token_urlsafe(32),
             jwt_algorithm="HS256",
             session_ttl_days=int(os.environ.get("AUTH_SESSION_TTL_DAYS", "30")),
-            default_tenant_id=int(os.environ.get("DEFAULT_TENANT_ID", "1")),
             dev_mode=dev_mode,
             login_throttle_max=int(os.environ.get("AUTH_LOGIN_THROTTLE_MAX", "5")),
             login_throttle_window_seconds=float(

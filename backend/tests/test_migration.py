@@ -73,3 +73,24 @@ def test_init_db_is_idempotent() -> None:
     init_db(eng)  # second run must not error (all columns already present)
     after = {c["name"] for c in inspect(eng).get_columns("lead")}
     assert set(_LEAD_ADDED_COLUMNS).issubset(after)
+
+
+# ── the tenant table (#86) is additive ────────────────────────────────────────
+def test_init_db_adds_the_tenant_table_to_an_existing_db() -> None:
+    """A dev DB from before teams existed (lead rows under tenant 1, no
+    ``tenant`` table) boots with no manual steps, and the first registered
+    team picks up tenant id 1 — inheriting that pre-existing board."""
+    eng = _legacy_engine()  # has a populated lead table, no tenant table
+    assert "tenant" not in inspect(eng).get_table_names()
+
+    init_db(eng)
+
+    assert "tenant" in inspect(eng).get_table_names()
+    # The legacy lead rows survived…
+    store = LeadStore(Session(bind=eng, future=True), tenant_id=1)
+    assert store.get_lead("old1") is not None
+    # …and the first team registered on this DB receives tenant id 1.
+    from backend.app.tenant_service import TenantService
+
+    tenant = TenantService(Session(bind=eng, future=True)).find_or_create("original-team")
+    assert tenant.id == 1

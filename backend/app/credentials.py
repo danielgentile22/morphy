@@ -106,6 +106,16 @@ def load(path: Path | str) -> dict[str, CredentialEntry]:
         return {}
 
 
+def teams_in_file_order(users: Mapping[str, CredentialEntry]) -> list[str]:
+    """Unique team names in first-appearance (file) order.
+
+    The order matters: teams are find-or-created in this order at login
+    (#86), which is what guarantees the first team in the file receives
+    tenant 1 and inherits the pre-teams lead board.
+    """
+    return list(dict.fromkeys(entry.team for entry in users.values()))
+
+
 def authenticate(users: Mapping[str, CredentialEntry], username: str, password: str) -> AuthResult:
     """Check a username/password against the parsed credential entries."""
     canonical = normalize(username)

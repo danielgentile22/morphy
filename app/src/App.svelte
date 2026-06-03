@@ -163,7 +163,9 @@
         <h1>{app.activeState?.name ?? 'Pilot Map'}</h1>
         <p class="subtitle">Parcels &amp; infrastructure — renegotiation candidates</p>
         <p class="signed-in-as">
-          <span data-testid="map-nav-user">{auth.email}</span>
+          <span data-testid="map-nav-user">
+            {auth.team ? `${auth.email} · ${auth.team}` : auth.email}
+          </span>
           <button class="signout-link" data-testid="map-signout" onclick={() => auth.signOut()}>
             Sign out
           </button>
@@ -252,7 +254,9 @@
             My Leads
             {#if leads.myLeadsCount}<span class="lc-badge">{leads.myLeadsCount}</span>{/if}
           </button>
-          <span class="nav-user" data-testid="nav-user">{auth.email}</span>
+          <span class="nav-user" data-testid="nav-user">
+            {auth.team ? `${auth.email} · ${auth.team}` : auth.email}
+          </span>
           <button class="navtab signout" data-testid="signout" onclick={() => auth.signOut()}>
             Sign out
           </button>

@@ -82,7 +82,9 @@ def test_valid_credentials_return_a_jwt_and_grant_access() -> None:
         assert client.get("/api/candidates", headers=headers).status_code == 200
         me = client.get("/api/auth/me", headers=headers).json()
         assert me["email"] == "dev"  # the username is the opaque identity
-        assert me["tenant_id"] == settings.default_tenant_id
+        # dev's team is the first (only) team in the conftest-seeded file →
+        # it registers as tenant 1 (#86).
+        assert me["tenant_id"] == 1
 
 
 def test_username_is_case_insensitive_and_trimmed() -> None:
@@ -209,8 +211,8 @@ def test_a_user_added_to_the_file_can_sign_in_without_restart() -> None:
 
 
 def test_two_usernames_share_one_tenant() -> None:
-    # Teams are parsed from the file but not yet used for isolation (#84);
-    # every credential still lands in the one default tenant until #86.
+    # Two usernames on the same team (extra_user defaults to dev's "devteam")
+    # share one tenant — the teams-as-tenants board sharing (#86).
     with extra_user("alice", "wonderland"), api(SAMPLE) as (client, _eng, _sender):
 
         def identity(username: str, password: str) -> tuple[dict, str]:
@@ -225,7 +227,7 @@ def test_two_usernames_share_one_tenant() -> None:
 
         # Distinct identities, one shared tenant.
         assert dev_me["email"] != alice_me["email"]
-        assert dev_me["tenant_id"] == alice_me["tenant_id"] == settings.default_tenant_id
+        assert dev_me["tenant_id"] == alice_me["tenant_id"] == 1
 
         # Same tenant → identical candidate view.
         dev_c = client.get("/api/candidates", headers=auth_header(dev_jwt)).json()

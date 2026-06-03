@@ -187,3 +187,6 @@ class TokenResponse(BaseModel):
 class MeResponse(BaseModel):
     tenant_id: int
     email: str
+    # The signed-in user's team name (#86) — '' when the tenant has no Tenant
+    # row (e.g. a session minted before teams existed).
+    team: str = ""
