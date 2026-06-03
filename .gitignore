@@ -9,6 +9,11 @@ data/
 .env.local
 *.env
 
+# ─── Backend credentials (password hashes; never commit) ─────────────
+# The real users file. Only backend/users.txt.example (fake entries) is
+# committed. Guarded by backend/tests/test_commit_guard.py.
+backend/users.txt
+
 # ─── Python ──────────────────────────────────────────────────────────
 .venv/
 venv/

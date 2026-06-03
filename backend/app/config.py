@@ -6,13 +6,20 @@ database is a local SQLite file so the backend runs with zero external
 services; point ``DATABASE_URL`` at Postgres (``postgresql+psycopg://…``)
 in deploy/CI.
 
+Credentials live in a git-ignored plain-text file (#84, PRD #83): one
+``username:hash:team`` line per user, default ``backend/users.txt``,
+overridable via ``APP_USERS_FILE`` (production secret stores can mount
+files). The old ``APP_USERS`` env var is gone — the file is the one source
+of truth.
+
 Auth posture is gated on a single switch, ``AUTH_DEV_MODE`` (default
 **off** — the safe state). With it off (prod), ``from_env`` refuses to
-build without a real ``AUTH_JWT_SECRET`` **and** at least one login
-credential (``APP_USERS``) — so a deploy can be neither open nor impossible
-to log into. With it on, the zero-config local loop is preserved: an
-ephemeral per-process secret and a built-in ``dev``/``dev`` login. The real
-secret store lands with #16.
+build without a real ``AUTH_JWT_SECRET`` **and** a credentials file with at
+least one valid entry — so a deploy can be neither open nor impossible to
+log into. With it on, the zero-config local loop is preserved: an ephemeral
+per-process secret and a built-in ``dev``/``dev`` login seeded **through the
+same file-parsing code path** (a temp credentials file), so dev mode cannot
+hide parsing bugs. The real secret store lands with #16.
 """
 
 from __future__ import annotations
@@ -20,7 +27,8 @@ from __future__ import annotations
 import logging
 import os
 import secrets
-from dataclasses import dataclass, field
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import credentials
@@ -28,15 +36,21 @@ from .password import hash_password
 
 _log = logging.getLogger(__name__)
 
-# Zero-config dev credential, seeded into the parsed APP_USERS map when
-# AUTH_DEV_MODE is on so local runs and CI need no env setup. Not a secret —
-# it only unlocks the ephemeral, dev-only JWT secret.
+# Zero-config dev credential, written to a temp credentials file when
+# AUTH_DEV_MODE is on and the configured file has no valid entry — so local
+# runs and CI need no setup. Not a secret — it only unlocks the ephemeral,
+# dev-only JWT secret.
 DEV_USERNAME = "dev"
 DEV_PASSWORD = "dev"
+DEV_TEAM = "dev"
 
 # repo root = backend/app/config.py → parents[2]
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 COMPOSITE_ROOT = PROJECT_ROOT / "data" / "processed" / "composite"
+
+# The real credentials file lives in the backend directory (git-ignored; a
+# committed users.txt.example documents the format).
+DEFAULT_CREDENTIALS_PATH = PROJECT_ROOT / "backend" / "users.txt"
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -44,6 +58,19 @@ def _env_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _write_dev_credentials_file() -> Path:
+    """Seed the built-in dev login into a temp credentials file.
+
+    Dev mode goes through the exact same file-parsing path as production
+    (PRD #83 user story 28) — never an in-memory shortcut that could hide
+    parsing bugs."""
+    fd, name = tempfile.mkstemp(prefix="pilot-dev-users-", suffix=".txt")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write("# AUTH_DEV_MODE built-in dev credential (ephemeral; not a secret)\n")
+        f.write(f"{DEV_USERNAME}:{hash_password(DEV_PASSWORD)}:{DEV_TEAM}\n")
+    return Path(name)
 
 
 @dataclass(frozen=True)
@@ -70,10 +97,9 @@ class Settings:
     # state; resets on restart.
     login_throttle_max: int
     login_throttle_window_seconds: float
-    # Username/password credentials (Slice 1 / #76): {username -> encoded hash},
-    # parsed from APP_USERS at load. The username/password login route checks
-    # against this; in dev a built-in ``dev``/``dev`` entry is seeded.
-    app_users: dict[str, str] = field(default_factory=dict)
+    # The credentials file (#84): ``username:hash:team`` lines, the only
+    # credential source. Login re-reads it, so edits apply without restart.
+    credentials_path: Path
 
     @staticmethod
     def from_env() -> Settings:
@@ -82,21 +108,20 @@ class Settings:
         )
         dev_mode = _env_bool("AUTH_DEV_MODE", default=False)
         explicit_secret = os.environ.get("AUTH_JWT_SECRET")
-        # The login credential set (Slice 1 / #76). The fail-closed guard below
-        # is expressed in terms of *this* — an instance with no credential is
-        # un-loginnable and must not boot.
-        app_users = credentials.parse(os.environ.get("APP_USERS"))
+        credentials_path = Path(os.environ.get("APP_USERS_FILE", str(DEFAULT_CREDENTIALS_PATH)))
 
         if not dev_mode:
             # Fail closed: an instance that can't authenticate safely must never
-            # boot. Require BOTH a real signing secret and >=1 login credential,
-            # so a deploy can be neither open nor impossible to log into.
+            # boot. Require BOTH a real signing secret and a credentials file
+            # with >=1 valid entry, so a deploy can be neither open nor
+            # impossible to log into.
             problems = []
             if not explicit_secret:
                 problems.append("AUTH_JWT_SECRET must be set (no ephemeral secret outside dev)")
-            if not app_users:
+            if not credentials.load(credentials_path):
                 problems.append(
-                    "APP_USERS must define at least one 'username:hash' credential "
+                    f"credentials file {credentials_path} must exist and contain at least "
+                    "one valid 'username:hash:team' line "
                     "(generate a hash with `python -m app.password`)"
                 )
             if problems:
@@ -114,8 +139,10 @@ class Settings:
                 "Never run this in production.",
                 "ephemeral JWT secret" if not explicit_secret else "fixed dev secret",
             )
-            # Seed the built-in dev login without clobbering an explicit entry.
-            app_users.setdefault(DEV_USERNAME, hash_password(DEV_PASSWORD))
+            # Seed the built-in dev login unless the configured file already
+            # has a valid credential — through the same file-parsing path.
+            if not credentials.load(credentials_path):
+                credentials_path = _write_dev_credentials_file()
 
         return Settings(
             database_url=os.environ.get("DATABASE_URL", default_db),
@@ -141,7 +168,7 @@ class Settings:
             login_throttle_window_seconds=float(
                 os.environ.get("AUTH_LOGIN_THROTTLE_WINDOW_SECONDS", "300")
             ),
-            app_users=app_users,
+            credentials_path=credentials_path,
         )
 
 

@@ -1,14 +1,19 @@
-"""Username/password login over HTTP (Slice 1 / #76).
+"""Username/password login over HTTP (Slice 1 / #76, credentials file #84).
 
 Pins the externally observable auth behavior: a wrong password and an unknown
 username are *distinguishable* 401s, a valid credential mints a usable JWT,
-every data route rejects an unauthenticated caller, and two distinct usernames
-share the one tenant. The reused JWT seam (create/decode) is checked directly.
+every data route rejects an unauthenticated caller, the credentials file is
+the live credential source (a user added to it can sign in without a restart),
+and two distinct usernames share the one tenant (until teams land, #86). The
+reused JWT seam (create/decode) is checked directly.
 """
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import jwt
 import pytest
@@ -174,34 +179,58 @@ def test_successful_login_resets_the_throttle() -> None:
             )
 
 
-# ── two users, one tenant ─────────────────────────────────────────────────────
-def test_two_usernames_share_one_tenant() -> None:
-    # Seed a second credential alongside the built-in dev login (the app_users
-    # dict is mutable even though Settings is frozen); restore it afterward.
-    settings.app_users["alice"] = hash_password("wonderland")
+# ── the credentials file is the live credential source (#84) ─────────────────
+@contextlib.contextmanager
+def extra_user(username: str, password: str, team: str = "devteam") -> Iterator[None]:
+    """Append a credential line to the file and remove it afterward. Login
+    re-reads the file, so the new user is signable-in immediately."""
+    creds = Path(settings.credentials_path)
+    original = creds.read_text()
+    creds.write_text(original + f"{username}:{hash_password(password)}:{team}\n")
     try:
-        with api(SAMPLE) as (client, _eng, _sender):
-
-            def identity(username: str, password: str) -> tuple[dict, str]:
-                token = client.post(
-                    "/api/auth/login", json={"username": username, "password": password}
-                ).json()["access_token"]
-                me = client.get("/api/auth/me", headers=auth_header(token)).json()
-                return me, token
-
-            dev_me, dev_jwt = identity("dev", "dev")
-            alice_me, alice_jwt = identity("alice", "wonderland")
-
-            # Distinct identities, one shared tenant.
-            assert dev_me["email"] != alice_me["email"]
-            assert dev_me["tenant_id"] == alice_me["tenant_id"] == settings.default_tenant_id
-
-            # Same tenant → identical candidate view.
-            dev_c = client.get("/api/candidates", headers=auth_header(dev_jwt)).json()
-            alice_c = client.get("/api/candidates", headers=auth_header(alice_jwt)).json()
-            assert dev_c == alice_c
+        yield
     finally:
-        settings.app_users.pop("alice", None)
+        creds.write_text(original)
+
+
+def test_a_user_added_to_the_file_can_sign_in_without_restart() -> None:
+    with api(SAMPLE) as (client, _eng, _sender):
+        # Not in the file yet → the specific unknown-username 401.
+        r = client.post("/api/auth/login", json={"username": "alice", "password": "wonderland"})
+        assert r.status_code == 401
+        assert r.json()["detail"] == "Unknown username"
+        # Added to the file → signs in on the very next attempt (no restart).
+        with extra_user("alice", "wonderland"):
+            r = client.post("/api/auth/login", json={"username": "alice", "password": "wonderland"})
+            assert r.status_code == 200
+        # Removed from the file → back to unknown-username on new logins.
+        r = client.post("/api/auth/login", json={"username": "alice", "password": "wonderland"})
+        assert r.status_code == 401
+
+
+def test_two_usernames_share_one_tenant() -> None:
+    # Teams are parsed from the file but not yet used for isolation (#84);
+    # every credential still lands in the one default tenant until #86.
+    with extra_user("alice", "wonderland"), api(SAMPLE) as (client, _eng, _sender):
+
+        def identity(username: str, password: str) -> tuple[dict, str]:
+            token = client.post(
+                "/api/auth/login", json={"username": username, "password": password}
+            ).json()["access_token"]
+            me = client.get("/api/auth/me", headers=auth_header(token)).json()
+            return me, token
+
+        dev_me, dev_jwt = identity("dev", "dev")
+        alice_me, alice_jwt = identity("alice", "wonderland")
+
+        # Distinct identities, one shared tenant.
+        assert dev_me["email"] != alice_me["email"]
+        assert dev_me["tenant_id"] == alice_me["tenant_id"] == settings.default_tenant_id
+
+        # Same tenant → identical candidate view.
+        dev_c = client.get("/api/candidates", headers=auth_header(dev_jwt)).json()
+        alice_c = client.get("/api/candidates", headers=auth_header(alice_jwt)).json()
+        assert dev_c == alice_c
 
 
 # ── JWT seam (reused verbatim) ────────────────────────────────────────────────

@@ -1,0 +1,26 @@
+# Credentials file for the lead-triage backend — EXAMPLE (safe to commit).
+#
+# The real file is `users.txt` in this directory. It is git-ignored and must
+# NEVER be committed (backend/tests/test_commit_guard.py fails the suite if it
+# is). In production, point APP_USERS_FILE at wherever the secret store mounts
+# the real file.
+#
+# Format — one user per line, three colon-separated fields:
+#
+#   username:password-hash:team
+#
+#   - username and team are case-insensitive; surrounding spaces are ignored
+#   - password-hash is the self-describing PBKDF2 form printed by
+#     `cd backend && python -m app.password <password>`
+#   - lines starting with '#' and blank lines are ignored
+#   - a malformed line (wrong field count, empty field) is skipped, never fatal
+#   - a line WITHOUT a team is not a valid credential
+#
+# Teams: every user belongs to exactly one team; teammates share one lead
+# board. The FIRST team listed in the file inherits tenant 1 — the existing
+# lead board — so keep the original team's users at the top.
+#
+# The hashes below are fake placeholders — replace them with real output from
+# `python -m app.password`.
+alice:pbkdf2_sha256$240000$EXAMPLEsaltEXAMPLEsalt==$EXAMPLEhashEXAMPLEhashEXAMPLEhashEXAMPLEha=:acme-team
+bob:pbkdf2_sha256$240000$EXAMPLEsaltEXAMPLEsalt==$EXAMPLEhashEXAMPLEhashEXAMPLEhashEXAMPLEha=:acme-team

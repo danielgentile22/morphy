@@ -1,9 +1,10 @@
 """Username/password sign-in + user provisioning (Slice 1 / #76, ADR-055).
 
 Session-scoped like ``LeadStore``. ``login`` verifies a credential against
-``settings.app_users`` and find-or-creates the ``User`` row (new users land in
-the default tenant), returning the ``Principal`` the route turns into a session
-JWT. The tenant rides on that JWT; every route then scopes to it.
+the credentials file (#84 — re-read on every login, so edits to the file
+apply without a restart) and find-or-creates the ``User`` row (new users land
+in the default tenant), returning the ``Principal`` the route turns into a
+session JWT. The tenant rides on that JWT; every route then scopes to it.
 """
 
 from __future__ import annotations
@@ -24,15 +25,17 @@ class InvalidCredentials(ValueError):
 
 
 def login(session: Session, *, username: str, password: str) -> Principal:
-    """Username/password sign-in: verify against ``settings.app_users``,
+    """Username/password sign-in: verify against the credentials file,
     find-or-create the ``User`` in the default tenant, and return a
     ``Principal`` the route turns into a JWT.
 
-    Every credential shares the one default tenant; each username is its own
-    identity, stored opaquely in ``User.email`` (no schema change). Raises
-    ``InvalidCredentials`` with a specific message on failure.
+    Every credential shares the one default tenant (teams-as-tenants lands
+    with #86); each username is its own identity, stored opaquely in
+    ``User.email`` (no schema change). Raises ``InvalidCredentials`` with a
+    specific message on failure.
     """
-    result = credentials.authenticate(settings.app_users, username, password)
+    users = credentials.load(settings.credentials_path)
+    result = credentials.authenticate(users, username, password)
     if result.outcome is AuthOutcome.UNKNOWN_USER:
         raise InvalidCredentials("Unknown username")
     if result.outcome is AuthOutcome.WRONG_PASSWORD:

@@ -8,10 +8,10 @@ The encoded form is self-describing so a stored hash carries everything
 Keeping the iteration count *in* the hash lets the cost be raised later
 without invalidating already-issued credentials. Verification is
 constant-time (``hmac.compare_digest``) and treats any malformed encoding
-as a non-match rather than raising — a corrupt ``APP_USERS`` entry must
+as a non-match rather than raising — a corrupt credentials-file entry must
 fail closed, not crash the login route.
 
-Print an encoded hash for an ``APP_USERS`` entry with:
+Print an encoded hash for a credentials-file (users.txt) line with:
 
     cd backend && python -m app.password <password>
 """

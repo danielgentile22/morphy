@@ -3,8 +3,9 @@
 ``api(sample)`` yields a ``TestClient`` over a fresh in-memory SQLite DB with
 a seeded owners index and the ``get_db`` dependency overridden, plus the
 engine for inspection. ``login`` drives the real ``POST /api/auth/login`` with
-the AUTH_DEV_MODE built-in ``dev``/``dev`` credential and returns a session
-JWT, so tests authenticate exactly the way the SPA does.
+the ``dev``/``dev`` credential conftest seeds into the temp credentials file
+(#84) and returns a session JWT, so tests authenticate exactly the way the
+SPA does.
 """
 
 from __future__ import annotations
@@ -65,7 +66,8 @@ def api(sample: dict) -> Iterator[tuple[TestClient, Engine, None]]:
 def login(client: TestClient, username: str = "dev", password: str = "dev") -> str:
     """Sign in via ``POST /api/auth/login``; returns the session JWT.
 
-    Defaults to the AUTH_DEV_MODE built-in ``dev``/``dev`` credential.
+    Defaults to the ``dev``/``dev`` credential seeded into the test
+    credentials file by conftest.
     """
     r = client.post("/api/auth/login", json={"username": username, "password": password})
     r.raise_for_status()
