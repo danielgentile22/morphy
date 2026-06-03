@@ -125,3 +125,36 @@ def authenticate(users: Mapping[str, CredentialEntry], username: str, password: 
     if not verify_password(password, entry.encoded_hash):
         return AuthResult(AuthOutcome.WRONG_PASSWORD)
     return AuthResult(AuthOutcome.SUCCESS, username=canonical, team=entry.team)
+
+
+class CredentialsFile:
+    """The credentials file, re-read only when it changes on disk (#88).
+
+    The file is authoritative on every request; this wrapper is what makes
+    that affordable. ``current()`` stats the file and re-parses it only when
+    its (mtime_ns, size) signature moved — an unchanged file costs one
+    ``stat`` per request, never a parse. A missing/unreadable file yields no
+    entries (every request fails closed with 401, same as ``load``).
+
+    Known limit: a replacement that preserves both mtime_ns and size (e.g.
+    ``cp --preserve=timestamps`` of a same-length file) is not detected.
+    The management CLI always writes temp + rename, which bumps mtime.
+    """
+
+    def __init__(self, path: Path | str) -> None:
+        self.path = Path(path)
+        self._signature: tuple[int, int] | None = None
+        self._users: dict[str, CredentialEntry] = {}
+
+    def current(self) -> dict[str, CredentialEntry]:
+        try:
+            stat = self.path.stat()
+            signature = (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            self._signature = None
+            self._users = {}
+            return self._users
+        if signature != self._signature:
+            self._users = load(self.path)
+            self._signature = signature
+        return self._users

@@ -22,7 +22,7 @@ This is **not** a comprehensive infosec policy. It's the project-specific postur
 | **Pitch / demo screenshots** | `docs/pitch-assets/*` | May show real owner names depending on capture context |
 | **Anthropic API key** | `ANTHROPIC_API_KEY` (preprocess `diagnose.py` + Slice 4 lease extraction) | Standard secret hygiene |
 | **AWS / S3-compatible / hosting credentials** | Slice 4 backend + (future) paid Regrid | Standard secret hygiene |
-| **Login credentials + session JWTs** | `APP_USERS` password hashes + HS256 session tokens ([ADR-062](./adr/0062-username-password-replaces-magic-link.md)) | Auth surface — leakage = account takeover |
+| **Login credentials + session JWTs** | `backend/users.txt` password hashes (git-ignored; commit-guard test) + HS256 session tokens ([ADR-062](./adr/0062-username-password-replaces-magic-link.md) / [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md)) | Auth surface — leakage = account takeover |
 | **Tenant boundary** (Slice 4) | `tenant_id` column on every backend table | Single-tenant today, but the boundary must hold from Day 1 for when a second tenant joins |
 | **Outputs shared with partners** | ZIP bundles per [DEPLOYMENT.md §5.2](./DEPLOYMENT.md) | Reduplicates PII outside our environment |
 
@@ -62,7 +62,7 @@ Public-record information that is **not** sensitive in isolation: parcel APN, ge
 
 | Control | Posture |
 |---|---|
-| Auth | Username/password (`APP_USERS` env secret, PBKDF2 hashes); HS256 session JWTs; per-user sessions ([ADR-062](./adr/0062-username-password-replaces-magic-link.md)) |
+| Auth | Username/password against the git-ignored `backend/users.txt` (PBKDF2 hashes, managed via `python -m app.users`); identity-only HS256 session JWTs; **the file is authoritative on every request** — removal / re-teaming applies on the next click ([ADR-062](./adr/0062-username-password-replaces-magic-link.md) / [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md)) |
 | Multi-tenancy | `tenant_id` column on every table; every route filters by it; isolation tests gate PRs |
 | Lease-PDF storage | S3-compatible bucket; **encrypted at rest** (SSE-S3 or KMS); private bucket; signed download URLs only |
 | Database | Managed Postgres; TLS in transit; backups daily; encryption at rest |
@@ -82,7 +82,7 @@ Before sharing the product with anyone (co-founder, prospective hire, advisor):
 2. **Audit screenshots** for individually-identifiable owners. Prefer LLC / trust labels in any capture.
 3. **Confirm need-to-know.** Don't leave raw composite outputs or backend access in a shared drive after the meeting.
 4. **If sharing a ZIP** ([DEPLOYMENT.md §5.2](./DEPLOYMENT.md)): encrypt with a strong password; communicate password through a *different* channel than the file.
-5. **If granting backend access**: add a credential to `APP_USERS` (hash via `python -m app.password`); remove the entry when no longer needed (and rotate `AUTH_JWT_SECRET` to kill any live sessions).
+5. **If granting backend access**: `cd backend && python -m app.users add <username> <team>` (prompts for a password, writes `users.txt`). To revoke: `python -m app.users remove <username>` — effective on their next request, no restart ([ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md)). Rotating `AUTH_JWT_SECRET` additionally kills every live session at once.
 
 ---
 
@@ -109,7 +109,7 @@ If a sensitive output or backend session is exposed:
 1. **Stop the bleed** — remove the public URL, revoke shared link, kill the leaked session, rotate the leaked credential, etc.
 2. **Document** the exposure window in the relevant commit message (date, scope, audience, what was visible) — git log is the canonical history.
 3. **Notify** affected partners if they received the exposed output.
-4. **Rotate** any credential that was exposed alongside (API keys, `APP_USERS` entries, the `AUTH_JWT_SECRET` signing secret).
+4. **Rotate** any credential that was exposed alongside (API keys, `users.txt` passwords — `python -m app.users set-password` — and the `AUTH_JWT_SECRET` signing secret).
 5. **Post-mortem** — what failure mode allowed this; what control would have prevented it.
 
 The audience for this is *very* small today (just the project lead + the co-founder once Slice 4 lands), but documenting the muscle now means it's already in place when the team grows.

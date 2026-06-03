@@ -20,7 +20,7 @@ import pytest
 from fastapi import HTTPException
 
 from backend.app import main
-from backend.app.auth import Principal, create_access_token, decode_access_token
+from backend.app.auth import create_access_token, decode_access_token
 from backend.app.config import settings
 from backend.app.login_throttle import LoginThrottle
 from backend.app.password import hash_password
@@ -235,16 +235,15 @@ def test_two_usernames_share_one_tenant() -> None:
         assert dev_c == alice_c
 
 
-# ── JWT seam (reused verbatim) ────────────────────────────────────────────────
-def test_jwt_round_trip_carries_tenant_and_identity() -> None:
-    principal = Principal(tenant_id=3, user_id=9, email="alice")
-    decoded = decode_access_token(create_access_token(principal))
-    assert (decoded.tenant_id, decoded.user_id, decoded.email) == (3, 9, "alice")
+# ── JWT seam (identity-only, #88) ─────────────────────────────────────────────
+def test_jwt_round_trip_carries_identity_only() -> None:
+    # The token's subject is the username — the only claim of substance.
+    # Tenancy is never in the token; it's resolved from the file per request.
+    assert decode_access_token(create_access_token("alice")) == "alice"
 
 
 def test_expired_jwt_is_rejected() -> None:
-    principal = Principal(tenant_id=1, user_id=1, email="dev")
-    stale = create_access_token(principal, now=datetime.now(UTC) - timedelta(days=999))
+    stale = create_access_token("dev", now=datetime.now(UTC) - timedelta(days=999))
     with pytest.raises(HTTPException) as exc:
         decode_access_token(stale)
     assert exc.value.status_code == 401
@@ -252,7 +251,7 @@ def test_expired_jwt_is_rejected() -> None:
 
 def test_tampered_jwt_is_rejected() -> None:
     forged = jwt.encode(
-        {"sub": "1", "tid": 1, "email": "dev"},
+        {"sub": "dev"},
         "a-different-secret-also-long-enough-for-hs256",
         algorithm="HS256",
     )

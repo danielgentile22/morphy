@@ -135,7 +135,9 @@ def login(
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     throttle.reset(key)  # a real sign-in clears the counter for this key
     return TokenResponse(
-        access_token=create_access_token(principal),
+        # Identity-only token (#88): just the username. The tenant/team are
+        # re-resolved from the credentials file on every request.
+        access_token=create_access_token(principal.email),
         expires_in=settings.session_ttl_days * 86400,
     )
 

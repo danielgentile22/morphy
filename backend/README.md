@@ -37,7 +37,8 @@ backend/tests/              LeadStore + auth + tenant-isolation (testcontainers 
 
 - `lead(tenant_id, display_cluster_id, status, notes, contact_name, contact_phone, contact_email, best_channel, created_at, updated_at)` — PK `(tenant_id, display_cluster_id)`. The `contact_*` columns (Slice 3 / #49) are the team's **editable** outreach record, distinct from the read-only mailing address served from source parcel data. Added to an existing DB by the additive `init_db` migration (`db._migrate_added_columns`; a stand-in until Alembic).
 - `contact_attempt(id, tenant_id, display_cluster_id, occurred_on, channel, outcome, note, created_at)` — manual outreach events **and** auto-logged status-transition rows (`channel='status'`) share this one activity stream.
-- `app_user(id, tenant_id, email UNIQUE, created_at)` — a person who can sign in, bound to one tenant.
+- `tenant(id, name UNIQUE, created_at)` — a **team** (#86, ADR-063). Teams ARE tenants; team isolation is the ADR-055 tenant isolation. Registered find-or-create in credentials-file order, so the first team in the file owns tenant 1 (the pre-teams board). Rows are never deleted.
+- `app_user(id, tenant_id, email UNIQUE, created_at)` — a person who can sign in (email = the username, stored opaquely). Synced to their current team's tenant on every login/request (#88).
 - `owner_cluster_override(tenant_id, source_cluster_id, target_cluster_id, created_at)` — manual merge overrides (Slice 7 / #53). PK `(tenant_id, source_cluster_id)`. Keyed on **raw** cluster ids, so overrides survive an owners-index recompute (raw ids in the parquet are never mutated).
 
 ## Manual owner merge/split (Slice 7 / #53, ADR-056)
@@ -88,8 +89,8 @@ are rejected (HTTP 409).
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/auth/login` | **username/password → session JWT** (the front door, Slice 1 / #76); brute-force throttled (#77) |
-| GET | `/api/auth/me` | the authenticated tenant + email |
+| POST | `/api/auth/login` | **username/password → identity-only session JWT** (the front door, #76/#84/#88); brute-force throttled (#77) |
+| GET | `/api/auth/me` | the authenticated username + tenant + **team** (#86) |
 | GET | `/api/health` | liveness + owners-indexed count (public) |
 | GET | `/api/candidates?limit=` | owners at New, ranked by interestingness |
 | GET | `/api/my-leads` | owners advanced **off** New — the My-Leads kanban worklist (Slice 5 / #51); each carries its status so the client buckets it into a lane |
@@ -119,9 +120,11 @@ per-tenant. Rebuild both after composing states: `python scripts/preprocess.py
 `OwnerSummary` / `Structure` fields are **defaulted** so a pre-v4 index still
 validates.
 
-Every data route resolves the tenant from the `Authorization: Bearer <jwt>`
-(`current_tenant_id`, now JWT-derived) and is tenant-scoped; an
-unauthenticated data request is rejected with **401**.
+Every data route verifies the `Authorization: Bearer <jwt>` (identity), then
+resolves the tenant by re-checking the **credentials file** on that very
+request (`current_tenant_id` → `resolve_principal`, #88 / ADR-063) — the file,
+never the token, decides authorization. An unauthenticated request, or one
+whose username has been removed from the file, is rejected with **401**.
 
 ## User management (users.txt + CLI, #87)
 
@@ -145,20 +148,32 @@ All writes are atomic (temp file + rename). The file path defaults to
 team in the file owns tenant 1 — the original lead board (#86) — so keep the
 original team's users at the top.
 
-## Auth (username/password, Slice 1 / #76)
+## Auth (username/password over a credentials file, ADR-062 + ADR-063)
 
 The live front door is `POST /api/auth/login {username, password}`. Credentials
-live in the `APP_USERS` env var (`username:<encoded-hash>,…`, comma-separated;
-generate a hash with `cd backend && python -m app.password <password>`).
-Usernames are case-insensitive (trimmed + lowercased); the password is verified
-constant-time against a stdlib PBKDF2-HMAC-SHA256 hash (`app/password.py`, no
-third-party dependency). On success the route mints the same HS256 session JWT
-(`tid`/`sub`/`email`) the routes below already consume; a wrong password and an
-unknown username are *distinguishable* 401s (a deliberate usability-over-
-enumeration call, with the enumeration exposure bounded by the throttle). All
-credentials map to the one `DEFAULT_TENANT_ID`. In dev (`AUTH_DEV_MODE=1`) a
-built-in `dev`/`dev` credential is seeded so the loop needs zero config. Send the
-resulting JWT as `Authorization: Bearer <jwt>` on every data route.
+live in the git-ignored **`backend/users.txt`** (one `username:hash:team` line
+per user — see "User management" above; path overridable via `APP_USERS_FILE`).
+Usernames and teams are case-insensitive (trimmed + lowercased); the password is
+verified constant-time against a stdlib PBKDF2-HMAC-SHA256 hash
+(`app/password.py`, no third-party dependency). A wrong password and an unknown
+username are *distinguishable* 401s (a deliberate usability-over-enumeration
+call, with the enumeration exposure bounded by the throttle). In dev
+(`AUTH_DEV_MODE=1`) a built-in `dev`/`dev` credential on a built-in `dev` team
+is seeded **through the same file-parsing path** so the loop needs zero config.
+
+On success the route mints an HS256 session JWT that carries **identity only**
+(`sub` = the username — no tenant, no team). Send it as
+`Authorization: Bearer <jwt>` on every data route. **The credentials file is
+authoritative on every request** (#88): each request re-checks (mtime-cached)
+that the username is still in the file and resolves its *current* team → that
+team's tenant scopes the request. Consequences:
+
+- **Removing a user** (`python -m app.users remove`) locks them out on their
+  very next request — no waiting out the session TTL, no restart.
+- **Moving a user to another team** (`set-team`) re-homes their live session on
+  its next request; the old team's data is untouched.
+- Nothing a token carries — even forged extra claims signed with a leaked
+  secret — can grant access the file doesn't currently grant.
 
 ### Brute-force throttle (#77)
 
@@ -177,19 +192,20 @@ restart, and is not shared across replicas).
 
 A single switch gates the auth posture. It is **off by default** (the safe,
 prod state). With it off, the app **refuses to start** unless **both**
-`AUTH_JWT_SECRET` is set **and** at least one login credential is configured in
-`APP_USERS` — so a deploy can be neither open (no secret) nor impossible to log
-into (no credential). Set `AUTH_DEV_MODE=1` for the zero-config local loop
-(ephemeral secret + built-in `dev`/`dev` login), so the dev convenience never
-leaks into prod by accident.
+`AUTH_JWT_SECRET` is set **and** the credentials file exists with at least one
+valid `username:hash:team` line — so a deploy can be neither open (no secret)
+nor impossible to log into (no credential). Set `AUTH_DEV_MODE=1` for the
+zero-config local loop (ephemeral secret + built-in `dev`/`dev` login seeded
+through the same file-parsing path), so the dev convenience never leaks into
+prod by accident.
 
-#### Secret rotation & the kill switch
+#### Revocation & the kill switch
 
-Two operational levers, both immediate (no extra tooling):
+Two operational levers, both immediate (no restart, no extra tooling):
 
-- **Revoke one user:** remove their entry from `APP_USERS` and restart. New
-  logins for that username fail immediately (unknown user). Their *existing*
-  JWTs remain valid until they expire (sessions are stateless — see trade-offs).
+- **Revoke one user:** `python -m app.users remove <username>`. The file is
+  authoritative on every request (#88), so they are locked out on their very
+  next click — even with a valid, unexpired session JWT.
 - **Kill every session at once:** rotate `AUTH_JWT_SECRET`. Every already-issued
   JWT was signed by the old secret, so all of them fail verification at once and
   every user must log in again. This is the global panic button for a suspected
@@ -201,34 +217,33 @@ Auth environment variables:
 |---|---|---|
 | `AUTH_DEV_MODE` | `0` (prod) | **master safety switch.** `1` = local dev (ephemeral secret + built-in `dev`/`dev` login). Off ⇒ the prereqs below are enforced at boot. |
 | `AUTH_JWT_SECRET` | _(required off-dev)_ | HS256 signing secret — **set from the host secret store in prod (#16); never commit.** Ephemeral per-process value in dev. Rotating it invalidates every active session (kill switch). |
-| `APP_USERS` | _(required off-dev)_ | login credentials, `username:<encoded-hash>,…` (hash via `python -m app.password`). **Never commit.** Removing an entry blocks that user's new logins. In dev a `dev`/`dev` entry is seeded. |
+| `APP_USERS_FILE` | `backend/users.txt` | path to the credentials file (`username:hash:team` lines; manage with `python -m app.users`). **Never commit the real file.** Prod secret stores can mount it anywhere and point this at it. |
 | `AUTH_LOGIN_THROTTLE_MAX` | `5` | failed logins per `(ip, username)` before 429 within the window |
 | `AUTH_LOGIN_THROTTLE_WINDOW_SECONDS` | `300` | sliding throttle window (block self-clears as it rolls forward; no hard lockout) |
-| `AUTH_SESSION_TTL_DAYS` | `30` | session JWT lifetime (no revocation except secret rotation, so a daily-use balance — see trade-offs) |
-| `DEFAULT_TENANT_ID` | `1` | tenant new sign-ins land in (ADR-055 "reads 1 for now") |
+| `AUTH_SESSION_TTL_DAYS` | `30` | session JWT lifetime — purely a convenience window now; authorization is re-checked against the file on every request (#88) |
 
-### Security model & trade-offs (Slice 2)
+### Security model & trade-offs
 
 - **JWT in `localStorage` (SPA).** An XSS could read it and exfiltrate the
-  session. Accepted for an internal, single-tenant tool, and mitigated by
-  Svelte's default escaping of all rendered PII (owner names, notes). The more
-  secure alternative — an httpOnly + SameSite cookie with CSRF handling — is
+  session. Accepted for an internal tool, and mitigated by Svelte's default
+  escaping of all rendered PII (owner names, notes). The more secure
+  alternative — an httpOnly + SameSite cookie with CSRF handling — is
   deliberately deferred (a larger change touching CORS + the SPA fetch layer).
-- **No server-side revocation / logout.** Sessions are stateless JWTs valid
-  until `exp`; `signOut()` only clears the client. The blast radius of a leaked
-  token is bounded by the (30-day) TTL, or cut to zero immediately by rotating
-  `AUTH_JWT_SECRET` (the kill switch above). A `jti`/token-version denylist is a
-  future option if per-session revocation becomes a requirement.
+- **Sessions are identity-only; the file authorizes every request** (#88,
+  ADR-063). A leaked token is only as useful as the file allows right now:
+  remove the username and the token is dead on the next request. The 30-day
+  TTL bounds how long an *unrevoked* identity stays signed in, nothing more.
 - **No `aud`/`iss` claims.** Fine while one secret signs for one audience; add
   them if this secret is ever shared across services.
 - **Login throttle is per-process.** The brute-force counter lives in memory on
   one VM; it resets on restart and isn't shared across replicas. Acceptable for
   the single-VM deployment — a shared store (Redis) is the move if it ever scales
-  horizontally.
+  horizontally. (The credentials file itself is replica-safe: every process
+  re-reads the same mounted file.)
 - **Prod deploy checklist (ties to #16).** Set `AUTH_DEV_MODE=0`,
-  `AUTH_JWT_SECRET` (host secret store), and a non-empty `APP_USERS`
-  (`username:hash`, hash via `python -m app.password`). The app refuses to boot
-  if the secret or any credential is missing.
+  `AUTH_JWT_SECRET` (host secret store), and mount a credentials file with at
+  least one valid line (`APP_USERS_FILE` if not at the default path). The app
+  refuses to boot otherwise.
 
 ## Run
 
@@ -242,7 +257,7 @@ python scripts/preprocess.py --owners-index        # writes composite/owners_ind
 
 # 2. run the API (SQLite dev DB at data/processed/lead_state.sqlite3 by default).
 #    AUTH_DEV_MODE=1 opts into the local loop; without it the app fails closed
-#    (it requires a real AUTH_JWT_SECRET + a sign-in gate — see "fail closed").
+#    (it requires a real AUTH_JWT_SECRET + a credentials file — see "fail closed").
 AUTH_DEV_MODE=1 uvicorn backend.app.main:app --reload --port 8000
 # health check (public):
 curl localhost:8000/api/health
@@ -257,7 +272,7 @@ curl localhost:8000/api/candidates -H "authorization: Bearer $JWT"   # 200; with
 Point at Postgres instead of SQLite with
 `DATABASE_URL=postgresql+psycopg://user:pass@host/db`. In prod leave
 `AUTH_DEV_MODE` off and follow the deploy checklist above (set
-`AUTH_JWT_SECRET` from the host secret store and a non-empty `APP_USERS`,
+`AUTH_JWT_SECRET` from the host secret store and mount a real `users.txt`,
 #16) — the app refuses to boot otherwise.
 
 ## Test

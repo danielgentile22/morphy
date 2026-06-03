@@ -200,7 +200,7 @@ Locked in [ADR-055](./adr/0055-hosted-private-backend.md). Supersedes ADR-006 (s
 | App | **FastAPI** (Python) | Same language as preprocess; thin CRUD + auth + extraction-orchestration surface |
 | Database | **Postgres** (managed in prod; testcontainers in CI) | Tenant-shaped schema from Day 1 — every table has `tenant_id` |
 | Object store | **S3-compatible** — Backblaze B2 / Cloudflare R2 / AWS S3 | Lease PDFs; encrypted at rest; signed download URLs only |
-| Auth | **Username/password** (`APP_USERS`) | Hardcoded credentials for 2–5 users; HS256 session JWTs ([ADR-062](./adr/0062-username-password-replaces-magic-link.md)) |
+| Auth | **Username/password** (`backend/users.txt`) | File-based credentials managed via `python -m app.users`; teams = tenants; identity-only HS256 JWTs, file authoritative per request ([ADR-062](./adr/0062-username-password-replaces-magic-link.md) / [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md)) |
 | LLM | **Anthropic Claude API** | Sonnet 4.6 default + Opus 4.7 retry for lease extraction ([ADR-059](./adr/0059-llm-lease-extraction.md)); prompt caching on |
 | Address normalization | **libpostal** (preferred) or **`usaddress`** (fallback) | For owner-cluster strengthening — pick at build time per dep-management friction |
 | Transport | **HTTPS only** (HSTS) | TLS terminated at the host platform's edge |
@@ -213,7 +213,7 @@ Locked in [ADR-055](./adr/0055-hosted-private-backend.md). Supersedes ADR-006 (s
 | `DATABASE_URL` | FastAPI app | Managed Postgres connection string |
 | `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | FastAPI app | Lease PDF object store |
 | `ANTHROPIC_API_KEY` | Lease-extraction worker | Claude API |
-| `APP_USERS` | Auth surface | Login credentials, `username:<pbkdf2-hash>,…` (hash via `python -m app.password`) |
+| `APP_USERS_FILE` | Auth surface | Path to the mounted credentials file (default `backend/users.txt`; one `username:hash:team` line per user, managed via `python -m app.users`) |
 | `AUTH_JWT_SECRET` | Auth surface | Signing user-session JWTs (rotating it revokes every active session) |
 | `BACKEND_BASE_URL` | Map app | Where the API is reachable |
 

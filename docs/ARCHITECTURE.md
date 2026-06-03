@@ -310,7 +310,7 @@ A small FastAPI + Postgres + S3-compatible + Claude-API service that stands up i
 Locked architectural decisions:
 - **Hosted-private** — single small VM (Fly.io / Render / Hetzner class); ~$30-100/mo Phase 1 ([ADR-055](./adr/0055-hosted-private-backend.md), supersedes ADR-006 for write features).
 - **Tenant-shaped schema from Day 1** — every table has a `tenant_id` column, always `1` for now. Adding a second tenant (intern / advisor / second cofounder / paid Phase-3 customer) is a row-add not a refactor.
-- **Username/password auth** — hardcoded credentials (`APP_USERS` env secret, PBKDF2 hashes) for 2–5 users; HS256 session JWTs. Replaced the original magic-link design ([ADR-062](./adr/0062-username-password-replaces-magic-link.md)).
+- **Username/password auth over a credentials file** — `backend/users.txt` (`username:hash:team` lines, PBKDF2 hashes, managed via `python -m app.users`); **teams are tenants**; identity-only HS256 session JWTs with the file authoritative on every request. Replaced the original magic-link design and the interim `APP_USERS` env var ([ADR-062](./adr/0062-username-password-replaces-magic-link.md) / [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md)).
 - **S3-compatible** object store for lease PDFs (Backblaze B2 / Cloudflare R2 / AWS S3) — encrypted at rest, signed download URLs only.
 - **Postgres** — managed in prod; `testcontainers-postgres` in CI for real-Postgres testing (no SQLite-stub drift).
 - **Claude API** — Sonnet 4.6 default + Opus 4.7 retry for lease extraction; prompt caching on ([ADR-059](./adr/0059-llm-lease-extraction.md)).
@@ -389,8 +389,8 @@ Per [ADR-059](./adr/0059-llm-lease-extraction.md):
 
 ### 5.5 Auth + multi-tenancy
 
-- Username/password login (`POST /api/auth/login`) → backend verifies against the `APP_USERS` credential set (PBKDF2 hashes) → mints an HS256 session JWT ([ADR-062](./adr/0062-username-password-replaces-magic-link.md)).
-- Every API route filters by `tenant_id` derived from the session. Multi-tenancy isolation tests gate every PR (see [TESTING.md §11.2](./TESTING.md)).
+- Username/password login (`POST /api/auth/login`) → backend verifies against the credentials file `backend/users.txt` (PBKDF2 hashes) → mints an **identity-only** HS256 session JWT ([ADR-062](./adr/0062-username-password-replaces-magic-link.md) / [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md)).
+- Every API route re-authorizes the session's username against the credentials file (mtime-cached) and resolves their *current* team → `tenant_id`; teams ARE tenants. Removing a user or changing their team applies on their next request. Multi-tenancy isolation tests gate every PR (see [TESTING.md §11.2](./TESTING.md)).
 
 ### 5.6 What's not in Slice 4
 

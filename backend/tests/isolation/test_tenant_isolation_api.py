@@ -1,23 +1,27 @@
 """Route-level multi-tenancy isolation — the ADR-055 Day-1 requirement,
-driven through real auth (Slice 2 / #48).
+driven through real auth (Slice 2 / #48, re-keyed on teams by #86/#88).
 
-Two synthetic tenants, each authenticated with its *own* session JWT
-(tenant A auto-provisioned into the default tenant; tenant B provisioned
-into tenant 2). Every data route asserts "tenant A cannot read / write /
-list tenant B's data" — even though only one tenant exists in production.
-The store-level twin of these checks lives in ``test_tenant_isolation.py``.
+Two users on two different teams, each authenticated through the real
+login route against the credentials file (the only way to reach a tenant
+since #88 — a JWT cannot claim one). Every data route asserts "team A
+cannot read / write / list team B's data". The store-level twin of these
+checks lives in ``test_tenant_isolation.py``; the login-driven team
+behaviors (sharing, inheritance, re-homing) live in ``test_teams.py``.
 
 Run with ``pytest -k tenant_isolation``.
 """
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.auth import Principal, create_access_token
+from backend.app.config import settings
+from backend.app.password import hash_password
 
 from .._helpers import api, auth_header
 
@@ -50,31 +54,49 @@ SAMPLE = {
 }
 
 
+@contextlib.contextmanager
+def _users_file(*lines: str) -> Iterator[None]:
+    creds = Path(settings.credentials_path)
+    original = creds.read_text()
+    creds.write_text("\n".join(lines) + "\n")
+    try:
+        yield
+    finally:
+        creds.write_text(original)
+
+
 @pytest.fixture
 def two_tenants() -> Iterator[tuple[TestClient, dict, dict]]:
-    """A client plus per-tenant auth headers for two distinct tenants.
+    """A client plus per-tenant auth headers for two users on two teams.
 
-    The two JWTs are minted directly via the seam (synthetic tenants 1 and 2,
-    bypassing login + team registration) — the routes resolve the tenant from
-    the token, which is exactly the isolation under test. The login-driven
-    twin of these checks (real teams from the credentials file) lives in
-    ``test_teams.py``.
+    Both sessions come from the real login route against the credentials
+    file — since #88 the file is the only source of tenancy (an identity-only
+    JWT cannot carry or forge a tenant), so this is exactly the isolation
+    boundary under test.
     """
-    with api(SAMPLE) as (client, _eng, _sender):
-        header_a = auth_header(
-            create_access_token(Principal(tenant_id=1, user_id=1, email="tenant-a"))
-        )
-        header_b = auth_header(
-            create_access_token(Principal(tenant_id=2, user_id=2, email="tenant-b"))
-        )
-        yield client, header_a, header_b
+    with (
+        _users_file(
+            f"user-a:{hash_password('pw-a')}:team-a",
+            f"user-b:{hash_password('pw-b')}:team-b",
+        ),
+        api(SAMPLE) as (client, _eng, _sender),
+    ):
+
+        def login(username: str, password: str) -> dict:
+            r = client.post("/api/auth/login", json={"username": username, "password": password})
+            assert r.status_code == 200, r.text
+            return auth_header(r.json()["access_token"])
+
+        yield client, login("user-a", "pw-a"), login("user-b", "pw-b")
 
 
 @pytest.mark.tenant_isolation
 def test_jwts_resolve_to_distinct_tenants(two_tenants) -> None:
     client, a, b = two_tenants
-    assert client.get("/api/auth/me", headers=a).json()["tenant_id"] == 1
-    assert client.get("/api/auth/me", headers=b).json()["tenant_id"] == 2
+    me_a = client.get("/api/auth/me", headers=a).json()
+    me_b = client.get("/api/auth/me", headers=b).json()
+    assert me_a["tenant_id"] != me_b["tenant_id"]
+    assert (me_a["team"], me_b["team"]) == ("team-a", "team-b")
 
 
 @pytest.mark.tenant_isolation
