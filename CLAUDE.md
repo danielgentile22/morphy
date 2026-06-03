@@ -4,7 +4,11 @@ Orientation for Claude Code sessions working in this repo. Read this
 first; then dip into the relevant doc under [docs/](docs/) when you
 need depth.
 
-**Last updated:** 2026-06-02 (**sign-in gates the whole app + teams-as-tenants + file-based credentials — PRD #83 complete, ADR-063**: #84 the git-ignored `backend/users.txt` (`username:hash:team` lines, managed by `python -m app.users` — #87) replaces the `APP_USERS` env var as the only credential source (PR #89); #85 a full-screen sign-in gate renders before anything else — no map, no data fetch, until a verified session exists (PR #90); #86 **teams are tenants** — the `tenant` table registers teams in credentials-file order, the first team in the file owns tenant 1 and inherits the pre-teams lead board (PR #91); #88 the **file is authoritative on every request** — the JWT is identity-only (sub = username), each request re-resolves the user's existence + current team from the mtime-cached file, so removing/re-teaming a user applies on their next click. The username/password front door, throttle, and fail-closed posture from PRD #75 / ADR-062 stand. Prior, 2026-05-31: **auth front door is now username/password** — PRD #75 replaced the magic-link sign-in with hardcoded username/password logins: #76 login (PR #79) + #77 throttle + credential-keyed fail-closed boot (PR #81) + #78 removed the magic-link machinery (`email_sender.py`, `magic_link_token`, the request-link/exchange routes + dead config knobs; ADR-062). `POST /api/auth/login` → HS256 JWT is the only front door; the JWT seam + tenant isolation are unchanged. Prior, 2026-05-30: **the lead-centric triage redesign UI is complete** — the ADR-055/056 write-layer + redesigned UI have landed through Slice 7: Slice 1 tracer (#47), **auth** (#48: HS256 JWT + route-level tenant-from-JWT, fail-closed `AUTH_DEV_MODE`), **full Lead page** (#49: cross-state holdings + EPSG:4326 mini-map + editable contact + attempts + auto-logged status; owners index **schema v2**), **structures-first map** (#50: clustered towers across all four anchors, click → landowner Lead), **My-Leads kanban** (#51: drag-to-change-status worklist + live nav counts), **top-bar filters + owner/ASR search** (#52 / PR #63: one shared lead-centric `FilterModel` narrows the map's towers + the Candidates list; owners index **→ schema v3** + slim client `owners_filter.json`; the parcel-centric sidebar is retired), and **manual owner merge/split** (#53 / PR #65: `OwnerMergeService` + tenant-scoped `owner_cluster_override`; `display_cluster_id = coalesce(override_target, raw_cluster_id)` applied in the read path so a merge/split shows up identically on every served surface; raw parquet cluster ids never mutated, so overrides survive a recompute). This **completes the PRD #46 redesign**. **Slice A — carrier identification — has since landed:** the FCC ULS↔ASR carrier layer is merged to `main` (#12 ULS normalize → #11 ULS↔ASR join calibration → #22 licensee→brand rollup → #24 `carriers` list on every tower), and the **carrier-list UI is merged** (#28 / PR #71 — one shared `CarrierList.svelte` with confidence badges + tooltips + empty state, on the LeadPage holdings + the schema-driven DetailsPanel tower panel; owners-index → **schema v4**). Coverage is ~6–17% of ASR towers (high-precision / low-recall), so an empty carrier list is the common case. Lease-doc upload + LLM extraction (the rest of D+E) still unimplemented. See docs/STATUS.md.
+**Current state:** see [docs/STATUS.md](docs/STATUS.md) for what works today
+and the live slice plan. Auth (PRD #75 + #83), the lead-centric redesign
+(PRD #46), and Slice A (carrier identification) have all shipped; the rest of
+**D+E** — lease-doc upload + LLM extraction — is the next build. A dated
+milestone log lives at the bottom of this file. (Last doc sweep: 2026-06-02.)
 
 > **🔀 2026-05-25 phase shift:** The project pivoted from "v1 pitch
 > demo" to **Phase 1 of a co-founder-facing product** — see
@@ -122,13 +126,36 @@ pilot/
 The full repository layout + system diagram is in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+### Intent Layer (per-subsystem AGENTS.md)
+
+**Before modifying code in one of these subsystems, read its `AGENTS.md`
+first** — each captures the local entry points, contracts, and invariants
+that are easy to violate, and links to the deep doc for that area. This
+`CLAUDE.md` stays the single project-root context file; the nodes below are
+its children.
+
+| Subsystem | Node | Owns | Most-violated invariant |
+|---|---|---|---|
+| Map app (frontend) | [`app/AGENTS.md`](app/AGENTS.md) | Svelte 5 + MapLibre read-layer triage UI | Schema-completeness contract; structures-first map |
+| Write-layer backend | [`backend/AGENTS.md`](backend/AGENTS.md) | FastAPI Lead status/notes/attempts | `tenant_id` everywhere; `users.txt` per-request authority; identity-only JWT |
+| Headless puller | [`scripts/fetch/AGENTS.md`](scripts/fetch/AGENTS.md) | `DataSource` fetchers + manifest | No Qt imports; never add scraping to a MANUAL_ONLY source |
+| Preprocess pipeline | [`scripts/preprocess/AGENTS.md`](scripts/preprocess/AGENTS.md) | Normalizer→Join→View→Compose ETL | EPSG:4326 output; no normalize-time filtering; owners-index schema versioning |
+| Desktop puller | [`app_puller/AGENTS.md`](app_puller/AGENTS.md) | PySide6 UI over the headless puller | Qt lives only here |
+
+Global invariants (apply across all subsystems) live in §8 below.
+
 ---
 
 ## 3. The current work plan
 
 Phase 1 slice plan (untimed, goal-driven): **F → A → C → D+E → B**. After Slice B, the **4-week outcome-bar clock** starts (cofounder uses the product as his primary daily triage tool for 4 consecutive weeks).
 
-> **Update (2026-05-30):** the ADR-055/056 write-layer (originally part of D+E) was pulled ahead via the lead-centric triage redesign, whose **UI is now complete** — tracer (#47) → auth (#48) → full Lead page (#49) → structures-first map (#50) → My-Leads kanban (#51) → top-bar filters + owner/ASR search (#52) → manual owner merge/split (#53). This **completes the PRD #46 redesign**. **Slice A — carriers — has since landed:** data layer merged (#11/#12/#22/#24) + carrier-list UI merged (#28 / PR #71; owners-index → schema v4). Remaining Phase-1 work: the rest of **D+E** (lease-doc upload + LLM extraction), **Slice C** (tunable scoring UI; solar→parcel done), and **Slice B** (vendor inference). See docs/STATUS.md §6.
+> **Status:** the lead-centric redesign (PRD #46) pulled the ADR-055/056
+> write-layer ahead of A and C and is complete; **Slice A (carriers)** has
+> landed. Remaining Phase-1 work: the rest of **D+E** (lease-doc upload + LLM
+> extraction), **Slice C** (tunable scoring UI; solar→parcel done), and
+> **Slice B** (vendor inference). Per-PR history + current blockers live in
+> [docs/STATUS.md](docs/STATUS.md) and the milestone log at the bottom of this file.
 
 Per-slice "shipped" gates in [docs/GOALS.md §3](docs/GOALS.md). Current slice + blockers in [docs/STATUS.md](docs/STATUS.md) — always check it before starting a new task.
 
@@ -233,7 +260,7 @@ State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). Ph
   add status / validity columns; let Joins and Views filter.
 - **Use `safe_merge`** when a Join adds columns that a Normalizer
   initializes as placeholders ([ADR-020](docs/adr/0020-safe-merge-helper.md)).
-- **Backend — `tenant_id` everywhere** ([ADR-055](docs/adr/0055-hosted-private-backend.md)). Every table has it; every route filters by it. SQLAlchemy ORM, SQLite dev / Postgres via `DATABASE_URL`. The tenant is now **resolved from the credentials file on every request** (`current_tenant_id` → `resolve_principal`; the JWT is identity-only — PRD #83 / ADR-063, on top of the username/password front door per ADR-062) — do not reintroduce the `tenant_id=1` stub, never put tenant/team claims back into the JWT, and respect the fail-closed `AUTH_DEV_MODE` posture. **Teams are tenants** (the `tenant` table; teams register find-or-create in credentials-file order, so the first team in `users.txt` owns tenant 1 and the pre-teams lead board). Credentials live only in the git-ignored `backend/users.txt` (`username:hash:team`; manage with `python -m app.users` — never hand-edit hashes, never commit the real file — a commit-guard test enforces this). Schema changes ride an additive `init_db` migration until Alembic (e.g. the Slice 3 `lead.contact_*` columns, #49). The static read-side **owners index** (`scripts/preprocess/owners_index.py`, served read-only by `OwnersIndexService`) is at **schema v4** — Slice 6 (#52) added the per-owner filter rollups (`counties` / `active_tower_count` / `structure_count` / `structure_types`) the shared top-bar `FilterModel` reads, and a slim client companion `owners_filter.json`; **Slice A (#28) added `carriers` onto each tower structure inside a holding** — and **declared it on the backend `Structure` model**, because an undeclared field is silently dropped by `response_model=LeadDetail` (the carrier list would never reach the Lead page otherwise). Bump `OWNERS_INDEX_SCHEMA_VERSION` + give new `OwnerSummary` / `Structure` fields safe defaults when you extend it (a stale index must still serve). **Manual owner merge/split** (Slice 7 / #53) lives in the tenant-scoped `owner_cluster_override` table + `OwnerMergeService`: `display_cluster_id = coalesce(override_target, raw_cluster_id)`, applied in **one place** in the read path (`OwnersIndexService.effective`) so every served surface honors it — never fork resolution per surface, and never bake an override into the parquet (raw cluster ids stay untouched, so overrides survive a recompute). See `backend/README.md`.
+- **Backend — `tenant_id` everywhere** ([ADR-055](docs/adr/0055-hosted-private-backend.md)). Every table has it; every route filters by it. SQLAlchemy ORM, SQLite dev / Postgres via `DATABASE_URL`. **Auth guard-rails** (PRD #75 + #83, ADR-062 + ADR-063 — mechanics in `backend/README.md`): the tenant is **resolved from the git-ignored `backend/users.txt` on every request** (`current_tenant_id` → `resolve_principal`), the JWT is **identity-only**, and **teams are tenants** (file-order registration — the first team in `users.txt` owns tenant 1 + the pre-teams lead board). Do **not** reintroduce the `tenant_id=1` stub, put tenant/team claims back into the JWT, hand-edit hashes, commit the real `users.txt` (a commit-guard test enforces this), or relax the fail-closed `AUTH_DEV_MODE` posture; manage credentials only via `python -m app.users`. Schema changes ride an additive `init_db` migration until Alembic. **Owners index** (`scripts/preprocess/owners_index.py`, served read-only by `OwnersIndexService`) is at **schema v4** — when you extend it: bump `OWNERS_INDEX_SCHEMA_VERSION`, give new fields safe defaults (a stale index must still serve), and **declare any new `Structure`/`OwnerSummary` field on the backend model** (an undeclared field is silently dropped by `response_model`). **Manual owner merge/split** resolves in **one place** — `display_cluster_id = coalesce(override_target, raw_cluster_id)` in `OwnersIndexService.effective`; never fork resolution per surface, never bake an override into the parquet (raw cluster ids stay untouched, so overrides survive a recompute). See `backend/README.md`.
 
 ---
 
@@ -290,3 +317,16 @@ repo — the `triage` skill will create them on first use. See
 Single-context: [CONTEXT.md](CONTEXT.md) at the repo root. All ADRs under
 [docs/adr/](docs/adr/), indexed by [docs/DECISIONS.md](docs/DECISIONS.md).
 See [docs/agents/domain.md](docs/agents/domain.md).
+
+---
+
+## Milestone log
+
+Volatile changelog kept at the **bottom** so the structural sections above
+form a stable, cacheable prefix. [docs/STATUS.md](docs/STATUS.md) is the
+authoritative live status; this is a quick orientation trail.
+
+- **2026-06-02 — auth: file credentials + teams-as-tenants + per-request authority** (PRD #83, ADR-063). `backend/users.txt` (`username:hash:team`, managed by `python -m app.users`, #87) replaced `APP_USERS` as the only credential source (#84 / PR #89); a full-screen sign-in gate renders before any map/data (#85 / PR #90); teams register as tenants in file order (#86 / PR #91); the file re-authorizes every request, JWT identity-only (#88 / PR #94).
+- **2026-05-31 — auth front door → username/password** (PRD #75, ADR-062). Replaced magic-link with `POST /api/auth/login` → HS256 JWT (#76 / PR #79), added throttle + credential-keyed fail-closed boot (#77 / PR #81), removed the magic-link machinery (#78).
+- **2026-05-30 — lead-centric triage redesign complete** (PRD #46, ADR-061). Tracer (#47) → auth (#48) → full Lead page + owners index schema v2 (#49) → structures-first map (#50) → My-Leads kanban (#51) → top-bar filters + owner/ASR search, schema v3 (#52) → manual owner merge/split (#53).
+- **2026-05-30 — Slice A (carrier identification) landed.** FCC ULS↔ASR carrier layer merged (#12 normalize → #11 join calibration → #22 licensee→brand rollup → #24 `carriers` on every tower) + carrier-list UI, owners-index schema v4 (#28 / PR #71). Coverage ~6–17% of ASR towers (high-precision / low-recall) — an empty carrier list is the common case.
