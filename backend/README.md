@@ -24,7 +24,9 @@ backend/app/
   owners_index_service.py   serves the static index (override-aware) left-joined with the tenant's lead state
   auth.py                   JWT issue/verify + current_tenant_id (JWT-derived)
   password.py               stdlib PBKDF2-HMAC-SHA256 hashing (no third-party dep; `python -m app.password`)
-  credentials.py            parse APP_USERS + authenticate username/password (Slice 1 / #76)
+  credentials.py            parse + authenticate against the credentials file users.txt (#84)
+  users.py                  user-management CLI for users.txt (`python -m app.users`, #87)
+  tenant_service.py         team → tenant resolution, file-order registration (#86)
   login_throttle.py         in-process (ip, username) brute-force throttle (Slice 2 / #77)
   auth_service.py           login() (username/password) + user provisioning
   main.py                   FastAPI routes
@@ -120,6 +122,28 @@ validates.
 Every data route resolves the tenant from the `Authorization: Bearer <jwt>`
 (`current_tenant_id`, now JWT-derived) and is tenant-scoped; an
 unauthenticated data request is rejected with **401**.
+
+## User management (users.txt + CLI, #87)
+
+Credentials live in the git-ignored **`backend/users.txt`** (one
+`username:password-hash:team` line per user; format documented by the
+committed `users.txt.example`). **The CLI is the management surface — never
+edit hashes by hand:**
+
+```bash
+cd backend
+python -m app.users add <username> <team>       # prompts for a password (hidden)
+python -m app.users remove <username>           # user is locked out of new sign-ins
+python -m app.users list                        # usernames + teams only, never hashes
+python -m app.users set-password <username>     # prompts; old password stops working
+python -m app.users set-team <username> <team>  # moves the user to another team's board
+```
+
+All writes are atomic (temp file + rename). The file path defaults to
+`backend/users.txt`; point the CLI (and the backend) somewhere else with
+`--file` / the `APP_USERS_FILE` env var. **Line order matters:** the first
+team in the file owns tenant 1 — the original lead board (#86) — so keep the
+original team's users at the top.
 
 ## Auth (username/password, Slice 1 / #76)
 

@@ -5,13 +5,19 @@
 # is). In production, point APP_USERS_FILE at wherever the secret store mounts
 # the real file.
 #
+# Manage this file with the CLI — never edit hashes by hand (#87):
+#
+#   cd backend && python -m app.users add <username> <team>
+#   cd backend && python -m app.users list
+#   (also: remove / set-password / set-team)
+#
 # Format — one user per line, three colon-separated fields:
 #
 #   username:password-hash:team
 #
 #   - username and team are case-insensitive; surrounding spaces are ignored
-#   - password-hash is the self-describing PBKDF2 form printed by
-#     `cd backend && python -m app.password <password>`
+#   - password-hash is the self-describing PBKDF2 form (the CLI generates it;
+#     `python -m app.password <password>` prints one manually)
 #   - lines starting with '#' and blank lines are ignored
 #   - a malformed line (wrong field count, empty field) is skipped, never fatal
 #   - a line WITHOUT a team is not a valid credential
