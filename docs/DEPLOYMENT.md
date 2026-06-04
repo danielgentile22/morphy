@@ -190,61 +190,66 @@ bucket; encrypted at rest.
 
 ## 8. Hosted-private backend (Slice 4 — D + E)
 
-Locked in [ADR-055](./adr/0055-hosted-private-backend.md). Supersedes ADR-006 (static-site, no backend) for write-layer features only — read-only analytical layers (parquet, PMTiles, GeoJSON) stay static.
+Locked in [ADR-055](./adr/0055-hosted-private-backend.md) (supersedes ADR-006 — static-site, no backend — for write-layer features only; read-only analytical layers stay static). The **platform, database, and object-store** choices below are **narrowed by [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md)** (2026-06-03 hosting-decision session): Fly.io single always-on machine + SQLite-on-volume + Cloudflare front, ~$5–8/mo — not the managed-Postgres + separate-S3-service shape ADR-055 originally defaulted to. **Not yet built** — tracked by issue #16.
 
-### Stack
+### Stack (per ADR-064)
 
-| Component | Choice (Slice 4 default) | Notes |
+| Component | Choice | Notes |
 |---|---|---|
-| Hosting | Small VM — **Fly.io / Render / Hetzner** class | Any will do; pick at Slice 4 implementation time |
-| App | **FastAPI** (Python) | Same language as preprocess; thin CRUD + auth + extraction-orchestration surface |
-| Database | **Postgres** (managed in prod; testcontainers in CI) | Tenant-shaped schema from Day 1 — every table has `tenant_id` |
-| Object store | **S3-compatible** — Backblaze B2 / Cloudflare R2 / AWS S3 | Lease PDFs; encrypted at rest; signed download URLs only |
-| Auth | **Username/password** (`backend/users.txt`) | File-based credentials managed via `python -m app.users`; teams = tenants; identity-only HS256 JWTs, file authoritative per request ([ADR-062](./adr/0062-username-password-replaces-magic-link.md) / [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md)) |
-| LLM | **Anthropic Claude API** | Sonnet 4.6 default + Opus 4.7 retry for lease extraction ([ADR-059](./adr/0059-llm-lease-extraction.md)); prompt caching on |
-| Address normalization | **libpostal** (preferred) or **`usaddress`** (fallback) | For owner-cluster strengthening — pick at build time per dep-management friction |
-| Transport | **HTTPS only** (HSTS) | TLS terminated at the host platform's edge |
-| Cost (Phase 1) | ~$30–100 / month | Within ADR-057 reframed budget |
+| Hosting | **Fly.io**, US region, **single always-on machine** (`min_machines_running=1`) | User chose the `fly deploy` PaaS over a ~$2/mo-cheaper bare VM. One machine only — SQLite is single-writer. |
+| App | **FastAPI** (uvicorn) | Thin CRUD + auth + extraction-orchestration; same language as preprocess. |
+| In-machine web server | **Caddy + uvicorn under supervisord** | Caddy serves `app/dist` (SPA) + `/data/*` Range/206 + gzip and reverse-proxies `/api/*` → uvicorn. Replaces `scripts/serve.py` in prod. (Fly `[processes]` is *not* used — it would spawn separate machines and break single-volume / single-writer.) |
+| Storage | **Fly Volume, 10 GB** (`fly volume extend` later) | Holds the 4.29 GB served composite + SQLite + lease PDFs. The 4.29 GB stays **same-origin behind the login** (PII). |
+| Database | **SQLite on the Volume** | `DATABASE_URL=sqlite+pysqlite:////data/lead_state.sqlite3`. Tenant isolation is app-level (identical to PG); schema is PG-portable. Avoids Fly Managed PG ($38/mo). Tenant-shaped schema from Day 1 — every table has `tenant_id`. |
+| Object store | **Cloudflare R2** | Backups + (at D+E) lease PDFs; encrypted; private bucket. Also the laptop→R2→volume staging relay for data sync. |
+| Backups | **Litestream → R2** (continuous SQLite) + Fly volume snapshots; restic→R2 for PDFs at D+E | Composite data is disposable (re-compose); precious = SQLite write-layer + lease PDFs. |
+| Auth | **Username/password** (`users.txt` on the Volume) | `APP_USERS_FILE=/data/users.txt`, managed via `fly ssh` + `python -m app.users`; teams = tenants; identity-only HS256 JWTs, file authoritative per request ([ADR-062](./adr/0062-username-password-replaces-magic-link.md) / [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md)). |
+| Domain + perimeter | **Custom domain via Cloudflare Registrar**; **Cloudflare proxy (orange-cloud), no Access**; SSL Full (strict); cache-bypass `/data/*` | Edge DDoS + WAF + hidden origin + login rate-limiting, no extra user friction. App login stays the auth boundary; Access deferred. |
+| LLM | **Anthropic Claude API** | Sonnet 4.6 default + Opus 4.7 retry for lease extraction ([ADR-059](./adr/0059-llm-lease-extraction.md)); prompt caching on. |
+| Address normalization | **libpostal** (preferred) or **`usaddress`** (fallback) | For owner-cluster strengthening — pick at build time per dep-management friction. |
+| Transport | **HTTPS only** (HSTS) | TLS at Cloudflare's edge + Fly's edge (Full strict). |
+| Machine size / cost | **shared-cpu-1x @ 1 GB**, **~$5–8/mo** all-in + ~$10/yr domain | Within ADR-057 reframed budget. DuckDB runs client-side, so the server stays light. |
 
-### Env vars (Slice 4)
+### Env vars (per ADR-064)
 
 | Variable | Used by | Purpose |
 |---|---|---|
-| `DATABASE_URL` | FastAPI app | Managed Postgres connection string |
-| `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | FastAPI app | Lease PDF object store |
-| `ANTHROPIC_API_KEY` | Lease-extraction worker | Claude API |
-| `APP_USERS_FILE` | Auth surface | Path to the mounted credentials file (default `backend/users.txt`; one `username:hash:team` line per user, managed via `python -m app.users`) |
-| `AUTH_JWT_SECRET` | Auth surface | Signing user-session JWTs (rotating it revokes every active session) |
-| `BACKEND_BASE_URL` | Map app | Where the API is reachable |
+| `DATABASE_URL` | FastAPI app | `sqlite+pysqlite:////data/lead_state.sqlite3` — **must point at the Volume**, not the default repo path (which is ephemeral in-container and unwatched by Litestream). |
+| `APP_USERS_FILE` | Auth surface | `/data/users.txt` (on the Volume; `username:hash:team` per line, managed via `python -m app.users`). |
+| `AUTH_DEV_MODE` | Auth surface | `0` in prod (fail-closed; the default is already `False`). |
+| `AUTH_JWT_SECRET` | Auth surface | Signs identity-only session JWTs (rotating it revokes every active session). |
+| `ANTHROPIC_API_KEY` | Lease-extraction worker | Claude API (added at D+E). |
+| R2 access/secret keys + bucket | Litestream + `rclone` | Backups + data-sync staging. |
 
-Stored in the host platform's secret store (Fly secrets / Render env vars / Hetzner vault). Never in repo.
+Secrets (`AUTH_JWT_SECRET`, R2 keys, `ANTHROPIC_API_KEY`) go in **Fly secrets**; non-secret env (`AUTH_DEV_MODE`, `APP_USERS_FILE`, `DATABASE_URL`) in `fly.toml [env]`. Never in repo. **No `BACKEND_BASE_URL`** — the map app resolves its API base as `VITE_API_BASE ?? '/api'` (`app/src/lib/leads-api.ts`), so single-origin Caddy needs nothing set, and a later domain change needs no rebuild.
 
-### Run commands (Slice 4 — placeholders until build)
+### Deploy artifacts (issue #16 deliverable — unbuilt)
+
+`Dockerfile` (multi-stage: node builds `app/dist`, runtime bundles Caddy + uvicorn + supervisord + Litestream + restic + backend) · `fly.toml` (one machine, volume mount, US region, `[env]`) · `Caddyfile` · `supervisord.conf` · `litestream.yml` · `deploy.sh` (`fly deploy` then `rclone` R2→volume data sync). **Not** systemd units (that was the bare-VM path, not taken).
+
+### Run commands
 
 ```bash
-# Local backend (after Slice 4 lands)
+# Local backend (SQLite default; no Postgres needed)
 cd backend
-poetry install
-DATABASE_URL=postgres://... S3_BUCKET=... ANTHROPIC_API_KEY=... \
-  uvicorn app.main:app --reload --port 8000
-
-# Migrations
-cd backend && alembic upgrade head
+uvicorn app.main:app --reload --port 8000     # DATABASE_URL defaults to local SQLite
 
 # Tests
-cd backend && pytest                       # spins testcontainers-postgres
-cd backend && pytest -k tenant_isolation   # multi-tenancy isolation specifically
-cd backend && pytest -m llm_eval           # gold-set LLM extraction eval (gating CI check)
+cd backend && pytest                           # SQLite in-memory; AUTH_DEV_MODE=1 in conftest
+cd backend && pytest -k tenant_isolation       # multi-tenancy isolation specifically
+cd backend && pytest -m llm_eval               # gold-set LLM extraction eval (gating CI check)
+ruff check . && ruff format --check .          # the only real CI gate — run before declaring done
 
-# Production deploy (vendor-specific; example for Fly)
-fly deploy --app pilot-backend
+# Production deploy (after #16 artifacts exist)
+fly deploy --app pilot-backend                 # ships code; data syncs via deploy.sh (R2→volume)
+fly ssh console -C "python -m app.users add <user> --team <team>"   # bootstrap / manage users
 ```
 
 ### PII custody (see [SECURITY.md](./SECURITY.md))
 
-- HTTPS everywhere; HSTS.
-- Postgres TLS in transit, encryption at rest, daily backups.
-- S3 bucket private; SSE-S3 or KMS encryption; signed download URLs only.
+- HTTPS everywhere (Cloudflare + Fly edges, HSTS); origin IP hidden behind Cloudflare.
+- The 4.29 GB of parcel-owner PII stays **same-origin behind the login**; `/data/*` is cache-bypassed at Cloudflare so PII never sits at the edge.
+- SQLite + lease PDFs on the encrypted Volume; Litestream replicates SQLite to a private R2 bucket; lease PDFs served via signed download URLs only (at D+E).
 - Session JWTs expire (30-day TTL); rotating `AUTH_JWT_SECRET` revokes every session at once.
 - Multi-tenancy isolation tests gate every PR.
 

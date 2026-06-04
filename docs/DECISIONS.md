@@ -1,6 +1,6 @@
 # DECISIONS — Architecture Decision Records (index)
 
-**Last updated:** 2026-06-02 (ADR-063 — file-based credentials, teams-as-tenants, per-request file authority)
+**Last updated:** 2026-06-03 (ADR-064 — Phase-1 hosting: Fly.io single machine, SQLite-on-volume, Cloudflare front)
 
 Index of every locked-in design choice in the repo. Per-ADR content lives under [`docs/adr/`](./adr/). New ADRs go straight there ([CLAUDE.md §9](../CLAUDE.md)).
 
@@ -70,6 +70,7 @@ The currently-binding decisions.
 | [ADR-061](./adr/0061-lead-centric-triage-redesign.md) | Lead-centric triage UI redesign — cross-state leads, structures-first map, write-layer pulled forward |
 | [ADR-062](./adr/0062-username-password-replaces-magic-link.md) | Username/password login replaces magic-link; magic-link machinery removed |
 | [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md) | File-based credentials (users.txt + CLI), teams-as-tenants, per-request file authority |
+| [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md) | Phase-1 hosting — Fly.io single always-on machine, SQLite-on-volume, Cloudflare front (~$5–8/mo) |
 
 ---
 
@@ -98,7 +99,7 @@ Earlier decisions still partially in force, modified by a later ADR.
 | [ADR-023](./adr/0023-huge-geojson-threshold.md) | `HUGE_GEOJSON_THRESHOLD = 100,000` | Narrowed by [ADR-052](./adr/0052-no-geojson-threshold.md) (250K hard ceiling above this) |
 | [ADR-024](./adr/0024-owner-clustering-sha1.md) | Owner clustering = SHA1(normalized name + address) | Follow-up locked in [ADR-056](./adr/0056-lead-equals-owner-cluster.md) — conservative normalization layers + manual merge/split UI before SHA1 |
 | [ADR-041](./adr/0041-no-llc-unmasking.md) | No LLC unmasking | Narrowed by [ADR-057](./adr/0057-budget-posture-reframed.md) — free SoS officer disclosure in scope; paid skip-trace stays non-goal |
-| [ADR-055](./adr/0055-hosted-private-backend.md) | Hosted-private backend (Slice 4) | Magic-link auth portion superseded by [ADR-062](./adr/0062-username-password-replaces-magic-link.md) (username/password login); the backend + `tenant_id` Day-1 decision stands |
+| [ADR-055](./adr/0055-hosted-private-backend.md) | Hosted-private backend (Slice 4) | Magic-link auth portion superseded by [ADR-062](./adr/0062-username-password-replaces-magic-link.md) (username/password login); platform + managed-Postgres + S3-service portions narrowed by [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md) (Fly.io + SQLite-on-volume + R2); the backend + `tenant_id` Day-1 decision stands |
 | [ADR-062](./adr/0062-username-password-replaces-magic-link.md) | Username/password login replaces magic-link | Credential store (`APP_USERS` env) + "no server-side revocation" trade-off superseded by [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md); the username/password front door, throttle, and fail-closed posture stand |
 
 ---
