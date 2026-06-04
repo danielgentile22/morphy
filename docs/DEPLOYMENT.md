@@ -1,15 +1,15 @@
 # DEPLOYMENT — How this runs
 
-**Last updated:** 2026-05-25
-**Status:** Phase 1 = local data pipeline + map app today; **hosted-private backend stands up in Slice 4** (lease docs + lead state + auth) per [ADR-055](./adr/0055-hosted-private-backend.md).
+**Last updated:** 2026-06-04
+**Status:** **Live in production** at [morphyconsulting.com](https://morphyconsulting.com) (Fly app `morphy-consulting`, region `iad`) since 2026-06-04 — the hosted-private backend shipped per [ADR-055](./adr/0055-hosted-private-backend.md) as narrowed by [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md) (#96 built, #16 closed). Local dev still runs all four surfaces on a laptop (§1). **To update the running app, see §8 → "Day-2 operations".**
 
 This doc describes how to stand up the project — what to install, how to run each subsystem, how to ship outputs to a partner, and what Slice 4 adds when the backend lands.
 
 ---
 
-## 1. Where this runs today (pre-Slice 4)
+## 1. Where this runs (local development)
 
-All four surfaces run locally on a developer's machine:
+All four surfaces run locally on a developer's machine (the hosted app is §8):
 
 | Surface | Run command | Port / location |
 |---|---|---|
@@ -18,7 +18,7 @@ All four surfaces run locally on a developer's machine:
 | **Map app** | `python scripts/serve.py 8765` + `cd app && npm run dev` | localhost:5173 |
 | **Tests** | `pytest` · `cd app && npm run test:unit && npm run test:e2e` | Terminal |
 
-**Slice 4 (D + E) adds a hosted-private backend** — small VM + Postgres + S3-compatible object store + FastAPI + username/password auth + Claude API for lease extraction. The map app remains static; it talks to the backend over a thin API for the write-layer features (lead state, lease upload, activity log, scoring profiles per user). See §8 for the deployment shape.
+**The hosted-private backend is now live** (§8) — a single Fly.io machine + SQLite-on-volume + Cloudflare R2 + FastAPI + username/password auth (Claude API for lease extraction lands with D+E). The map app stays static; it talks to the backend over a thin API for the write-layer features (lead state, lease upload, activity log, scoring profiles per user). The local commands above are still how you develop; **to ship a change to the live app, see §8 → "Day-2 operations".**
 
 ---
 
@@ -190,7 +190,7 @@ bucket; encrypted at rest.
 
 ## 8. Hosted-private backend (Slice 4 — D + E)
 
-Locked in [ADR-055](./adr/0055-hosted-private-backend.md) (supersedes ADR-006 — static-site, no backend — for write-layer features only; read-only analytical layers stay static). The **platform, database, and object-store** choices below are **narrowed by [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md)** (2026-06-03 hosting-decision session): Fly.io single always-on machine + SQLite-on-volume + Cloudflare front, ~$5–8/mo — not the managed-Postgres + separate-S3-service shape ADR-055 originally defaulted to. **Deploy artifacts built (#96); cloud provisioning is the operator's remaining step** — tracked by issue #16.
+Locked in [ADR-055](./adr/0055-hosted-private-backend.md) (supersedes ADR-006 — static-site, no backend — for write-layer features only; read-only analytical layers stay static). The **platform, database, and object-store** choices below are **narrowed by [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md)** (2026-06-03 hosting-decision session): Fly.io single always-on machine + SQLite-on-volume + Cloudflare front, ~$5–8/mo — not the managed-Postgres + separate-S3-service shape ADR-055 originally defaulted to. **Live in production since 2026-06-04** at [morphyconsulting.com](https://morphyconsulting.com) (Fly app `morphy-consulting`, region `iad`, 10 GB volume, SQLite + Litestream → R2 `morphy-prod`, Cloudflare orange-cloud / Full-strict): deploy artifacts built (#96), cloud provisioned, issue #16 closed. The **provisioning runbook** below is the one-time stand-up; **"Day-2 operations" is how you update the running app.**
 
 ### Stack (per ADR-064)
 
@@ -238,7 +238,7 @@ Secrets (`AUTH_JWT_SECRET`, the `LITESTREAM_*` R2 keys + bucket/endpoint, `ANTHR
 | `Caddyfile` | SPA fallback; `/data/processed/*` Range/206 + gzip + `Cache-Control: private, no-store`; `/api/*` → uvicorn; HSTS; DB/`users.txt` never served. | `tests/test_caddy_serving.py` (real caddy) |
 | `supervisord.conf` | Runs uvicorn + Caddy + Litestream in the one machine; all logs → stdout (`fly logs`). | — |
 | `litestream.yml` | Continuous SQLite → R2 replication (env-driven; same file for prod + the drill). | `tests/test_litestream_restore.py` (real litestream + minio) |
-| `deploy.sh` | `code` (`fly deploy`), `data` (laptop → R2 → volume via `scripts/sync_composite.py`, mirror, **dry-run by default**), `all`, `smoke`. | `shellcheck` clean |
+| `deploy.sh` | `code` (`fly deploy`; **refuses a dirty working tree** — `ALLOW_DIRTY=1` overrides), `data` (laptop → R2 → volume via `scripts/sync_composite.py`, mirror, **dry-run by default**), `all`, `smoke`. | `shellcheck` clean |
 | `scripts/sync_composite.py` | Owns the served-composite include/exclude contract (drops `*/parcels/` compose-inputs, keeps `parcels.pmtiles`); drives rclone (mirror / dry-run / idempotent). | `tests/test_sync_composite.py` (real rclone) |
 
 **Image dependency decision (PRD #96).** The image installs **`backend/requirements.txt`** (the slim FastAPI/uvicorn/SQLAlchemy/PyJWT set), **not** the root `requirements.txt` — the latter carries geopandas/shapely/pyproj/PySide6 used only by the preprocess pipeline, which never runs in this image. (The PRD's fallback "extract a slim subset" was unnecessary: that subset already existed as `backend/requirements.txt`.) **Not** systemd units (that was the bare-VM path, not taken).
@@ -309,6 +309,75 @@ FLY_APP="$APP" APP_URL="https://<domain>" ./deploy.sh smoke   # SPA, /data Range
 #    Fly volume snapshots are automatic (daily); extend retention as desired.
 #    Litestream restore drill: tests/test_litestream_restore.py is its rehearsal.
 ```
+
+### Day-2 operations (updating the live app)
+
+The live app is one Docker image (SPA + FastAPI + Caddy + Litestream + rclone) on
+one Fly machine. **Updating it** means rebuilding that image or refreshing the
+data on its volume. All commands assume `FLY_APP=morphy-consulting`.
+
+**Update the code — the common case (any frontend or backend change):**
+
+```bash
+git checkout main && git pull                       # deploy from a clean, current tree
+FLY_APP=morphy-consulting ./deploy.sh code          # remote build → roll the machine
+FLY_APP=morphy-consulting ./deploy.sh smoke         # SPA 200 · /data 206 · /api/health 200
+```
+
+`fly deploy` ships the **working tree**, not `git HEAD` — so deploy from a clean
+checkout of exactly what you want live. `deploy.sh code` enforces this: it aborts
+on a dirty tree (`ALLOW_DIRTY=1` overrides for a deliberate local experiment). The
+remote builder compiles `app/dist` and assembles the runtime layer; the single
+machine then rolls to the new image (a few seconds' blip — one machine, single
+SQLite writer, so there's no zero-downtime rollout). Hard-refresh the browser
+after (Cloudflare won't cache the SPA shell, but your browser may hold old JS).
+
+**Update the map data (after a recompose):**
+
+```bash
+FLY_APP=morphy-consulting R2_REMOTE=r2:morphy-prod/composite ./deploy.sh data          # dry-run (default)
+FLY_APP=morphy-consulting R2_REMOTE=r2:morphy-prod/composite ./deploy.sh data --apply  # laptop→R2→volume
+fly apps restart morphy-consulting                  # REQUIRED — reload the owners index (see gotchas)
+```
+
+**Manage users (add / remove / re-team) — no redeploy:**
+
+```bash
+fly ssh console --app morphy-consulting
+  cd /srv/backend && python -m app.users add <username> <team>   # positional args + hidden password prompt
+  # ... list / remove via `python -m app.users --help`; then `exit`
+```
+
+The credentials file is authoritative **per request**, so changes apply on the
+next click — never a redeploy, never hand-edit hashes, never commit `users.txt`.
+
+**Everything else:**
+
+| Change | Command |
+|---|---|
+| A **secret** (JWT / R2 / Anthropic key) | `fly secrets set NAME=value --app morphy-consulting` — auto-restarts the machine |
+| A **non-secret env var** (`fly.toml [env]`) | edit `fly.toml`, then `./deploy.sh code` (it's deploy config) |
+| **Restart** the machine | `fly apps restart morphy-consulting` |
+| **Logs / status / shell** | `fly logs` · `fly status` · `fly ssh console` (all `--app morphy-consulting`) |
+| **Roll back** a bad deploy | `git checkout <good-sha>` → `./deploy.sh code` (the `init_db` migration is additive, so older code stays compatible) |
+
+**Conventions that must hold (don't violate these):**
+
+- **One machine, one SQLite writer.** Never scale to >1 machine, never add a Fly
+  `[processes]` block, never turn `auto_stop_machines` on — each breaks the
+  single-volume / single-writer invariant.
+- **Deploy from a clean tree** (the guard enforces it) — the image *is* the tree,
+  not the commit.
+- **Restart after a data sync** — the backend caches `owners_index.json` at boot,
+  so a fresh sync shows `owners_indexed: 0` until you `fly apps restart`.
+- **Don't restart mid-sync** — a restart kills the in-machine `fly ssh` rclone leg
+  and leaves the volume partial. Let `deploy.sh data` finish (it's idempotent — a
+  re-run repairs a partial).
+- **Auth stays fail-closed** ([ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md)) — never `AUTH_DEV_MODE=1` in prod, never put tenant/team claims in
+  the JWT, never web-serve the DB or `users.txt`.
+- **`/data/*` is PII** — keep it cache-bypassed at Cloudflare (orange-cloud + the
+  `/data/*` cache rule); it must never sit at the edge.
+- **Schema changes** ride the additive `init_db` migration until Alembic lands.
 
 ### Local / CI commands
 

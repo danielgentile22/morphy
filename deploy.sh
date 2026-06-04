@@ -14,6 +14,8 @@
 # Safety: `data` is DRY-RUN by default (reports, writes nothing). Pass --apply
 # (or DRY_RUN=0) to actually transfer. The R2->volume leg runs inside the
 # machine via `fly ssh` (the image carries rclone + sync_composite.py).
+# `code` refuses to deploy a dirty working tree (fly builds the tree, not HEAD);
+# set ALLOW_DIRTY=1 to override for a local experiment.
 #
 # Config via env (with defaults):
 #   FLY_APP        Fly app name              (pilot-app)
@@ -45,8 +47,26 @@ need_fly() {
   command -v fly >/dev/null 2>&1 || die "flyctl not found — install it and 'fly auth login'"
 }
 
+# `fly deploy` ships the working tree (minus .dockerignore), NOT git HEAD — a
+# dirty tree silently bakes in uncommitted edits, and a stale checkout omits
+# merged work. Refuse unless the tree matches HEAD (ALLOW_DIRTY=1 to override).
+# --porcelain ignores gitignored paths (data/, .venv/), so this only trips on
+# changes that would actually reach the image.
+require_clean_tree() {
+  command -v git >/dev/null 2>&1 || die "git not found"
+  if [[ "${ALLOW_DIRTY:-0}" == "1" ]]; then
+    log "ALLOW_DIRTY=1 — skipping clean-tree check"
+    return
+  fi
+  if [[ -n "$(git -C "${REPO_ROOT}" status --porcelain)" ]]; then
+    git -C "${REPO_ROOT}" status --short >&2
+    die "working tree is dirty — commit/stash first, or set ALLOW_DIRTY=1 to override"
+  fi
+}
+
 deploy_code() {
   need_fly
+  require_clean_tree
   log "fly deploy --app ${FLY_APP}"
   fly deploy --app "${FLY_APP}"
 }
