@@ -5,9 +5,11 @@ data/
 !data/.gitkeep
 
 # Local environment overrides
+# NB: `*.env` only matches names ENDING in .env; `.env.*` catches .env.share etc.
 .env
 .env.local
 *.env
+.env.*
 
 # ─── Backend credentials (password hashes; never commit) ─────────────
 # The real users file. Only backend/users.txt.example (fake entries) is
@@ -74,3 +76,7 @@ backups/
 # ─── Throwaway UI verification artifacts (slice screenshots, MCP logs) ─
 screenshots/
 .playwright-mcp/
+# Added by code-review-graph
+.code-review-graph/
+# Local MCP server wiring (machine-specific absolute paths — not portable)
+.mcp.json
