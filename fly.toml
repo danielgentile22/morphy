@@ -5,7 +5,7 @@
 # Operator sets `app` + region at create time; secrets (AUTH_JWT_SECRET, the R2
 # keys, the R2 bucket/endpoint) come from `fly secrets set`, never this file.
 
-app = "pilot-app"
+app = "morphy-consulting"
 primary_region = "iad"
 
 [build]
