@@ -1,0 +1,29 @@
+# Continuous SQLite replication to Cloudflare R2 (PRD #96, ADR-064).
+#
+# Litestream streams the write-layer SQLite (Lead state, contact attempts,
+# scoring profiles, owner merge/split overrides) to a private R2 bucket so a
+# volume loss costs seconds of work, not a day — the "one real risk" the
+# hosting decision called out.
+#
+# Every value is environment-driven, so this exact file is exercised by the
+# restore-drill test (against a local minio R2 stand-in) and run unchanged in
+# prod (against R2, with the keys from Fly secrets). Litestream expands ${VAR}
+# by default. force-path-style suits both minio and R2.
+#
+# Prod env (fly.toml [env] + secrets):
+#   LITESTREAM_DB_PATH=/data/lead_state.sqlite3
+#   LITESTREAM_BUCKET=<r2-bucket>   LITESTREAM_PATH=lead_state
+#   LITESTREAM_ENDPOINT=https://<account>.r2.cloudflarestorage.com
+#   LITESTREAM_REGION=auto
+#   LITESTREAM_ACCESS_KEY_ID / LITESTREAM_SECRET_ACCESS_KEY  (Fly secrets)
+dbs:
+  - path: ${LITESTREAM_DB_PATH}
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: ${LITESTREAM_PATH}
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: ${LITESTREAM_REGION}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        force-path-style: true

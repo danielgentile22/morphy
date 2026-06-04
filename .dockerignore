@@ -1,0 +1,26 @@
+# Keep the Docker build context tiny and secret-free (PRD #96).
+# The ~15 GB data tree is synced to the volume separately (deploy.sh), never
+# baked into the image; the real credentials file lives on the volume, never
+# in the image.
+.git
+.venv
+data
+**/__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+
+# Frontend build inputs we don't need in the context (the image rebuilds dist).
+**/node_modules
+app/dist
+app/test-results
+app/playwright-report
+
+# Never bake credentials or backend tests into the image.
+backend/users.txt
+backend/tests
+
+# Docs / dev-only trees.
+docs
+app_puller
+tests

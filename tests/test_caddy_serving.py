@@ -1,0 +1,192 @@
+"""Caddy edge-serving contract for the hosted app (PRD #96, Module C).
+
+Boots the *real* repo-root ``Caddyfile`` (env-parameterised) against a fixture
+volume + SPA bundle + a stub backend, and asserts the externally observable
+behavior the deploy depends on:
+
+  * a Range request to ``/data/processed/*`` returns 206 + Content-Range;
+  * an unknown route falls back to the SPA's index.html;
+  * ``/api/*`` is reverse-proxied to the backend;
+  * ``/data/processed/*`` responses are ``Cache-Control: private, no-store``;
+  * the SQLite DB and ``users.txt`` (volume root, outside the web subtree) are
+    never web-served (403/404) — the PII/credentials-never-served invariant;
+  * HSTS is set on responses.
+
+These guard the security-relevant edge config, so they drive the *real* binary
+rather than asserting on the Caddyfile's text.
+"""
+
+from __future__ import annotations
+
+import http.client
+import os
+import shutil
+import socket
+import subprocess
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+import pytest
+
+_CADDY = shutil.which("caddy")
+_CADDYFILE = Path(__file__).resolve().parents[1] / "Caddyfile"
+
+pytestmark = pytest.mark.skipif(_CADDY is None, reason="caddy binary not installed")
+
+# Distinctive fixture contents so a wrong handler can't accidentally look right.
+_DB_MARKER = b"SQLITE-SECRET-DB-CONTENTS"
+_USERS_MARKER = b"alice:$hash$:acme\n"
+_SPA_MARKER = b"<!doctype html><title>pilot-spa</title>"
+_TILE_BYTES = bytes(range(256)) * 8  # 2048 deterministic bytes
+
+
+def _free_port() -> int:
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+class _StubBackend(BaseHTTPRequestHandler):
+    """Stands in for uvicorn so the reverse-proxy hop has something to hit."""
+
+    def do_GET(self) -> None:  # noqa: N802 — http.server API
+        body = b'{"status":"ok","via":"stub-backend"}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args: object) -> None:  # silence test noise
+        pass
+
+
+@pytest.fixture(scope="module")
+def caddy_base(tmp_path_factory: pytest.TempPathFactory):
+    tmp = tmp_path_factory.mktemp("caddy-edge")
+
+    # Built SPA bundle.
+    site = tmp / "dist"
+    site.mkdir()
+    (site / "index.html").write_bytes(_SPA_MARKER)
+
+    # Fixture "volume": served composite under processed/, plus the DB and
+    # users.txt at the volume root (outside the web-served subtree).
+    volume = tmp / "volume"
+    composite = volume / "processed" / "composite" / "05"
+    composite.mkdir(parents=True)
+    (composite / "parcels.pmtiles").write_bytes(_TILE_BYTES)
+    (volume / "lead_state.sqlite3").write_bytes(_DB_MARKER)
+    (volume / "users.txt").write_bytes(_USERS_MARKER)
+
+    backend_port = _free_port()
+    caddy_port = _free_port()
+    httpd = HTTPServer(("127.0.0.1", backend_port), _StubBackend)
+    backend_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    backend_thread.start()
+
+    env = {
+        **os.environ,
+        "CADDY_PORT": str(caddy_port),
+        "SITE_ROOT": str(site),
+        # Root for /data/processed/* maps the URL prefix onto the fixture volume:
+        # /data/processed/X -> {DATA_WEB_ROOT}/data/processed/X. We symlink the
+        # volume in as "data" so the 1:1 mapping holds against the fixture.
+        "DATA_WEB_ROOT": str(tmp),
+        "BACKEND_UPSTREAM": f"127.0.0.1:{backend_port}",
+    }
+    (tmp / "data").symlink_to(volume, target_is_directory=True)
+
+    proc = subprocess.Popen(
+        [_CADDY, "run", "--config", str(_CADDYFILE), "--adapter", "caddyfile"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    _wait_until_ready(caddy_port, proc)
+    try:
+        yield f"127.0.0.1:{caddy_port}"
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        httpd.shutdown()
+
+
+def _wait_until_ready(port: int, proc: subprocess.Popen, timeout: float = 15.0) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(f"caddy exited early:\n{proc.stdout.read() if proc.stdout else ''}")
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                return
+        except OSError:
+            time.sleep(0.1)
+    raise RuntimeError("caddy did not become ready in time")
+
+
+def _get(host_port: str, path: str, headers: dict[str, str] | None = None):
+    host, port = host_port.split(":")
+    conn = http.client.HTTPConnection(host, int(port), timeout=10)
+    conn.request("GET", path, headers=headers or {})
+    resp = conn.getresponse()
+    body = resp.read()
+    hdrs = {k.lower(): v for k, v in resp.getheaders()}
+    conn.close()
+    return resp.status, hdrs, body
+
+
+def test_range_request_to_composite_returns_206(caddy_base: str) -> None:
+    status, hdrs, body = _get(
+        caddy_base,
+        "/data/processed/composite/05/parcels.pmtiles",
+        {"Range": "bytes=0-3"},
+    )
+    assert status == 206
+    assert hdrs.get("content-range", "").startswith("bytes 0-3/")
+    assert body == _TILE_BYTES[0:4]
+
+
+def test_unknown_route_falls_back_to_the_spa(caddy_base: str) -> None:
+    status, _hdrs, body = _get(caddy_base, "/leads/some/deep/client-route")
+    assert status == 200
+    assert body == _SPA_MARKER
+
+
+def test_api_is_reverse_proxied_to_the_backend(caddy_base: str) -> None:
+    status, _hdrs, body = _get(caddy_base, "/api/health")
+    assert status == 200
+    assert b"stub-backend" in body
+
+
+def test_composite_responses_are_not_cacheable(caddy_base: str) -> None:
+    status, hdrs, _ = _get(caddy_base, "/data/processed/composite/05/parcels.pmtiles")
+    assert status == 200
+    assert hdrs.get("cache-control") == "private, no-store"
+
+
+def test_sqlite_db_is_never_web_served(caddy_base: str) -> None:
+    # The DB lives at the volume root, outside /data/processed — a request for
+    # it must be refused, never leak Lead data through the static file server.
+    status, _hdrs, body = _get(caddy_base, "/data/lead_state.sqlite3")
+    assert status in (403, 404)
+    assert _DB_MARKER not in body
+
+
+def test_users_file_is_never_web_served(caddy_base: str) -> None:
+    status, _hdrs, body = _get(caddy_base, "/data/users.txt")
+    assert status in (403, 404)
+    assert _USERS_MARKER not in body
+
+
+def test_hsts_header_is_set(caddy_base: str) -> None:
+    _status, hdrs, _ = _get(caddy_base, "/api/health")
+    assert "max-age=" in hdrs.get("strict-transport-security", "")

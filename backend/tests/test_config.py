@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.config import Settings
+from backend.app.config import DEFAULT_CREDENTIALS_PATH, PROJECT_ROOT, Settings
 from backend.app.password import hash_password
 
 _SECRET = "a-prod-secret-long-enough-for-hs256-aaaaaaaa"
@@ -91,6 +91,43 @@ def test_the_app_users_env_var_has_no_effect(monkeypatch, tmp_path) -> None:
     )
     with pytest.raises(RuntimeError, match="credentials file"):
         Settings.from_env()
+
+
+# ── volume-pinned overrides (prod hosting / #96, ADR-064) ────────────────────
+def test_prod_honors_the_volume_database_url(monkeypatch, tmp_path) -> None:
+    # The deploy pins DATABASE_URL at the Fly volume. If from_env didn't honor
+    # the override, writes would land on the ephemeral in-container path — lost
+    # on every redeploy and never seen by Litestream (PRD #96 pinned gotcha #1).
+    volume_db = "sqlite+pysqlite:////data/lead_state.sqlite3"
+    _prod_env(
+        monkeypatch,
+        AUTH_JWT_SECRET=_SECRET,
+        APP_USERS_FILE=str(_valid_users_file(tmp_path)),
+        DATABASE_URL=volume_db,
+    )
+    assert Settings.from_env().database_url == volume_db
+
+
+def test_prod_honors_the_volume_credentials_file_over_the_default(monkeypatch, tmp_path) -> None:
+    # APP_USERS_FILE=/data/users.txt in prod must win over the repo default, so
+    # auth reads the mounted file Litestream/ops manage (ADR-063).
+    users = _valid_users_file(tmp_path)
+    _prod_env(monkeypatch, AUTH_JWT_SECRET=_SECRET, APP_USERS_FILE=str(users))
+    s = Settings.from_env()
+    assert s.credentials_path == users
+    assert s.credentials_path != DEFAULT_CREDENTIALS_PATH
+
+
+def test_default_database_url_is_the_ephemeral_repo_path_not_the_volume(monkeypatch) -> None:
+    # Pins PRD gotcha #1 the other way: with nothing set, the DB defaults UNDER
+    # the repo (ephemeral in-container), never the /data volume — so a deploy
+    # that forgets the override is data-losing, and this guards the default from
+    # silently drifting onto the volume path.
+    monkeypatch.setenv("AUTH_DEV_MODE", "1")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    db = Settings.from_env().database_url
+    assert str(PROJECT_ROOT) in db
+    assert db != "sqlite+pysqlite:////data/lead_state.sqlite3"
 
 
 # ── dev mode ─────────────────────────────────────────────────────────────────

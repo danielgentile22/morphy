@@ -1,0 +1,57 @@
+# Caddy edge config for the hosted Phase-1 app (PRD #96, ADR-064).
+#
+# One Caddy serves three things inside the single Fly machine:
+#   1. /api/*               → reverse-proxied to uvicorn (the FastAPI backend)
+#   2. /data/processed/*    → the served composite on the volume, with Range/206
+#                             + gzip, marked private/no-store (it is parcel-owner
+#                             PII and must never sit in a cache)
+#   3. everything else      → the built SPA (app/dist) with history fallback
+#
+# TLS terminates at the Cloudflare and Fly edges, so Caddy speaks plain HTTP on
+# an internal port (auto_https off). Paths/ports/upstream are env-driven with
+# production defaults, so the integration test boots this exact file against
+# fixtures (tests/test_caddy_serving.py).
+{
+	admin off
+	auto_https off
+}
+
+:{$CADDY_PORT:8080} {
+	encode gzip
+
+	# HSTS on every response (TLS is enforced at the Cloudflare + Fly edges).
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+
+	# API → uvicorn (the FastAPI backend, same machine, internal port).
+	handle /api/* {
+		reverse_proxy {$BACKEND_UPSTREAM:127.0.0.1:8000}
+	}
+
+	# Served composite (PII): byte-range friendly, never cached anywhere.
+	handle /data/processed/* {
+		# Volume is mounted at /data and the served subtree is /data/processed,
+		# so the URL path /data/processed/X maps 1:1 onto the filesystem when the
+		# root is "/". The test points DATA_WEB_ROOT at its fixture volume's parent.
+		root * {$DATA_WEB_ROOT:/}
+		# Parcel-owner PII: keep it out of every cache (browser + Cloudflare;
+		# a /data/* cache-bypass rule at the edge backs this up).
+		header Cache-Control "private, no-store"
+		file_server
+	}
+
+	# Anything else under /data is volume-internal — the SQLite DB and users.txt
+	# live at the volume root, outside the web-served subtree. Refuse them
+	# explicitly so they can never leak through the static file server, and so a
+	# miss doesn't fall through to the SPA's 200.
+	handle /data/* {
+		respond 404
+	}
+
+	# Everything else is the SPA: serve static assets, fall back to index.html
+	# so client-side routes (deep links / refreshes) resolve.
+	handle {
+		root * {$SITE_ROOT:/srv/dist}
+		try_files {path} /index.html
+		file_server
+	}
+}

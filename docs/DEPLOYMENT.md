@@ -190,7 +190,7 @@ bucket; encrypted at rest.
 
 ## 8. Hosted-private backend (Slice 4 — D + E)
 
-Locked in [ADR-055](./adr/0055-hosted-private-backend.md) (supersedes ADR-006 — static-site, no backend — for write-layer features only; read-only analytical layers stay static). The **platform, database, and object-store** choices below are **narrowed by [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md)** (2026-06-03 hosting-decision session): Fly.io single always-on machine + SQLite-on-volume + Cloudflare front, ~$5–8/mo — not the managed-Postgres + separate-S3-service shape ADR-055 originally defaulted to. **Not yet built** — tracked by issue #16.
+Locked in [ADR-055](./adr/0055-hosted-private-backend.md) (supersedes ADR-006 — static-site, no backend — for write-layer features only; read-only analytical layers stay static). The **platform, database, and object-store** choices below are **narrowed by [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md)** (2026-06-03 hosting-decision session): Fly.io single always-on machine + SQLite-on-volume + Cloudflare front, ~$5–8/mo — not the managed-Postgres + separate-S3-service shape ADR-055 originally defaulted to. **Deploy artifacts built (#96); cloud provisioning is the operator's remaining step** — tracked by issue #16.
 
 ### Stack (per ADR-064)
 
@@ -218,31 +218,108 @@ Locked in [ADR-055](./adr/0055-hosted-private-backend.md) (supersedes ADR-006 �
 | `APP_USERS_FILE` | Auth surface | `/data/users.txt` (on the Volume; `username:hash:team` per line, managed via `python -m app.users`). |
 | `AUTH_DEV_MODE` | Auth surface | `0` in prod (fail-closed; the default is already `False`). |
 | `AUTH_JWT_SECRET` | Auth surface | Signs identity-only session JWTs (rotating it revokes every active session). |
+| `OWNERS_INDEX_PATH` | FastAPI app | `/data/processed/composite/owners_index.json` — the owners index ships in the served composite on the Volume, **not** the default repo path. |
+| `LITESTREAM_DB_PATH` | Litestream | `/data/lead_state.sqlite3` — the DB to replicate (same file as `DATABASE_URL`). |
+| `LITESTREAM_BUCKET` / `LITESTREAM_ENDPOINT` | Litestream + `rclone` | R2 bucket + endpoint (`https://<acct>.r2.cloudflarestorage.com`). |
+| `LITESTREAM_PATH` / `LITESTREAM_REGION` | Litestream | Replica prefix (`lead_state`) + region (`auto` for R2). |
+| `LITESTREAM_ACCESS_KEY_ID` / `LITESTREAM_SECRET_ACCESS_KEY` | Litestream + `rclone` | R2 keys (Fly secrets). |
+| `SITE_ROOT` / `DATA_WEB_ROOT` / `BACKEND_UPSTREAM` / `CADDY_PORT` | Caddy | Image defaults (`/srv/dist` · `/` · `127.0.0.1:8000` · `8080`); same names the edge-serving test sets. |
 | `ANTHROPIC_API_KEY` | Lease-extraction worker | Claude API (added at D+E). |
-| R2 access/secret keys + bucket | Litestream + `rclone` | Backups + data-sync staging. |
 
-Secrets (`AUTH_JWT_SECRET`, R2 keys, `ANTHROPIC_API_KEY`) go in **Fly secrets**; non-secret env (`AUTH_DEV_MODE`, `APP_USERS_FILE`, `DATABASE_URL`) in `fly.toml [env]`. Never in repo. **No `BACKEND_BASE_URL`** — the map app resolves its API base as `VITE_API_BASE ?? '/api'` (`app/src/lib/leads-api.ts`), so single-origin Caddy needs nothing set, and a later domain change needs no rebuild.
+Secrets (`AUTH_JWT_SECRET`, the `LITESTREAM_*` R2 keys + bucket/endpoint, `ANTHROPIC_API_KEY`) go in **Fly secrets**; non-secret env (`AUTH_DEV_MODE`, `APP_USERS_FILE`, `DATABASE_URL`, `OWNERS_INDEX_PATH`, `LITESTREAM_DB_PATH`/`PATH`/`REGION`, the Caddy vars) in `fly.toml [env]`. Never in repo. **No `BACKEND_BASE_URL`** — the map app resolves its API base as `VITE_API_BASE ?? '/api'` (`app/src/lib/leads-api.ts`), so single-origin Caddy needs nothing set, and a later domain change needs no rebuild.
 
-### Deploy artifacts (issue #16 deliverable — unbuilt)
+### Deploy artifacts (issue #96 — built; at the repo root)
 
-`Dockerfile` (multi-stage: node builds `app/dist`, runtime bundles Caddy + uvicorn + supervisord + Litestream + restic + backend) · `fly.toml` (one machine, volume mount, US region, `[env]`) · `Caddyfile` · `supervisord.conf` · `litestream.yml` · `deploy.sh` (`fly deploy` then `rclone` R2→volume data sync). **Not** systemd units (that was the bare-VM path, not taken).
+| Artifact | Role | Tested by |
+|---|---|---|
+| `Dockerfile` | Multi-stage: node builds `app/dist`; runtime bundles Caddy 2.11 + Litestream 0.5.11 + rclone 1.74 (from their official images) + restic + supervisor + the backend. | Built at `fly deploy` (needs Docker). |
+| `.dockerignore` | Keeps the 15 GB `data/` and the real `users.txt` out of the build context. | — |
+| `fly.toml` | One machine, US region, 10 GB volume at `/data`, `[env]`, `/api/health` check, `min_machines_running=1`, `auto_stop_machines=off`. | — |
+| `Caddyfile` | SPA fallback; `/data/processed/*` Range/206 + gzip + `Cache-Control: private, no-store`; `/api/*` → uvicorn; HSTS; DB/`users.txt` never served. | `tests/test_caddy_serving.py` (real caddy) |
+| `supervisord.conf` | Runs uvicorn + Caddy + Litestream in the one machine; all logs → stdout (`fly logs`). | — |
+| `litestream.yml` | Continuous SQLite → R2 replication (env-driven; same file for prod + the drill). | `tests/test_litestream_restore.py` (real litestream + minio) |
+| `deploy.sh` | `code` (`fly deploy`), `data` (laptop → R2 → volume via `scripts/sync_composite.py`, mirror, **dry-run by default**), `all`, `smoke`. | `shellcheck` clean |
+| `scripts/sync_composite.py` | Owns the served-composite include/exclude contract (drops `*/parcels/` compose-inputs, keeps `parcels.pmtiles`); drives rclone (mirror / dry-run / idempotent). | `tests/test_sync_composite.py` (real rclone) |
 
-### Run commands
+**Image dependency decision (PRD #96).** The image installs **`backend/requirements.txt`** (the slim FastAPI/uvicorn/SQLAlchemy/PyJWT set), **not** the root `requirements.txt` — the latter carries geopandas/shapely/pyproj/PySide6 used only by the preprocess pipeline, which never runs in this image. (The PRD's fallback "extract a slim subset" was unnecessary: that subset already existed as `backend/requirements.txt`.) **Not** systemd units (that was the bare-VM path, not taken).
+
+### Provisioning runbook (operator — needs your hands)
+
+Each step needs credentials/accounts the build can't supply. Run in order:
+
+`APP` below is your globally-unique Fly app name (`pilot-app` is likely taken —
+pick your own and set `app =` in fly.toml to match). `fly deploy` builds the
+image on Fly's remote builder, so **no local Docker is required**.
+
+```bash
+# 1. flyctl + app + 10 GB volume (region must match fly.toml primary_region)
+fly auth login
+fly apps create "$APP"                            # then set app = "$APP" in fly.toml
+fly volume create pilot_data --size 10 --region iad --app "$APP"
+
+# 2. Domain at Cloudflare Registrar (manual, in the dashboard) — ~$10/yr.
+
+# 3. Private R2 bucket + an S3 API token (access key / secret) — Cloudflare R2.
+
+# 4. Secrets (never in the repo): JWT signing secret + R2 config/keys. The
+#    RCLONE_CONFIG_R2_* set lets the in-machine rclone resolve `r2:` for leg 2.
+fly secrets set --app "$APP" \
+  AUTH_JWT_SECRET="$(openssl rand -base64 48)" \
+  LITESTREAM_BUCKET=<bucket> \
+  LITESTREAM_ENDPOINT=https://<account>.r2.cloudflarestorage.com \
+  LITESTREAM_ACCESS_KEY_ID=<key> LITESTREAM_SECRET_ACCESS_KEY=<secret> \
+  RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare \
+  RCLONE_CONFIG_R2_ACCESS_KEY_ID=<key> RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=<secret> \
+  RCLONE_CONFIG_R2_ENDPOINT=https://<account>.r2.cloudflarestorage.com \
+  RCLONE_CONFIG_R2_REGION=auto
+
+# 5. First deploy (remote build). uvicorn FAIL-CLOSES until a credentials file
+#    exists (intended, ADR-063), so /api/health stays red and the machine looks
+#    unhealthy until step 6 — that is expected, not a bug.
+FLY_APP="$APP" ./deploy.sh code
+
+# 6. Bootstrap the first user — INTERACTIVE (hidden password prompt; positional
+#    <username> <team>). Writes /data/users.txt on the volume; uvicorn then
+#    self-heals on its next restart (no redeploy needed for later user changes).
+fly ssh console --app "$APP"
+#   inside the machine:
+#     cd /srv/backend && python -m app.users add <username> <team>
+#     (type + confirm the password, then `exit`)
+
+# 7. Confirm the pipe is live
+fly status --app "$APP"
+curl -fsS "https://$APP.fly.dev/api/health"       # {"status":"ok",...}
+
+# 8. Sync the ~4.29 GB served composite (dry-run first, then --apply).
+#    Configure a local rclone 'r2' remote first, e.g.:
+#      rclone config create r2 s3 provider=Cloudflare access_key_id=<key> \
+#        secret_access_key=<secret> endpoint=https://<account>.r2.cloudflarestorage.com region=auto
+FLY_APP="$APP" R2_REMOTE=r2:<bucket>/composite ./deploy.sh data           # dry-run
+FLY_APP="$APP" R2_REMOTE=r2:<bucket>/composite ./deploy.sh data --apply   # laptop→R2→volume
+
+# 9. Custom domain + Cloudflare edge
+fly certs add <domain> --app "$APP"               # then `fly certs show <domain>` for DNS records
+#    Cloudflare: DNS → Fly, orange-cloud proxy, SSL Full (strict),
+#    a cache rule that BYPASSES cache for /data/* (PII never at the edge),
+#    optional rate-limit on /api/auth/login.
+
+# 10. Verify + durability
+FLY_APP="$APP" APP_URL="https://<domain>" ./deploy.sh smoke   # SPA, /data Range→206, /api live
+#    then run /verify for the full login round-trip.
+#    Fly volume snapshots are automatic (daily); extend retention as desired.
+#    Litestream restore drill: tests/test_litestream_restore.py is its rehearsal.
+```
+
+### Local / CI commands
 
 ```bash
 # Local backend (SQLite default; no Postgres needed)
-cd backend
-uvicorn app.main:app --reload --port 8000     # DATABASE_URL defaults to local SQLite
+cd backend && uvicorn app.main:app --reload --port 8000
 
-# Tests
-cd backend && pytest                           # SQLite in-memory; AUTH_DEV_MODE=1 in conftest
-cd backend && pytest -k tenant_isolation       # multi-tenancy isolation specifically
-cd backend && pytest -m llm_eval               # gold-set LLM extraction eval (gating CI check)
-ruff check . && ruff format --check .          # the only real CI gate — run before declaring done
-
-# Production deploy (after #16 artifacts exist)
-fly deploy --app pilot-backend                 # ships code; data syncs via deploy.sh (R2→volume)
-fly ssh console -C "python -m app.users add <user> --team <team>"   # bootstrap / manage users
+# Tests (the four hosting modules need rclone / caddy / litestream + minio installed)
+pytest                                          # full suite
+pytest tests/test_sync_composite.py tests/test_caddy_serving.py tests/test_litestream_restore.py
+ruff check . && ruff format --check .           # the only real CI gate — run before declaring done
 ```
 
 ### PII custody (see [SECURITY.md](./SECURITY.md))
@@ -267,7 +344,7 @@ Not built. Tracked in [ROADMAP.md](./ROADMAP.md) → Phase 3.
 
 ---
 
-## 9. Quick troubleshooting
+## 10. Quick troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
