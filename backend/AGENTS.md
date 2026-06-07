@@ -23,6 +23,17 @@ the schema, or the owners-index read path.
   re-authorizes every request** (mtime-cached). Removal / re-teaming applies on
   the next click. Manage it only via `python -m app.users`; never hand-edit hashes,
   never commit the real file (a commit-guard test enforces this).
+  - **One sanctioned runtime caller** (PRD #121, [ADR-068](../docs/adr/0068-self-service-password-change.md)):
+    `POST /api/me/password` rotates the *caller's own* hash via
+    `users.change_password` → `users.set_password` (verify-then-atomic-write). It
+    calls the `app.users` API — it does **not** hand-edit hashes — so the invariant
+    holds. The username comes from the verified principal, never the request body.
+    Prod caveat: `users.txt` is on the Fly volume, **not** Litestream-replicated
+    like the DB.
+- **Per-user settings (`UserSetting`, PRD #121)** are scoped by **both** `tenant_id`
+  *and* `user_id` (PK `(tenant_id, user_id, key)`); `UserSettingsStore` mirrors
+  `SettingsStore`. `home_view` / `filter_default` are opaque client-owned JSON
+  blobs — persist + serve verbatim, never inspect (like `ScoringPreset.config`).
 - **JWT is identity-only.** Never put tenant/team claims back in it.
 - **Teams ARE tenants**, registered in file order (first team owns tenant 1 + the
   pre-teams board). Tenant rows are never deleted.

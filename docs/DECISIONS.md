@@ -79,6 +79,7 @@ The currently-binding decisions.
 | [ADR-065](./adr/0065-redesign-three-section-ia.md) | Redesigned app IA — three sections (Dashboard · Explore · Leads) + Dashboard digest-hub |
 | [ADR-066](./adr/0066-inbound-event-reply-seam.md) | Replies are provider-agnostic inbound activity events (manual now, Gmail later) |
 | [ADR-067](./adr/0067-tower-grained-explore.md) | Tower-grained Explore + per-tower scoring; owner stays the unit of work (extends ADR-061) |
+| [ADR-068](./adr/0068-self-service-password-change.md) | Self-service password change is a sanctioned runtime caller of `users.set_password` (PRD #121 Settings page) |
 
 > ADR-058 (tunable scoring) **amended** the same day — tower-grain + "preset" terminology + tenant-shared storage; the row stays under *Phase 1 product cut*.
 

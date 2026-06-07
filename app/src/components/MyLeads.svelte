@@ -8,7 +8,7 @@
     canTransition,
     type LeadStatus,
   } from '../lib/lead-status';
-  import { kindLabel, statusVar } from '../lib/lead-format';
+  import { kindLabel, statusVar, statusGlyph } from '../lib/lead-format';
   import { leadHash, SECTION_HASH } from '../lib/nav';
   import type { OwnerSummary } from '../lib/leads-api';
 
@@ -115,6 +115,7 @@
         >
           <div class="lane-head" style="border-color:{statusVar(lane)}">
             <span class="dot" style="background:{statusVar(lane)}"></span>
+            <span class="cb-cue" aria-hidden="true">{statusGlyph(lane)}</span>
             {STATUS_LABELS[lane]}
             <span class="count" data-testid="lane-count">{cards.length}</span>
           </div>

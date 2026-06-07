@@ -23,13 +23,14 @@ requires gets created in the first place.
 from __future__ import annotations
 
 import argparse
+import enum
 import os
 import sys
 import tempfile
 from pathlib import Path
 
 from . import credentials
-from .password import hash_password
+from .password import hash_password, verify_password
 
 # backend/app/users.py → parents[1] = backend/
 DEFAULT_FILE = Path(__file__).resolve().parents[1] / "users.txt"
@@ -37,6 +38,15 @@ DEFAULT_FILE = Path(__file__).resolve().parents[1] / "users.txt"
 
 class UsersFileError(Exception):
     """A user-facing CLI error (bad input, missing user, duplicate)."""
+
+
+class ChangePasswordOutcome(enum.Enum):
+    """The result of a self-service password change (PRD #121). ``WRONG_CURRENT``
+    is the only *soft* failure (the file is left untouched); a missing user or an
+    empty new password raise ``UsersFileError`` like the rest of this module."""
+
+    OK = "ok"
+    WRONG_CURRENT = "wrong_current"
 
 
 # ── public command functions (the testable API) ──────────────────────────────
@@ -76,6 +86,27 @@ def set_password(file: Path | str, username: str, password: str) -> None:
     entry = _entry_of(lines[idx])
     lines[idx] = f"{entry.username}:{hash_password(password)}:{entry.team}"
     _write_atomic(file, lines)
+
+
+def change_password(
+    file: Path | str, username: str, current: str, new: str
+) -> ChangePasswordOutcome:
+    """Self-service password change (PRD #121): verify ``current``, then rotate.
+
+    The one *sanctioned* runtime caller of ``set_password`` — it never writes a
+    line by hand. The current password is checked first (constant-time) so a
+    wrong guess returns ``WRONG_CURRENT`` and leaves the file byte-for-byte
+    unchanged. On success ``set_password`` does the atomic rewrite, preserving
+    the user's team + file position and bumping mtime so the per-request
+    ``CredentialsFile`` cache reloads. An empty ``new`` (or an unknown user)
+    raises ``UsersFileError``."""
+    lines = _read_lines(file)
+    idx = _require_user_line(lines, username)
+    entry = _entry_of(lines[idx])
+    if not verify_password(current, entry.encoded_hash):
+        return ChangePasswordOutcome.WRONG_CURRENT
+    set_password(file, username, new)
+    return ChangePasswordOutcome.OK
 
 
 def set_team(file: Path | str, username: str, team: str) -> None:

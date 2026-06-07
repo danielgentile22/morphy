@@ -242,6 +242,50 @@ class MeResponse(BaseModel):
     # The signed-in user's team name (#86) — '' when the tenant has no Tenant
     # row (e.g. a session minted before teams existed).
     team: str = ""
+    # The friendly name the user set in Settings (PRD #121); '' falls back to
+    # the email at every render site (History/Stats/task assignment).
+    display_name: str = ""
+
+
+class MeUpdate(BaseModel):
+    """Self-service identity edit (PRD #121). Only the display name is editable;
+    email/team are administered via the credentials file."""
+
+    display_name: str | None = Field(default=None)
+
+
+class PasswordChange(BaseModel):
+    """Self-service password change (PRD #121)."""
+
+    current_password: str
+    new_password: str
+
+
+class UserSettingsResponse(BaseModel):
+    """The resolved per-user preferences (PRD #121), defaults filled in. The
+    ``home_view`` / ``filter_default`` fields are opaque JSON strings the client
+    owns — the backend persists + serves them without inspecting."""
+
+    theme: str
+    colorblind: bool
+    basemap: str
+    view_mode: str
+    home_view: str
+    filter_default: str
+    filter_default_apply: bool
+
+
+class UserSettingsUpdate(BaseModel):
+    """Upsert one or more per-user preference keys (PRD #121). Omit a field to
+    leave it unchanged (the route reads ``model_fields_set``)."""
+
+    theme: str | None = Field(default=None)
+    colorblind: bool | None = Field(default=None)
+    basemap: str | None = Field(default=None)
+    view_mode: str | None = Field(default=None)
+    home_view: str | None = Field(default=None)
+    filter_default: str | None = Field(default=None)
+    filter_default_apply: bool | None = Field(default=None)
 
 
 # ── tasks (UI overhaul P2 / #107, fleshed out #110) ──────────────────────────

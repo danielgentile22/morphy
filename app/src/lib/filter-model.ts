@@ -261,3 +261,68 @@ export function isAnyFilterActive(m: FilterModel): boolean {
 export function activeFilterCount(m: FilterModel): number {
   return FILTER_FIELDS.reduce((n, f) => n + (f.isActive(m) ? 1 : 0), 0);
 }
+
+// ── personal filter default (PRD #121) ────────────────────────────────────────
+// A saved "default filters" snapshot is an opaque JSON blob the backend stores
+// per user (see UserSettingsStore) and serves back verbatim. We serialise only
+// the fields that differ from the empty model — same shape as the URL `filters`
+// param (url.ts) — so a snapshot is forward-compatible (a new field absent from
+// an old snapshot just keeps its default on restore).
+
+/** Serialise a model to its stored snapshot — non-default fields only. */
+export function serializeFilterModel(m: FilterModel): string {
+  const defaults = emptyFilterModel();
+  const active: Record<string, unknown> = {};
+  for (const key of Object.keys(defaults) as (keyof FilterModel)[]) {
+    if (JSON.stringify(m[key]) !== JSON.stringify(defaults[key])) active[key] = m[key];
+  }
+  return JSON.stringify(active);
+}
+
+/** Restore a snapshot, merging known keys onto the defaults. Malformed JSON (or
+ *  a non-object) yields the empty model rather than throwing. */
+export function deserializeFilterModel(json: string): FilterModel {
+  const result = emptyFilterModel();
+  try {
+    const parsed: unknown = JSON.parse(json);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const obj = parsed as Record<string, unknown>;
+      const target = result as unknown as Record<string, unknown>;
+      for (const key of Object.keys(result)) {
+        if (key in obj) target[key] = obj[key];
+      }
+    }
+  } catch {
+    // malformed snapshot — fall back to no filters
+  }
+  return result;
+}
+
+/** Whether to auto-apply a personal default when Explore opens. A shared deep
+ *  link carrying its own filters always wins, so the default applies only when
+ *  the URL has no filter params *and* the user opted in. */
+export function shouldApplyFilterDefault(urlHasFilters: boolean, applyPref: boolean): boolean {
+  return applyPref && !urlHasFilters;
+}
+
+/** A short, human-readable summary of the active filters in a model — for the
+ *  "Filter defaults" settings card, so the user can see what their saved
+ *  default will apply. Empty array ⇒ no filters (opens unfiltered). */
+export function summarizeFilterModel(m: FilterModel): string[] {
+  const out: string[] = [];
+  if (m.states.length) out.push(`States: ${m.states.join(', ')}`);
+  if (m.distressTiers.length) out.push(`Distress: ${m.distressTiers.join(', ')}`);
+  if (m.ownerKinds.length) out.push(`Owner type: ${m.ownerKinds.join(', ')}`);
+  if (m.countyFips.length) out.push(`Counties: ${m.countyFips.length}`);
+  if (m.structureTypes.length) out.push(`Structure: ${m.structureTypes.join(', ')}`);
+  if (m.inOz) out.push('In Opportunity Zone');
+  if (m.inQct) out.push('In QCT');
+  if (m.persistentPoverty) out.push('Persistent poverty');
+  if (m.activeOnly) out.push('Active towers only');
+  if (m.scoreMin > 0) out.push(`Score ≥ ${m.scoreMin}`);
+  if (m.portfolioMin > 1) out.push(`Parcels ≥ ${m.portfolioMin}`);
+  if (m.heightMin > 0) out.push(`Height ≥ ${m.heightMin} m`);
+  if (m.structureCountMin > 1) out.push(`Structures ≥ ${m.structureCountMin}`);
+  if (m.assessedValue) out.push(`Assessed $${m.assessedValue[0]}–$${m.assessedValue[1]}`);
+  return out;
+}

@@ -15,6 +15,9 @@ class AuthStore {
   // The signed-in user's team name (#86) — shown next to the username so
   // it's always clear which identity and board you're working in.
   team = $state<string | null>(null);
+  // The friendly display name set in Settings (PRD #121); '' / null falls back
+  // to the email everywhere it's shown.
+  displayName = $state<string | null>(null);
   // True while a persisted token is being validated at app load — the gate
   // shows a "checking session" state instead of flashing the sign-in form
   // at users who are already signed in.
@@ -50,6 +53,7 @@ class AuthStore {
       const me = await fetchMe();
       this.email = me.email;
       this.team = me.team ?? null;
+      this.displayName = me.display_name ?? null;
     } catch (e) {
       // A stale/expired token surfaces as 401 — drop it so the UI shows sign-in.
       if (e instanceof ApiError && e.status === 401) this.signOut();
@@ -65,6 +69,13 @@ class AuthStore {
     this.token = null;
     this.email = null;
     this.team = null;
+    this.displayName = null;
+  }
+
+  /** The name to show for the signed-in user — their display name, or the email
+   *  when unset. */
+  get name(): string {
+    return this.displayName?.trim() || this.email || '';
   }
 }
 

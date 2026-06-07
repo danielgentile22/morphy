@@ -5,6 +5,10 @@ import {
   isAnyFilterActive,
   activeFilterCount,
   emptyFilterModel,
+  serializeFilterModel,
+  deserializeFilterModel,
+  shouldApplyFilterDefault,
+  summarizeFilterModel,
   FILTER_FIELDS,
   type FilterModel,
   type FilterableOwner,
@@ -206,5 +210,55 @@ describe('registry bookkeeping', () => {
       expect(f.isActive(emptyFilterModel())).toBe(false);
       expect(f.toSQL(emptyFilterModel())).toBeNull();
     }
+  });
+});
+
+describe('filter-default snapshot (PRD #121)', () => {
+  it('round-trips a populated model through serialize → deserialize', () => {
+    const original = model({
+      states: ['AR', 'MT'],
+      distressTiers: ['distressed'],
+      inOz: true,
+      scoreMin: 0.7,
+      assessedValue: [1000, 50000],
+      structureCountMin: 3,
+    });
+    const restored = deserializeFilterModel(serializeFilterModel(original));
+    expect(restored).toEqual(original);
+  });
+
+  it('round-trips the empty model (snapshotting "no filters")', () => {
+    const restored = deserializeFilterModel(serializeFilterModel(emptyFilterModel()));
+    expect(restored).toEqual(emptyFilterModel());
+  });
+
+  it('only serialises the fields that differ from the defaults', () => {
+    const snapshot = JSON.parse(serializeFilterModel(model({ states: ['AR'] })));
+    expect(snapshot).toEqual({ states: ['AR'] });
+  });
+
+  it('merges a partial snapshot onto the defaults (forward-compatible)', () => {
+    const restored = deserializeFilterModel('{"scoreMin":0.5}');
+    expect(restored).toEqual(model({ scoreMin: 0.5 }));
+  });
+
+  it('falls back to the empty model on malformed JSON', () => {
+    expect(deserializeFilterModel('not json')).toEqual(emptyFilterModel());
+    expect(deserializeFilterModel('[1,2,3]')).toEqual(emptyFilterModel());
+  });
+
+  it('applies the default only when apply is on AND the URL carries no filters', () => {
+    // a shared deep link (filters in the URL) must win over a personal default
+    expect(shouldApplyFilterDefault(true, true)).toBe(false);
+    expect(shouldApplyFilterDefault(false, true)).toBe(true);
+    expect(shouldApplyFilterDefault(false, false)).toBe(false);
+    expect(shouldApplyFilterDefault(true, false)).toBe(false);
+  });
+
+  it('summarises the active filters in readable lines', () => {
+    expect(summarizeFilterModel(emptyFilterModel())).toEqual([]);
+    expect(
+      summarizeFilterModel(model({ states: ['AR', 'MT'], scoreMin: 0.7, inOz: true })),
+    ).toEqual(['States: AR, MT', 'In Opportunity Zone', 'Score ≥ 0.7']);
   });
 });

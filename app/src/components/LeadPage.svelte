@@ -2,7 +2,7 @@
   import { leads } from '../lib/leads-store.svelte';
   import { filterModel } from '../lib/filter-model.svelte';
   import { STATUSES, STATUS_LABELS, canTransition, type LeadStatus } from '../lib/lead-status';
-  import { kindLabel, money, distressText, statusVar, feet } from '../lib/lead-format';
+  import { kindLabel, money, distressText, statusVar, statusGlyph, feet } from '../lib/lead-format';
   import {
     CHANNELS,
     OUTCOMES,
@@ -180,6 +180,7 @@
     {@const o = l.owner}
     <header class="head">
       <span class="dot" style="background:{statusVar(l.status)}"></span>
+      <span class="cb-cue" aria-hidden="true">{statusGlyph(l.status)}</span>
       <h1>{o.owner_name}</h1>
       <span class="tag">{kindLabel(o.owner_kind)}</span>
       {#each o.states as s (s)}
@@ -311,6 +312,7 @@
                 data-status={s}
                 onclick={() => setStatus(s)}
               >
+                <span class="cb-cue" aria-hidden="true">{statusGlyph(s)}</span>
                 {STATUS_LABELS[s]}
               </button>
             {/each}

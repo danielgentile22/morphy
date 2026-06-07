@@ -5,6 +5,7 @@ import {
   dashboardHash,
   leadHash,
   towerHash,
+  settingsHash,
   isUnowned,
   NO_OWNER,
   SECTION_HASH,
@@ -40,6 +41,16 @@ describe('nav routing (UI overhaul P1 / #104)', () => {
 
   it('falls back to Dashboard for an unknown route', () => {
     expect(parseRoute('#/nonsense')).toEqual({ name: 'dashboard', sub: 'home' });
+  });
+
+  it('parses the settings route and round-trips its hash (PRD #121)', () => {
+    expect(parseRoute('#/settings')).toEqual({ name: 'settings' });
+    expect(settingsHash()).toBe('#/settings');
+    expect(parseRoute(settingsHash())).toEqual({ name: 'settings' });
+    // a stray sub-segment is ignored — settings has no sub-routes
+    expect(parseRoute('#/settings/account')).toEqual({ name: 'settings' });
+    // a near-miss still falls back to the Dashboard (no regression)
+    expect(parseRoute('#/settingz')).toEqual({ name: 'dashboard', sub: 'home' });
   });
 
   it('parses a tower detail page (cid + asr, decoded) under Explore', () => {

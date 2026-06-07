@@ -29,7 +29,12 @@ export type Route =
    *  ``NO_OWNER`` sentinel for a tower with no resolved landowner (an unowned
    *  tower still gets a page — UI overhaul round 2). ``asr`` is the tower.
    *  Nav-wise it belongs to Explore. */
-  | { name: 'tower'; cid: string; asr: string };
+  | { name: 'tower'; cid: string; asr: string }
+  /** The per-user Settings page (PRD #121) — reached from the user-menu
+   *  dropdown, not a primary nav tab. One flat route; its four sections
+   *  (Account / Map & display / Filter defaults / Automations) are local
+   *  component state, not sub-routes. */
+  | { name: 'settings' };
 
 /** Sentinel `cid` segment for an unowned tower's URL — keeps `#/tower/<cid>/<asr>`
  *  well-formed when there's no owner cluster to address (the segment can't be
@@ -49,6 +54,7 @@ export function parseRoute(hash: string): Route {
   }
   if (parts[0] === 'explore') return { name: 'explore' };
   if (parts[0] === 'leads') return { name: 'leads' };
+  if (parts[0] === 'settings') return { name: 'settings' };
   if (parts[0] === 'dashboard') {
     const sub = parts[1];
     return {
@@ -89,6 +95,11 @@ export function dashboardHash(sub: DashboardSub): string {
 /** The hash for an owner (Lead) page. */
 export function leadHash(displayClusterId: string): string {
   return `#/lead/${encodeURIComponent(displayClusterId)}`;
+}
+
+/** The canonical hash for the Settings page (PRD #121). */
+export function settingsHash(): string {
+  return '#/settings';
 }
 
 /** The hash for a tower detail page (#108). An empty `cid` (an unowned tower)

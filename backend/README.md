@@ -148,6 +148,41 @@ All writes are atomic (temp file + rename). The file path defaults to
 team in the file owns tenant 1 — the original lead board (#86) — so keep the
 original team's users at the top.
 
+**One runtime endpoint is a sanctioned caller of this writer** (PRD #121,
+[ADR-068](../docs/adr/0068-self-service-password-change.md)):
+`POST /api/me/password {current_password, new_password}` lets a signed-in user
+change **their own** password from Settings → Account. It is *not* a second
+file-writing path — it calls `users.change_password`, which verifies the current
+password (constant-time) and then rotates the hash through the same atomic
+`users.set_password` writer (team + line position preserved, mtime bumped so the
+per-request `CredentialsFile` cache reloads — the new password is live on the
+next request). Wrong current password → 401; the file is left byte-for-byte
+unchanged. The username comes from the verified principal, never the body, so a
+caller can only rotate their own credential. "Manage `users.txt` only via the
+`app.users` API" still holds. **Prod caveat:** `users.txt` lives on the Fly
+volume and is **not** Litestream-replicated like the SQLite DB ([ADR-064](../docs/adr/0064-phase1-hosting-fly-sqlite.md));
+snapshot the volume to back up credential changes.
+
+## Per-user settings (`UserSetting`, PRD #121)
+
+The first *per-user* persisted preference layer (the backend was tenant-shaped
+until now). `UserSetting` is a generic key/value table keyed
+`(tenant_id, user_id, key)`; `UserSettingsStore` mirrors `SettingsStore` with
+baked-in defaults so a user who never opened Settings still reads sane values.
+Routes are scoped by **both** ids from the resolved principal:
+
+```
+GET  /api/me/settings   → resolved per-user prefs (defaults filled in)
+PUT  /api/me/settings   → upsert one or more keys; returns the resolved prefs
+PUT  /api/me            → update the signed-in user's display_name
+```
+
+Keys: `theme`, `colorblind`, `basemap`, `view_mode`, `home_view`,
+`filter_default`, `filter_default_apply`. `home_view` and `filter_default` are
+**opaque JSON blobs the client owns** — persisted + served verbatim, never
+inspected (same posture as `ScoringPreset.config`). New prefs slot in as new
+keys with no schema change.
+
 ## Auth (username/password over a credentials file, ADR-062 + ADR-063)
 
 The live front door is `POST /api/auth/login {username, password}`. Credentials

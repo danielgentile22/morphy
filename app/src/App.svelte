@@ -12,11 +12,16 @@
   import TowerDetail from './components/TowerDetail.svelte';
   import ScoringPanel from './components/ScoringPanel.svelte';
   import SignIn from './components/SignIn.svelte';
+  import Settings from './components/Settings.svelte';
+  import UserMenu from './components/UserMenu.svelte';
   import { leads } from './lib/leads-store.svelte';
   import { dashboard } from './lib/dashboard-store.svelte';
   import { archivedAntennas } from './lib/archived-antennas.svelte';
   import { filterModel } from './lib/filter-model.svelte';
+  import { shouldApplyFilterDefault, deserializeFilterModel } from './lib/filter-model';
   import { auth } from './lib/auth-store.svelte';
+  import { userSettings } from './lib/user-settings-store.svelte';
+  import { readUrlState } from './lib/url';
   import {
     parseRoute,
     sectionOf,
@@ -53,6 +58,9 @@
   // nav (ADR-061 map persistence). The app opens on the Dashboard.
   let route = $state<Route>(parseRoute(location.hash));
   let section = $derived<Section>(sectionOf(route));
+  // The Settings page is reached from the user menu, not a primary tab — so no
+  // top-nav tab is active while it's open (PRD #121).
+  let navSection = $derived<Section | null>(route.name === 'settings' ? null : section);
   // Explore's two lenses (#108): the map and the ranked tower list. The map
   // stays mounted; the list renders over it.
   let exploreView = $state<'map' | 'list'>('map');
@@ -72,14 +80,30 @@
     }
   });
 
+  // Load the signed-in user's prefs (PRD #121), then apply a saved filter
+  // default to Explore — but only when the URL carries no filters of its own,
+  // so a shared deep link always wins.
+  async function bootUserSettings(): Promise<void> {
+    await userSettings.load();
+    const s = userSettings.settings;
+    const urlHasFilters = readUrlState(location.search).filters !== null;
+    if (s.filter_default && shouldApplyFilterDefault(urlHasFilters, s.filter_default_apply)) {
+      filterModel.updateFilter(deserializeFilterModel(s.filter_default));
+    }
+  }
+
   // Live nav counts + attention badge — load once signed in and on every
   // sign-in transition, so the Explore / Leads / Dashboard badges are correct.
+  // The per-user settings load lives here too (not behind `booted`), so a
+  // second user signing in on the same page load gets *their* prefs, never the
+  // first user's (PRD #121).
   $effect(() => {
     if (auth.verified) {
       void leads.loadCounts();
       void dashboard.loadAttention();
       // The set of archived antennas the map + list exclude (round 2).
       void archivedAntennas.hydrate();
+      void bootUserSettings();
     }
   });
 
@@ -157,39 +181,36 @@
       <div class="tabs" role="tablist" aria-label="Sections">
         <button
           class="tab"
-          class:on={section === 'dashboard'}
+          class:on={navSection === 'dashboard'}
           data-testid="nav-dashboard"
           role="tab"
-          aria-selected={section === 'dashboard'}
+          aria-selected={navSection === 'dashboard'}
           onclick={() => go('dashboard')}
         >
           Dashboard{#if dashboard.count}<span class="nbadge" data-testid="attention-badge">{dashboard.count}</span>{/if}
         </button>
         <button
           class="tab"
-          class:on={section === 'explore'}
+          class:on={navSection === 'explore'}
           data-testid="nav-explore"
           role="tab"
-          aria-selected={section === 'explore'}
+          aria-selected={navSection === 'explore'}
           onclick={() => go('explore')}
         >
           Explore{#if leads.candidatesCount}<span class="nbadge">{leads.candidatesCount}</span>{/if}
         </button>
         <button
           class="tab"
-          class:on={section === 'leads'}
+          class:on={navSection === 'leads'}
           data-testid="nav-leads"
           role="tab"
-          aria-selected={section === 'leads'}
+          aria-selected={navSection === 'leads'}
           onclick={() => go('leads')}
         >
           Leads{#if leads.myLeadsCount}<span class="nbadge">{leads.myLeadsCount}</span>{/if}
         </button>
       </div>
-      <span class="nav-user" data-testid="nav-user">
-        {auth.team ? `${auth.email} · ${auth.team}` : auth.email}
-      </span>
-      <button class="signout" data-testid="signout" onclick={() => auth.signOut()}>Sign out</button>
+      <UserMenu />
     </nav>
 
     <div class="shell-body">
@@ -310,7 +331,9 @@
       <!-- Dashboard / Leads / owner page render over the (still-mounted) map. -->
       {#if section !== 'explore'}
         <div class="surface" data-testid="section-surface">
-          {#if route.name === 'dashboard'}
+          {#if route.name === 'settings'}
+            <Settings />
+          {:else if route.name === 'dashboard'}
             <Dashboard sub={route.sub} />
           {:else if route.name === 'leads'}
             <Leads />
@@ -412,20 +435,6 @@
   .tab.on .nbadge {
     background: rgba(255, 255, 255, 0.28);
     color: #fff;
-  }
-  .nav-user {
-    margin-left: auto;
-    font-size: 12px;
-    color: var(--text-2);
-  }
-  .signout {
-    background: none;
-    border: none;
-    padding: 0;
-    font-size: 12px;
-    color: var(--muted);
-    text-decoration: underline;
-    cursor: pointer;
   }
   .shell-body {
     flex: 1;

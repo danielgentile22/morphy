@@ -189,6 +189,20 @@ export interface MeResponse {
   // The signed-in user's team name (#86). Optional so an older backend
   // (pre-teams) still parses; the nav just omits the team then.
   team?: string;
+  // The friendly name set in Settings (PRD #121); '' falls back to the email.
+  display_name?: string;
+}
+
+/** Per-user preferences (PRD #121). `home_view` / `filter_default` are opaque
+ *  JSON strings this client owns; the backend stores + serves them verbatim. */
+export interface UserSettings {
+  theme: 'light' | 'dark' | 'system';
+  colorblind: boolean;
+  basemap: 'light' | 'voyager' | 'dark';
+  view_mode: 'home' | 'last';
+  home_view: string;
+  filter_default: string;
+  filter_default_apply: boolean;
 }
 
 /** Error carrying the HTTP status so callers can branch (e.g. 409 illegal). */
@@ -346,4 +360,32 @@ export function login(username: string, password: string): Promise<TokenResponse
 
 export function fetchMe(): Promise<MeResponse> {
   return request<MeResponse>('/auth/me');
+}
+
+// ── per-user self-service (PRD #121) ─────────────────────────────────────────
+export function fetchMySettings(): Promise<UserSettings> {
+  return request<UserSettings>('/me/settings');
+}
+
+export function saveMySettings(patch: Partial<UserSettings>): Promise<UserSettings> {
+  return request<UserSettings>('/me/settings', {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  });
+}
+
+export function updateDisplayName(displayName: string): Promise<MeResponse> {
+  return request<MeResponse>('/me', {
+    method: 'PUT',
+    body: JSON.stringify({ display_name: displayName }),
+  });
+}
+
+/** Change my password. Resolves on success; rejects with an ApiError whose
+ *  status is 401 when the current password is wrong. */
+export function changeMyPassword(currentPassword: string, newPassword: string): Promise<void> {
+  return request<void>('/me/password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
 }

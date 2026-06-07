@@ -36,6 +36,55 @@
   --s-uninterested: #b0392b;
 }
 
+/* Dark theme (PRD #121). A full token override — the same variables the whole
+   app already paints through, re-valued for a dark surface. The bar is
+   "coherent and legible"; per-component contrast polish iterates post-merge. */
+[data-theme='dark'] {
+  --bg: #14171b;
+  --panel: #1c2025;
+  --panel-2: #23282f;
+  --border: #2e343c;
+  --border-strong: #444c57;
+  --text: #e7e9ec;
+  --text-2: #b7bdc6;
+  --muted: #8b939e;
+  --accent: #4ea3da; /* Wong blue, lightened for dark-bg contrast */
+  --accent-soft: #1e3a4d;
+  --danger: #e8772f; /* Wong vermillion, lightened */
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 4px 24px rgba(0, 0, 0, 0.6);
+
+  /* Lead-status hues, lifted for legibility on the dark panel. */
+  --s-new: #9aa4b1;
+  --s-researching: #d6a429;
+  --s-contacted: #4ea3da;
+  --s-interested: #a07fd6;
+  --s-in_business: #3fae74;
+  --s-uninterested: #d35a48;
+}
+
+/* Colorblind mode (PRD #121) — independent of theme. Remap the green/red
+   status pair that's hardest for red-green colorblindness to a Wong CB-safe
+   set; the non-color glyph cue (.cb-cue, shown only here) is the real safety
+   net so meaning never rides on hue alone. The map/data palette (palette.ts)
+   is already Wong-safe and untouched. */
+html.cb {
+  --s-in_business: #009e73; /* Wong bluish-green */
+  --s-uninterested: #d55e00; /* Wong vermillion */
+}
+
+/* The per-status shape/letter cue. Hidden unless colorblind mode is on, then
+   shown wherever status is rendered by color (kanban lanes, the Lead page). */
+.cb-cue {
+  display: none;
+}
+html.cb .cb-cue {
+  display: inline-block;
+  font-weight: 700;
+  font-size: 0.85em;
+  line-height: 1;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -117,4 +166,119 @@ a {
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+/* ── Settings page primitives (PRD #121) ─────────────────────────────────────
+   Shared, unscoped classes the four settings panels paint through, so each
+   section component stays markup-only. */
+.set-section {
+  max-width: 580px;
+}
+.set-section > h2 {
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+.set-section > .hint {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin: 0 0 18px;
+}
+.set-group {
+  margin-bottom: 22px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.set-group:last-child {
+  border-bottom: none;
+}
+.set-group > h3 {
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.set-label {
+  font-size: 12.5px;
+  color: var(--text-2);
+  min-width: 116px;
+}
+.set-input,
+.set-select {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+}
+.set-input {
+  min-width: 220px;
+}
+.set-btn {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 7px 14px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.set-btn.secondary {
+  background: var(--panel);
+  color: var(--text-2);
+  border-color: var(--border-strong);
+}
+.set-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.set-status {
+  font-size: 12px;
+}
+.set-status.ok {
+  color: var(--accent);
+}
+.set-status.err {
+  color: var(--danger);
+}
+.set-readonly {
+  font-size: 13px;
+  color: var(--text);
+}
+.set-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.set-seg {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.set-seg button {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 14px;
+  background: var(--panel);
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.set-seg button:last-child {
+  border-right: none;
+}
+.set-seg button.on {
+  background: var(--accent);
+  color: #fff;
 }

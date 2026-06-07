@@ -208,6 +208,27 @@ class TenantSetting(Base):
     value: Mapped[str] = mapped_column(String(255), nullable=False, default="")
 
 
+class UserSetting(Base):
+    """A per-user key/value preference (PRD #121). The first *per-user* persisted
+    preference layer in a codebase that was tenant-shaped until now — mirrors
+    ``TenantSetting`` but scoped to the individual: PK ``(tenant_id, user_id,
+    key)``. Generic, so new prefs slot in as new keys with no schema change.
+    ``value`` is ``Text`` (not ``String(255)``) because some keys hold opaque
+    client-owned JSON blobs (a saved filter snapshot, a home-view) the backend
+    persists + serves without inspecting.
+
+    A brand-new table, so ``create_all`` builds it on any DB — no additive
+    migration entry needed.
+    """
+
+    __tablename__ = "user_setting"
+
+    tenant_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
 class ScoringPreset(Base):
     """A named, tenant-shared scoring configuration (UI overhaul P4 / #115,
     ADR-058 amended). Both teammates see the same presets (the team is one

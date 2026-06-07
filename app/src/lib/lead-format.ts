@@ -40,6 +40,22 @@ export function statusVar(status: LeadStatus | string): string {
   return `var(--s-${status})`;
 }
 
+/** A non-color cue per status (PRD #121): a distinct glyph so meaning never
+ *  rides on hue alone. Shown only in colorblind mode (gated by the `.cb-cue`
+ *  CSS class). The won/lost pair is the deliberate ✓ / ✗ contrast. */
+const STATUS_GLYPHS: Record<string, string> = {
+  new: '○',
+  researching: '◔',
+  contacted: '◑',
+  interested: '☆',
+  in_business: '✓',
+  uninterested: '✗',
+};
+
+export function statusGlyph(status: LeadStatus | string): string {
+  return STATUS_GLYPHS[status] ?? '•';
+}
+
 /** Distress summary string, e.g. "distressed · OZ QCT". */
 export function distressText(d: {
   distress_tier: string;

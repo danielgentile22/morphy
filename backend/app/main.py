@@ -13,6 +13,9 @@ Surface:
   POST /api/leads/{cluster_id}/split   split a merged-in cluster back out
   GET/POST /api/tasks            list / create tasks (tenant-scoped)
   GET/PUT/DELETE /api/tasks/{id} read / update (title·desc·status) / delete a task
+  GET/PUT /api/me/settings       per-user preferences (PRD #121; defaults filled in)
+  PUT  /api/me                   update the signed-in user's display_name (PRD #121)
+  POST /api/me/password          self-service password change (PRD #121, ADR-068)
 
 Every data route resolves a tenant via ``current_tenant_id`` (now derived
 from the bearer JWT — Slice 2 / #48) and goes through ``LeadStore`` /
@@ -60,9 +63,11 @@ from .schemas import (
     LeadUpdate,
     LoginBody,
     MeResponse,
+    MeUpdate,
     MyLeadsResponse,
     OverrideBody,
     OwnerSummary,
+    PasswordChange,
     PursueBody,
     ScoringPresetIn,
     ScoringPresetOut,
@@ -76,6 +81,8 @@ from .schemas import (
     TaskUpdate,
     TokenResponse,
     UserOut,
+    UserSettingsResponse,
+    UserSettingsUpdate,
     UsersResponse,
 )
 from .scoring_preset_store import ScoringPresetStore
@@ -87,6 +94,9 @@ from .settings_store import (
 from .stats_service import ActivityRow, LeadRow, StatsService
 from .task_store import InvalidTaskPriority, InvalidTaskStatus, TaskStore, label_list
 from .tenant_service import TenantService
+from .user_settings_store import KNOWN_KEYS, UserSettingsStore
+from .users import ChangePasswordOutcome, UsersFileError
+from .users import change_password as users_change_password
 
 
 @asynccontextmanager
@@ -163,6 +173,16 @@ def get_settings(
     return SettingsStore(db, tenant_id)
 
 
+def get_user_settings(
+    principal: Principal = Depends(current_principal),
+    db: Session = Depends(get_db),
+) -> UserSettingsStore:
+    """Per-user settings scoped to the resolved principal (PRD #121) — by both
+    ``tenant_id`` *and* ``user_id``, so no teammate (or other tenant) can see
+    another's preferences."""
+    return UserSettingsStore(db, principal.tenant_id, principal.user_id)
+
+
 def _auto_followup(store: LeadStore, db: Session, merges: OwnerMergeService) -> AutoFollowUpRule:
     """Build the auto-follow-up rule for a request (shares the session)."""
     return AutoFollowUpRule(
@@ -214,18 +234,103 @@ def login(
     )
 
 
-@app.get("/api/auth/me", response_model=MeResponse)
-def me(
-    principal: Principal = Depends(current_principal),
-    db: Session = Depends(get_db),
-) -> MeResponse:
+def _me_response(principal: Principal, db: Session) -> MeResponse:
+    from .models import User
+
+    user = db.get(User, principal.user_id)
     return MeResponse(
         tenant_id=principal.tenant_id,
         email=principal.email,
         # The team name lives on the Tenant row (#86), not in the JWT — #88
         # makes the JWT identity-only, so nothing tenant-shaped is added to it.
         team=TenantService(db).get_name(principal.tenant_id),
+        display_name=user.display_name if user is not None else "",
     )
+
+
+@app.get("/api/auth/me", response_model=MeResponse)
+def me(
+    principal: Principal = Depends(current_principal),
+    db: Session = Depends(get_db),
+) -> MeResponse:
+    return _me_response(principal, db)
+
+
+@app.put("/api/me", response_model=MeResponse)
+def update_me(
+    body: MeUpdate,
+    principal: Principal = Depends(current_principal),
+    db: Session = Depends(get_db),
+) -> MeResponse:
+    """Edit the signed-in user's display name (PRD #121). A blank name is
+    allowed — it falls back to the email at every render site."""
+    from .models import User
+
+    if "display_name" in body.model_fields_set and body.display_name is not None:
+        user = db.get(User, principal.user_id)
+        if user is not None:
+            user.display_name = body.display_name.strip()
+            db.commit()
+    return _me_response(principal, db)
+
+
+def _user_settings_out(s: UserSettingsStore) -> UserSettingsResponse:
+    r = s.resolved()
+    return UserSettingsResponse(
+        theme=r["theme"],
+        colorblind=r["colorblind"] == "1",
+        basemap=r["basemap"],
+        view_mode=r["view_mode"],
+        home_view=r["home_view"],
+        filter_default=r["filter_default"],
+        filter_default_apply=r["filter_default_apply"] == "1",
+    )
+
+
+@app.get("/api/me/settings", response_model=UserSettingsResponse)
+def get_my_settings(s: UserSettingsStore = Depends(get_user_settings)) -> UserSettingsResponse:
+    return _user_settings_out(s)
+
+
+@app.put("/api/me/settings", response_model=UserSettingsResponse)
+def update_my_settings(
+    body: UserSettingsUpdate, s: UserSettingsStore = Depends(get_user_settings)
+) -> UserSettingsResponse:
+    """Upsert one or more preference keys (PRD #121). ``home_view`` /
+    ``filter_default`` are opaque client-owned blobs persisted verbatim — the
+    backend never inspects them (same posture as ``ScoringPreset.config``)."""
+    sent = body.model_fields_set
+    for key in KNOWN_KEYS:
+        if key not in sent:
+            continue
+        value = getattr(body, key)
+        if value is None:
+            continue  # an explicit null means "leave unchanged" — never store "None"
+        # bool prefs are stored as "0"/"1"; everything else is a string.
+        s.set(key, ("1" if value else "0") if isinstance(value, bool) else str(value))
+    return _user_settings_out(s)
+
+
+@app.post("/api/me/password", status_code=204)
+def change_my_password(
+    body: PasswordChange,
+    principal: Principal = Depends(current_principal),
+) -> None:
+    """Self-service password change (PRD #121). Routes through the *one*
+    sanctioned atomic writer (``users.change_password`` → ``set_password``);
+    wrong current password → 401 (the file untouched), success is live on the
+    next request via the per-request ``CredentialsFile`` reload."""
+    try:
+        outcome = users_change_password(
+            settings.credentials_path,
+            principal.email,
+            body.current_password,
+            body.new_password,
+        )
+    except UsersFileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if outcome is ChangePasswordOutcome.WRONG_CURRENT:
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
 
 
 @app.get("/api/candidates", response_model=CandidatesResponse)

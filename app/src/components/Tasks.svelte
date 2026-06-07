@@ -4,30 +4,11 @@
   // any-field + free-text search. Rendered as the Dashboard `tasks` sub-page.
   import { onMount } from 'svelte';
   import { tasks } from '../lib/tasks-store.svelte';
-  import { leadHash, towerHash } from '../lib/nav';
-  import { request } from '../lib/leads-api';
+  import { leadHash, towerHash, settingsHash } from '../lib/nav';
   import type { Task, TaskStatus, TaskPriority } from '../lib/tasks-api';
 
-  // Automation settings (#116) — the auto follow-up rule's on/off + window.
-  interface Settings {
-    auto_followup_enabled: boolean;
-    auto_followup_window_days: number;
-  }
-  let settings = $state<Settings | null>(null);
-  async function loadSettings(): Promise<void> {
-    try {
-      settings = await request<Settings>('/settings');
-    } catch {
-      settings = null;
-    }
-  }
-  async function saveSettings(patch: Partial<Settings>): Promise<void> {
-    try {
-      settings = await request<Settings>('/settings', { method: 'PUT', body: JSON.stringify(patch) });
-    } catch {
-      /* best-effort */
-    }
-  }
+  // The auto-follow-up automation moved to Settings → Automations (PRD #121);
+  // Tasks keeps only a pointer to it (below).
 
   // ── create form ─────────────────────────────────────────────────────────
   let draft = $state({
@@ -45,7 +26,6 @@
   onMount(() => {
     void tasks.load();
     void tasks.loadUsers();
-    void loadSettings();
   });
 
   async function add(): Promise<void> {
@@ -95,32 +75,10 @@
 </script>
 
 <div class="tasks" data-testid="tasks">
-  <!-- automation settings (#116) -->
-  {#if settings}
-    <div class="automation" data-testid="automation">
-      <label class="auto-toggle">
-        <input
-          type="checkbox"
-          data-testid="auto-followup-enabled"
-          checked={settings.auto_followup_enabled}
-          onchange={(e) => saveSettings({ auto_followup_enabled: e.currentTarget.checked })}
-        />
-        Auto follow-up
-      </label>
-      <span class="auto-detail">
-        after
-        <input
-          class="auto-window"
-          type="number"
-          min="1"
-          data-testid="auto-followup-window"
-          value={settings.auto_followup_window_days}
-          onchange={(e) => saveSettings({ auto_followup_window_days: Number(e.currentTarget.value) })}
-        />
-        days of no reply
-      </span>
-    </div>
-  {/if}
+  <!-- Auto follow-up relocated to Settings → Automations (PRD #121). -->
+  <p class="auto-pointer" data-testid="automation-pointer">
+    Auto follow-up is configured in <a href={settingsHash()}>Settings → Automations</a>.
+  </p>
 
   <!-- create -->
   <form
@@ -247,33 +205,13 @@
   .tasks {
     max-width: 860px;
   }
-  .automation {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 12px;
+  .auto-pointer {
+    margin: 0 0 12px;
     padding: 8px 12px;
     background: var(--panel-2);
     border-radius: var(--radius);
     font-size: 12.5px;
-  }
-  .auto-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-weight: 600;
-  }
-  .auto-detail {
     color: var(--muted);
-  }
-  .auto-window {
-    width: 56px;
-    font: inherit;
-    font-size: 12px;
-    padding: 3px 6px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius);
-    background: var(--panel);
   }
   .newtask {
     margin-bottom: 12px;

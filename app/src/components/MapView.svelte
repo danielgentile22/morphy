@@ -22,6 +22,9 @@
   import { filterModel } from '../lib/filter-model.svelte';
   import { archivedAntennas } from '../lib/archived-antennas.svelte';
   import { towerHash } from '../lib/nav';
+  import { userSettings } from '../lib/user-settings-store.svelte';
+  import { basemapStyle, basemapTiles, resolveInitialView } from '../lib/basemap';
+  import { readLastView, writeLastView } from '../lib/map-view-cache';
 
   maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
@@ -29,26 +32,14 @@
   // vector tiles via HTTP Range requests.
   maplibregl.addProtocol('pmtiles', new Protocol().tile);
 
-  // Keyless raster basemap — Carto Positron. No API key, consistent with
-  // the no-backend constraint.
-  const BASEMAP_STYLE: StyleSpecification = {
-    version: 8,
-    sources: {
-      basemap: {
-        type: 'raster',
-        tiles: [
-          'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-          'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-          'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-        ],
-        tileSize: 256,
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' +
-          'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      },
-    },
-    layers: [{ id: 'basemap', type: 'raster', source: 'basemap' }],
-  };
+  // Keyless raster basemap — the user's choice (Positron / Voyager / Dark
+  // Matter), theme-aware (PRD #121). No API key, consistent with the no-backend
+  // constraint. The live map hot-swaps only the basemap source's tiles when the
+  // pref changes, so the app's tower/parcel/solar layers are never dropped.
+  const initialStyle: StyleSpecification = basemapStyle(
+    untrack(() => userSettings.basemap),
+    untrack(() => userSettings.effectiveTheme),
+  );
 
   const US_BOUNDS: [number, number, number, number] = [-125, 24, -66, 50];
   const TOWER_ICON = 'tower-marker';
@@ -140,12 +131,20 @@
   onMount(() => {
     const m = new maplibregl.Map({
       container,
-      style: BASEMAP_STYLE,
+      style: initialStyle,
       bounds: app.anchorBounds ?? US_BOUNDS,
       fitBoundsOptions: { padding: 28 },
       attributionControl: { compact: true },
     });
     map = m;
+
+    // Persist the camera on every settle so "where I left off" can restore it
+    // next session (PRD #121). Local/per-device — the pinned "home" view is the
+    // backend-synced one.
+    m.on('moveend', () => {
+      const c = m.getCenter();
+      writeLastView({ lng: c.lng, lat: c.lat, zoom: m.getZoom() });
+    });
     // Test handle — lets E2E project feature coords to click the map
     // deterministically. Harmless in a local single-user app.
     (window as unknown as { __pilotMap?: maplibregl.Map }).__pilotMap = m;
@@ -178,6 +177,32 @@
       map = undefined;
       ready = false;
     };
+  });
+
+  // Restore the startup camera once the per-user prefs resolve (PRD #121):
+  // pinned home wins when set, else where I left off; otherwise the default
+  // bounds (already fitted at construction) stand. One-shot, so it never fights
+  // the user after they start panning.
+  let initialViewApplied = false;
+  $effect(() => {
+    if (!map || initialViewApplied || !userSettings.loaded) return;
+    initialViewApplied = true;
+    const view = resolveInitialView(
+      { viewMode: userSettings.settings.view_mode, home: userSettings.homeView },
+      readLastView(),
+    );
+    if (view) map.jumpTo({ center: [view.lng, view.lat], zoom: view.zoom });
+  });
+
+  // Hot-swap just the basemap raster tiles when the basemap / theme pref
+  // changes — leaves every app layer (towers, parcels, solar) untouched, unlike
+  // a full setStyle.
+  $effect(() => {
+    const tiles = basemapTiles(userSettings.basemap, userSettings.effectiveTheme);
+    const src = map?.getSource('basemap');
+    if (src && 'setTiles' in src) {
+      (src as maplibregl.RasterTileSource).setTiles(tiles);
+    }
   });
 
   // ── hover cursor (shared by parcels) ─────────────────────────────────────
