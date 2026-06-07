@@ -2,10 +2,8 @@
   import { onMount } from 'svelte';
   import { app } from './lib/stores.svelte';
   import MapView from './components/MapView.svelte';
-  import StateSelector from './components/StateSelector.svelte';
-  import SummaryCard from './components/SummaryCard.svelte';
-  import LayerPanel from './components/LayerPanel.svelte';
-  import TopFilterBar from './components/TopFilterBar.svelte';
+  import FilterPanel from './components/FilterPanel.svelte';
+  import StatStrip from './components/StatStrip.svelte';
   import DetailsPanel from './components/DetailsPanel.svelte';
   import Dashboard from './components/Dashboard.svelte';
   import Leads from './components/Leads.svelte';
@@ -17,8 +15,8 @@
   import { leads } from './lib/leads-store.svelte';
   import { dashboard } from './lib/dashboard-store.svelte';
   import { archivedAntennas } from './lib/archived-antennas.svelte';
+  import { filterModel } from './lib/filter-model.svelte';
   import { auth } from './lib/auth-store.svelte';
-  import { buildUrl } from './lib/url';
   import {
     parseRoute,
     sectionOf,
@@ -27,10 +25,26 @@
     type Section,
   } from './lib/nav';
 
-  // Captured synchronously, before any effect can rewrite the URL.
-  const initialSearch = location.search;
-
   let showHelp = $state(false);
+
+  // Collapsible filter sidebar (#119): collapse it for a bigger map once
+  // filters are set; the choice persists across reloads.
+  const SIDEBAR_KEY = 'explore.sidebarCollapsed';
+  function readCollapsed(): boolean {
+    try {
+      return localStorage.getItem(SIDEBAR_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+  let sidebarCollapsed = $state(readCollapsed());
+  $effect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed ? '1' : '0');
+    } catch {
+      // Private-mode / storage-disabled — collapse just won't persist.
+    }
+  });
 
   // Three-section hash routing (UI overhaul P1 / #104, ADR-065):
   // Dashboard · Explore · Leads, with Dashboard sub-pages. The Explore map
@@ -54,7 +68,7 @@
   $effect(() => {
     if (auth.verified && !booted) {
       booted = true;
-      void app.boot(initialSearch);
+      void app.boot();
     }
   });
 
@@ -123,26 +137,6 @@
       window.removeEventListener('hashchange', onHashChange);
     };
   });
-
-  // Keep the URL a shareable deep link — state, selected parcel, filters live
-  // in the query string; the section lives in the hash. Only sync while in
-  // Explore (the map), and always preserve the section hash so the sync never
-  // strips it. Gated on urlSyncReady so it can't erase the deep-link before
-  // boot has restored it.
-  $effect(() => {
-    if (section !== 'explore') return;
-    if (!app.urlSyncReady) return;
-    const sel = app.selection;
-    const selectedId =
-      sel?.kind === 'parcel' && typeof sel.props.parcel_id === 'string'
-        ? sel.props.parcel_id
-        : null;
-    const next =
-      buildUrl(location.pathname, app.activeFips, selectedId, app.filters) + location.hash;
-    if (next !== location.pathname + location.search + location.hash) {
-      history.replaceState(null, '', next);
-    }
-  });
 </script>
 
 {#if !auth.verified}
@@ -203,36 +197,53 @@
            DuckDB never tear down on a section change (ADR-061 / #104). The
            other sections render as an opaque surface over it (below). -->
       <div class="explore-layout">
-        <aside class="sidebar">
-          <header class="app-header">
-            <h1>{app.activeState?.name ?? 'Explore'}</h1>
-            <p class="subtitle">Parcels &amp; infrastructure — renegotiation candidates</p>
-          </header>
-
-          {#if app.notice}
-            <div class="notice" role="status">
-              <span>{app.notice}</span>
-              <button class="notice-close" onclick={() => app.dismissNotice()} aria-label="Dismiss">
-                ×
+        {#if sidebarCollapsed}
+          <!-- Collapsed rail: one-click re-open, showing the active-filter count
+               so the user knows filters are still applied (#119, stories 2–3). -->
+          <button
+            class="sidebar-rail"
+            data-testid="sidebar-open"
+            onclick={() => (sidebarCollapsed = false)}
+            title="Show filters"
+          >
+            <span class="rail-icon" aria-hidden="true">»</span>
+            <span class="rail-label">
+              Filters{#if filterModel.activeCount}<span class="rail-badge">{filterModel.activeCount}</span>{/if}
+            </span>
+          </button>
+        {:else}
+          <aside class="sidebar" data-testid="sidebar">
+            <header class="app-header">
+              <h1>Explore</h1>
+              <button
+                class="collapse"
+                data-testid="sidebar-collapse"
+                onclick={() => (sidebarCollapsed = true)}
+                aria-label="Collapse filters"
+                title="Collapse"
+              >
+                «
               </button>
-            </div>
-          {/if}
+            </header>
 
-          <div class="sidebar-scroll">
-            <section class="panel">
-              <StateSelector />
-            </section>
-            {#if app.status === 'ready'}
-              <SummaryCard />
-              <ScoringPanel />
-              <LayerPanel />
+            {#if app.notice}
+              <div class="notice" role="status">
+                <span>{app.notice}</span>
+                <button class="notice-close" onclick={() => app.dismissNotice()} aria-label="Dismiss">
+                  ×
+                </button>
+              </div>
             {/if}
-          </div>
 
-          <footer class="app-footer">
-            Prototype · local use only · data is PII (owner names + addresses)
-          </footer>
-        </aside>
+            <div class="sidebar-scroll">
+              <StatStrip />
+              <FilterPanel />
+              {#if app.status === 'ready'}
+                <ScoringPanel />
+              {/if}
+            </div>
+          </aside>
+        {/if}
 
         <main class="stage">
       {#if app.status === 'error'}
@@ -244,40 +255,35 @@
               Start the range-capable data server from the repo root
               (<code>python scripts/serve.py 8765</code>), then retry.
             </p>
-            <button class="retry" onclick={() => app.boot(initialSearch)}>Retry</button>
+            <button class="retry" onclick={() => app.boot()}>Retry</button>
           </div>
         </div>
       {:else}
-        {#if app.status === 'ready' && section === 'explore'}
-          <!-- The top filter bar drives the Explore map + tower list only.
-               Dashboard/Leads/Lead have their own (or no) filtering, so the
-               bar is gated to Explore — elsewhere it was dead and overlapped
-               the page heading. -->
-          <TopFilterBar />
-          {#if route.name === 'explore'}
-            <div class="explore-views" role="tablist" aria-label="Explore view">
-              <button
-                class="vbtn"
-                class:on={exploreView === 'map'}
-                data-testid="explore-view-map"
-                role="tab"
-                aria-selected={exploreView === 'map'}
-                onclick={() => (exploreView = 'map')}
-              >
-                Map
-              </button>
-              <button
-                class="vbtn"
-                class:on={exploreView === 'list'}
-                data-testid="explore-view-list"
-                role="tab"
-                aria-selected={exploreView === 'list'}
-                onclick={() => (exploreView = 'list')}
-              >
-                List
-              </button>
-            </div>
-          {/if}
+        {#if app.status === 'ready' && route.name === 'explore'}
+          <!-- Map/List lens toggle stays at the top, independent of the filter
+               panel's collapsed state (#119, story 4). -->
+          <div class="explore-views" role="tablist" aria-label="Explore view">
+            <button
+              class="vbtn"
+              class:on={exploreView === 'map'}
+              data-testid="explore-view-map"
+              role="tab"
+              aria-selected={exploreView === 'map'}
+              onclick={() => (exploreView = 'map')}
+            >
+              Map
+            </button>
+            <button
+              class="vbtn"
+              class:on={exploreView === 'list'}
+              data-testid="explore-view-list"
+              role="tab"
+              aria-selected={exploreView === 'list'}
+              onclick={() => (exploreView = 'list')}
+            >
+              List
+            </button>
+          </div>
         {/if}
         <div class="map-wrap">
           <MapView />
@@ -452,16 +458,70 @@
   }
 
   .app-header {
-    padding: 16px 18px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 16px;
     border-bottom: 1px solid var(--border);
   }
   .app-header h1 {
     font-size: 18px;
   }
-  .subtitle {
-    margin: 3px 0 0;
+  .collapse {
+    margin-left: auto;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    font-size: 16px;
+    line-height: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .collapse:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  /* Collapsed sidebar → a thin vertical rail that reopens the filter panel. */
+  .sidebar-rail {
+    width: 40px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 0;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    color: var(--text-2);
+    cursor: pointer;
+    z-index: 10;
+  }
+  .sidebar-rail:hover {
+    color: var(--accent);
+  }
+  .rail-icon {
+    font-size: 16px;
+    line-height: 1;
+  }
+  .rail-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    writing-mode: vertical-rl;
     font-size: 12px;
-    color: var(--muted);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .rail-badge {
+    writing-mode: horizontal-tb;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 999px;
+    padding: 0 6px;
+    font-size: 11px;
   }
   .notice {
     display: flex;
@@ -485,17 +545,6 @@
   .sidebar-scroll {
     flex: 1;
     overflow-y: auto;
-  }
-  .panel {
-    padding: 14px 18px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .app-footer {
-    padding: 10px 18px;
-    font-size: 11px;
-    color: var(--muted);
-    border-top: 1px solid var(--border);
   }
 
   .stage {

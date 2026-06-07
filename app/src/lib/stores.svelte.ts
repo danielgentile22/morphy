@@ -1,228 +1,101 @@
 /**
- * Central app state — Svelte 5 runes.
+ * Central app state — Svelte 5 runes (UI overhaul #119: all-states map).
  *
- * The app binds to the catalog, never to a hardcoded state. Boot reads
- * composite/index.json for the state list, then loads the active state's
- * catalog.json and its eager layer GeoJSON. Switching state re-runs the
- * same path. Nothing here knows that AR or MT specifically exist.
+ * The app boots the whole anchor set at once — there is no "active state". Boot
+ * reads composite/index.json, then loads the national tower points, the
+ * national solar points, the shared owners filter index (via the filter-model
+ * store, mounted by the FilterPanel), and probes each anchor state's parcel
+ * vector tiles. Filters narrow TOWERS only; parcels and solar are context
+ * layers that render on zoom. The per-state catalog / slim-parquet / DuckDB
+ * parcel-fade machinery was retired with the state selector.
  */
 
-import type { FeatureCollection } from 'geojson';
-import type { Catalog, CompositeIndex, StateEntry } from './catalog';
-import {
-  compositeAssetUrl,
-  countyBoundariesUrl,
-  loadCatalog,
-  loadFacets,
-  loadGeoJson,
-  loadIndex,
-  parcelsAttrUrl,
-  pmtilesUrl,
-  probeResource,
-} from './data';
-import { duckDb } from './duckdb';
-import type { FacetData } from './facets';
-import {
-  FilterEngine,
-  type FilterResult,
-  type FilterStatus,
-} from './filter-engine';
-import { bboxCenter, parseGeomBbox } from './geo';
-import { emptyFilters, isAnyFilterActive, type FilterState } from './filters';
-import type { EntityKind, Props } from './schema';
-import { readUrlState } from './url';
+import type { FeatureCollection, Point } from 'geojson';
+import type { CompositeIndex } from './catalog';
+import { loadIndex, pmtilesUrl, probeResource } from './data';
 import { loadTowerPoints, type TowerProps } from './towers';
-import type { Point } from 'geojson';
+import { loadSolarPoints, solarTotal, type SolarProps } from './solar';
+import { errMsg, parcelSources as computeParcelSources, unionBounds } from './stores-helpers';
+import type { ParcelSource } from './stores-helpers';
+import type { EntityKind, Props } from './schema';
 
 /** A pair of corners for MapLibre `fitBounds` — `[[w, s], [e, n]]`. */
 export type BoundsCorners = [[number, number], [number, number]];
 
-/** Where the map is framed: all anchors at once (structures-first default),
- *  or zoomed to one focused state (an explicit StateSelector / deep-link pick). */
-export type MapFocus = { kind: 'anchors' } | { kind: 'state'; fips: string };
-
-export type { FilterStatus } from './filter-engine';
-
-/** Synthetic layer-visibility keys for the two base layers (not catalog
- *  entries — parcels come from PMTiles, the choropleth from an
- *  --app-assets GeoJSON). */
+/** Synthetic layer-visibility key for the parcel base layer (it comes from
+ *  PMTiles, not a catalog GeoJSON layer). */
 export const BASE_PARCELS = 'parcels';
-export const BASE_COUNTY = 'county_boundaries';
 
 /** A clicked / selected entity, shown in the detail panel. */
 export interface Selection {
   kind: EntityKind;
   props: Props;
-  /** Which loaded layer + feature index it came from — lets the map
-   *  highlight the feature via feature-state. */
-  featureRef?: { layer: string; index: number };
   /** lon/lat to recentre on, when known (e.g. a top-list row click). */
   at?: [number, number];
 }
 
 export type BootStatus = 'loading' | 'ready' | 'error';
-
-export {
-  HEAVY_VIEWS,
-  eagerAssets,
-  defaultVisibility,
-  pickInitialState,
-  type LoadableAsset,
-} from './stores-helpers';
-import {
-  defaultVisibility,
-  eagerAssets,
-  errMsg,
-  pickInitialState,
-  syncStateParam,
-  unionBounds,
-} from './stores-helpers';
+type Loadable = 'idle' | 'loading' | 'ready' | 'error';
 
 export class AppStore {
   status = $state<BootStatus>('loading');
   errorMessage = $state<string | null>(null);
-  /** Non-fatal advisory (e.g. an unknown ?state= fell back to a real one). */
+  /** Non-fatal advisory (e.g. no parcel tiles reachable). */
   notice = $state<string | null>(null);
 
   index = $state<CompositeIndex | null>(null);
-  activeFips = $state<string | null>(null);
-  catalog = $state<Catalog | null>(null);
-
-  /** layer / view name -> loaded GeoJSON. */
-  layerData = $state<Record<string, FeatureCollection>>({});
-  /** County-choropleth GeoJSON for the active state (null if absent). */
-  countyData = $state<FeatureCollection | null>(null);
-  /** URL of the active state's parcels.pmtiles (null if not built). */
-  parcelsUrl = $state<string | null>(null);
-  /** Precomputed filter facets for the active state (null if absent). */
-  facets = $state<FacetData | null>(null);
-  /** True when the slim parquet exists — the DuckDB filter engine is usable. */
-  filtersAvailable = $state(false);
-  /** layer / view name -> visible on the map. */
-  layerVisible = $state<Record<string, boolean>>({});
-  /** layer / view names whose GeoJSON failed to load (toggle disabled). */
-  failedLayers = $state<string[]>([]);
-
-  /** The live parcel filter state. */
-  filters = $state<FilterState>(emptyFilters());
-  /** Count of parcels matching the active filter (null = no filter). */
-  filterCount = $state<number | null>(null);
-  /** Up to FILTER_FADE_CAP matching parcel ids — the map fades non-matches. */
-  filterMatchIds = $state<string[]>([]);
-  filterStatus = $state<FilterStatus>('idle');
-  /** Bumped once per *settled* engine result (idle/error — never the
-   *  intermediate querying emit) so the map fade coalesces to a single
-   *  clear+reapply per query instead of one per filterMatchIds change. */
-  filterResultEpoch = $state(0);
-  /** False until boot has read the deep-link — guards the URL-sync effect
-   *  from erasing the query string before it is restored. */
-  urlSyncReady = $state(false);
-
-  selection = $state<Selection | null>(null);
-  /** Status of the async full-row enrichment for a selected parcel — the
-   *  detail panel shows a hint while loading and a banner on failure. */
-  enrichmentStatus = $state<'idle' | 'loading' | 'error'>('idle');
 
   // ── structures-first map (Slice 4 / #50) ──────────────────────────────
   /** Tower points across every anchor state — the map's primary clustered
-   *  layer. Loaded once (independent of the active state) so the all-anchors
-   *  view survives state switches and route round-trips. */
+   *  layer. Loaded once so the all-anchors view survives section round-trips. */
   towerPoints = $state<FeatureCollection<Point, TowerProps> | null>(null);
-  towersStatus = $state<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  towersStatus = $state<Loadable>('idle');
   towersError = $state<string | null>(null);
-  /** How the map is framed (all anchors by default; a state on explicit pick). */
-  mapFocus = $state<MapFocus>({ kind: 'anchors' });
-  /** A one-shot fly request — the top-bar ASR search sets it to jump the map
-   *  to a matched tower (Slice 6 / #52); MapView consumes it. */
-  flyTarget = $state<{ center: [number, number]; zoom: number } | null>(null);
 
-  activeState = $derived<StateEntry | null>(
-    this.index && this.activeFips
-      ? (this.index.states.find((s) => s.fips === this.activeFips) ?? null)
-      : null,
-  );
+  // ── national solar layer (#119) ───────────────────────────────────────
+  /** Solar facilities across every anchor state — one persistent context
+   *  layer, shown only when the Structure-type filter includes solar. */
+  solarPoints = $state<FeatureCollection<Point, SolarProps> | null>(null);
+  solarStatus = $state<Loadable>('idle');
+  solarError = $state<string | null>(null);
+
+  // ── parcels for all states (#119) ─────────────────────────────────────
+  /** One parcel vector-tile source per anchor state whose tiles are present.
+   *  The map adds them all; parcels draw on zoom anywhere across the anchors. */
+  parcelSources = $state<ParcelSource[]>([]);
+
+  /** Towers/parcels layer visibility (towers + parcels are always on now that
+   *  the Layers panel is gone; solar visibility is derived from the filter). */
+  layerVisible = $state<Record<string, boolean>>({});
+
+  selection = $state<Selection | null>(null);
+
+  /** A one-shot fly request — the FilterPanel's ASR search sets it to jump the
+   *  map to a matched tower (Slice 6 / #52); MapView consumes it. */
+  flyTarget = $state<{ center: [number, number]; zoom: number } | null>(null);
 
   /** Union of every anchor state's bbox — the all-anchors map framing.
    *  Null until the index has loaded. */
   anchorBounds = $derived<BoundsCorners | null>(unionBounds(this.index?.states ?? []));
 
-  filtersActive = $derived(isAnyFilterActive(this.filters));
-
-  /** Execution mechanics (debounce, token, cap, DuckDB calls) live in
-   *  the engine; AppStore just mirrors the engine's result callback
-   *  into the three reactive fields above. */
-  #engine = new FilterEngine(
-    {
-      count: (where) => duckDb.count(where),
-      matchingIds: (where, limit) => duckDb.matchingIds(where, limit),
-      available: () => this.filtersAvailable,
-    },
-    (r: FilterResult) => {
-      this.filterCount = r.count;
-      this.filterMatchIds = r.matchIds;
-      this.filterStatus = r.status;
-      // A settled result drives the map's filter-fade exactly once; the
-      // transient querying emit (empty ids) must not clear the live fade.
-      if (r.status !== 'querying') this.filterResultEpoch++;
-    },
-  );
-  #selectionToken = 0;
+  /** Static Solar tile total — sum of every anchor's solar-facility count.
+   *  Fixed regardless of the active filter (solar can't be cluster-filtered). */
+  solarCount = $derived<number>(solarTotal(this.index));
 
   // ── synchronous mutations ────────────────────────────────────────────
 
   setSelection(sel: Selection | null): void {
     this.selection = sel;
-    const token = ++this.#selectionToken;
-    // A parcel clicked on the map / top-list carries only a partial set
-    // of attributes (PMTiles baked tiles, or a view's GeoJSON). Fetch the
-    // full row from DuckDB so the detail panel shows everything.
-    const parcelId = sel?.kind === 'parcel' ? sel.props.parcel_id : null;
-    if (sel?.kind === 'parcel' && this.filtersAvailable && typeof parcelId === 'string' && parcelId) {
-      this.enrichmentStatus = 'loading';
-      void this.#enrichParcel(parcelId, token);
-    } else {
-      this.enrichmentStatus = 'idle';
-    }
   }
   clearSelection(): void {
-    this.setSelection(null);
+    this.selection = null;
   }
 
-  /** Jump the map to a coordinate (top-bar ASR search). */
+  /** Jump the map to a coordinate (FilterPanel ASR search). */
   flyTo(center: [number, number], zoom = 12): void {
     this.flyTarget = { center, zoom };
   }
 
-  async #enrichParcel(parcelId: string, token: number): Promise<void> {
-    const row = await duckDb.fetchParcel(parcelId).catch(() => null);
-    if (token !== this.#selectionToken) return; // superseded by a newer selection
-    if (!row) {
-      this.enrichmentStatus = 'error';
-      return;
-    }
-    const sel = this.selection;
-    if (sel?.kind !== 'parcel') return;
-    this.selection = { ...sel, props: row };
-    this.enrichmentStatus = 'idle';
-  }
-
-  /** Look a parcel up by exact APN; select + fly to it. Returns false if
-   *  no parcel has that id. */
-  async selectParcelByApn(parcelId: string): Promise<boolean> {
-    const trimmed = parcelId.trim();
-    if (!trimmed || !this.filtersAvailable) return false;
-    const row = await duckDb.fetchParcel(trimmed).catch(() => null);
-    if (!row) return false;
-    this.#selectionToken += 1; // invalidate any in-flight enrich
-    const bbox = parseGeomBbox(row.geom_bbox);
-    this.selection = {
-      kind: 'parcel',
-      props: row,
-      at: bbox ? bboxCenter(bbox) : undefined,
-    };
-    this.enrichmentStatus = 'idle'; // row is already the full record
-    return true;
-  }
   setLayerVisible(name: string, visible: boolean): void {
     this.layerVisible = { ...this.layerVisible, [name]: visible };
   }
@@ -236,39 +109,11 @@ export class AppStore {
     this.notice = null;
   }
 
-  // ── filters ──────────────────────────────────────────────────────────
+  // ── async boot ────────────────────────────────────────────────────────
 
-  /** Merge a patch into the filter state and re-query (debounced). */
-  updateFilter(patch: Partial<FilterState>): void {
-    this.filters = { ...this.filters, ...patch };
-    this.#engine.schedule(this.filters);
-  }
-
-  /** Clear every filter. */
-  resetFilters(): void {
-    this.filters = emptyFilters();
-    this.#engine.schedule(this.filters);
-  }
-
-  /** Run the active filter immediately (bypassing the debounce). Kept
-   *  as a public method for boot's deep-link restore and for callers
-   *  that need a synchronous round-trip. */
-  async applyFilters(): Promise<void> {
-    await this.#engine.run(this.filters);
-  }
-
-  #resetFilterState(): void {
-    this.filters = emptyFilters();
-    this.#engine.reset();
-  }
-
-  // ── async boot / state switch ────────────────────────────────────────
-
-  /**
-   * @param initialSearch the URL query string captured *before* any
-   * effect could rewrite it — boot reads the deep-link from here.
-   */
-  async boot(initialSearch: string): Promise<void> {
+  /** Boot the whole anchor set: index → national towers + solar (kicked off in
+   *  parallel) → probe each state's parcel tiles. No active state. */
+  async boot(): Promise<void> {
     this.status = 'loading';
     this.errorMessage = null;
     try {
@@ -280,105 +125,24 @@ export class AppStore {
         );
       }
       this.index = index;
-      // Tower points span all anchors and are independent of the active
-      // state — kick the load off now and let the map render them when ready.
+      // National layers — independent of any one state; render when ready.
       void this.loadTowers();
-      const pick = pickInitialState(initialSearch, index.states);
-      if (pick.invalidRequest) {
-        this.notice = `No composed state "${pick.invalidRequest}" — showing ${
-          index.states.find((s) => s.fips === pick.fips)?.name ?? pick.fips
-        } instead.`;
-      }
-      // Structures-first default: always frame all anchors at once. (?state=
-      // still picks which state's parcels/catalog load, and is auto-written to
-      // the URL — so it can't be read as an explicit "focus this state"
-      // intent; that comes only from a StateSelector pick → focusState.)
-      this.mapFocus = { kind: 'anchors' };
-      await this.selectState(pick.fips);
-      this.#restoreFromUrl(initialSearch);
-    } catch (e) {
-      this.status = 'error';
-      this.errorMessage = errMsg(e);
-    } finally {
-      // Boot is done — the URL-sync effect may now write the query string.
-      this.urlSyncReady = true;
-    }
-  }
-
-  /** Restore a deep-linked filter / selection from the URL after boot. */
-  #restoreFromUrl(initialSearch: string): void {
-    const url = readUrlState(initialSearch);
-    if (url.filters && isAnyFilterActive(url.filters)) {
-      this.filters = url.filters;
-      void this.applyFilters();
-    }
-    if (url.selected) void this.selectParcelByApn(url.selected);
-  }
-
-  async selectState(fips: string): Promise<void> {
-    this.status = 'loading';
-    this.errorMessage = null;
-    this.selection = null;
-    this.enrichmentStatus = 'idle';
-    this.#resetFilterState();
-    try {
-      const catalog = await loadCatalog(fips);
-      const assets = eagerAssets(catalog);
-      const [assetResults, countyData, parcelTilesProbe, facets, attrParquetProbe] =
-        await Promise.all([
-          Promise.allSettled(
-            assets.map((a) => loadGeoJson(compositeAssetUrl(fips, a.geojsonPath))),
-          ),
-          // Base layers + filter inputs — tolerant: a missing choropleth /
-          // pmtiles / facets / slim parquet is not fatal.
-          loadGeoJson(countyBoundariesUrl(fips)).catch(() => null),
-          probeResource(pmtilesUrl(fips)),
-          loadFacets(fips).catch(() => null),
-          probeResource(parcelsAttrUrl(fips)),
-        ]);
-      const data: Record<string, FeatureCollection> = {};
-      const failed: string[] = [];
-      assetResults.forEach((r, i) => {
-        if (r.status === 'fulfilled') data[assets[i].name] = r.value;
-        else failed.push(assets[i].name);
-      });
-
-      this.activeFips = fips;
-      this.catalog = catalog;
-      this.layerData = data;
-      this.failedLayers = failed;
-      this.countyData = countyData;
-      this.parcelsUrl = parcelTilesProbe === 'present' ? pmtilesUrl(fips) : null;
-      this.facets = facets;
-      this.filtersAvailable = attrParquetProbe === 'present';
-      // A genuine 404 (absent parquet) degrades silently; an unreachable
-      // probe means the server is down — say so rather than pretend the
-      // filter data simply doesn't exist for this state.
-      if (attrParquetProbe === 'unreachable') {
+      void this.loadSolar();
+      // Probe each anchor state's parcel tiles → the per-state vector sources.
+      const fipsList = index.states.map((s) => s.fips);
+      const probeEntries = await Promise.all(
+        fipsList.map(async (fips) => [fips, await probeResource(pmtilesUrl(fips))] as const),
+      );
+      this.parcelSources = computeParcelSources(index.states, Object.fromEntries(probeEntries));
+      if (this.parcelSources.length === 0) {
         this.notice =
-          'Could not reach the parcel attribute data — filters and parcel search are ' +
-          'unavailable. Is the data server running?';
+          'No parcel tiles are reachable — the map shows towers and solar only. ' +
+          'Is the data server running?';
       }
-      // Point the DuckDB filter engine at this state (lazy WASM init),
-      // then fire a warm-up count so the user's first filter is instant
-      // instead of paying the cold parquet-read cost.
-      if (this.filtersAvailable) {
-        void duckDb.loadState(fips, parcelsAttrUrl(fips)).catch(() => {
-          // Registration failed after a successful HEAD — disable filters
-          // and tell the user instead of leaving a silently broken panel.
-          this.filtersAvailable = false;
-          this.notice = 'Filters are unavailable — the parcel attribute data failed to load.';
-        });
-        void duckDb.count('').catch(() => undefined);
-      }
-      const visibility = defaultVisibility(catalog);
-      // Parcels are always on — they fade in on zoom and are no longer a
-      // toggle. The county distress choropleth was retired (UI overhaul
-      // round 3); distress lives on as a filter field, not a map overlay.
-      visibility[BASE_PARCELS] = true;
-      this.layerVisible = visibility;
+      // Towers + parcels are always on (the Layers panel was retired); solar
+      // visibility is derived from the Structure-type filter in MapView.
+      this.layerVisible = { towers: true, [BASE_PARCELS]: true };
       this.status = 'ready';
-      syncStateParam(fips);
     } catch (e) {
       this.status = 'error';
       this.errorMessage = errMsg(e);
@@ -402,26 +166,20 @@ export class AppStore {
     }
   }
 
-  /** Frame the map on one state and load its detail (parcels / catalog).
-   *  The StateSelector calls this; boot uses the lower-level selectState so
-   *  it can keep the all-anchors framing. */
-  async focusState(fips: string): Promise<void> {
-    this.mapFocus = { kind: 'state', fips };
-    await this.selectState(fips);
-  }
-
-  /** Lazy-load a heavy view's GeoJSON on first toggle-on. */
-  async ensureLayerLoaded(name: string): Promise<void> {
-    if (!this.catalog || !this.activeFips) return;
-    if (this.layerData[name]) return;
-    const view = this.catalog.views.find((v) => v.name === name);
-    const geojsonPath = view?.geojsonPath;
-    if (!geojsonPath) return;
+  /** Load solar points across every anchor state into one national source.
+   *  Mirrors `loadTowers`; a missing state's file degrades to fewer dots. */
+  async loadSolar(): Promise<void> {
+    if (this.solarStatus === 'loading' || this.solarStatus === 'ready') return;
+    const fipsList = this.index?.states.map((s) => s.fips) ?? [];
+    if (fipsList.length === 0) return;
+    this.solarStatus = 'loading';
+    this.solarError = null;
     try {
-      const fc = await loadGeoJson(compositeAssetUrl(this.activeFips, geojsonPath));
-      this.layerData = { ...this.layerData, [name]: fc };
-    } catch {
-      this.failedLayers = [...this.failedLayers, name];
+      this.solarPoints = await loadSolarPoints(fipsList);
+      this.solarStatus = 'ready';
+    } catch (e) {
+      this.solarError = errMsg(e);
+      this.solarStatus = 'error';
     }
   }
 }

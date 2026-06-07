@@ -11,14 +11,14 @@
   // code — Vite 8 / Rolldown mis-compiles it (the GeoJSON tiler throws
   // "f is not defined"). Same pattern as the DuckDB-WASM worker.
   import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-csp-worker.js?url';
-  import type { FeatureCollection, Point } from 'geojson';
+  import type { Point } from 'geojson';
+  import type { FeatureCollection } from 'geojson';
   import { Protocol } from 'pmtiles';
-  import { app, BASE_PARCELS } from '../lib/stores.svelte';
-  import { entityKind } from '../lib/catalog';
-  import { detectGeometryClasses } from '../lib/geo';
+  import { app } from '../lib/stores.svelte';
   import { layerColor, TOWER_MARKER_SVG, WONG } from '../lib/palette';
   import type { Props } from '../lib/schema';
   import { towerHoverHtml, filterTowers, type TowerProps } from '../lib/towers';
+  import { showSolarLayer } from '../lib/solar';
   import { filterModel } from '../lib/filter-model.svelte';
   import { archivedAntennas } from '../lib/archived-antennas.svelte';
   import { towerHash } from '../lib/nav';
@@ -55,9 +55,8 @@
 
   // Structures-first tower layer (Slice 4 / #50): one clustered source across
   // every anchor state, the map's primary clickable layer. Lives outside the
-  // per-state catalog machinery (its own ids, never torn down on a state
-  // switch) so the all-anchors view persists. `towers` is the catalog name the
-  // LayerPanel toggle drives.
+  // parcel/solar machinery (its own ids, never torn down) so the all-anchors
+  // view persists across section changes (ADR-061 map persistence).
   const TOWERS_SRC = 'towers-all';
   const TL_CLUSTERS = 'towers-clusters';
   const TL_COUNT = 'towers-cluster-count';
@@ -67,49 +66,53 @@
   let towerHandlersAttached = false;
   let towerPopup: maplibregl.Popup | undefined;
 
-  // parcels:fill opacity — the plain zoom fade, and the filtered form
-  // where DuckDB-matched parcels (feature-state `match`) stay bright.
-  const PARCELS_OPACITY_NORMAL: ExpressionSpecification = [
+  // National solar layer (#119): one persistent context layer across all
+  // anchors, shown only when the Structure-type filter includes solar.
+  const SOLAR_SRC = 'solar-all';
+  const SOLAR_LAYER = 'solar-point';
+  let solarLayersAdded = false;
+
+  // Parcel base layer — one PMTiles vector source PER anchor state (#119), so
+  // parcels draw on zoom anywhere across AR/FL/MT/WV, not just a selected
+  // state. Each source carries the same 'parcels' source-layer + baked
+  // attributes; click + selection enumerate every state's fill layer.
+  const parcelStatesAdded = new Set<string>();
+  let parcelFillIds: string[] = [];
+  /** The plain zoom fade, brightened for the selected parcel (the feature-state
+   *  branch is the interpolation's output stop — `zoom` must stay the top-level
+   *  interpolate input, so it can't wrap a `case`). Filtering never fades
+   *  parcels (#119): they are stable context while the filter narrows towers. */
+  const PARCELS_OPACITY: ExpressionSpecification = [
     'interpolate',
     ['linear'],
     ['zoom'],
     8,
     0,
     10,
-    0.55,
+    ['case', ['boolean', ['feature-state', 'selected'], false], 0.85, 0.55],
   ];
-  // `zoom` must be the top-level interpolate input — it cannot be nested
-  // inside a `case` — so the feature-state branch is the interpolation's
-  // output stop instead.
-  const PARCELS_OPACITY_FILTERED: ExpressionSpecification = [
-    'interpolate',
-    ['linear'],
-    ['zoom'],
-    8,
-    0,
-    10,
-    ['case', ['boolean', ['feature-state', 'match'], false], 0.8, 0.05],
-  ];
+
+  function parcelSrcId(state: string): string {
+    return `src:parcels:${state}`;
+  }
+  function parcelFillId(state: string): string {
+    return `parcels:${state}:fill`;
+  }
+  function parcelLineId(state: string): string {
+    return `parcels:${state}:line`;
+  }
 
   let container: HTMLDivElement;
   let map: maplibregl.Map | undefined;
   let ready = $state(false);
   let towerIconReady = false;
 
-  /** MapLibre layer id -> logical catalog layer/view name. */
-  const layerIdToName = new Map<string, string>();
-  /** Logical name -> the MapLibre layer ids rendering it. */
-  const nameToLayerIds = new Map<string, string[]>();
-  /** Source ids currently added. */
-  const sourceIds = new Set<string>();
-  let interactiveLayerIds: string[] = [];
-  let highlighted: { source: string; id: number } | null = null;
-  /** The fips whose layers are currently rendered. A change means a state
-   *  switch (full rebuild); an unchanged fips with new layerData keys means
-   *  a lazy view loaded (incremental add — no full re-tile). */
-  let syncedFips: string | null = null;
-  /** Interactive layer ids the pointer is currently over — drives the
-   *  pointer cursor without a per-mousemove queryRenderedFeatures scan. */
+  /** The parcel currently outlined via feature-state `selected` (and which
+   *  state source it lives on, for the multi-source highlight). */
+  let highlightedParcel: { source: string; id: string | number } | null = null;
+
+  /** Interactive layer ids the pointer is currently over — drives the pointer
+   *  cursor without a per-mousemove queryRenderedFeatures scan. */
   const hoveredLayers = new Set<string>();
   /** Teardown fns for the per-layer mouseenter/mouseleave listeners. */
   const hoverListenerCleanups: Array<() => void> = [];
@@ -138,7 +141,7 @@
     const m = new maplibregl.Map({
       container,
       style: BASEMAP_STYLE,
-      bounds: app.activeState?.bbox ?? US_BOUNDS,
+      bounds: app.anchorBounds ?? US_BOUNDS,
       fitBoundsOptions: { padding: 28 },
       attributionControl: { compact: true },
     });
@@ -169,70 +172,15 @@
       towerPopup = undefined;
       towerLayersAdded = false;
       towerHandlersAttached = false;
+      solarLayersAdded = false;
+      parcelStatesAdded.clear();
       m.remove();
       map = undefined;
       ready = false;
     };
   });
 
-  // ── layer sync ─────────────────────────────────────────────────────────
-
-  function clearRenderedLayers(): void {
-    if (!map) return;
-    for (const id of layerIdToName.keys()) {
-      if (map.getLayer(id)) map.removeLayer(id);
-    }
-    for (const id of sourceIds) {
-      if (map.getSource(id)) map.removeSource(id);
-    }
-    layerIdToName.clear();
-    nameToLayerIds.clear();
-    sourceIds.clear();
-    interactiveLayerIds = [];
-    detachHover();
-    highlighted = null;
-  }
-
-  function fillColor(name: string): ExpressionSpecification | string {
-    if (name === 'distress_overlays') {
-      return [
-        'match',
-        ['get', 'overlay_type'],
-        'opportunity_zone',
-        WONG.blue,
-        'qct',
-        WONG.skyBlue,
-        '#9aa0aa',
-      ] as ExpressionSpecification;
-    }
-    return layerColor(name);
-  }
-
-  function fillOpacity(name: string): number {
-    if (name === 'interestingness_top_1000') return 0.55;
-    if (name === 'distress_overlays') return 0.22;
-    return 0.4;
-  }
-
-  function selectedWidth(base: number): ExpressionSpecification {
-    return [
-      'case',
-      ['boolean', ['feature-state', 'selected'], false],
-      base + 2.5,
-      base,
-    ] as ExpressionSpecification;
-  }
-
-  function register(layerId: string, name: string, interactive: boolean): void {
-    layerIdToName.set(layerId, name);
-    const ids = nameToLayerIds.get(name) ?? [];
-    ids.push(layerId);
-    nameToLayerIds.set(name, ids);
-    if (interactive) {
-      interactiveLayerIds.push(layerId);
-      attachHover(layerId);
-    }
-  }
+  // ── hover cursor (shared by parcels) ─────────────────────────────────────
 
   function updateCursor(): void {
     if (map) map.getCanvas().style.cursor = hoveredLayers.size > 0 ? 'pointer' : '';
@@ -240,10 +188,7 @@
 
   // Per-layer hover tracking for the pointer cursor. MapLibre hit-tests
   // internally for these delegated listeners, so the cursor costs nothing
-  // per frame — unlike querying every interactive layer on each mousemove
-  // (10-30×/s over 50k+ features). Hidden layers don't fire mouseenter, so
-  // no visibility filter is needed (applyVisibility prunes stale entries
-  // when a layer the pointer sits over is toggled off).
+  // per frame — unlike querying every interactive layer on each mousemove.
   function attachHover(layerId: string): void {
     if (!map) return;
     const enter = (): void => {
@@ -260,96 +205,6 @@
       map?.off('mouseenter', layerId, enter);
       map?.off('mouseleave', layerId, leave);
     });
-  }
-
-  function detachHover(): void {
-    for (const off of hoverListenerCleanups) off();
-    hoverListenerCleanups.length = 0;
-    hoveredLayers.clear();
-    updateCursor();
-  }
-
-  // `beforeId`, when given, inserts the sublayers beneath that layer so an
-  // incrementally-added polygon view stays under the point markers (the
-  // full-sync two-pass order). Omitted during a full sync (append).
-  function addPolygonSublayers(name: string, beforeId?: string): void {
-    if (!map) return;
-    const src = `src:${name}`;
-    const fillId = `${name}:fill`;
-    const lineId = `${name}:line`;
-    map.addLayer(
-      {
-        id: fillId,
-        type: 'fill',
-        source: src,
-        filter: ['match', ['geometry-type'], ['Polygon', 'MultiPolygon'], true, false],
-        paint: { 'fill-color': fillColor(name), 'fill-opacity': fillOpacity(name) },
-      },
-      beforeId,
-    );
-    map.addLayer(
-      {
-        id: lineId,
-        type: 'line',
-        source: src,
-        filter: ['match', ['geometry-type'], ['Polygon', 'MultiPolygon'], true, false],
-        paint: { 'line-color': fillColor(name), 'line-width': selectedWidth(1.1) },
-      },
-      beforeId,
-    );
-    register(fillId, name, true);
-    register(lineId, name, false);
-  }
-
-  function addPointSublayer(name: string): void {
-    if (!map) return;
-    const src = `src:${name}`;
-    if (name === 'towers' && towerIconReady) {
-      const symId = `${name}:symbol`;
-      map.addLayer({
-        id: symId,
-        type: 'symbol',
-        source: src,
-        filter: ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
-        layout: {
-          'icon-image': TOWER_ICON,
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true,
-          // Small at state zoom — there can be ~16k towers and full-size
-          // icons blanket the map — growing to a legible icon when zoomed in.
-          'icon-size': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            5,
-            0.22,
-            8,
-            0.4,
-            11,
-            0.62,
-            14,
-            0.9,
-          ],
-        },
-        paint: { 'icon-opacity': 0.9 },
-      });
-      register(symId, name, true);
-      return;
-    }
-    const circleId = `${name}:circle`;
-    map.addLayer({
-      id: circleId,
-      type: 'circle',
-      source: src,
-      filter: ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
-      paint: {
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 3, 12, 7],
-        'circle-color': layerColor(name),
-        'circle-stroke-width': selectedWidth(1),
-        'circle-stroke-color': '#ffffff',
-      },
-    });
-    register(circleId, name, true);
   }
 
   /** MapLibre `match` expression: a distress-tier value → a fill colour. */
@@ -371,63 +226,118 @@
     ] as ExpressionSpecification;
   }
 
-  // Parcel base layer — PMTiles vector tiles, discovered by convention.
-  function addParcels(): void {
-    if (!map || !app.parcelsUrl) return;
-    const src = `src:${BASE_PARCELS}`;
-    const absoluteUrl = new URL(app.parcelsUrl, location.href).href;
-    // promoteId lifts parcel_id to the feature id so the filter pipeline
-    // can highlight matches with setFeatureState.
-    map.addSource(src, {
-      type: 'vector',
-      url: `pmtiles://${absoluteUrl}`,
-      promoteId: { parcels: 'parcel_id' },
-    });
-    sourceIds.add(src);
-    map.addLayer({
-      id: `${BASE_PARCELS}:fill`,
-      type: 'fill',
-      source: src,
-      'source-layer': 'parcels',
-      minzoom: 6,
-      paint: {
-        'fill-color': tierColorMatch('distress_tier'),
-        'fill-opacity': PARCELS_OPACITY_NORMAL,
-      },
-    });
-    map.addLayer({
-      id: `${BASE_PARCELS}:line`,
-      type: 'line',
-      source: src,
-      'source-layer': 'parcels',
-      minzoom: 6,
-      paint: {
-        'line-color': '#5b6470',
-        // A heavier outline emphasises parcels that host infrastructure.
-        'line-width': [
-          'case',
-          [
-            'any',
-            ['coalesce', ['get', 'has_tower'], false],
-            ['coalesce', ['get', 'has_solar'], false],
-            ['coalesce', ['get', 'has_billboard'], false],
+  // ── parcels: one vector source per present anchor state (#119) ────────────
+
+  function addParcelSources(): void {
+    if (!map) return;
+    // Keep parcels under the solar dots (and towers) regardless of which layer
+    // loaded first — insert beneath solar when it already exists.
+    const beforeId = map.getLayer(SOLAR_LAYER) ? SOLAR_LAYER : undefined;
+    for (const { state, tilesUrl } of app.parcelSources) {
+      if (parcelStatesAdded.has(state)) continue;
+      const src = parcelSrcId(state);
+      const absoluteUrl = new URL(tilesUrl, location.href).href;
+      // promoteId lifts parcel_id to the feature id so a clicked parcel can be
+      // outlined with setFeatureState.
+      map.addSource(src, {
+        type: 'vector',
+        url: `pmtiles://${absoluteUrl}`,
+        promoteId: { parcels: 'parcel_id' },
+      });
+      map.addLayer(
+        {
+          id: parcelFillId(state),
+          type: 'fill',
+          source: src,
+          'source-layer': 'parcels',
+          minzoom: 6,
+          paint: {
+            'fill-color': tierColorMatch('distress_tier'),
+            'fill-opacity': PARCELS_OPACITY,
+          },
+        },
+        beforeId,
+      );
+      map.addLayer(
+        {
+          id: parcelLineId(state),
+          type: 'line',
+          source: src,
+          'source-layer': 'parcels',
+          minzoom: 6,
+          paint: {
+          'line-color': [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            WONG.blue,
+            '#5b6470',
           ],
-          1.8,
-          0.25,
-        ],
-        'line-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0, 11, 0.85],
-      },
-    });
-    register(`${BASE_PARCELS}:fill`, BASE_PARCELS, true);
-    register(`${BASE_PARCELS}:line`, BASE_PARCELS, false);
+          // A heavier outline emphasises parcels that host infrastructure (and
+          // the selected parcel).
+          'line-width': [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            2.4,
+            [
+              'any',
+              ['coalesce', ['get', 'has_tower'], false],
+              ['coalesce', ['get', 'has_solar'], false],
+              ['coalesce', ['get', 'has_billboard'], false],
+            ],
+            1.8,
+            0.25,
+          ] as ExpressionSpecification,
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0, 11, 0.85],
+          },
+        },
+        beforeId,
+      );
+      parcelStatesAdded.add(state);
+      attachHover(parcelFillId(state));
+    }
+    parcelFillIds = [...parcelStatesAdded].map(parcelFillId);
+    ensureTowersOnTop();
   }
 
-  // ── structures-first tower layer ─────────────────────────────────────────
+  function clearParcelHighlight(): void {
+    if (map && highlightedParcel) {
+      map.removeFeatureState({ source: highlightedParcel.source, sourceLayer: 'parcels', id: highlightedParcel.id });
+    }
+    highlightedParcel = null;
+  }
 
-  /** Open a clicked tower's detail page — a peek (#108, ADR-067). Inspecting
-   *  commits nothing. Every tower opens: a tower with no resolved landowner
-   *  still gets a page (towerHash substitutes the NO_OWNER sentinel) so the
-   *  user can fill in owner details manually (UI overhaul round 2). */
+  // ── solar: one national context layer, gated on the structure-type filter ─
+
+  function addSolarLayer(): void {
+    if (!map || solarLayersAdded || !app.solarPoints) return;
+    map.addSource(SOLAR_SRC, { type: 'geojson', data: app.solarPoints });
+    map.addLayer({
+      id: SOLAR_LAYER,
+      type: 'circle',
+      source: SOLAR_SRC,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 3, 12, 7],
+        'circle-color': layerColor('solar_facilities'),
+        'circle-stroke-width': 1,
+        'circle-stroke-color': '#ffffff',
+        'circle-opacity': 0.85,
+      },
+      layout: { visibility: showSolarLayer(filterModel.model) ? 'visible' : 'none' },
+    });
+    solarLayersAdded = true;
+    ensureTowersOnTop();
+  }
+
+  function applySolarVisibility(): void {
+    if (!map || !solarLayersAdded) return;
+    map.setLayoutProperty(SOLAR_LAYER, 'visibility', showSolarLayer(filterModel.model) ? 'visible' : 'none');
+  }
+
+  // ── structures-first tower layer (ported verbatim from #50) ───────────────
+
+  /** Open a clicked tower's detail page — a peek (#108, ADR-067). Every tower
+   *  opens: a tower with no resolved landowner still gets a page (towerHash
+   *  substitutes the NO_OWNER sentinel) so the user can fill in owner details. */
   function openTowerDetail(props: TowerProps): void {
     location.hash = towerHash(props.cid, props.asr);
   }
@@ -484,9 +394,6 @@
       // Split into individual towers at high zoom (acceptance criterion).
       clusterMaxZoom: 11,
     });
-    // NB: deliberately NOT added to `sourceIds` — the tower source/layers are
-    // managed independently and must survive `clearRenderedLayers()` on a
-    // state switch (they only go away on full map teardown).
 
     map.addLayer({
       id: TL_CLUSTERS,
@@ -549,7 +456,7 @@
   function syncTowerLayers(): void {
     if (!map || !app.towerPoints) return;
     // The shared FilterModel narrows the tower layer to matching owners
-    // (null = no filter active → every tower). Same model as the Candidates
+    // (null = no filter active → every tower). Same model as the candidates
     // list, so the two surfaces stay consistent (Slice 6 / #52). Archived
     // antennas drop out too unless "show archived" is on (UI overhaul round 2).
     const data = filterTowers(
@@ -567,8 +474,7 @@
     applyTowerVisibility();
   }
 
-  /** Keep the tower layers above the per-state catalog/parcel layers, which a
-   *  state-switch rebuild re-adds on top. */
+  /** Keep the tower layers above the parcel + solar context layers. */
   function ensureTowersOnTop(): void {
     if (!map || !towerLayersAdded) return;
     for (const id of TOWER_LAYER_IDS) {
@@ -576,7 +482,7 @@
     }
   }
 
-  /** Tower layers follow the catalog `towers` visibility toggle (default on). */
+  /** Tower layers follow the `towers` visibility flag (default on). */
   function applyTowerVisibility(): void {
     if (!map || !towerLayersAdded) return;
     const vis = app.isLayerVisible('towers') ? 'visible' : 'none';
@@ -585,147 +491,12 @@
     }
   }
 
-  function syncLayers(data: Record<string, FeatureCollection>): void {
-    if (!map) return;
-    clearRenderedLayers();
-
-    // Parcel base layer — drawn underneath the catalog overlays. Always on
-    // (it just fades in on zoom); no longer a user toggle, and the county
-    // distress choropleth was retired (UI overhaul round 3).
-    addParcels();
-
-    // Detect each layer's geometry families once. A layer can mix families
-    // (e.g. solar_facilities has Point + Polygon), so this can't be read
-    // from catalog.geometry_type — but it need only be scanned a single
-    // time, not once per sublayer pass.
-    const entries = Object.entries(data).map(([name, fc]) => ({
-      name,
-      fc,
-      classes: detectGeometryClasses(fc.features),
-    }));
-    for (const { name, fc } of entries) {
-      const src = `src:${name}`;
-      map.addSource(src, { type: 'geojson', data: fc, generateId: true });
-      sourceIds.add(src);
-    }
-    // Polygon sublayers (drawn under points).
-    for (const { name, classes } of entries) {
-      if (classes.hasPolygon) addPolygonSublayers(name);
-    }
-    // Point / symbol sublayers (drawn on top). `towers` is map-owned (the
-    // global clustered layer) and never arrives in catalog data here, but
-    // skip it defensively so a future per-state load can't double-render it.
-    for (const { name, classes } of entries) {
-      if (name !== 'towers' && classes.hasPoint) addPointSublayer(name);
-    }
-    applyVisibility();
-    reapplyHighlight();
-    applyFilterFade();
-    // Catalog/parcel layers were just (re)added on top — restore the tower
-    // layers to the very top so they stay the primary clickable layer.
-    ensureTowersOnTop();
-  }
-
-  /** The lowest point/symbol layer id, so an incrementally-added polygon
-   *  view can be inserted beneath the markers (matching the full-sync
-   *  two-pass order). */
-  function firstPointLayerId(): string | undefined {
-    for (const id of layerIdToName.keys()) {
-      if (id.endsWith(':circle') || id.endsWith(':symbol')) return id;
-    }
-    return undefined;
-  }
-
-  // Add a single catalog GeoJSON layer (source + sublayers) without
-  // tearing down the rest of the map — used when a lazy view loads. A full
-  // clearRenderedLayers()/syncLayers() would re-tile every source and
-  // flicker the selection; this touches only the new layer.
-  function addCatalogLayer(name: string, fc: FeatureCollection): void {
-    if (!map || name === 'towers' || map.getSource(`src:${name}`)) return;
-    const src = `src:${name}`;
-    map.addSource(src, { type: 'geojson', data: fc, generateId: true });
-    sourceIds.add(src);
-    const classes = detectGeometryClasses(fc.features);
-    if (classes.hasPolygon) addPolygonSublayers(name, firstPointLayerId());
-    if (classes.hasPoint) addPointSublayer(name);
-  }
-
-  // Re-apply the selected feature's highlight after a re-sync recreated
-  // its source (e.g. a lazy view loaded), so the outline does not flicker off.
-  function reapplyHighlight(): void {
-    if (!map) return;
-    const sel = app.selection;
-    if (!sel?.featureRef) return;
-    const ref = { source: `src:${sel.featureRef.layer}`, id: sel.featureRef.index };
-    if (map.getSource(ref.source)) {
-      map.setFeatureState(ref, { selected: true });
-      highlighted = ref;
-    }
-  }
-
-  // Fade non-matching parcels when a filter is active. The matching ids
-  // (up to FILTER_FADE_CAP) are written as feature-state in batches so a
-  // large result set never blocks the frame.
-  let matchGeneration = 0;
-  function applyFilterFade(): void {
-    const fillId = `${BASE_PARCELS}:fill`;
-    if (!map || !map.getLayer(fillId)) return;
-    const active = app.filtersActive;
-    map.setPaintProperty(
-      fillId,
-      'fill-opacity',
-      active ? PARCELS_OPACITY_FILTERED : PARCELS_OPACITY_NORMAL,
-    );
-
-    const generation = ++matchGeneration;
-    const src = `src:${BASE_PARCELS}`;
-    if (map.getSource(src)) map.removeFeatureState({ source: src, sourceLayer: 'parcels' });
-    if (!active) return;
-
-    const ids = app.filterMatchIds;
-    let i = 0;
-    const step = (): void => {
-      if (!map || generation !== matchGeneration) return;
-      const end = Math.min(i + 6000, ids.length);
-      for (; i < end; i++) {
-        map.setFeatureState({ source: src, sourceLayer: 'parcels', id: ids[i] }, { match: true });
-      }
-      if (i < ids.length) requestAnimationFrame(step);
-    };
-    step();
-  }
-
-  function applyVisibility(): void {
-    if (!map) return;
-    for (const [name, ids] of nameToLayerIds) {
-      const visible = app.isLayerVisible(name);
-      for (const id of ids) {
-        if (map.getLayer(id)) {
-          map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
-        }
-        // A layer toggled off under a stationary pointer never fires
-        // mouseleave — drop it so the cursor doesn't stick on 'pointer'.
-        if (!visible) hoveredLayers.delete(id);
-      }
-    }
-    updateCursor();
-  }
-
   // ── interaction ──────────────────────────────────────────────────────────
-
-  /** Interactive layer ids that exist on the map and whose layer is visible. */
-  function visibleInteractive(): string[] {
-    return interactiveLayerIds.filter((id) => {
-      if (!map?.getLayer(id)) return false;
-      const name = layerIdToName.get(id);
-      return name ? app.isLayerVisible(name) : false;
-    });
-  }
 
   function onMapClick(e: maplibregl.MapMouseEvent): void {
     if (!map) return;
     // Towers are the primary layer: a tower/cluster hit is handled by its own
-    // layer listener (open Lead / expand cluster), so don't also select the
+    // layer listener (open detail / expand cluster), so don't also select the
     // parcel beneath it.
     if (towerLayersAdded && app.isLayerVisible('towers')) {
       const towerIds = TOWER_LAYER_IDS.filter((id) => map!.getLayer(id));
@@ -733,102 +504,56 @@
         return;
       }
     }
-    const interactive = visibleInteractive();
-    const baseFill = `${BASE_PARCELS}:fill`;
-
-    // Catalog overlays (markers) win — they are the specific things a user
-    // aims at; the parcel fill is the fallback.
-    const overlayIds = interactive.filter((id) => id !== baseFill);
-    let feature: MapGeoJSONFeature | undefined = overlayIds.length
-      ? map.queryRenderedFeatures(e.point, { layers: overlayIds })[0]
+    // Otherwise the parcel base layer (visible once zoomed in) — query every
+    // present anchor state's fill layer.
+    const fillIds = parcelFillIds.filter((id) => map!.getLayer(id));
+    const feature = fillIds.length
+      ? map.queryRenderedFeatures(e.point, { layers: fillIds })[0]
       : undefined;
-
-    // Otherwise the parcel base layer (visible once zoomed in).
-    if (!feature && interactive.includes(baseFill)) {
-      feature = map.queryRenderedFeatures(e.point, { layers: [baseFill] })[0];
-    }
     if (!feature) {
       app.clearSelection();
       return;
     }
-    selectFromFeature(feature);
+    selectParcel(feature);
   }
 
-  function selectFromFeature(f: MapGeoJSONFeature): void {
-    const name = layerIdToName.get(f.layer.id);
-    if (!name) return;
+  /** Select a clicked parcel (baked PMTiles tile properties only — the
+   *  per-state DuckDB enrichment was retired with the state selector) and
+   *  outline it via feature-state on whichever state source it belongs to. */
+  function selectParcel(f: MapGeoJSONFeature): void {
     const props = (f.properties ?? {}) as Props;
-
-    // Parcels come from PMTiles — scalar baked attributes only.
-    if (name === BASE_PARCELS) {
-      app.setSelection({ kind: 'parcel', props });
-      return;
+    app.setSelection({ kind: 'parcel', props });
+    clearParcelHighlight();
+    if (f.id != null) {
+      map!.setFeatureState({ source: f.source, sourceLayer: 'parcels', id: f.id }, { selected: true });
+      highlightedParcel = { source: f.source, id: f.id };
     }
-    const index = typeof f.id === 'number' ? f.id : -1;
-    // A catalog GeoJSON layer / view — resolve the original feature so
-    // nested-object properties survive (queryRenderedFeatures stringifies them).
-    if (!app.catalog) return;
-    const kind = entityKind(app.catalog, name);
-    if (!kind) return;
-    // Only reference the source feature when its GeoJSON is actually
-    // loaded; a featureRef into a failed / unloaded layer can't be
-    // resolved or highlighted. The stringified queryRenderedFeatures
-    // props still give the detail panel something to show.
-    const dataReady = !!app.layerData[name] && !app.failedLayers.includes(name);
-    const original = dataReady && index >= 0 ? app.layerData[name]?.features[index] : undefined;
-    app.setSelection({
-      kind,
-      props: (original?.properties as Props | undefined) ?? props,
-      featureRef: dataReady && index >= 0 ? { layer: name, index } : undefined,
-    });
   }
 
   // ── effects ──────────────────────────────────────────────────────────────
 
-  // Keep rendered layers in step with the store. A state switch (activeFips
-  // change) rebuilds everything; growing layerData within the same state
-  // (a lazy view loaded) adds only the new layers. The imperative body is
-  // untracked so this effect depends solely on the data/state identity —
-  // not on layerVisible / selection / filter state, which have their own
-  // effects (otherwise a visibility toggle or filter change would trigger
-  // a full rebuild here).
+  // Add the per-state parcel sources once they've been probed. Idempotent —
+  // addParcelSources skips states already added — so this only adds new ones.
   $effect(() => {
-    const data = app.layerData;
-    const fips = app.activeFips;
-    void app.parcelsUrl;
+    void app.parcelSources;
+    if (!map || !ready) return;
+    untrack(() => addParcelSources());
+  });
+
+  // Build the national solar layer once its data loads; keep its visibility in
+  // step with the Structure-type filter (the single control for solar now).
+  $effect(() => {
+    void app.solarPoints;
+    void filterModel.model;
     if (!map || !ready) return;
     untrack(() => {
-      if (fips !== syncedFips) {
-        syncedFips = fips;
-        syncLayers(data);
-        return;
-      }
-      let added = false;
-      for (const [name, fc] of Object.entries(data)) {
-        if (!map!.getSource(`src:${name}`)) {
-          addCatalogLayer(name, fc);
-          added = true;
-        }
-      }
-      if (added) {
-        applyVisibility();
-        reapplyHighlight();
-        ensureTowersOnTop();
-      }
+      addSolarLayer();
+      applySolarVisibility();
     });
   });
 
-  // Toggle MapLibre layer visibility from the store.
-  $effect(() => {
-    void app.layerVisible;
-    if (!map || !ready) return;
-    applyVisibility();
-    applyTowerVisibility();
-  });
-
   // Build / refresh the all-anchors tower layer once its data loads. Kept on
-  // its own effect (not the per-state catalog sync) so a state switch never
-  // rebuilds it — the structures-first layer is global.
+  // its own effect so a filter change re-narrows it without rebuilding parcels.
   $effect(() => {
     void app.towerPoints;
     void filterModel.matchingClusterIds; // re-narrow towers on a filter change
@@ -838,63 +563,35 @@
     untrack(() => syncTowerLayers());
   });
 
-  // One-shot fly to a tower matched by the top-bar ASR search.
+  // Toggle the tower layer visibility from the store.
+  $effect(() => {
+    void app.layerVisible;
+    if (!map || !ready) return;
+    untrack(() => applyTowerVisibility());
+  });
+
+  // One-shot fly to a tower matched by the FilterPanel ASR search.
   $effect(() => {
     const t = app.flyTarget;
     if (!map || !ready || !t) return;
     map.flyTo({ center: t.center, zoom: t.zoom, duration: 700 });
   });
 
-  // Fade non-matching parcels once per *settled* filter result. Driven by
-  // the engine's result epoch (bumped only on non-querying emits), so a
-  // rapid slider drag yields one clear+reapply per query — not per tick,
-  // and never the transient empty querying state. applyFilterFade's reads
-  // of filtersActive/filterMatchIds are untracked so they don't re-add the
-  // per-change triggering we're coalescing away.
+  // Frame the map on all anchors (structures-first — survey the whole pilot at
+  // once). There is no per-state framing anymore; the union of anchor bboxes is
+  // the only framing.
   $effect(() => {
-    void app.filterResultEpoch;
-    if (!map || !ready) return;
-    untrack(() => applyFilterFade());
-  });
-
-  // Frame the map. Default is all anchors (structures-first — survey the
-  // whole pilot at once); an explicit state pick / deep-link frames that one.
-  $effect(() => {
-    const focus = app.mapFocus;
     const anchors = app.anchorBounds;
-    if (!map) return;
-    let bounds: maplibregl.LngLatBoundsLike | undefined;
-    if (focus.kind === 'state') {
-      bounds = app.index?.states.find((s) => s.fips === focus.fips)?.bbox;
-    } else {
-      bounds = anchors ?? undefined;
-    }
-    if (!bounds) return;
-    map.fitBounds(bounds, { padding: 28, duration: ready ? 700 : 0 });
+    if (!map || !anchors) return;
+    map.fitBounds(anchors, { padding: 28, duration: ready ? 700 : 0 });
   });
 
-  // Highlight the selected feature; fly to it when a centre is supplied.
+  // Clear the parcel outline when the selection is cleared (Escape / panel
+  // close). A new parcel selection sets its own highlight imperatively.
   $effect(() => {
     const sel = app.selection;
     if (!map || !ready) return;
-    if (highlighted && map.getSource(highlighted.source)) {
-      map.removeFeatureState(highlighted);
-    }
-    highlighted = null;
-    if (sel?.featureRef) {
-      const ref = { source: `src:${sel.featureRef.layer}`, id: sel.featureRef.index };
-      if (map.getSource(ref.source)) {
-        map.setFeatureState(ref, { selected: true });
-        highlighted = ref;
-      }
-    }
-    if (sel?.at) {
-      map.flyTo({
-        center: sel.at,
-        zoom: Math.max(map.getZoom(), 11),
-        duration: 700,
-      });
-    }
+    if (!sel) untrack(() => clearParcelHighlight());
   });
 </script>
 

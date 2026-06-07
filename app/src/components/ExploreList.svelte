@@ -4,25 +4,15 @@
   // shared filter model as the map, each linking to its owner. Clicking a row
   // opens the tower's detail (a read-only peek); the owner link opens the owner
   // page. Subsumes the old owner-grained Candidates list.
-  import { app } from '../lib/stores.svelte';
-  import { filterModel } from '../lib/filter-model.svelte';
-  import { archivedAntennas } from '../lib/archived-antennas.svelte';
-  import { scoring } from '../lib/scoring-store.svelte';
-  import { rankedTowerRows } from '../lib/tower-list';
+  import { exploreTowers } from '../lib/explore-towers.svelte';
   import { towerHash, leadHash } from '../lib/nav';
   import { heightFeet, towerOwnerLabel } from '../lib/towers';
 
-  // Rank by the active scoring config (#114): the baked interestingness by
-  // default, or the live tunable blend once weights are touched. Archived
-  // antennas drop out unless "show archived" is on — same narrowing as the map.
-  const rows = $derived(
-    rankedTowerRows(
-      app.towerPoints?.features ?? [],
-      filterModel.matchingClusterIds,
-      (cid) => scoring.scoreOf(cid),
-      archivedAntennas.filter,
-    ),
-  );
+  // The shared ranked-tower derivation (#119) — the SAME rows the sidebar's
+  // live Towers tile counts, so list and tile can never disagree. Ranked by the
+  // active scoring config (#114), narrowed by the shared filter model, with
+  // archived antennas dropped unless "show archived" is on (same as the map).
+  const rows = $derived(exploreTowers.rows);
 
   // Cap the rendered rows — there can be ~16k towers; the filter narrows them,
   // but an unfiltered list still needs a ceiling for the DOM.

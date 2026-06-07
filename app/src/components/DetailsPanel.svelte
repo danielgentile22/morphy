@@ -1,7 +1,6 @@
 <script lang="ts">
   import { app } from '../lib/stores.svelte';
   import { entitySchema, infrastructureItems, scoreComponents, carriers, type Props } from '../lib/schema';
-  import { fmtInt, fmtText } from '../lib/format';
   import CarrierList from './CarrierList.svelte';
 
   const sel = $derived(app.selection);
@@ -15,17 +14,6 @@
   // Carriers (ULS licensees) on a tower — a list-of-struct rendered with
   // confidence badges (Slice A / #28), so the flat schema row can't show it.
   const towerCarriers = $derived(sel?.kind === 'tower' ? carriers(props) : []);
-
-  // Owner-cluster portfolio — show "see all parcels by this owner" when
-  // the selected parcel's owner holds more than one.
-  const ownerClusterId = $derived(
-    sel?.kind === 'parcel' ? fmtText(props.owner_cluster_id) : null,
-  );
-  const ownerClusterSize = $derived(Number(props.owner_cluster_size) || 0);
-
-  function seeOwnerParcels(): void {
-    if (ownerClusterId) app.updateFilter({ ownerClusterId });
-  }
 
   function humanize(s: string): string {
     return s.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
@@ -43,14 +31,6 @@
         ×
       </button>
     </header>
-
-    {#if sel.kind === 'parcel' && app.enrichmentStatus === 'loading'}
-      <p class="enrich enrich-loading" data-testid="enrich-loading">Loading full details…</p>
-    {:else if sel.kind === 'parcel' && app.enrichmentStatus === 'error'}
-      <p class="enrich enrich-error" data-testid="enrich-error">
-        Couldn't load full parcel details — showing partial data.
-      </p>
-    {/if}
 
     {#if schema}
       {@const tags = schema.tags(props)}
@@ -112,12 +92,6 @@
               </div>
             {/each}
           </div>
-        {/if}
-
-        {#if ownerClusterId && ownerClusterSize > 1}
-          <button class="see-owner" onclick={seeOwnerParcels} data-testid="see-owner-parcels">
-            See all {fmtInt(ownerClusterSize)} parcels by this owner
-          </button>
         {/if}
       </div>
     {:else}
@@ -277,34 +251,5 @@
     padding: 14px;
     font-size: 13px;
     color: var(--muted);
-  }
-
-  .enrich {
-    margin: 0;
-    padding: 7px 14px;
-    font-size: 11.5px;
-    border-bottom: 1px solid var(--border);
-  }
-  .enrich-loading {
-    color: var(--muted);
-  }
-  .enrich-error {
-    background: rgba(213, 94, 0, 0.12);
-    color: #9c4500;
-  }
-
-  .see-owner {
-    margin-top: 14px;
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px solid var(--accent);
-    background: var(--accent);
-    color: #fff;
-    border-radius: var(--radius);
-    font-size: 12.5px;
-    font-weight: 500;
-  }
-  .see-owner:hover {
-    filter: brightness(0.94);
   }
 </style>

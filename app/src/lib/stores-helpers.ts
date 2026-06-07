@@ -1,96 +1,40 @@
 /**
  * Pure helpers for the AppStore boot flow.
  *
- * Lives outside `stores.svelte.ts` so each piece is unit-testable
- * without spinning up Svelte runes / DOM. The store itself stays thin —
- * it sequences these helpers and writes their results into `$state`
- * fields.
+ * Lives outside `stores.svelte.ts` so each piece is unit-testable without
+ * spinning up Svelte runes / DOM. The store itself stays thin — it sequences
+ * these helpers and writes their results into `$state` fields.
+ *
+ * The per-state catalog/visibility selectors (eagerAssets / defaultVisibility /
+ * pickInitialState) were retired with the state selector (UI overhaul #119):
+ * the app loads all anchor states at once, so there is no "active state" to
+ * pick or per-state catalog to eager-load.
  */
 
-import type { Catalog } from './catalog';
-import type { StateEntry } from './catalog';
+import { pmtilesUrl, type ResourceProbe } from './data';
 
-/** Views whose GeoJSON is large enough that we lazy-load on first toggle. */
-export const HEAVY_VIEWS: ReadonlySet<string> = new Set([
-  'parcels_hosting_infra',
-  'distressed_parcels_hosting_infra',
-  'llc_owned_parcels_with_infra',
-  'towers_with_landowner',
-]);
-
-/** Layers shown by default when a state loads. (UI overhaul round 3: the
- *  map is now towers + solar + parcels only — distress is a filter field, not
- *  a coloured overlay, and the derived-view overlays were retired.) */
-const DEFAULT_ON: ReadonlySet<string> = new Set(['towers']);
-
-/** Catalog layers the redesigned app no longer surfaces on the map or in the
- *  LayerPanel. `distress_overlays` (OZ + QCT polygons) became a filter field
- *  in the top filter bar, so it's neither loaded nor drawn (UI overhaul
- *  round 3). Kept in the catalog/schema so its detail panel still resolves. */
-export const HIDDEN_LAYERS: ReadonlySet<string> = new Set(['distress_overlays']);
-
-export interface LoadableAsset {
-  name: string;
-  geojsonPath: string;
+/** One anchor state's parcel vector-tile source for the all-states map. */
+export interface ParcelSource {
+  /** State FIPS the source belongs to (drives multi-source click + highlight). */
+  state: string;
+  /** `pmtiles://`-ready URL of the state's parcels.pmtiles. */
+  tilesUrl: string;
 }
 
-/** Catalog layers the structures-first map renders itself, not as per-state
- *  GeoJSON. `towers` is served across ALL anchors as one clustered DuckDB-fed
- *  layer (Slice 4 / #50), so the per-state ~20 MB towers.geojson is neither
- *  eager-loaded nor drawn here — the global tower layer owns it. */
-export const MAP_OWNED_LAYERS: ReadonlySet<string> = new Set(['towers']);
-
-/** Catalog GeoJSON layers small enough to boot-load. Views (the retired
- *  "derived outreach segments") and hidden / map-owned layers are skipped. */
-export function eagerAssets(catalog: Catalog): LoadableAsset[] {
-  const out: LoadableAsset[] = [];
-  for (const l of catalog.layers) {
-    if (
-      l.geojsonPath &&
-      !HEAVY_VIEWS.has(l.name) &&
-      !MAP_OWNED_LAYERS.has(l.name) &&
-      !HIDDEN_LAYERS.has(l.name)
-    ) {
-      out.push({ name: l.name, geojsonPath: l.geojsonPath });
-    }
+/** The parcel vector-tile sources the map should add — one per anchor state
+ *  whose `parcels.pmtiles` HEAD-probed `present` (UI overhaul #119: parcels
+ *  draw for every state, not just a selected one). A state that's absent or
+ *  unreachable is dropped, so a missing tileset degrades to "fewer parcel
+ *  sources" rather than a broken source. Input order is preserved. Pure. */
+export function parcelSources(
+  states: { fips: string }[],
+  probes: Record<string, ResourceProbe>,
+): ParcelSource[] {
+  const out: ParcelSource[] = [];
+  for (const { fips } of states) {
+    if (probes[fips] === 'present') out.push({ state: fips, tilesUrl: pmtilesUrl(fips) });
   }
   return out;
-}
-
-/** Initial visibility for every rendered GeoJSON layer of a catalog. Hidden
- *  layers and views (no longer drawn) are omitted. */
-export function defaultVisibility(catalog: Catalog): Record<string, boolean> {
-  const vis: Record<string, boolean> = {};
-  for (const l of catalog.layers) {
-    if (l.geojsonPath && !HIDDEN_LAYERS.has(l.name)) vis[l.name] = DEFAULT_ON.has(l.name);
-  }
-  return vis;
-}
-
-/** Decide which state to open from the URL `?state=` param. */
-export function pickInitialState(
-  search: string,
-  states: StateEntry[],
-): { fips: string; invalidRequest: string | null } {
-  const requested = new URLSearchParams(search).get('state');
-  if (requested && states.some((s) => s.fips === requested)) {
-    return { fips: requested, invalidRequest: null };
-  }
-  return {
-    fips: states[0]?.fips ?? '',
-    invalidRequest: requested && requested.trim() !== '' ? requested : null,
-  };
-}
-
-/** Reflect the active state in the URL so a reload reopens it.
- *  Idempotent — the post-boot `$effect` in App.svelte also keeps the
- *  URL synced, so we no-op when the URL already matches. */
-export function syncStateParam(fips: string): void {
-  if (typeof history === 'undefined') return;
-  const url = new URL(location.href);
-  if (url.searchParams.get('state') === fips) return;
-  url.searchParams.set('state', fips);
-  history.replaceState(null, '', url);
 }
 
 /** Render an unknown thrown value as a user-displayable string. */
