@@ -23,7 +23,7 @@ function towerCount(page: Page): Promise<number> {
 }
 
 test('the slim top filter bar shows the high-use filters + search', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#/explore');
   await waitReady(page);
   const bar = page.getByRole('main').getByTestId('top-filter-bar');
   for (const name of ['State', 'Distress', 'Structure', 'Score', 'More filters']) {
@@ -35,7 +35,7 @@ test('the slim top filter bar shows the high-use filters + search', async ({ pag
 });
 
 test('a state filter narrows the tower layer (shared FilterModel)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#/explore');
   await waitReady(page);
   await page.waitForFunction(() => (window as any).__pilotMap.isStyleLoaded());
   await expect.poll(() => towerCount(page), { timeout: MAP }).toBeGreaterThan(0);
@@ -51,7 +51,7 @@ test('a state filter narrows the tower layer (shared FilterModel)', async ({ pag
 });
 
 test('reset is disabled until a filter is active, then clears it', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#/explore');
   await waitReady(page);
   const bar = page.getByRole('main').getByTestId('top-filter-bar');
 

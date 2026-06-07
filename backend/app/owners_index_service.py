@@ -180,12 +180,14 @@ class OwnersIndexService:
         """
         owners, _ = self.effective(merges)
         status_by_id = store.status_map()
+        flags = store.latest_flags()  # cid → triggering ASR (#109)
         out: list[dict] = []
         for owner in owners:  # already score-sorted
-            status = status_by_id.get(owner["display_cluster_id"], INITIAL_STATUS)
+            cid = owner["display_cluster_id"]
+            status = status_by_id.get(cid, INITIAL_STATUS)
             if status == INITIAL_STATUS:
                 continue
-            out.append({**owner, "status": status})
+            out.append({**owner, "status": status, "trigger_asr": flags.get(cid, "")})
             if limit is not None and len(out) >= limit:
                 break
         return out
@@ -230,12 +232,15 @@ class OwnersIndexService:
         lead = store.get_lead(root)  # the surviving target row is authoritative
         attempts = [a for m in members for a in store.list_attempts(m)]
         attempts.sort(key=lambda a: (a.occurred_on, a.id), reverse=True)
+        # Trigger antenna (#109): the latest flag row's ASR (attempts are
+        # newest-first, so the first flag is the latest).
+        trigger_asr = next((a.outcome for a in attempts if a.channel == "flag" and a.outcome), "")
         merged_members = [
             {"display_cluster_id": m, "owner_name": self._by_id.get(m, {}).get("owner_name", "")}
             for m in sorted(members - {root})
         ]
         return {
-            "owner": owner,
+            "owner": {**owner, "trigger_asr": trigger_asr},
             "status": lead.status if lead else INITIAL_STATUS,
             "notes": lead.notes if lead else "",
             "updated_at": lead.updated_at.isoformat() if lead else None,
@@ -255,6 +260,7 @@ class OwnersIndexService:
                     "channel": a.channel,
                     "outcome": a.outcome,
                     "note": a.note,
+                    "direction": a.direction,
                 }
                 for a in attempts
             ],

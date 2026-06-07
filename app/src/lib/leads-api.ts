@@ -37,6 +37,8 @@ export interface OwnerSummary {
   structure_types?: string[];
   active_tower_count?: number;
   tallest_tower_height_m?: number | null;
+  // The antenna that sparked pursuit (#109, ADR-067/D2) — '' until pursued.
+  trigger_asr?: string;
 }
 
 /** Adapt an OwnerSummary to the shape the shared FilterModel predicate reads,
@@ -65,12 +67,18 @@ export function ownerSummaryToFilterable(o: OwnerSummary): FilterableOwner {
   };
 }
 
+export type ActivityDirection = 'outbound' | 'inbound';
+
 export interface ContactAttempt {
   id: number;
   occurred_on: string;
   channel: string;
   outcome: string;
   note: string;
+  // outbound touch | inbound reply (#106, ADR-066). Optional so a row from an
+  // older backend (pre-direction) still parses — treat a missing value as
+  // outbound (the only kind before replies existed).
+  direction?: ActivityDirection;
 }
 
 export interface Structure {
@@ -87,6 +95,9 @@ export interface Structure {
   // entries, and on a pre-carriers index (older backend) — treat as []. Empty
   // is the common case (most ASR towers carry no matched ULS per-site license).
   carriers?: Carrier[] | null;
+  // Per-tower interestingness score (UI overhaul P1 / #105) — the tower's
+  // underlying parcel's score. Absent on solar entries and on a pre-v5 index.
+  score?: number | null;
 }
 
 export interface Holding {
@@ -139,12 +150,14 @@ export interface LeadDetail extends ContactFields {
   merged_members: MergedMember[];
 }
 
-/** The body POSTed to log a manual contact attempt. */
+/** The body POSTed to log a manual activity event. ``direction='inbound'``
+ *  logs a reply; omitted (or 'outbound') logs a touch (#106). */
 export interface AttemptPayload {
   channel: string;
   outcome: string;
   note: string;
   occurred_on: string | null;
+  direction?: ActivityDirection;
 }
 
 export interface CandidatesResponse {
@@ -188,7 +201,10 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** The shared fetch wrapper: attaches the Bearer JWT, maps non-2xx to an
+ *  ApiError carrying the status. Reused by the tasks client (tasks-api.ts) so
+ *  every backend call shares one auth + error path. */
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
@@ -213,6 +229,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       .catch(() => null);
     throw new ApiError(detail ?? `${res.status} ${res.statusText}`, res.status);
   }
+  // 204 No Content (e.g. DELETE) has no body — resolve to undefined.
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -252,6 +270,15 @@ export function appendAttempt(
   });
 }
 
+/** Pursue an owner from Explore (#109): advance New → Researching and record
+ *  the triggering antenna. Returns the (now-worked) Lead. */
+export function pursueOwner(displayClusterId: string, triggerAsr: string): Promise<LeadDetail> {
+  return request<LeadDetail>(`/leads/${encodeURIComponent(displayClusterId)}/pursue`, {
+    method: 'POST',
+    body: JSON.stringify({ trigger_asr: triggerAsr }),
+  });
+}
+
 /** Merge `sourceClusterId` into this Lead (the survivor). Afterward the source
  *  resolves to this Lead everywhere (Slice 7 / #53). Returns the merged Lead. */
 export function mergeCluster(
@@ -274,6 +301,39 @@ export function splitCluster(
     method: 'POST',
     body: JSON.stringify({ source_cluster_id: sourceClusterId }),
   });
+}
+
+// ── per-antenna manual state (UI overhaul round 2) ───────────────────────────
+/** The team's editable layer over one antenna (by ASR) — an address, an
+ *  archived flag, and manual owner details for a tower whose landowner we
+ *  couldn't auto-resolve. Mirrors the backend `AntennaState`. */
+export interface AntennaState {
+  asr: string;
+  archived: boolean;
+  address: string;
+  owner_name: string;
+  owner_phone: string;
+  owner_email: string;
+  notes: string;
+}
+
+/** A partial antenna update — omit a field to leave it unchanged. */
+export type AntennaUpdate = Partial<Omit<AntennaState, 'asr'>>;
+
+export function fetchAntenna(asr: string): Promise<AntennaState> {
+  return request<AntennaState>(`/antennas/${encodeURIComponent(asr)}`);
+}
+
+export function updateAntenna(asr: string, patch: AntennaUpdate): Promise<AntennaState> {
+  return request<AntennaState>(`/antennas/${encodeURIComponent(asr)}`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  });
+}
+
+/** The ASRs this tenant has archived — the map + list drop them by default. */
+export function fetchArchivedAsrs(): Promise<{ asrs: string[] }> {
+  return request<{ asrs: string[] }>('/antennas/archived');
 }
 
 // ── auth (Slice 1 / #76) ────────────────────────────────────────────────────

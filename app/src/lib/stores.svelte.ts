@@ -372,8 +372,10 @@ export class AppStore {
         void duckDb.count('').catch(() => undefined);
       }
       const visibility = defaultVisibility(catalog);
+      // Parcels are always on — they fade in on zoom and are no longer a
+      // toggle. The county distress choropleth was retired (UI overhaul
+      // round 3); distress lives on as a filter field, not a map overlay.
       visibility[BASE_PARCELS] = true;
-      visibility[BASE_COUNTY] = true;
       this.layerVisible = visibility;
       this.status = 'ready';
       syncStateParam(fips);

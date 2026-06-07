@@ -26,11 +26,10 @@
 
 <div class="signin" data-testid="signin">
   <div class="card">
-    <h2>Sign in</h2>
-    <p class="sub">
-      Lead state is private to your team (tenant-isolated, ADR-055). Enter your username and
-      password.
-    </p>
+    <div class="brand">
+      <img class="logo" src="/favicon.png" alt="" width="44" height="44" />
+      <span class="name">Morphy Consulting</span>
+    </div>
 
     <form onsubmit={submit}>
       <label for="username">Username</label>
@@ -66,25 +65,31 @@
   .signin {
     display: flex;
     justify-content: center;
-    padding: 48px 22px;
+    padding: 24px 22px;
   }
   .card {
     width: 100%;
-    max-width: 420px;
+    max-width: 360px;
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 22px 24px;
+    padding: 30px 28px;
     box-shadow: var(--shadow);
   }
-  h2 {
-    font-size: 18px;
-    margin-bottom: 6px;
+  .brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 24px;
   }
-  .sub {
-    font-size: 12.5px;
-    color: var(--text-2);
-    margin-bottom: 16px;
+  .logo {
+    border-radius: 10px;
+  }
+  .name {
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
   }
   form {
     display: flex;
@@ -98,25 +103,27 @@
     color: var(--muted);
   }
   input {
-    padding: 8px 10px;
+    padding: 9px 11px;
     font-size: 13px;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
   }
   button[type='submit'] {
-    margin-top: 8px;
-    padding: 8px 14px;
+    margin-top: 14px;
+    padding: 10px 14px;
     font-size: 13px;
+    font-weight: 600;
     border: 1px solid var(--accent);
     background: var(--accent);
     color: #fff;
     border-radius: var(--radius);
+    cursor: pointer;
   }
   button[type='submit']:disabled {
     opacity: 0.6;
   }
   .err {
-    margin-top: 10px;
+    margin-top: 12px;
     font-size: 12.5px;
     color: var(--danger);
   }

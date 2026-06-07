@@ -18,12 +18,16 @@ export const HEAVY_VIEWS: ReadonlySet<string> = new Set([
   'towers_with_landowner',
 ]);
 
-/** Layers / views shown by default when a state loads. */
-const DEFAULT_ON: ReadonlySet<string> = new Set([
-  'towers',
-  'distress_overlays',
-  'interestingness_top_1000',
-]);
+/** Layers shown by default when a state loads. (UI overhaul round 3: the
+ *  map is now towers + solar + parcels only — distress is a filter field, not
+ *  a coloured overlay, and the derived-view overlays were retired.) */
+const DEFAULT_ON: ReadonlySet<string> = new Set(['towers']);
+
+/** Catalog layers the redesigned app no longer surfaces on the map or in the
+ *  LayerPanel. `distress_overlays` (OZ + QCT polygons) became a filter field
+ *  in the top filter bar, so it's neither loaded nor drawn (UI overhaul
+ *  round 3). Kept in the catalog/schema so its detail panel still resolves. */
+export const HIDDEN_LAYERS: ReadonlySet<string> = new Set(['distress_overlays']);
 
 export interface LoadableAsset {
   name: string;
@@ -36,30 +40,29 @@ export interface LoadableAsset {
  *  eager-loaded nor drawn here — the global tower layer owns it. */
 export const MAP_OWNED_LAYERS: ReadonlySet<string> = new Set(['towers']);
 
-/** Layers + views that carry GeoJSON and are small enough to boot-load. */
+/** Catalog GeoJSON layers small enough to boot-load. Views (the retired
+ *  "derived outreach segments") and hidden / map-owned layers are skipped. */
 export function eagerAssets(catalog: Catalog): LoadableAsset[] {
   const out: LoadableAsset[] = [];
   for (const l of catalog.layers) {
-    if (l.geojsonPath && !HEAVY_VIEWS.has(l.name) && !MAP_OWNED_LAYERS.has(l.name)) {
+    if (
+      l.geojsonPath &&
+      !HEAVY_VIEWS.has(l.name) &&
+      !MAP_OWNED_LAYERS.has(l.name) &&
+      !HIDDEN_LAYERS.has(l.name)
+    ) {
       out.push({ name: l.name, geojsonPath: l.geojsonPath });
-    }
-  }
-  for (const v of catalog.views) {
-    if (v.geojsonPath && !HEAVY_VIEWS.has(v.name)) {
-      out.push({ name: v.name, geojsonPath: v.geojsonPath });
     }
   }
   return out;
 }
 
-/** Initial visibility for every GeoJSON-bearing layer / view of a catalog. */
+/** Initial visibility for every rendered GeoJSON layer of a catalog. Hidden
+ *  layers and views (no longer drawn) are omitted. */
 export function defaultVisibility(catalog: Catalog): Record<string, boolean> {
   const vis: Record<string, boolean> = {};
   for (const l of catalog.layers) {
-    if (l.geojsonPath) vis[l.name] = DEFAULT_ON.has(l.name);
-  }
-  for (const v of catalog.views) {
-    if (v.geojsonPath) vis[v.name] = DEFAULT_ON.has(v.name);
+    if (l.geojsonPath && !HIDDEN_LAYERS.has(l.name)) vis[l.name] = DEFAULT_ON.has(l.name);
   }
   return vis;
 }

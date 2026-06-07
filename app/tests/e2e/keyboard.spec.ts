@@ -7,7 +7,7 @@ async function waitReady(page: Page): Promise<void> {
 }
 
 test('? toggles the help overlay', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitReady(page);
 
   const help = page.getByTestId('help');
@@ -19,7 +19,7 @@ test('? toggles the help overlay', async ({ page }) => {
 });
 
 test('Esc closes the help overlay, then clears the selection', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitReady(page);
 
   await page.locator('[data-testid="top-list"] button.row').first().click();
@@ -39,7 +39,7 @@ test('Esc closes the help overlay, then clears the selection', async ({ page }) 
 });
 
 test('f focuses the owner search', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitReady(page);
 
   await page.keyboard.press('f');

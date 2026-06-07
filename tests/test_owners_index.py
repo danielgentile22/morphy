@@ -196,7 +196,7 @@ def test_build_owners_index_on_missing_root_is_empty(tmp_path):
     out = build_owners_index(composite_root=tmp_path)
     assert out["count"] == 0
     assert out["owners"] == []
-    assert out["schema_version"] == 4
+    assert out["schema_version"] == 5
 
 
 # ── holdings + mailing + tallest tower (Slice 3 / #49) ───────────────────────
@@ -472,6 +472,47 @@ def test_tower_without_attr_match_has_empty_carriers():
     assert _row_for(idx, "LONE PINE").holdings[0]["structures"][0]["carriers"] == []
 
 
+# ── per-tower score (UI overhaul P1 / #105, index schema v5) ─────────────────
+def test_tower_carries_its_parcels_interestingness_score():
+    # Each tower's score = its underlying parcel's interestingness_score,
+    # NOT the owner's rolled-up score (which adds the portfolio bonus).
+    idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(
+        pd.DataFrame(
+            [
+                _parcel_with_holding(
+                    "GRID TOWERS LLC", "05", score=0.73, parcel_id="P1", towers_asr=("T1",)
+                )
+            ]
+        )
+    )
+    row = _row_for(idx, "GRID TOWERS")
+    twr = row.holdings[0]["structures"][0]
+    assert twr["score"] == 0.73  # the parcel score, not the owner rollup
+
+
+def test_same_owner_towers_on_different_parcels_have_different_scores():
+    # The whole point of per-tower scoring: two towers of ONE owner, on two
+    # parcels with different interestingness, rank differently.
+    idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(
+        pd.DataFrame(
+            [
+                _parcel_with_holding(
+                    "AMERICAN TOWERS LLC", "05", score=0.9, parcel_id="P1", towers_asr=("T1",)
+                ),
+                _parcel_with_holding(
+                    "AMERICAN TOWERS LLC", "54", score=0.4, parcel_id="P2", towers_asr=("T2",)
+                ),
+            ]
+        )
+    )
+    row = _row_for(idx, "AMERICAN TOWERS")
+    by_asr = {
+        s["asr"]: s for h in row.holdings for s in h["structures"] if s.get("type") == "tower"
+    }
+    assert by_asr["T1"]["score"] == 0.9
+    assert by_asr["T2"]["score"] == 0.4  # same owner, different parcel → differs
+
+
 def test_filter_index_is_a_slim_projection_without_holdings():
     from preprocess.owners_index import FILTER_INDEX_FIELDS, build_owners_filter_index
 
@@ -511,7 +552,7 @@ def test_filter_index_is_a_slim_projection_without_holdings():
     slim = build_owners_filter_index(full)
     # build_owners_filter_index stamps the *current* index schema version,
     # regardless of the input dict's (here a stale v3).
-    assert slim["schema_version"] == 4 and slim["count"] == 1
+    assert slim["schema_version"] == 5 and slim["count"] == 1
     owner = slim["owners"][0]
     assert set(owner.keys()) == set(FILTER_INDEX_FIELDS)
     assert "holdings" not in owner and "mailing_address" not in owner

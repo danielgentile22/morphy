@@ -94,3 +94,51 @@ def test_init_db_adds_the_tenant_table_to_an_existing_db() -> None:
 
     tenant = TenantService(Session(bind=eng, future=True)).find_or_create("original-team")
     assert tenant.id == 1
+
+
+# ── #110 fleshed out task + app_user with additive columns ────────────────────
+_LEGACY_TASK_DDL = """
+CREATE TABLE task (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status VARCHAR(16) NOT NULL DEFAULT 'open',
+    created_by_user_id INTEGER,
+    created_at DATETIME,
+    updated_at DATETIME,
+    completed_at DATETIME
+)
+"""
+
+
+def test_init_db_backfills_task_and_user_columns() -> None:
+    """A #107-era ``task`` table (no links/assignee/priority) + a pre-#110
+    ``app_user`` (no display_name) get the new columns added, old rows
+    back-filling to safe defaults."""
+    eng = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    )
+    with eng.begin() as conn:
+        conn.execute(text(_LEGACY_TASK_DDL))
+        conn.execute(text("INSERT INTO task (tenant_id, title) VALUES (1, 'legacy task')"))
+
+    init_db(eng)
+
+    cols = {c["name"] for c in inspect(eng).get_columns("task")}
+    assert {
+        "priority",
+        "due_date",
+        "assignee_user_id",
+        "lead_cluster_id",
+        "tower_asr",
+        "labels",
+        "source",
+    } <= cols
+    assert "display_name" in {c["name"] for c in inspect(eng).get_columns("app_user")}
+    # the legacy task survived and back-filled to the defaults
+    from backend.app.task_store import TaskStore
+
+    t = TaskStore(Session(bind=eng, future=True), 1).list()[0]
+    assert (t.title, t.priority, t.source, t.labels) == ("legacy task", "none", "manual", "")
+    assert t.due_date is None and t.lead_cluster_id is None

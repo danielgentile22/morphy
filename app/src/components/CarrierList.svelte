@@ -1,9 +1,9 @@
 <script lang="ts">
   // The carriers identified on a tower (Slice A / #28) — the shared renderer
   // used by BOTH the LeadPage holdings (where a clicked tower lands) and the
-  // schema-driven DetailsPanel. One row per ULS licensee: name + callsign
-  // (+ license expiry), with a confidence badge (colour + tooltip + the tag
-  // word in text/aria so colour is never the only signal). De-dup + ordering
+  // schema-driven DetailsPanel. One row per ULS licensee: name + callsign,
+  // with a confidence badge (colour + tooltip + the tag word in text/aria so
+  // colour is never the only signal). De-dup + ordering
   // are done upstream in #24 — rendered as given. Empty is the COMMON case
   // (most ASR towers have no matched ULS per-site license), so it reads as
   // normal, not an error.
@@ -24,9 +24,7 @@
       <li class="carrier">
         <span class="who">
           <span class="name">{c.carrier_name || 'Unknown licensee'}</span>
-          <span class="sub">
-            {c.callsign || '—'}{#if c.license_expiry} · exp {c.license_expiry}{/if}
-          </span>
+          <span class="sub">{c.callsign || '—'}</span>
         </span>
         <span
           class="badge badge-{m.tone}"

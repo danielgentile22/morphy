@@ -9,7 +9,7 @@ const BOOT_BUDGET_MS = 6000;
 
 test('the app boots within the performance budget', async ({ page }) => {
   const started = Date.now();
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   // "ready" — the catalog loaded, layers loaded, the summary card rendered.
   await expect(page.getByTestId('summary-card')).toBeVisible();
   await expect(page.getByTestId('loading')).toBeHidden();

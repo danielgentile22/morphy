@@ -3,11 +3,18 @@
   import { filterModel } from '../lib/filter-model.svelte';
   import { STATUSES, STATUS_LABELS, canTransition, type LeadStatus } from '../lib/lead-status';
   import { kindLabel, money, distressText, statusVar, feet } from '../lib/lead-format';
-  import { CHANNELS, OUTCOMES, buildAttemptPayload } from '../lib/lead-attempt';
+  import {
+    CHANNELS,
+    OUTCOMES,
+    REPLY_OUTCOMES,
+    buildAttemptPayload,
+  } from '../lib/lead-attempt';
   import type { ContactAttempt, Holding, Structure } from '../lib/leads-api';
   import type { OwnerFilterRecord } from '../lib/owners-filter-index';
+  import { SECTION_HASH, towerHash } from '../lib/nav';
   import MiniMap from './MiniMap.svelte';
   import CarrierList from './CarrierList.svelte';
+  import LinkedTasks from './LinkedTasks.svelte';
 
   let { displayClusterId }: { displayClusterId: string } = $props();
 
@@ -52,6 +59,11 @@
     best_channel: '',
   });
   let attemptForm = $state({ channel: CHANNELS[0] as string, outcome: OUTCOMES[0] as string, occurred_on: '' });
+  let replyForm = $state({
+    channel: CHANNELS[0] as string,
+    outcome: REPLY_OUTCOMES[0] as string,
+    occurred_on: '',
+  });
   let loadedFor = '';
   $effect(() => {
     const l = leads.lead;
@@ -68,14 +80,60 @@
   });
 
   function towersOf(h: Holding): Structure[] {
-    return h.structures.filter((s) => s.type === 'tower');
+    // De-dup by ASR: the same tower can land on duplicate parcel rows within a
+    // holding, which would collide the keyed {#each} (Svelte throws on dup keys).
+    const byAsr = new Map<string, Structure>();
+    for (const s of h.structures) {
+      if (s.type !== 'tower') continue;
+      const k = s.asr ?? '';
+      if (!byAsr.has(k)) byAsr.set(k, s);
+    }
+    return [...byAsr.values()];
   }
   function solarOf(h: Holding): Structure[] {
     return h.structures.filter((s) => s.type === 'solar');
   }
+
+  // Owner's towers, ranked + filterable (#108, ADR-067): every tower across
+  // the owner's holdings, each with its per-tower score (#105), sorted by
+  // score desc, narrowed by an active-only toggle + an ASR search.
+  let towerFilter = $state({ activeOnly: false, q: '' });
+  const rankedOwnerTowers = $derived.by(() => {
+    const l = leads.lead;
+    if (!l) return [];
+    // De-dup by ASR across ALL holdings: the same tower (ASR) can appear under
+    // multiple parcels of one owner (common for carrier/utility portfolios),
+    // which would both flood the list and collide the keyed {#each} (Svelte
+    // throws on duplicate keys, crashing the page). Keep one row per ASR.
+    const byAsr = new Map<string, Structure & { state: string; county_fips: string }>();
+    for (const h of l.holdings) {
+      for (const s of h.structures) {
+        if (s.type !== 'tower') continue;
+        const k = s.asr ?? '';
+        if (!byAsr.has(k)) byAsr.set(k, { ...s, state: h.state, county_fips: h.county_fips });
+      }
+    }
+    let towers = [...byAsr.values()];
+    if (towerFilter.activeOnly) towers = towers.filter((t) => t.active === true);
+    const q = towerFilter.q.trim().toLowerCase();
+    if (q) towers = towers.filter((t) => (t.asr ?? '').toLowerCase().includes(q));
+    return towers.sort((a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity));
+  });
+  function openTower(asr: string | null | undefined): void {
+    const l = leads.lead;
+    if (l && asr) location.hash = towerHash(l.owner.display_cluster_id, asr);
+  }
   /** Manual attempts vs auto-logged status rows render differently. */
   function isStatusRow(a: ContactAttempt): boolean {
     return a.channel === 'status';
+  }
+  /** A reply is an inbound activity event (#106). */
+  function isReply(a: ContactAttempt): boolean {
+    return a.direction === 'inbound';
+  }
+  /** A trigger flag from Explore (#109) — channel='flag', outcome=ASR. */
+  function isFlag(a: ContactAttempt): boolean {
+    return a.channel === 'flag';
   }
 
   async function setStatus(s: LeadStatus): Promise<void> {
@@ -97,13 +155,21 @@
     if (ok) attemptForm = { ...attemptForm, occurred_on: '' };
   }
 
+  /** Log a reply — an inbound activity event (#106). Distinct from an outbound
+   *  touch and never changes the Lead's status. */
+  async function logReply(): Promise<void> {
+    const ok = await leads.addAttempt(displayClusterId, buildAttemptPayload(replyForm, 'inbound'));
+    if (ok) replyForm = { ...replyForm, occurred_on: '' };
+  }
+
   function back(): void {
-    location.hash = '#/candidates';
+    // Candidates folded into Explore (#104); return to the discovery surface.
+    location.hash = SECTION_HASH.explore;
   }
 </script>
 
 <div class="lead" data-testid="lead-page">
-  <button class="back" onclick={back}>‹ back to Candidates</button>
+  <button class="back" onclick={back}>‹ back to Explore</button>
 
   {#if leads.leadStatus === 'loading'}
     <p class="state-msg">Loading lead…</p>
@@ -121,6 +187,9 @@
       {/each}
       {#if o.cross_state}
         <span class="tag x" data-testid="cross-state-badge">cross-state lead</span>
+      {/if}
+      {#if o.trigger_asr}
+        <span class="tag trigger" data-testid="trigger-badge">⚑ flagged from ASR {o.trigger_asr}</span>
       {/if}
     </header>
 
@@ -157,7 +226,12 @@
             </p>
           {:else}
             <ul class="holdings" data-testid="holdings">
-              {#each l.holdings as h (h.parcel_id + h.state)}
+              <!-- Key includes the index: the same parcel_id can appear on more
+                   than one holding row (duplicate FDOR NAL parcel rows), which
+                   would collide a (parcel_id+state) key and crash the page. The
+                   list is static (never filtered/reordered), so the index is a
+                   stable disambiguator. -->
+              {#each l.holdings as h, hi (h.parcel_id + '|' + h.state + '|' + hi)}
                 <li class="holding">
                   <div class="hrow">
                     <b>{h.state} · County {h.county_fips || '—'}</b>
@@ -182,6 +256,43 @@
             </ul>
           {/if}
         </section>
+
+        <!-- Owner's towers, ranked + filterable (#108, ADR-067). -->
+        {#if rankedOwnerTowers.length > 0 || towerFilter.activeOnly || towerFilter.q}
+          <section class="card" data-testid="owner-towers">
+            <h3>Towers · ranked</h3>
+            <div class="towerfilter">
+              <input
+                class="tsearch"
+                data-testid="owner-tower-search"
+                bind:value={towerFilter.q}
+                placeholder="Filter by ASR…"
+                aria-label="Filter towers by ASR"
+              />
+              <label class="activeonly">
+                <input type="checkbox" bind:checked={towerFilter.activeOnly} />
+                active only
+              </label>
+            </div>
+            {#if rankedOwnerTowers.length === 0}
+              <p class="muted small mt">No towers match.</p>
+            {:else}
+              <ul class="ranked-towers" data-testid="ranked-towers">
+                {#each rankedOwnerTowers as t (t.asr)}
+                  <li>
+                    <button class="tower-row" data-testid="ranked-tower-row" onclick={() => openTower(t.asr)}>
+                      <span class="tscore">{t.score != null ? t.score.toFixed(2) : '—'}</span>
+                      <span class="tasr">ASR {t.asr}</span>
+                      <span class="readonly small">
+                        {t.state} · {feet(t.height_m ?? null)}{#if t.active === false} · inactive{/if}
+                      </span>
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </section>
+        {/if}
       </div>
 
       <!-- ── WRITE: status + contact + attempts + notes ─────────────── -->
@@ -251,7 +362,7 @@
         </section>
 
         <section class="card">
-          <h3>Contact attempts</h3>
+          <h3>Activity</h3>
           <div class="attemptform" data-testid="attempt-form">
             <input
               type="date"
@@ -266,18 +377,42 @@
               {#each OUTCOMES as o2 (o2)}<option value={o2}>{o2}</option>{/each}
             </select>
             <button class="sbtn" data-testid="log-attempt" onclick={logAttempt} disabled={leads.saving}>
-              + log attempt
+              + log touch
+            </button>
+          </div>
+          <!-- Log reply: an inbound event (#106) — what the owner said back. -->
+          <div class="attemptform reply" data-testid="reply-form">
+            <input
+              type="date"
+              data-testid="reply-date"
+              bind:value={replyForm.occurred_on}
+              aria-label="Reply date"
+            />
+            <select data-testid="reply-channel" bind:value={replyForm.channel} aria-label="Reply channel">
+              {#each CHANNELS as c (c)}<option value={c}>{c}</option>{/each}
+            </select>
+            <select data-testid="reply-outcome" bind:value={replyForm.outcome} aria-label="Reply outcome">
+              {#each REPLY_OUTCOMES as o2 (o2)}<option value={o2}>{o2}</option>{/each}
+            </select>
+            <button class="sbtn reply-btn" data-testid="log-reply" onclick={logReply} disabled={leads.saving}>
+              ↩ log reply
             </button>
           </div>
           {#if l.attempts.length === 0}
-            <p class="muted small mt">No attempts logged yet.</p>
+            <p class="muted small mt">No activity logged yet.</p>
           {:else}
             <ul class="activity" data-testid="activity">
               {#each l.attempts as a (a.id)}
-                <li class:status={isStatusRow(a)}>
+                <li class:status={isStatusRow(a) || isFlag(a)} class:inbound={isReply(a)} data-direction={a.direction ?? 'outbound'}>
                   <span class="muted when">{a.occurred_on}</span>
-                  {#if isStatusRow(a)}
+                  {#if isFlag(a)}
+                    <span data-testid="flag-row">⚑ Flagged from ASR {a.outcome}</span>
+                    <span class="readonly">from Explore</span>
+                  {:else if isStatusRow(a)}
                     <span>Status changed</span>
+                    <span class="readonly">{a.outcome}</span>
+                  {:else if isReply(a)}
+                    <span data-testid="reply-row">↩ Reply · {a.channel}</span>
                     <span class="readonly">{a.outcome}</span>
                   {:else}
                     <span>{a.channel}</span>
@@ -288,6 +423,9 @@
             </ul>
           {/if}
         </section>
+
+        <!-- Owner-linked tasks (#110). -->
+        <LinkedTasks query={`lead=${encodeURIComponent(displayClusterId)}`} heading="Tasks for this owner" />
 
         <section class="card">
           <h3>Notes</h3>
@@ -367,6 +505,8 @@
 
 <style>
   .lead {
+    height: 100%;
+    overflow-y: auto;
     padding: 16px 22px 40px;
     max-width: 1100px;
   }
@@ -486,6 +626,11 @@
     border-color: #d9c8f5;
     color: #5a3aa8;
   }
+  .tag.trigger {
+    background: #fff4e6;
+    border-color: #f0d2a8;
+    color: #9a5b00;
+  }
   /* holdings */
   .holdings {
     list-style: none;
@@ -513,6 +658,63 @@
   /* Carriers sit indented under their tower row. */
   .carriers-wrap {
     margin: 1px 0 4px 14px;
+  }
+  /* Owner's ranked + filterable towers (#108). */
+  .towerfilter {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .tsearch {
+    flex: 1;
+    font: inherit;
+    font-size: 12.5px;
+    padding: 5px 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--panel);
+  }
+  .activeonly {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-2);
+    white-space: nowrap;
+  }
+  .ranked-towers {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .ranked-towers li {
+    border-bottom: 1px solid var(--border);
+  }
+  .tower-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 7px 2px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .tower-row:hover {
+    background: var(--panel-2);
+  }
+  .tscore {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    min-width: 36px;
+    color: var(--accent);
+  }
+  .tasr {
+    font-size: 13px;
+    font-weight: 600;
   }
   .readonly {
     color: var(--muted);
@@ -619,8 +821,22 @@
   .activity li.status {
     color: var(--text-2);
   }
+  /* Inbound replies stand out — they're the events that need attention. */
+  .activity li.inbound {
+    font-weight: 600;
+  }
+  .activity li.inbound span:nth-child(2) {
+    color: var(--accent);
+  }
   .activity .when {
     min-width: 84px;
+  }
+  .attemptform.reply {
+    margin-top: 8px;
+  }
+  .reply-btn {
+    border-color: var(--accent);
+    color: var(--accent);
   }
   .notes {
     width: 100%;

@@ -40,8 +40,13 @@ describe('CarrierList — populated', () => {
     expect(text).toContain('AT&T');
     expect(text).toContain('KNKN566');
     expect(text).toContain('ALLTEL Corporation');
-    // license expiry shown when present, omitted when null
-    expect(text).toContain('2031-10-01');
+  });
+
+  it('does not show the license expiry date (it signals nothing useful)', () => {
+    const el = render(SAMPLE);
+    const text = el.querySelector('[data-testid="carrier-list"]')!.textContent ?? '';
+    expect(text).not.toContain('2031-10-01');
+    expect(text).not.toContain('exp');
   });
 
   it('renders a confidence badge per tag with the tag word in the text', () => {

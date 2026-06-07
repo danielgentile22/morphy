@@ -1,16 +1,17 @@
-// The shared FilterModel store (Svelte 5 runes) — Slice 6 / #52.
+// The shared FilterModel store (Svelte 5 runes) — Slice 6 / #52, extended for
+// the tower-grained Explore (#108).
 //
-// ONE instance of filter state drives BOTH the map's tower layer and the
-// Candidates list. It owns:
+// ONE instance of filter state drives BOTH Explore lenses — the map's tower
+// layer and the ranked tower list. It owns:
 //   - `model`            the live FilterModel (single source of truth)
 //   - the slim owners index, loaded once for map filtering + owner search
-//   - `matchingClusterIds`  the owner-id set the map narrows towers by
+//   - `matchingClusterIds`  the owner-id set both lenses narrow towers by
 //                           (null ⇒ no filter active ⇒ all towers)
+//   - `ownerById`           owner record by cid (rank a tower by its owner)
 //   - control options + numeric extents, derived from the index
 //
-// Both surfaces read the same `model` + the same predicate (`matchesOwner`),
-// so they can never fork. The map consumes `matchingClusterIds`; Candidates
-// calls `matchesOwner` directly on its rows (see Candidates.svelte).
+// Both lenses narrow by the same `matchingClusterIds` (the map via
+// `filterTowers`, the list via `rankedTowerRows`), so they can never fork.
 
 import {
   emptyFilterModel,
@@ -52,6 +53,14 @@ class FilterModelStore {
       if (matchesOwner(o, this.model)) ids.add(o.display_cluster_id);
     }
     return ids;
+  });
+
+  /** Owner record by display_cluster_id — O(1) lookup for the Explore tower
+   *  list (rank a tower by its owner's score) + the tower→owner bridge (#108). */
+  ownerById = $derived.by(() => {
+    const m = new Map<string, OwnerFilterRecord>();
+    for (const o of this.owners) m.set(o.display_cluster_id, o);
+    return m;
   });
 
   // ── control options, derived from the loaded index ─────────────────────

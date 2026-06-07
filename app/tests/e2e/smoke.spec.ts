@@ -12,7 +12,7 @@ function watchConsole(page: import('@playwright/test').Page): string[] {
 
 test('boots, renders the map, and lists AR + FL + MT', async ({ page }) => {
   const errors = watchConsole(page);
-  await page.goto('/');
+  await page.goto('/#/explore');
 
   // The map container and MapLibre canvas render.
   await expect(page.getByTestId('map')).toBeVisible();
@@ -32,7 +32,7 @@ test('boots, renders the map, and lists AR + FL + MT', async ({ page }) => {
 
 test('switching state re-renders the chrome and updates the URL', async ({ page }) => {
   const errors = watchConsole(page);
-  await page.goto('/');
+  await page.goto('/#/explore');
   await expect(page.locator('h1')).toHaveText('Arkansas');
 
   await page.getByTestId('state-select').selectOption('30');
@@ -44,13 +44,13 @@ test('switching state re-renders the chrome and updates the URL', async ({ page 
 
 test('a deep-linked ?state= restores that state on load', async ({ page }) => {
   const errors = watchConsole(page);
-  await page.goto('/?state=30');
+  await page.goto('/?state=30#/explore');
   await expect(page.locator('h1')).toHaveText('Montana');
   expect(errors).toEqual([]);
 });
 
 test('an unknown ?state= falls back to a real state with a notice', async ({ page }) => {
-  await page.goto('/?state=99');
+  await page.goto('/?state=99#/explore');
   await expect(page.locator('h1')).toHaveText('Arkansas');
   await expect(page.locator('.notice')).toContainText('99');
 });

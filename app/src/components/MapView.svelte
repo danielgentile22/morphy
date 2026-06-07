@@ -13,13 +13,15 @@
   import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-csp-worker.js?url';
   import type { FeatureCollection, Point } from 'geojson';
   import { Protocol } from 'pmtiles';
-  import { app, BASE_COUNTY, BASE_PARCELS } from '../lib/stores.svelte';
+  import { app, BASE_PARCELS } from '../lib/stores.svelte';
   import { entityKind } from '../lib/catalog';
   import { detectGeometryClasses } from '../lib/geo';
   import { layerColor, TOWER_MARKER_SVG, WONG } from '../lib/palette';
   import type { Props } from '../lib/schema';
-  import { towerHoverHtml, resolveTowerLeadKey, filterTowers, type TowerProps } from '../lib/towers';
+  import { towerHoverHtml, filterTowers, type TowerProps } from '../lib/towers';
   import { filterModel } from '../lib/filter-model.svelte';
+  import { archivedAntennas } from '../lib/archived-antennas.svelte';
+  import { towerHash } from '../lib/nav';
 
   maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
@@ -369,35 +371,6 @@
     ] as ExpressionSpecification;
   }
 
-  // County choropleth — shaded by ARC tier, fades out as parcels fade in.
-  function addChoropleth(): void {
-    if (!map || !app.countyData) return;
-    const src = `src:${BASE_COUNTY}`;
-    map.addSource(src, { type: 'geojson', data: app.countyData, generateId: true });
-    sourceIds.add(src);
-    map.addLayer({
-      id: `${BASE_COUNTY}:fill`,
-      type: 'fill',
-      source: src,
-      paint: {
-        'fill-color': tierColorMatch('tier'),
-        'fill-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.6, 10, 0],
-      },
-    });
-    map.addLayer({
-      id: `${BASE_COUNTY}:line`,
-      type: 'line',
-      source: src,
-      paint: {
-        'line-color': '#ffffff',
-        'line-width': selectedWidth(1),
-        'line-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.85, 10, 0],
-      },
-    });
-    register(`${BASE_COUNTY}:fill`, BASE_COUNTY, true);
-    register(`${BASE_COUNTY}:line`, BASE_COUNTY, false);
-  }
-
   // Parcel base layer — PMTiles vector tiles, discovered by convention.
   function addParcels(): void {
     if (!map || !app.parcelsUrl) return;
@@ -451,15 +424,12 @@
 
   // ── structures-first tower layer ─────────────────────────────────────────
 
-  /** Navigate a clicked tower to its landowner's Lead, or warn when its
-   *  owner can't be clustered into a Lead (blank parcel_owner). */
-  function openTowerLead(props: TowerProps): void {
-    const key = resolveTowerLeadKey(props);
-    if (!key) {
-      app.notice = 'No landowner on file for this tower — nothing to open.';
-      return;
-    }
-    location.hash = `#/lead/${encodeURIComponent(key)}`;
+  /** Open a clicked tower's detail page — a peek (#108, ADR-067). Inspecting
+   *  commits nothing. Every tower opens: a tower with no resolved landowner
+   *  still gets a page (towerHash substitutes the NO_OWNER sentinel) so the
+   *  user can fill in owner details manually (UI overhaul round 2). */
+  function openTowerDetail(props: TowerProps): void {
+    location.hash = towerHash(props.cid, props.asr);
   }
 
   // Click / hover handlers — attached once (the tower layers are never torn
@@ -483,7 +453,7 @@
     });
     map.on('click', TL_POINT, (e) => {
       const f = e.features?.[0];
-      if (f) openTowerLead(f.properties as TowerProps);
+      if (f) openTowerDetail(f.properties as TowerProps);
     });
 
     map.on('mouseenter', TL_CLUSTERS, () => {
@@ -580,8 +550,13 @@
     if (!map || !app.towerPoints) return;
     // The shared FilterModel narrows the tower layer to matching owners
     // (null = no filter active → every tower). Same model as the Candidates
-    // list, so the two surfaces stay consistent (Slice 6 / #52).
-    const data = filterTowers(app.towerPoints, filterModel.matchingClusterIds);
+    // list, so the two surfaces stay consistent (Slice 6 / #52). Archived
+    // antennas drop out too unless "show archived" is on (UI overhaul round 2).
+    const data = filterTowers(
+      app.towerPoints,
+      filterModel.matchingClusterIds,
+      archivedAntennas.filter,
+    );
     if (!towerLayersAdded) {
       addTowerLayers(data);
     } else {
@@ -614,8 +589,9 @@
     if (!map) return;
     clearRenderedLayers();
 
-    // Base layers first — drawn underneath the catalog overlays.
-    addChoropleth();
+    // Parcel base layer — drawn underneath the catalog overlays. Always on
+    // (it just fades in on zoom); no longer a user toggle, and the county
+    // distress choropleth was retired (UI overhaul round 3).
     addParcels();
 
     // Detect each layer's geometry families once. A layer can mix families
@@ -758,21 +734,18 @@
       }
     }
     const interactive = visibleInteractive();
-    const baseFills = [`${BASE_PARCELS}:fill`, `${BASE_COUNTY}:fill`];
+    const baseFill = `${BASE_PARCELS}:fill`;
 
-    // Catalog overlays (markers, view polygons) win — they are the
-    // specific things a user aims at.
-    const overlayIds = interactive.filter((id) => !baseFills.includes(id));
+    // Catalog overlays (markers) win — they are the specific things a user
+    // aims at; the parcel fill is the fallback.
+    const overlayIds = interactive.filter((id) => id !== baseFill);
     let feature: MapGeoJSONFeature | undefined = overlayIds.length
       ? map.queryRenderedFeatures(e.point, { layers: overlayIds })[0]
       : undefined;
 
-    // Otherwise the base layer — parcels when zoomed in, county when not.
-    if (!feature) {
-      const baseId = map.getZoom() >= 10 ? `${BASE_PARCELS}:fill` : `${BASE_COUNTY}:fill`;
-      if (interactive.includes(baseId)) {
-        feature = map.queryRenderedFeatures(e.point, { layers: [baseId] })[0];
-      }
+    // Otherwise the parcel base layer (visible once zoomed in).
+    if (!feature && interactive.includes(baseFill)) {
+      feature = map.queryRenderedFeatures(e.point, { layers: [baseFill] })[0];
     }
     if (!feature) {
       app.clearSelection();
@@ -792,15 +765,6 @@
       return;
     }
     const index = typeof f.id === 'number' ? f.id : -1;
-    if (name === BASE_COUNTY) {
-      const original = index >= 0 ? app.countyData?.features[index] : undefined;
-      app.setSelection({
-        kind: 'county',
-        props: (original?.properties as Props | undefined) ?? props,
-        featureRef: index >= 0 ? { layer: BASE_COUNTY, index } : undefined,
-      });
-      return;
-    }
     // A catalog GeoJSON layer / view — resolve the original feature so
     // nested-object properties survive (queryRenderedFeatures stringifies them).
     if (!app.catalog) return;
@@ -831,7 +795,6 @@
   $effect(() => {
     const data = app.layerData;
     const fips = app.activeFips;
-    void app.countyData;
     void app.parcelsUrl;
     if (!map || !ready) return;
     untrack(() => {
@@ -869,6 +832,8 @@
   $effect(() => {
     void app.towerPoints;
     void filterModel.matchingClusterIds; // re-narrow towers on a filter change
+    void archivedAntennas.asrs; // re-narrow when an antenna is (un)archived
+    void archivedAntennas.show; // …or when "show archived" is toggled
     if (!map || !ready) return;
     untrack(() => syncTowerLayers());
   });

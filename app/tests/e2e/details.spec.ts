@@ -18,7 +18,7 @@ for (const { fips, state } of [
 ]) {
   test(`demo gate — ${state}: top parcel shows a landowner`, async ({ page }) => {
     const errors = watchConsole(page);
-    await page.goto(`/?state=${fips}`);
+    await page.goto(`/?state=${fips}#/explore`);
     await expect(page.locator('h1')).toHaveText(state);
 
     const firstRow = page.locator('[data-testid="top-list"] button.row').first();
@@ -45,7 +45,7 @@ for (const { fips, state } of [
 }
 
 test('the detail panel closes and clears the selection', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await page.locator('[data-testid="top-list"] button.row').first().click();
   const panel = page.getByTestId('details-panel');
   await expect(panel).toBeVisible();
@@ -55,7 +55,7 @@ test('the detail panel closes and clears the selection', async ({ page }) => {
 });
 
 test('selecting a second parcel replaces the panel content', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   const rows = page.locator('[data-testid="top-list"] button.row');
   const panel = page.getByTestId('details-panel');
 

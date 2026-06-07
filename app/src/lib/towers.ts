@@ -96,15 +96,33 @@ export function rowsToFeatureCollection(rows: TowerRow[]): FeatureCollection<Poi
   return { type: 'FeatureCollection', features };
 }
 
-/** Narrow a tower collection to owners in `clusterIds`. `null` (no filter
- *  active) returns the collection unchanged. Pure — unit-tested; the map
+/** Per-antenna archive narrowing (UI overhaul round 2): archived ASRs drop out
+ *  of the map + list unless the user opts into showing them. ASR-grained, so
+ *  it's applied alongside the owner-cluster narrowing, not folded into it. */
+export interface ArchivedFilter {
+  asrs: ReadonlySet<string>;
+  show: boolean;
+}
+
+/** Narrow a tower collection to owners in `clusterIds` (`null` = no owner
+ *  filter), then drop archived towers unless `archived.show`. Returns the
+ *  collection unchanged when nothing narrows it. Pure — unit-tested; the map
  *  feeds the result straight to the tower source's `setData`. */
 export function filterTowers(
   fc: FeatureCollection<Point, TowerProps>,
   clusterIds: ReadonlySet<string> | null,
+  archived?: ArchivedFilter,
 ): FeatureCollection<Point, TowerProps> {
-  if (clusterIds === null) return fc;
-  return { type: 'FeatureCollection', features: fc.features.filter((f) => clusterIds.has(f.properties.cid)) };
+  const hideArchived = archived !== undefined && !archived.show && archived.asrs.size > 0;
+  if (clusterIds === null && !hideArchived) return fc;
+  return {
+    type: 'FeatureCollection',
+    features: fc.features.filter(
+      (f) =>
+        (clusterIds === null || clusterIds.has(f.properties.cid)) &&
+        !(hideArchived && archived.asrs.has(f.properties.asr)),
+    ),
+  };
 }
 
 /**

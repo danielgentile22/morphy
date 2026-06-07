@@ -1,102 +1,49 @@
 <script lang="ts">
-  import { app, BASE_COUNTY, BASE_PARCELS } from '../lib/stores.svelte';
-  import { geojsonLayers, geojsonViews } from '../lib/catalog';
-  import { layerColor, layerLabel, WONG } from '../lib/palette';
+  import { app } from '../lib/stores.svelte';
+  import { geojsonLayers } from '../lib/catalog';
+  import { HIDDEN_LAYERS } from '../lib/stores-helpers';
+  import { layerColor, layerLabel } from '../lib/palette';
 
-  const layers = $derived(app.catalog ? geojsonLayers(app.catalog) : []);
-  const views = $derived(app.catalog ? geojsonViews(app.catalog) : []);
+  // The map renders towers + solar as toggleable overlays, on top of the
+  // always-on parcel base tiles (which fade in on zoom and are no longer a
+  // setting). Distress became a filter field, and the derived-view overlays,
+  // the county choropleth, and the legend were all retired (UI overhaul
+  // round 3) — all narrowing now happens in the top filter bar.
+  const layers = $derived(
+    app.catalog ? geojsonLayers(app.catalog).filter((l) => !HIDDEN_LAYERS.has(l.name)) : [],
+  );
 
-  // Names of heavy views currently lazy-loading their GeoJSON.
-  const loading = $state(new Set<string>());
-
-  async function toggle(name: string): Promise<void> {
-    const willShow = !app.isLayerVisible(name);
-    if (willShow && !app.layerData[name]) {
-      loading.add(name);
-      await app.ensureLayerLoaded(name);
-      loading.delete(name);
-      if (app.failedLayers.includes(name)) return; // load failed — stay off
-    }
-    app.setLayerVisible(name, willShow);
+  function toggle(name: string): void {
+    app.setLayerVisible(name, !app.isLayerVisible(name));
   }
 </script>
 
-{#snippet toggleRow(name: string, count: number)}
-  {@const failed = app.failedLayers.includes(name)}
-  {@const isLoading = loading.has(name)}
-  <label class="toggle" class:disabled={failed}>
-    <input
-      type="checkbox"
-      checked={app.isLayerVisible(name)}
-      disabled={failed || isLoading}
-      onchange={() => toggle(name)}
-      data-testid="layer-toggle-{name}"
-    />
-    <span class="swatch" style:background={layerColor(name)}></span>
-    <span class="name">{layerLabel(name)}</span>
-    {#if failed}
-      <span class="badge err">unavailable</span>
-    {:else if isLoading}
-      <span class="badge">loading…</span>
-    {:else}
-      <span class="count">{count.toLocaleString()}</span>
-    {/if}
-  </label>
-{/snippet}
-
-{#if app.catalog}
-  {#if app.parcelsUrl || app.countyData}
-    <section class="panel">
-      <h2>Base layers</h2>
-      {#if app.parcelsUrl}
-        <label class="toggle">
-          <input
-            type="checkbox"
-            checked={app.isLayerVisible(BASE_PARCELS)}
-            onchange={() => app.setLayerVisible(BASE_PARCELS, !app.isLayerVisible(BASE_PARCELS))}
-            data-testid="layer-toggle-parcels"
-          />
-          <span class="swatch" style:background={WONG.vermillion}></span>
-          <span class="name">Parcels (vector tiles)</span>
-        </label>
-      {/if}
-      {#if app.countyData}
-        <label class="toggle">
-          <input
-            type="checkbox"
-            checked={app.isLayerVisible(BASE_COUNTY)}
-            onchange={() => app.setLayerVisible(BASE_COUNTY, !app.isLayerVisible(BASE_COUNTY))}
-            data-testid="layer-toggle-county_boundaries"
-          />
-          <span class="swatch" style:background={WONG.orange}></span>
-          <span class="name">County distress</span>
-        </label>
-      {/if}
-    </section>
-  {/if}
+{#if layers.length > 0}
   <section class="panel">
     <h2>Layers</h2>
     {#each layers as l (l.name)}
-      {@render toggleRow(l.name, l.rows)}
+      {@const failed = app.failedLayers.includes(l.name)}
+      <label class="toggle" class:disabled={failed}>
+        <input
+          type="checkbox"
+          checked={app.isLayerVisible(l.name)}
+          disabled={failed}
+          onchange={() => toggle(l.name)}
+          data-testid="layer-toggle-{l.name}"
+        />
+        <span class="swatch" style:background={layerColor(l.name)}></span>
+        <span class="name">{layerLabel(l.name)}</span>
+        {#if failed}
+          <span class="badge err">unavailable</span>
+        {:else}
+          <span class="count">{l.rows.toLocaleString()}</span>
+        {/if}
+      </label>
     {/each}
   </section>
-  {#if views.length > 0}
-    <section class="panel">
-      <h2>Views</h2>
-      <p class="hint">Derived outreach segments. Heavier ones load when switched on.</p>
-      {#each views as v (v.name)}
-        {@render toggleRow(v.name, v.rows)}
-      {/each}
-    </section>
-  {/if}
 {/if}
 
 <style>
-  .hint {
-    margin: 0 0 6px;
-    font-size: 11px;
-    color: var(--muted);
-  }
   .toggle {
     display: flex;
     align-items: center;

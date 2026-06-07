@@ -200,3 +200,21 @@ def test_pre_v2_index_without_holdings_degrades_safely(
     assert view["holdings"] == []
     assert view["mailing_address"] is None
     assert view["tallest_tower_height_m"] is None
+
+
+def test_pre_v5_tower_without_score_defaults_to_none() -> None:
+    """A stale (pre-#105) index has towers with no ``score`` key — the backend
+    Structure model must still validate, defaulting the field to None."""
+    from backend.app.schemas import Structure
+
+    legacy_tower = {
+        "type": "tower",
+        "asr": "A1",
+        "height_m": 120.0,
+        "active": True,
+        # no "score" key — built before the per-tower score existed
+    }
+    s = Structure(**legacy_tower)
+    assert s.score is None  # safe default; a stale index still serves
+    # and a current tower's score rides through the declared field
+    assert Structure(type="tower", asr="A2", score=0.73).score == 0.73

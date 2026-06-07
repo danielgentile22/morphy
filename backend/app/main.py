@@ -11,6 +11,8 @@ Surface:
   PUT  /api/leads/{cluster_id}   set status and/or notes (validates ladder)
   POST /api/leads/{cluster_id}/merge   merge another owner-cluster into this Lead
   POST /api/leads/{cluster_id}/split   split a merged-in cluster back out
+  GET/POST /api/tasks            list / create tasks (tenant-scoped)
+  GET/PUT/DELETE /api/tasks/{id} read / update (title·desc·status) / delete a task
 
 Every data route resolves a tenant via ``current_tenant_id`` (now derived
 from the bearer JWT — Slice 2 / #48) and goes through ``LeadStore`` /
@@ -20,6 +22,7 @@ unauthenticated requests are rejected with 401.
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import date
@@ -28,9 +31,13 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
+from .activity_service import ActivityService
+from .antenna_store import AntennaStore
+from .attention_service import DISMISS_CHANNEL, AttentionService
 from .auth import Principal, create_access_token, current_principal, current_tenant_id
 from .auth_service import InvalidCredentials
 from .auth_service import login as login_user
+from .auto_followup_rule import AutoFollowUpRule
 from .config import settings
 from .credentials import normalize_username
 from .db import get_db, init_db
@@ -40,9 +47,15 @@ from .login_throttle import LoginThrottle
 from .owner_merge_service import MergeError, OwnerMergeService
 from .owners_index_service import OwnersIndexService
 from .schemas import (
+    ActivityResponse,
+    AntennaState,
+    AntennaUpdate,
+    ArchivedAsrsResponse,
+    AttentionResponse,
     CandidatesResponse,
     ContactAttemptIn,
     CountsResponse,
+    DismissBody,
     LeadDetail,
     LeadUpdate,
     LoginBody,
@@ -50,8 +63,29 @@ from .schemas import (
     MyLeadsResponse,
     OverrideBody,
     OwnerSummary,
+    PursueBody,
+    ScoringPresetIn,
+    ScoringPresetOut,
+    ScoringPresetsResponse,
+    SettingsResponse,
+    SettingsUpdate,
+    StatsResponse,
+    TaskCreate,
+    TaskOut,
+    TasksResponse,
+    TaskUpdate,
     TokenResponse,
+    UserOut,
+    UsersResponse,
 )
+from .scoring_preset_store import ScoringPresetStore
+from .settings_store import (
+    AUTO_FOLLOWUP_ENABLED,
+    AUTO_FOLLOWUP_WINDOW_DAYS,
+    SettingsStore,
+)
+from .stats_service import ActivityRow, LeadRow, StatsService
+from .task_store import InvalidTaskPriority, InvalidTaskStatus, TaskStore, label_list
 from .tenant_service import TenantService
 
 
@@ -99,6 +133,44 @@ def get_merges(
     # Shares the request-scoped session with get_store (FastAPI caches the
     # get_db dependency per request), so a write + its read are one transaction.
     return OwnerMergeService(db, tenant_id)
+
+
+def get_tasks(
+    tenant_id: int = Depends(current_tenant_id),
+    db: Session = Depends(get_db),
+) -> TaskStore:
+    return TaskStore(db, tenant_id)
+
+
+def get_antennas(
+    tenant_id: int = Depends(current_tenant_id),
+    db: Session = Depends(get_db),
+) -> AntennaStore:
+    return AntennaStore(db, tenant_id)
+
+
+def get_presets(
+    tenant_id: int = Depends(current_tenant_id),
+    db: Session = Depends(get_db),
+) -> ScoringPresetStore:
+    return ScoringPresetStore(db, tenant_id)
+
+
+def get_settings(
+    tenant_id: int = Depends(current_tenant_id),
+    db: Session = Depends(get_db),
+) -> SettingsStore:
+    return SettingsStore(db, tenant_id)
+
+
+def _auto_followup(store: LeadStore, db: Session, merges: OwnerMergeService) -> AutoFollowUpRule:
+    """Build the auto-follow-up rule for a request (shares the session)."""
+    return AutoFollowUpRule(
+        store,
+        TaskStore(db, store.tenant_id),
+        SettingsStore(db, store.tenant_id),
+        owner_name_of=lambda cid: (owners_index.get_owner(cid, merges) or {}).get("owner_name", ""),
+    )
 
 
 @app.get("/api/health")
@@ -205,6 +277,8 @@ def update_lead(
     body: LeadUpdate,
     store: LeadStore = Depends(get_store),
     merges: OwnerMergeService = Depends(get_merges),
+    principal: Principal = Depends(current_principal),
+    db: Session = Depends(get_db),
 ) -> LeadDetail:
     if owners_index.get_owner(display_cluster_id, merges) is None:
         raise HTTPException(status_code=404, detail="owner not found in index")
@@ -220,10 +294,16 @@ def update_lead(
             status=body.status,
             notes=body.notes,
             contact=contact or None,
+            logged_by_user_id=principal.user_id,
         )
     except InvalidTransition as exc:
         # 409 Conflict — the request is well-formed but illegal for this Lead's state.
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # Auto follow-up (#116): moving to Contacted eagerly schedules a chase.
+    if body.status == "contacted":
+        _auto_followup(store, db, merges).maybe_schedule(
+            target, anchor=date.today(), status="contacted"
+        )
     view = owners_index.lead_view(store, display_cluster_id, merges=merges)
     assert view is not None  # owner existence checked above
     return _to_detail(view)
@@ -235,22 +315,67 @@ def log_attempt(
     body: ContactAttemptIn,
     store: LeadStore = Depends(get_store),
     merges: OwnerMergeService = Depends(get_merges),
+    principal: Principal = Depends(current_principal),
+    db: Session = Depends(get_db),
 ) -> LeadDetail:
-    """Append a manual contact attempt (date · channel · outcome) to the log.
+    """Append a manual activity event (date · channel · outcome) to the log.
 
-    Status-transition rows are auto-logged on ``PUT`` instead; this is the
-    co-founder explicitly recording an outreach event."""
+    ``direction='inbound'`` records a *reply* (the "Log reply" flow, #106);
+    the default ``'outbound'`` is a touch we made. Status-transition rows are
+    auto-logged on ``PUT`` instead; this is the co-founder explicitly recording
+    an outreach event or a reply."""
     if owners_index.get_owner(display_cluster_id, merges) is None:
         raise HTTPException(status_code=404, detail="owner not found in index")
     if not body.channel.strip():
         raise HTTPException(status_code=422, detail="channel is required")
+    if body.direction not in ("outbound", "inbound"):
+        raise HTTPException(status_code=422, detail="direction must be outbound or inbound")
     occurred_on = _parse_iso_date(body.occurred_on)
+    target = merges.resolve(display_cluster_id)
     store.append_attempt(
-        merges.resolve(display_cluster_id),
+        target,
         channel=body.channel,
         outcome=body.outcome,
         note=body.note,
         occurred_on=occurred_on,
+        direction=body.direction,
+        logged_by_user_id=principal.user_id,
+    )
+    # Auto follow-up (#116): an inbound reply cancels the open chase; an
+    # outbound touch (not a status/flag row) schedules one if eligible.
+    rule = _auto_followup(store, db, merges)
+    if body.direction == "inbound":
+        rule.cancel_on_reply(target)
+    elif body.channel not in ("status", "flag", "dismiss"):
+        lead = store.get_lead(target)
+        rule.maybe_schedule(
+            target,
+            anchor=occurred_on or date.today(),
+            status=lead.status if lead else "new",
+        )
+    view = owners_index.lead_view(store, display_cluster_id, merges=merges)
+    assert view is not None
+    return _to_detail(view)
+
+
+@app.post("/api/leads/{display_cluster_id}/pursue", response_model=LeadDetail)
+def pursue_owner(
+    display_cluster_id: str,
+    body: PursueBody,
+    store: LeadStore = Depends(get_store),
+    merges: OwnerMergeService = Depends(get_merges),
+    principal: Principal = Depends(current_principal),
+) -> LeadDetail:
+    """Pursue an owner from Explore (#109, ADR-067): advance New → Researching
+    and record the triggering antenna (a ``channel='flag'`` activity row). The
+    whole owner becomes a Lead (one human, one call); the trigger preserves the
+    discovery context. Idempotent — pursuing a worked owner just adds a trigger."""
+    if owners_index.get_owner(display_cluster_id, merges) is None:
+        raise HTTPException(status_code=404, detail="owner not found in index")
+    store.pursue(
+        merges.resolve(display_cluster_id),
+        trigger_asr=body.trigger_asr,
+        logged_by_user_id=principal.user_id,
     )
     view = owners_index.lead_view(store, display_cluster_id, merges=merges)
     assert view is not None
@@ -303,6 +428,426 @@ def split_cluster(
     return _to_detail(view)
 
 
+# ── per-antenna manual state (UI overhaul round 2) ────────────────────────────
+def _antenna_state(asr: str, row) -> AntennaState:
+    """Serialize an antenna override row, or the empty/unedited state if none."""
+    if row is None:
+        return AntennaState(asr=asr)
+    return AntennaState(
+        asr=asr,
+        archived=row.archived,
+        address=row.address,
+        owner_name=row.owner_name,
+        owner_phone=row.owner_phone,
+        owner_email=row.owner_email,
+        notes=row.notes,
+    )
+
+
+@app.get("/api/antennas/archived", response_model=ArchivedAsrsResponse)
+def list_archived_antennas(
+    antennas: AntennaStore = Depends(get_antennas),
+) -> ArchivedAsrsResponse:
+    """The ASRs this tenant has archived — the Explore map + list drop these
+    unless the user toggles "show archived". Declared before the ``/{asr}``
+    route so the literal path wins the match."""
+    return ArchivedAsrsResponse(asrs=sorted(antennas.archived_asrs()))
+
+
+@app.get("/api/antennas/{asr}", response_model=AntennaState)
+def get_antenna(asr: str, antennas: AntennaStore = Depends(get_antennas)) -> AntennaState:
+    """The team's manual layer over one antenna (address / archived / manual
+    owner details). Empty when never edited."""
+    return _antenna_state(asr, antennas.get(asr))
+
+
+@app.put("/api/antennas/{asr}", response_model=AntennaState)
+def update_antenna(
+    asr: str,
+    body: AntennaUpdate,
+    antennas: AntennaStore = Depends(get_antennas),
+) -> AntennaState:
+    """Set the archived flag and/or any subset of the editable fields for an
+    antenna. Only fields actually sent are touched (``model_fields_set``), so
+    archiving doesn't clear an address and vice-versa."""
+    sent = body.model_fields_set
+    fields = {f: getattr(body, f) for f in AntennaStore.EDITABLE if f in sent}
+    archived = body.archived if "archived" in sent else None
+    row = antennas.upsert(asr, archived=archived, fields=fields or None)
+    return _antenna_state(asr, row)
+
+
+# ── tasks (UI overhaul P2 / #107, filtering #110) ─────────────────────────────
+@app.get("/api/tasks", response_model=TasksResponse)
+def list_tasks(
+    tasks: TaskStore = Depends(get_tasks),
+    status: str | None = Query(default=None),
+    priority: str | None = Query(default=None),
+    assignee: int | None = Query(default=None),
+    unassigned: bool = Query(default=False),
+    lead: str | None = Query(default=None),
+    tower: str | None = Query(default=None),
+    source: str | None = Query(default=None),
+    label: str | None = Query(default=None),
+    due_before: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+) -> TasksResponse:
+    """List the tenant's tasks, narrowed by any subset of fields (#110)."""
+    rows = tasks.list_filtered(
+        status=status,
+        priority=priority,
+        assignee_user_id=assignee,
+        unassigned=unassigned,
+        lead_cluster_id=lead,
+        tower_asr=tower,
+        source=source,
+        label=label,
+        due_before=_parse_iso_date(due_before),
+        q=q,
+    )
+    return TasksResponse(count=len(rows), tasks=[_task_to_out(t) for t in rows])
+
+
+@app.post("/api/tasks", response_model=TaskOut)
+def create_task(
+    body: TaskCreate,
+    tasks: TaskStore = Depends(get_tasks),
+    principal: Principal = Depends(current_principal),
+) -> TaskOut:
+    if not body.title.strip():
+        raise HTTPException(status_code=422, detail="title is required")
+    try:
+        task = tasks.create(
+            title=body.title,
+            description=body.description,
+            priority=body.priority,
+            due_date=_parse_iso_date(body.due_date),
+            assignee_user_id=body.assignee_user_id,
+            lead_cluster_id=body.lead_cluster_id,
+            tower_asr=body.tower_asr,
+            labels=body.labels,
+            created_by_user_id=principal.user_id,
+        )
+    except InvalidTaskPriority as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _task_to_out(task)
+
+
+@app.get("/api/tasks/{task_id}", response_model=TaskOut)
+def get_task(task_id: int, tasks: TaskStore = Depends(get_tasks)) -> TaskOut:
+    task = tasks.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+    return _task_to_out(task)
+
+
+@app.put("/api/tasks/{task_id}", response_model=TaskOut)
+def update_task(
+    task_id: int,
+    body: TaskUpdate,
+    tasks: TaskStore = Depends(get_tasks),
+) -> TaskOut:
+    if body.title is not None and not body.title.strip():
+        raise HTTPException(status_code=422, detail="title cannot be blank")
+    # Only fields the client actually sent — so omitting a nullable link leaves
+    # it unchanged while sending null clears it (#110).
+    sent = body.model_fields_set
+    kwargs: dict = {}
+    for f in ("title", "description", "status", "priority", "labels"):
+        if f in sent:
+            kwargs[f] = getattr(body, f)
+    if "due_date" in sent:
+        kwargs["due_date"] = _parse_iso_date(body.due_date)
+    for f in ("assignee_user_id", "lead_cluster_id", "tower_asr"):
+        if f in sent:
+            kwargs[f] = getattr(body, f)
+    try:
+        task = tasks.update(task_id, **kwargs)
+    except InvalidTaskStatus as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except InvalidTaskPriority as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+    return _task_to_out(task)
+
+
+@app.delete("/api/tasks/{task_id}", status_code=204)
+def delete_task(task_id: int, tasks: TaskStore = Depends(get_tasks)) -> None:
+    if not tasks.delete(task_id):
+        raise HTTPException(status_code=404, detail="task not found")
+
+
+# ── Dashboard: attention feed (#111) ──────────────────────────────────────────
+@app.get("/api/attention", response_model=AttentionResponse)
+def attention(
+    store: LeadStore = Depends(get_store),
+    tasks: TaskStore = Depends(get_tasks),
+    merges: OwnerMergeService = Depends(get_merges),
+    principal: Principal = Depends(current_principal),
+) -> AttentionResponse:
+    """Unhandled inbound replies + overdue tasks (mine or unassigned) — the
+    Dashboard attention feed + nav badge (#111, D10)."""
+    svc = AttentionService(
+        store,
+        tasks,
+        user_id=principal.user_id,
+        today=date.today(),
+        owner_name_of=lambda cid: (owners_index.get_owner(cid, merges) or {}).get("owner_name", ""),
+    )
+    items = svc.items()
+    return AttentionResponse(
+        count=len(items),
+        items=[
+            {
+                "kind": i.kind,
+                "title": i.title,
+                "when": i.when,
+                "cluster_id": i.cluster_id,
+                "owner_name": i.owner_name,
+                "task_id": i.task_id,
+            }
+            for i in items
+        ],
+    )
+
+
+@app.post("/api/attention/dismiss")
+def dismiss_attention(
+    body: DismissBody,
+    store: LeadStore = Depends(get_store),
+    merges: OwnerMergeService = Depends(get_merges),
+    principal: Principal = Depends(current_principal),
+) -> dict:
+    """Dismiss a Lead's unhandled reply by appending a newer activity row (the
+    "newer activity clears it" rule subsumes dismissal — D10). Attributed to the
+    dismissing user so it carries a teammate dimension in activity/stats."""
+    store.append_attempt(
+        merges.resolve(body.cluster_id),
+        channel=DISMISS_CHANNEL,
+        outcome="dismissed",
+        logged_by_user_id=principal.user_id,
+    )
+    return {"ok": True}
+
+
+# ── Settings: automation (#116) ───────────────────────────────────────────────
+@app.get("/api/settings", response_model=SettingsResponse)
+def get_tenant_settings(settings: SettingsStore = Depends(get_settings)) -> SettingsResponse:
+    return SettingsResponse(
+        auto_followup_enabled=settings.auto_followup_enabled,
+        auto_followup_window_days=settings.auto_followup_window_days,
+    )
+
+
+@app.put("/api/settings", response_model=SettingsResponse)
+def update_tenant_settings(
+    body: SettingsUpdate, settings: SettingsStore = Depends(get_settings)
+) -> SettingsResponse:
+    if body.auto_followup_enabled is not None:
+        settings.set(AUTO_FOLLOWUP_ENABLED, "1" if body.auto_followup_enabled else "0")
+    if body.auto_followup_window_days is not None:
+        if body.auto_followup_window_days < 1:
+            raise HTTPException(status_code=422, detail="window must be ≥ 1 day")
+        settings.set(AUTO_FOLLOWUP_WINDOW_DAYS, str(body.auto_followup_window_days))
+    return SettingsResponse(
+        auto_followup_enabled=settings.auto_followup_enabled,
+        auto_followup_window_days=settings.auto_followup_window_days,
+    )
+
+
+# ── Scoring presets (#115) — tenant-shared named scoring configs ──────────────
+def _preset_out(p) -> ScoringPresetOut:
+    try:
+        config = json.loads(p.config)
+    except (ValueError, TypeError):
+        config = {}
+    return ScoringPresetOut(id=p.id, name=p.name, config=config, is_default=p.is_default)
+
+
+@app.get("/api/scoring-presets", response_model=ScoringPresetsResponse)
+def list_scoring_presets(
+    presets: ScoringPresetStore = Depends(get_presets),
+) -> ScoringPresetsResponse:
+    rows = presets.list()
+    return ScoringPresetsResponse(count=len(rows), presets=[_preset_out(p) for p in rows])
+
+
+@app.post("/api/scoring-presets", response_model=ScoringPresetOut)
+def create_scoring_preset(
+    body: ScoringPresetIn, presets: ScoringPresetStore = Depends(get_presets)
+) -> ScoringPresetOut:
+    if not body.name.strip():
+        raise HTTPException(status_code=422, detail="name is required")
+    p = presets.create(
+        name=body.name.strip(), config=json.dumps(body.config), is_default=body.is_default
+    )
+    return _preset_out(p)
+
+
+@app.post("/api/scoring-presets/{preset_id}/default", response_model=ScoringPresetOut)
+def set_default_scoring_preset(
+    preset_id: int, presets: ScoringPresetStore = Depends(get_presets)
+) -> ScoringPresetOut:
+    p = presets.set_default(preset_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="preset not found")
+    return _preset_out(p)
+
+
+@app.delete("/api/scoring-presets/{preset_id}", status_code=204)
+def delete_scoring_preset(
+    preset_id: int, presets: ScoringPresetStore = Depends(get_presets)
+) -> None:
+    if not presets.delete(preset_id):
+        raise HTTPException(status_code=404, detail="preset not found")
+
+
+# ── Dashboard: Stats (#113) ───────────────────────────────────────────────────
+@app.get("/api/stats", response_model=StatsResponse)
+def stats(
+    store: LeadStore = Depends(get_store),
+    merges: OwnerMergeService = Depends(get_merges),
+    tenant_id: int = Depends(current_tenant_id),
+    db: Session = Depends(get_db),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    member: int | None = Query(default=None),
+) -> StatsResponse:
+    """Outreach analytics derived from leads + activity (#113, D11): funnel,
+    conversion, reply/win rate, volume by channel; date-range filter; member
+    + state breakdowns. No new write data."""
+    owners, _ = owners_index.effective(merges)
+    status_by_id = store.status_map()
+    leads = [
+        LeadRow(
+            cid=o["display_cluster_id"],
+            states=list(o.get("states") or []),
+            status=status_by_id.get(o["display_cluster_id"], "new"),
+        )
+        for o in owners
+    ]
+    attempts = [
+        ActivityRow(
+            occurred_on=a.occurred_on,
+            channel=a.channel,
+            direction=a.direction,
+            cid=a.display_cluster_id,
+            logged_by_user_id=a.logged_by_user_id,
+        )
+        for a in store.tenant_attempts()
+    ]
+    names = _tenant_user_names(db, tenant_id)
+    # Unknown / null author (e.g. legacy rows, or system-generated activity) →
+    # "Unattributed" rather than the raw "user None"/"user 7".
+    svc = StatsService(leads, attempts, member_name_of=lambda uid: names.get(uid, "Unattributed"))
+    r = svc.compute(
+        date_from=_parse_iso_date(date_from),
+        date_to=_parse_iso_date(date_to),
+        state=state,
+        member=member,
+    )
+    return StatsResponse(
+        funnel=r.funnel,
+        conversion=r.conversion,
+        reply_rate=r.reply_rate,
+        win_rate=r.win_rate,
+        volume_by_channel=r.volume_by_channel,
+        activity_total=r.activity_total,
+        active_days=r.active_days,
+        by_state=r.by_state,
+        by_member=r.by_member,
+    )
+
+
+# ── Dashboard: activity views — History + Calendar (#112) ─────────────────────
+@app.get("/api/activity", response_model=ActivityResponse)
+def activity(
+    store: LeadStore = Depends(get_store),
+    merges: OwnerMergeService = Depends(get_merges),
+    tenant_id: int = Depends(current_tenant_id),
+    db: Session = Depends(get_db),
+    lead: str | None = Query(default=None),
+    member: int | None = Query(default=None),
+    channel: str | None = Query(default=None),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+) -> ActivityResponse:
+    """The shared activity read model (#112, D9): the tenant's time-ordered
+    activity, narrowed by lead / member / channel / date range. History renders
+    it chronologically; Calendar buckets it by date. Includes the recent-
+    activity digest (last contact + last reply)."""
+    names = _tenant_user_names(db, tenant_id)
+    svc = ActivityService(
+        store,
+        owner_name_of=lambda cid: (owners_index.get_owner(cid, merges) or {}).get("owner_name", ""),
+        member_name_of=lambda uid: names.get(uid, "") if uid is not None else "",
+    )
+    events = svc.events(
+        lead=lead,
+        member=member,
+        channel=channel,
+        date_from=_parse_iso_date(date_from),
+        date_to=_parse_iso_date(date_to),
+    )
+    digest = svc.digest()
+    return ActivityResponse(
+        count=len(events),
+        events=[
+            {
+                "id": e.id,
+                "date": e.date,
+                "kind": e.kind,
+                "channel": e.channel,
+                "cluster_id": e.cluster_id,
+                "owner_name": e.owner_name,
+                "logged_by_user_id": e.logged_by_user_id,
+                "member_name": e.member_name,
+                "summary": e.summary,
+            }
+            for e in events
+        ],
+        last_contact_on=digest["last_contact_on"],
+        last_reply_on=digest["last_reply_on"],
+    )
+
+
+def _tenant_user_names(db: Session, tenant_id: int) -> dict[int, str]:
+    """``user_id → display name`` (display_name or email) for a tenant."""
+    from sqlalchemy import select as _select
+
+    from .models import User
+
+    rows = db.scalars(_select(User).where(User.tenant_id == tenant_id))
+    return {u.id: (u.display_name or u.email) for u in rows}
+
+
+@app.get("/api/users", response_model=UsersResponse)
+def list_users(
+    tenant_id: int = Depends(current_tenant_id),
+    db: Session = Depends(get_db),
+) -> UsersResponse:
+    """The tenant's teammates for task assignment (#110)."""
+    from sqlalchemy import select as _select
+
+    from .models import User
+
+    rows = list(db.scalars(_select(User).where(User.tenant_id == tenant_id).order_by(User.email)))
+    return UsersResponse(
+        count=len(rows),
+        users=[
+            UserOut(
+                id=u.id,
+                email=u.email,
+                display_name=u.display_name,
+                name=u.display_name or u.email,
+            )
+            for u in rows
+        ],
+    )
+
+
 def _parse_iso_date(value: str | None) -> date | None:
     if not value:
         return None
@@ -310,6 +855,26 @@ def _parse_iso_date(value: str | None) -> date | None:
         return date.fromisoformat(value)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="occurred_on must be ISO date") from exc
+
+
+def _task_to_out(task) -> TaskOut:
+    return TaskOut(
+        id=task.id,
+        title=task.title,
+        description=task.description,
+        status=task.status,
+        priority=task.priority,
+        due_date=task.due_date.isoformat() if task.due_date else None,
+        assignee_user_id=task.assignee_user_id,
+        lead_cluster_id=task.lead_cluster_id,
+        tower_asr=task.tower_asr,
+        labels=label_list(task.labels),
+        source=task.source,
+        created_by_user_id=task.created_by_user_id,
+        created_at=task.created_at.isoformat() if task.created_at else "",
+        updated_at=task.updated_at.isoformat() if task.updated_at else "",
+        completed_at=task.completed_at.isoformat() if task.completed_at else None,
+    )
 
 
 def _to_detail(view: dict) -> LeadDetail:

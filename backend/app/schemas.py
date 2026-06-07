@@ -30,6 +30,9 @@ class OwnerSummary(BaseModel):
     structure_types: list[str] = Field(default_factory=list)
     active_tower_count: int = 0
     tallest_tower_height_m: float | None = None
+    # The antenna that sparked pursuit (#109, ADR-067/D2) — '' until pursued.
+    # Per-tenant (derived from the flag activity row), attached at read time.
+    trigger_asr: str = ""
 
 
 class ContactAttemptOut(BaseModel):
@@ -38,15 +41,22 @@ class ContactAttemptOut(BaseModel):
     channel: str
     outcome: str
     note: str
+    # outbound touch | inbound reply (#106, ADR-066). Defaulted so a row from
+    # before the column existed still serializes.
+    direction: str = "outbound"
 
 
 class ContactAttemptIn(BaseModel):
-    """A manually-logged outreach attempt (date · channel · outcome)."""
+    """A manually-logged activity event (date · channel · outcome).
+
+    ``direction='inbound'`` logs a *reply* (the "Log reply" action, #106);
+    the default ``'outbound'`` is a touch we made."""
 
     channel: str
     outcome: str = ""
     note: str = ""
     occurred_on: str | None = None  # ISO date; defaults to today server-side
+    direction: str = "outbound"
 
 
 # ── full Lead page detail (Slice 3 / #49) ───────────────────────────────────
@@ -78,6 +88,10 @@ class Structure(BaseModel):
     # response_model passes them through (an undeclared field is dropped).
     # Defaulted so a pre-v4 owners index (no carriers) still validates.
     carriers: list[CarrierOut] = Field(default_factory=list)
+    # Per-tower interestingness score (UI overhaul P1 / #105, ADR-067) — the
+    # tower's underlying parcel's score, projected onto it. Declared so
+    # response_model keeps it; None on a pre-v5 index (safe default).
+    score: float | None = None
 
 
 class Holding(BaseModel):
@@ -143,6 +157,13 @@ class LeadUpdate(BaseModel):
     best_channel: str | None = Field(default=None)
 
 
+class PursueBody(BaseModel):
+    """Pursue an owner from Explore (#109). ``trigger_asr`` is the antenna that
+    sparked it — recorded as the Lead's trigger."""
+
+    trigger_asr: str = ""
+
+
 class OverrideBody(BaseModel):
     """The other owner-cluster in a manual merge/split (Slice 7 / #53). The
     Lead being acted on is the path ``display_cluster_id`` (the survivor on
@@ -171,6 +192,37 @@ class CountsResponse(BaseModel):
     my_leads: int
 
 
+# ── per-antenna manual state (UI overhaul round 2) ───────────────────────────
+class AntennaState(BaseModel):
+    """The team's editable layer over one antenna (by ASR). All fields default
+    so an antenna with no override row serializes as the empty/unedited state."""
+
+    asr: str
+    archived: bool = False
+    address: str = ""
+    owner_name: str = ""
+    owner_phone: str = ""
+    owner_email: str = ""
+    notes: str = ""
+
+
+class AntennaUpdate(BaseModel):
+    """Partial update — omit a field to leave it unchanged."""
+
+    archived: bool | None = None
+    address: str | None = None
+    owner_name: str | None = None
+    owner_phone: str | None = None
+    owner_email: str | None = None
+    notes: str | None = None
+
+
+class ArchivedAsrsResponse(BaseModel):
+    """The ASRs the tenant has archived — the map + list drop these by default."""
+
+    asrs: list[str]
+
+
 # ── auth ─────────────────────────────────────────────────────────────────────
 # Username/password login (Slice 1 / #76).
 class LoginBody(BaseModel):
@@ -190,3 +242,153 @@ class MeResponse(BaseModel):
     # The signed-in user's team name (#86) — '' when the tenant has no Tenant
     # row (e.g. a session minted before teams existed).
     team: str = ""
+
+
+# ── tasks (UI overhaul P2 / #107, fleshed out #110) ──────────────────────────
+class TaskCreate(BaseModel):
+    """Create a task. Links (owner/tower), assignee, due, priority, labels all
+    optional (#110)."""
+
+    title: str
+    description: str = ""
+    priority: str = "none"
+    due_date: str | None = None  # ISO date
+    assignee_user_id: int | None = None
+    lead_cluster_id: str | None = None
+    tower_asr: str | None = None
+    labels: list[str] = Field(default_factory=list)
+
+
+class TaskUpdate(BaseModel):
+    """Partial update — omit a field to leave it unchanged. A nullable field
+    sent as ``null`` clears it (the route reads ``model_fields_set``)."""
+
+    title: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+    status: str | None = Field(default=None)
+    priority: str | None = Field(default=None)
+    due_date: str | None = Field(default=None)
+    assignee_user_id: int | None = Field(default=None)
+    lead_cluster_id: str | None = Field(default=None)
+    tower_asr: str | None = Field(default=None)
+    labels: list[str] | None = Field(default=None)
+
+
+class TaskOut(BaseModel):
+    id: int
+    title: str
+    description: str
+    status: str
+    priority: str = "none"
+    due_date: str | None = None
+    assignee_user_id: int | None = None
+    lead_cluster_id: str | None = None
+    tower_asr: str | None = None
+    labels: list[str] = Field(default_factory=list)
+    source: str = "manual"
+    created_by_user_id: int | None = None
+    created_at: str
+    updated_at: str
+    completed_at: str | None = None
+
+
+class TasksResponse(BaseModel):
+    count: int
+    tasks: list[TaskOut]
+
+
+class UserOut(BaseModel):
+    """A tenant teammate for the assignment UI (#110). ``name`` is the display
+    name, falling back to the email."""
+
+    id: int
+    email: str
+    display_name: str = ""
+    name: str = ""
+
+
+class UsersResponse(BaseModel):
+    count: int
+    users: list[UserOut]
+
+
+# ── Dashboard attention feed (UI overhaul P2 / #111) ─────────────────────────
+class AttentionItemOut(BaseModel):
+    kind: str  # 'reply' | 'overdue_task'
+    title: str
+    when: str
+    cluster_id: str = ""
+    owner_name: str = ""
+    task_id: int | None = None
+
+
+class AttentionResponse(BaseModel):
+    count: int
+    items: list[AttentionItemOut]
+
+
+class DismissBody(BaseModel):
+    cluster_id: str
+
+
+# ── Dashboard activity views: History + Calendar (UI overhaul P3 / #112) ─────
+class ActivityEventOut(BaseModel):
+    id: int  # ContactAttempt PK — stable key for keyed rendering
+    date: str
+    kind: str  # touch | reply | status | flag
+    channel: str
+    cluster_id: str
+    owner_name: str = ""
+    logged_by_user_id: int | None = None
+    member_name: str = ""
+    summary: str = ""
+
+
+class ActivityResponse(BaseModel):
+    count: int
+    events: list[ActivityEventOut]
+    last_contact_on: str | None = None
+    last_reply_on: str | None = None
+
+
+# ── Settings: automation (UI overhaul P5 / #116) ─────────────────────────────
+class SettingsResponse(BaseModel):
+    auto_followup_enabled: bool
+    auto_followup_window_days: int
+
+
+class SettingsUpdate(BaseModel):
+    auto_followup_enabled: bool | None = None
+    auto_followup_window_days: int | None = None
+
+
+# ── Scoring presets (UI overhaul P4 / #115) ──────────────────────────────────
+class ScoringPresetIn(BaseModel):
+    name: str
+    config: dict  # opaque to the backend (useDefault + weights)
+    is_default: bool = False
+
+
+class ScoringPresetOut(BaseModel):
+    id: int
+    name: str
+    config: dict
+    is_default: bool
+
+
+class ScoringPresetsResponse(BaseModel):
+    count: int
+    presets: list[ScoringPresetOut]
+
+
+# ── Dashboard Stats (UI overhaul P3 / #113) ──────────────────────────────────
+class StatsResponse(BaseModel):
+    funnel: dict[str, int]
+    conversion: dict[str, float]
+    reply_rate: float
+    win_rate: float
+    volume_by_channel: dict[str, int]
+    activity_total: int
+    active_days: int
+    by_state: dict[str, dict[str, int]] = Field(default_factory=dict)
+    by_member: dict[str, int] = Field(default_factory=dict)

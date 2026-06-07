@@ -70,26 +70,27 @@ const INDEX = parseCompositeIndex({
 });
 
 describe('eagerAssets', () => {
-  it('includes GeoJSON layers + the light view, excludes heavy + map-owned layers', () => {
+  it('eager-loads only renderable catalog layers — no views, hidden, or map-owned', () => {
     const names = eagerAssets(CATALOG).map((a) => a.name);
-    expect(names).toContain('distress_overlays');
-    expect(names).toContain('interestingness_top_1000');
+    // distress_overlays is a filter field now — hidden from the map.
+    expect(names).not.toContain('distress_overlays');
+    // Views (derived outreach segments) are retired — never eager-loaded.
+    expect(names).not.toContain('interestingness_top_1000');
+    expect(names).not.toContain('parcels_hosting_infra');
     // towers is map-owned (the global clustered layer) — not eager-loaded per state.
     expect(names).not.toContain('towers');
-    // parcels_hosting_infra is a heavy view — lazy-loaded, not eager.
-    expect(names).not.toContain('parcels_hosting_infra');
     // owner_clusters has no GeoJSON — not loadable at all.
     expect(names).not.toContain('owner_clusters');
   });
 });
 
 describe('defaultVisibility', () => {
-  it('switches on towers, distress overlays and the top-1000 view by default', () => {
+  it('switches on towers by default and omits hidden distress overlays + views', () => {
     const vis = defaultVisibility(CATALOG);
     expect(vis.towers).toBe(true);
-    expect(vis.distress_overlays).toBe(true);
-    expect(vis.interestingness_top_1000).toBe(true);
-    expect(vis.parcels_hosting_infra).toBe(false);
+    expect(vis).not.toHaveProperty('distress_overlays');
+    expect(vis).not.toHaveProperty('interestingness_top_1000');
+    expect(vis).not.toHaveProperty('parcels_hosting_infra');
   });
   it('omits layers / views with no GeoJSON', () => {
     expect(defaultVisibility(CATALOG)).not.toHaveProperty('county_scores');

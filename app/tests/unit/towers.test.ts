@@ -88,6 +88,28 @@ describe('filterTowers', () => {
   it('an empty set drops every tower', () => {
     expect(filterTowers(fc, new Set()).features).toHaveLength(0);
   });
+
+  // Archived antennas (UI overhaul round 2) drop out of the map unless shown.
+  it('hides archived towers by ASR when not showing archived', () => {
+    const out = filterTowers(fc, null, { asrs: new Set(['b']), show: false });
+    expect(out.features.map((f) => f.properties.asr)).toEqual(['a', 'c']);
+  });
+
+  it('keeps archived towers when show is true', () => {
+    const out = filterTowers(fc, null, { asrs: new Set(['b']), show: true });
+    expect(out.features.map((f) => f.properties.asr)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('applies archive narrowing alongside the owner-cluster set', () => {
+    const keep = new Set([ownerNameToClusterId('MITCHELL VICKI')]); // a + c
+    const out = filterTowers(fc, keep, { asrs: new Set(['c']), show: false });
+    expect(out.features.map((f) => f.properties.asr)).toEqual(['a']); // c archived out
+  });
+
+  it('returns the collection unchanged when nothing narrows it', () => {
+    expect(filterTowers(fc, null, { asrs: new Set(), show: false })).toBe(fc);
+    expect(filterTowers(fc, null, { asrs: new Set(['b']), show: true })).toBe(fc);
+  });
 });
 
 describe('heightFeet', () => {

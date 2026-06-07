@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { leads } from '../lib/leads-store.svelte';
+  import { scoring } from '../lib/scoring-store.svelte';
   import {
     KANBAN_LANES,
     STATUS_LABELS,
@@ -9,19 +9,26 @@
     type LeadStatus,
   } from '../lib/lead-status';
   import { kindLabel, statusVar } from '../lib/lead-format';
+  import { leadHash, SECTION_HASH } from '../lib/nav';
   import type { OwnerSummary } from '../lib/leads-api';
 
-  onMount(() => {
-    void leads.loadMyLeads();
-    void leads.loadCounts();
-  });
+  // The Leads surface (parent) owns the data load; this is just the board lens.
 
   // Bucket the worklist into lanes. Reactive on leads.myLeads (and each
   // owner's .status), so an optimistic drag re-renders both lanes at once.
+  // Within each lane, cards rank by the active scoring config so a preset
+  // switch re-orders the board consistently with Explore + the list (#115).
   const byLane = $derived.by(() => {
     const m: Record<string, OwnerSummary[]> = {};
     for (const lane of KANBAN_LANES) m[lane] = [];
     for (const o of leads.myLeads) (m[o.status] ??= []).push(o);
+    for (const lane of Object.keys(m)) {
+      m[lane].sort(
+        (a, b) =>
+          (scoring.scoreOf(b.display_cluster_id) ?? -Infinity) -
+          (scoring.scoreOf(a.display_cluster_id) ?? -Infinity),
+      );
+    }
     return m;
   });
 
@@ -67,17 +74,16 @@
   }
 
   function open(id: string): void {
-    location.hash = `#/lead/${encodeURIComponent(id)}`;
+    location.hash = leadHash(id);
   }
 </script>
 
 <div class="myleads" data-testid="my-leads">
   <header class="head">
-    <h2>My Leads</h2>
     <p class="sub">
       Owners you’ve advanced off “New”. Drag a card between lanes to change its status — the change
       is auto-logged and persists. New owners live in
-      <button class="link" onclick={() => (location.hash = '#/candidates')}>Candidates</button>.
+      <button class="link" onclick={() => (location.hash = SECTION_HASH.explore)}>Explore</button>.
     </p>
   </header>
 
@@ -138,6 +144,9 @@
                     <span class="distress-high">high distress</span>
                   {/if}
                 </div>
+                {#if o.trigger_asr}
+                  <div class="trigger" data-testid="card-trigger">⚑ flagged from ASR {o.trigger_asr}</div>
+                {/if}
               </div>
             {/each}
             {#if cards.length === 0}
@@ -155,16 +164,13 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    padding: 18px 22px 0;
+    padding: 4px 22px 0;
   }
   .head {
     flex-shrink: 0;
   }
-  h2 {
-    font-size: 18px;
-  }
   .sub {
-    margin: 4px 0 14px;
+    margin: 0 0 14px;
     font-size: 12.5px;
     color: var(--text-2);
     max-width: 760px;
@@ -272,6 +278,11 @@
   }
   .card .cmeta .x {
     color: #5a3aa8;
+  }
+  .card .trigger {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #9a5b00;
   }
   .distress-high {
     color: var(--danger);

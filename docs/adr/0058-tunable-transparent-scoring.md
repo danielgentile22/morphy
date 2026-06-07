@@ -35,3 +35,27 @@ Scoring becomes **tunable and transparent** in the map app (Slice 3):
 
 - **Status quo (hardcoded, opaque):** co-founder dependent on dev for every weight tweak. Rejected.
 - **Transparent but not tunable** (show components breakdown only): half-measure; co-founder still can't experiment. Rejected.
+
+## Amendment (2026-06-06) — UI overhaul
+
+The UI overhaul ([docs/UI_OVERHAUL.md](../UI_OVERHAUL.md), decision D4) extends this
+ADR; the core (tunable, transparent, client-side over DuckDB-WASM, named saved
+configs, today's weights as the default) stands. Three refinements:
+
+- **Tower-grain.** Scoring was specified per **parcel**. Explore (ADR-067) ranks
+  **towers**, so the same tunable framework now also produces a **per-tower** score
+  (base = the tower's underlying parcel score; tower signals — height, carrier
+  count, active, vendor — join the feature menu). Owner ranking = an aggregate
+  (default `max`) of the owner's tower scores under the active config.
+- **Terminology.** The canonical term is **scoring preset** (CONTEXT.md); this
+  ADR's "saved scoring profiles" / "named weight presets" are the same thing —
+  "profile" is now an alias to avoid.
+- **Storage.** Presets persist to a **tenant-shared** `scoring_preset` table (the
+  team is one tenant), superseding this ADR's "localStorage → tied to user account"
+  note.
+- **Future.** An **ML-learned** weighting (learn from outcomes which towers convert)
+  and **asset-level conversion analytics** (Stats, deferred) are anticipated feeders
+  — explicitly out of scope for the first tunable cut.
+
+Delivered as **Phase 4** of the overhaul (after the shell, Tasks, and Dashboard
+views), not the original "Slice 3."

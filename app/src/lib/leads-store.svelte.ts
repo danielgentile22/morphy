@@ -9,6 +9,7 @@ import {
   fetchLead,
   fetchMyLeads,
   mergeCluster,
+  pursueOwner,
   splitCluster,
   updateLead,
   type AttemptPayload,
@@ -164,6 +165,24 @@ class LeadsStore {
     this.saveError = null;
     try {
       this.lead = await appendAttempt(displayClusterId, payload);
+      return true;
+    } catch (e) {
+      this.saveError = handle(e);
+      return false;
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  /** Pursue an owner from Explore (#109): advance New → Researching + record
+   *  the trigger antenna. Refreshes the in-memory lead + nav counts (the owner
+   *  moved from the discovery pool into Leads). Returns true on success. */
+  async pursue(displayClusterId: string, triggerAsr: string): Promise<boolean> {
+    this.saving = true;
+    this.saveError = null;
+    try {
+      this.lead = await pursueOwner(displayClusterId, triggerAsr);
+      void this.loadCounts();
       return true;
     } catch (e) {
       this.saveError = handle(e);

@@ -9,7 +9,7 @@ async function waitReady(page: Page): Promise<void> {
 }
 
 test('applying a filter writes it to the URL', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitReady(page);
 
   await page.locator('[data-testid="filter-panel"] .chip', { hasText: 'LLC' }).click();
@@ -21,7 +21,7 @@ test('applying a filter writes it to the URL', async ({ page }) => {
 
 test('a filtered URL restores the filter on load', async ({ page }) => {
   const filters = encodeURIComponent(JSON.stringify({ ownerKind: ['llc'], hasTower: true }));
-  await page.goto(`/?state=05&filters=${filters}`);
+  await page.goto(`/?state=05&filters=${filters}#/explore`);
   await waitReady(page);
 
   // The chips reflect the restored filter, and the count is live.
@@ -32,7 +32,7 @@ test('a filtered URL restores the filter on load', async ({ page }) => {
 });
 
 test('selecting a parcel writes ?selected= and restores it on reload', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitReady(page);
 
   await page.locator('[data-testid="top-list"] button.row').first().click();
@@ -55,7 +55,7 @@ test('selecting a parcel writes ?selected= and restores it on reload', async ({ 
 });
 
 test('switching state updates the URL', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitReady(page);
 
   await page.getByTestId('state-select').selectOption('30');

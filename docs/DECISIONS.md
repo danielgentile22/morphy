@@ -1,6 +1,6 @@
 # DECISIONS — Architecture Decision Records (index)
 
-**Last updated:** 2026-06-03 (ADR-064 — Phase-1 hosting: Fly.io single machine, SQLite-on-volume, Cloudflare front)
+**Last updated:** 2026-06-06 (ADR-065/066/067 — UI overhaul: three-section IA + Dashboard digest-hub, inbound-event reply seam, tower-grained Explore; ADR-058 amended for tower-grain scoring presets)
 
 Index of every locked-in design choice in the repo. Per-ADR content lives under [`docs/adr/`](./adr/). New ADRs go straight there ([CLAUDE.md §9](../CLAUDE.md)).
 
@@ -71,6 +71,16 @@ The currently-binding decisions.
 | [ADR-062](./adr/0062-username-password-replaces-magic-link.md) | Username/password login replaces magic-link; magic-link machinery removed |
 | [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md) | File-based credentials (users.txt + CLI), teams-as-tenants, per-request file authority |
 | [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md) | Phase-1 hosting — Fly.io single always-on machine, SQLite-on-volume, Cloudflare front (~$5–8/mo) |
+
+### Phase 1 UI overhaul (2026-06-06)
+
+| # | Title |
+|---|---|
+| [ADR-065](./adr/0065-redesign-three-section-ia.md) | Redesigned app IA — three sections (Dashboard · Explore · Leads) + Dashboard digest-hub |
+| [ADR-066](./adr/0066-inbound-event-reply-seam.md) | Replies are provider-agnostic inbound activity events (manual now, Gmail later) |
+| [ADR-067](./adr/0067-tower-grained-explore.md) | Tower-grained Explore + per-tower scoring; owner stays the unit of work (extends ADR-061) |
+
+> ADR-058 (tunable scoring) **amended** the same day — tower-grain + "preset" terminology + tenant-shared storage; the row stays under *Phase 1 product cut*.
 
 ---
 

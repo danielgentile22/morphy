@@ -65,7 +65,7 @@ const AR_PARCEL_AREA: [number, number] = [-92.289, 34.746];
 
 test('parcels render from the PMTiles vector source', async ({ page }) => {
   const errors = watchConsole(page);
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitForMapReady(page);
 
   // The pmtiles source + parcel fill layer were added by convention.
@@ -82,7 +82,7 @@ test('parcels render from the PMTiles vector source', async ({ page }) => {
 });
 
 test('time-to-first-parcel-paint is within the 1.5 s budget', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitForMapReady(page);
 
   // Median of several first-paints (each jumps in from a low zoom) — the
@@ -102,13 +102,12 @@ test('time-to-first-parcel-paint is within the 1.5 s budget', async ({ page }) =
 });
 
 test('clicking a parcel opens a parcel detail panel', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitForMapReady(page);
 
-  // Isolate the parcel base layer so the click lands on it.
-  for (const layer of ['towers', 'distress_overlays', 'interestingness_top_1000']) {
-    await page.getByTestId(`layer-toggle-${layer}`).click();
-  }
+  // Isolate the parcel base layer so the click lands on it (towers is the
+  // only overlay over parcels now — distress/views were retired, round 3).
+  await page.getByTestId('layer-toggle-towers').click();
   await jumpAndSettle(page, AR_PARCEL_AREA, 13);
   expect(await parcelFeatureCount(page)).toBeGreaterThan(0);
 
@@ -121,57 +120,9 @@ test('clicking a parcel opens a parcel detail panel', async ({ page }) => {
   await expect(panel.locator('[data-field="Owner"] .v')).toBeVisible();
 });
 
-test('the county choropleth renders and a county opens a panel', async ({ page }) => {
-  await page.goto('/?state=05');
-  await waitForMapReady(page);
-
-  expect(
-    await page.evaluate(() => !!(window as any).__pilotMap.getLayer('county_boundaries:fill')),
-  ).toBe(true);
-
-  // Hide every overlay so the click lands on the choropleth.
-  for (const layer of ['towers', 'distress_overlays', 'interestingness_top_1000']) {
-    await page.getByTestId(`layer-toggle-${layer}`).click();
-  }
-
-  // Wait until the choropleth source is queryable (a beat after m.loaded()).
-  await page.waitForFunction(
-    () => {
-      const m = (window as any).__pilotMap;
-      return (
-        m &&
-        m.isSourceLoaded('src:county_boundaries') &&
-        m.querySourceFeatures('src:county_boundaries').length > 0
-      );
-    },
-    undefined,
-    { timeout: 15_000, polling: 300 },
-  );
-
-  // Project a real county's interior point and click it.
-  const pt = await page.evaluate(() => {
-    const m = (window as any).__pilotMap;
-    const feats = m.querySourceFeatures('src:county_boundaries');
-    const g = feats[0]?.geometry;
-    if (!g) return null;
-    const ring = g.type === 'MultiPolygon' ? g.coordinates[0][0] : g.coordinates[0];
-    const n = ring.length;
-    const center: [number, number] = [
-      ring.reduce((s: number, c: number[]) => s + c[0], 0) / n,
-      ring.reduce((s: number, c: number[]) => s + c[1], 0) / n,
-    ];
-    const proj = m.project(center);
-    const r = m.getContainer().getBoundingClientRect();
-    return { x: r.left + proj.x, y: r.top + proj.y };
-  });
-  expect(pt, 'a county feature was found to click').not.toBeNull();
-  await page.mouse.click(pt!.x, pt!.y);
-
-  const panel = page.getByTestId('details-panel');
-  await expect(panel).toBeVisible();
-  await expect(panel.locator('.kind')).toHaveText('county');
-  await expect(panel.locator('h2')).toContainText('County');
-});
+// The county distress choropleth was retired in UI overhaul round 3 — distress
+// is now a top-bar filter field, not a coloured map overlay. (Former test:
+// "the county choropleth renders and a county opens a panel".)
 
 test('panning and zooming the parcels emits no errors; tiles return 200/206', async ({ page }) => {
   const errors = watchConsole(page);
@@ -180,7 +131,7 @@ test('panning and zooming the parcels emits no errors; tiles return 200/206', as
     if (r.url().includes('parcels.pmtiles')) tileStatuses.push(r.status());
   });
 
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitForMapReady(page);
 
   for (const z of [11, 13, 12, 14, 10]) {

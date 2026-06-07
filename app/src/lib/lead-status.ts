@@ -3,11 +3,13 @@
 // Single status per Lead. The ladder branches after Contacted:
 //
 //   New ──▶ Researching ──▶ Contacted ──┬──▶ Interested ──▶ In Business
-//                                       └──▶ Uninterested   (terminal)
+//                                       └──▶ Uninterested   (reopenable)
 //
-// Default = New. `in_business` (won) and `uninterested` (lost) are
-// terminal; `in_business` is reachable only via `interested`. Re-saving
-// the same status is allowed (saving a note without advancing).
+// Default = New. `in_business` (won) is the one true terminal — reachable
+// only via `interested`, no way out. `uninterested` (lost/parked) is the
+// closed-but-reopenable bucket: it can move back to ANY status so a
+// mis-classified lead is never stranded. Re-saving the same status is
+// allowed (saving a note without advancing).
 //
 // This MUST stay in lockstep with backend/app/lead_status.py — both encode
 // the same ladder; the backend re-validates every write server-side.
@@ -34,6 +36,9 @@ export const STATUS_LABELS: Record<LeadStatus, string> = {
   uninterested: 'Uninterested',
 };
 
+// Closed/end-of-pipeline lanes — used for the kanban's "closed" visual
+// treatment, NOT for transition-locking. `uninterested` shows as closed but
+// is reopenable (see ALLOWED_TRANSITIONS); only `in_business` is truly locked.
 export const TERMINAL_STATUSES: ReadonlySet<LeadStatus> = new Set([
   'in_business',
   'uninterested',
@@ -41,17 +46,20 @@ export const TERMINAL_STATUSES: ReadonlySet<LeadStatus> = new Set([
 
 // The My-Leads kanban lanes (Slice 5 / #51): every status *except* New, in
 // ladder order. New owners live in Candidates, not the worklist;
-// `uninterested` is rendered as a closed/terminal lane.
+// `uninterested` is rendered as a closed lane (still draggable back out).
 export const KANBAN_LANES: readonly LeadStatus[] = STATUSES.filter((s) => s !== INITIAL_STATUS);
 
-// Allowed *forward* transitions (identity handled separately).
+// Allowed *forward* transitions (identity handled separately). `uninterested`
+// is the exception: a lost/parked lead can be reopened to ANY status, so a
+// mis-click or change of heart is never a dead end. `in_business` stays a
+// true terminal (won — no outgoing moves).
 const ALLOWED_TRANSITIONS: Record<LeadStatus, readonly LeadStatus[]> = {
   new: ['researching'],
   researching: ['contacted', 'uninterested'],
   contacted: ['interested', 'uninterested'],
   interested: ['in_business', 'uninterested'],
   in_business: [],
-  uninterested: [],
+  uninterested: ['new', 'researching', 'contacted', 'interested', 'in_business'],
 };
 
 export function isValidStatus(status: string): status is LeadStatus {

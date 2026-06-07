@@ -3,13 +3,14 @@
 Single status per Lead. The ladder branches after Contacted:
 
     New ──▶ Researching ──▶ Contacted ──┬──▶ Interested ──▶ In Business
-                                        └──▶ Uninterested   (terminal)
+                                        └──▶ Uninterested   (reopenable)
 
-Default = New. ``in_business`` is the won terminal; ``uninterested`` the
-lost terminal. ``in_business`` is reachable only via ``interested``.
-Re-saving the same status is always allowed (saving a note without
-advancing). This mirrors ``app/src/lib/lead-status.ts`` (the Vitest
-parity target); keep the two in lockstep.
+Default = New. ``in_business`` is the one true terminal (won) — reachable
+only via ``interested``, with no way out. ``uninterested`` (lost/parked) is
+closed-but-reopenable: it can move back to ANY status so a mis-classified
+lead is never stranded. Re-saving the same status is always allowed (saving
+a note without advancing). This mirrors ``app/src/lib/lead-status.ts`` (the
+Vitest parity target); keep the two in lockstep.
 """
 
 from __future__ import annotations
@@ -24,18 +25,23 @@ STATUSES: tuple[str, ...] = (
 )
 
 INITIAL_STATUS = "new"
+# Closed/end-of-pipeline lanes (kanban "closed" visual treatment), NOT a
+# transition-lock: ``uninterested`` shows as closed but is reopenable; only
+# ``in_business`` is truly locked.
 TERMINAL_STATUSES: frozenset[str] = frozenset({"in_business", "uninterested"})
 
 # Allowed *forward* transitions (identity is handled separately). Strict
 # one-rung steps plus the documented "give up → uninterested" branch from
-# any worked-but-not-closed state.
+# any worked-but-not-closed state. ``uninterested`` is the exception: a
+# lost/parked lead can be reopened to ANY status, so a mis-click is never a
+# dead end. ``in_business`` stays a true terminal (won — no outgoing moves).
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "new": frozenset({"researching"}),
     "researching": frozenset({"contacted", "uninterested"}),
     "contacted": frozenset({"interested", "uninterested"}),
     "interested": frozenset({"in_business", "uninterested"}),
     "in_business": frozenset(),
-    "uninterested": frozenset(),
+    "uninterested": frozenset({"new", "researching", "contacted", "interested", "in_business"}),
 }
 
 

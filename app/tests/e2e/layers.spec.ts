@@ -43,7 +43,7 @@ async function sourceExists(page: Page, sourceId: string): Promise<boolean> {
 
 test('layer toggles show and hide map layers, no console errors', async ({ page }) => {
   const errors = watchConsole(page);
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitForLayers(page);
 
   expect(await logicalLayerVisible(page, 'towers')).toBe(true);
@@ -64,7 +64,7 @@ test('layer toggles show and hide map layers, no console errors', async ({ page 
 
 test('toggling a heavy view lazy-loads its GeoJSON', async ({ page }) => {
   const errors = watchConsole(page);
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitForLayers(page);
 
   // llc_owned_parcels_with_infra is a heavy view — not loaded until toggled.
@@ -82,7 +82,7 @@ test('toggling a heavy view lazy-loads its GeoJSON', async ({ page }) => {
 });
 
 test('the owner filter narrows the top list', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   const count = page.getByTestId('top-count');
   await expect(count).toContainText('Showing 1,000 of 1,000');
 
@@ -100,7 +100,7 @@ test('the owner filter narrows the top list', async ({ page }) => {
 });
 
 test('owner-kind chips filter the top list', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   const count = page.getByTestId('top-count');
 
   await page.getByRole('button', { name: 'LLC', exact: true }).click();
@@ -114,32 +114,28 @@ test('owner-kind chips filter the top list', async ({ page }) => {
   await expect(count).toContainText('Showing 1,000 of 1,000');
 });
 
-test('the summary card and legend render', async ({ page }) => {
-  await page.goto('/?state=05');
+test('the summary card renders', async ({ page }) => {
+  await page.goto('/?state=05#/explore');
   await expect(page.getByTestId('summary-card')).toContainText('2,116,976');
-  const legend = page.getByTestId('legend');
-  await expect(legend).toBeVisible();
-  await expect(legend).toContainText('Towers');
 });
 
-test('every layer and view toggle works without errors', async ({ page }) => {
-  // Exercises all 8 toggles incl. 4 heavy views (~52 MB of lazy GeoJSON).
-  test.setTimeout(120_000);
+test('every layer toggle works without errors', async ({ page }) => {
+  // UI overhaul round 3: the panel is towers + solar only (parcels are an
+  // always-on base layer, distress is a filter field, views were retired).
   const pageErrors: string[] = [];
   page.on('pageerror', (e) => pageErrors.push(e.message));
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitForLayers(page);
 
   const toggles = page.locator('[data-testid^="layer-toggle-"]');
   const n = await toggles.count();
-  expect(n, '2 base layers + 3 catalog layers + 5 views have toggles').toBe(10);
+  expect(n, 'towers + solar layer toggles').toBe(2);
 
   for (let i = 0; i < n; i++) {
     const t = toggles.nth(i);
     const before = await t.isChecked();
     await t.click();
-    // Heavy views disable their toggle while lazy-loading — wait it out.
-    await expect(t).toBeEnabled({ timeout: 20_000 });
+    await expect(t).toBeEnabled();
     expect(await t.isChecked()).toBe(!before);
   }
   expect(pageErrors).toEqual([]);
@@ -179,13 +175,11 @@ async function featurePoint(page: Page, sourceId: string): Promise<{ x: number; 
 }
 
 test('clicking a solar facility opens a solar detail panel', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitForLayers(page);
 
   // Isolate solar so the click lands on it, not an overlapping layer.
   await page.getByTestId('layer-toggle-towers').click();
-  await page.getByTestId('layer-toggle-distress_overlays').click();
-  await page.getByTestId('layer-toggle-interestingness_top_1000').click();
   await page.getByTestId('layer-toggle-solar_facilities').click();
 
   const pt = await featurePoint(page, 'src:solar_facilities');
@@ -196,25 +190,9 @@ test('clicking a solar facility opens a solar detail panel', async ({ page }) =>
   await expect(panel.locator('.kind')).toHaveText('solar');
 });
 
-test('clicking a distress overlay opens a distress detail panel', async ({ page }) => {
-  await page.goto('/?state=05');
-  await waitForLayers(page);
-
-  // Distress is on by default; hide the layers that sit over it.
-  await page.getByTestId('layer-toggle-towers').click();
-  await page.getByTestId('layer-toggle-interestingness_top_1000').click();
-
-  const pt = await featurePoint(page, 'src:distress_overlays');
-  await page.mouse.click(pt.x, pt.y);
-
-  const panel = page.getByTestId('details-panel');
-  await expect(panel).toBeVisible();
-  await expect(panel.locator('.kind')).toHaveText('distress overlay');
-});
-
 test('clicking a tower on the map opens a tower detail panel', async ({ page }) => {
   const errors = watchConsole(page);
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitForLayers(page);
 
   // Wait for the towers source to finish loading, then project a real

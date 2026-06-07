@@ -15,7 +15,7 @@ function search(page: Page) {
 }
 
 test('owner-name search surfaces matching owners and opens a Lead', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#/explore');
   await waitReady(page);
 
   await search(page).fill('weyerhaeuser');
@@ -26,11 +26,11 @@ test('owner-name search surfaces matching owners and opens a Lead', async ({ pag
   await hits.locator('.hit').first().click();
   // Jumps to the matched owner's Lead (the shareable detail route).
   await expect(page).toHaveURL(/#\/lead\//, { timeout: MAP });
-  await expect(page.getByTestId('lead-overlay')).toBeVisible();
+  await expect(page.getByTestId('lead-page')).toBeVisible();
 });
 
 test('ASR search surfaces tower matches and flies the map to one', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#/explore');
   await waitReady(page);
   await page.waitForFunction(() => (window as any).__pilotMap.isStyleLoaded());
 

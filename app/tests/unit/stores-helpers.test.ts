@@ -6,6 +6,7 @@ import {
   eagerAssets,
   errMsg,
   HEAVY_VIEWS,
+  HIDDEN_LAYERS,
   pickInitialState,
   unionBounds,
 } from '../../src/lib/stores-helpers';
@@ -29,42 +30,40 @@ function fakeCatalog(overrides: Partial<Catalog> = {}): Catalog {
 }
 
 describe('eagerAssets', () => {
-  it('returns layers + views with a geojsonPath, excluding HEAVY_VIEWS and map-owned towers', () => {
+  it('returns catalog layers with a geojsonPath, excluding heavy / map-owned / hidden — and never views', () => {
     const catalog = fakeCatalog({
       layers: [
         // map-owned: drawn as the global clustered tower layer, not per-state
         { name: 'towers', geojsonPath: 't.geojson', rows: 1 },
         { name: 'solar_facilities', geojsonPath: 's.geojson', rows: 1 },
+        // hidden: distress is a filter field now, not a map overlay
+        { name: 'distress_overlays', geojsonPath: 'd.geojson', rows: 1 },
         { name: 'no_path', geojsonPath: null, rows: 1 },
       ] as any,
+      // Views (derived outreach segments) are retired — never eager-loaded.
       views: [
         { name: 'interestingness_top_1000', geojsonPath: 'i.geojson', rows: 1 },
-        // heavy view — excluded
         { name: 'parcels_hosting_infra', geojsonPath: 'ph.geojson', rows: 1 },
       ] as any,
     });
     const got = eagerAssets(catalog);
-    expect(got.map((a) => a.name)).toEqual(['solar_facilities', 'interestingness_top_1000']);
+    expect(got.map((a) => a.name)).toEqual(['solar_facilities']);
   });
 });
 
 describe('defaultVisibility', () => {
-  it('only marks DEFAULT_ON layers + views as visible', () => {
+  it('marks only DEFAULT_ON layers visible, omits hidden layers and all views', () => {
     const catalog = fakeCatalog({
       layers: [
         { name: 'towers', geojsonPath: 't.geojson', rows: 1 },
         { name: 'solar_facilities', geojsonPath: 's.geojson', rows: 1 },
+        { name: 'distress_overlays', geojsonPath: 'd.geojson', rows: 1 },
       ] as any,
-      views: [
-        { name: 'interestingness_top_1000', geojsonPath: 'i.geojson', rows: 1 },
-        { name: 'parcels_hosting_infra', geojsonPath: 'ph.geojson', rows: 1 },
-      ] as any,
+      views: [{ name: 'interestingness_top_1000', geojsonPath: 'i.geojson', rows: 1 }] as any,
     });
     expect(defaultVisibility(catalog)).toEqual({
       towers: true,
       solar_facilities: false,
-      interestingness_top_1000: true,
-      parcels_hosting_infra: false,
     });
   });
   it('skips entries without geojsonPath', () => {
@@ -72,6 +71,14 @@ describe('defaultVisibility', () => {
       layers: [{ name: 'towers', geojsonPath: null, rows: 0 }] as any,
     });
     expect(defaultVisibility(catalog)).toEqual({});
+  });
+});
+
+describe('HIDDEN_LAYERS sentinel set', () => {
+  it('hides distress_overlays from the map + panel (it is a filter field now)', () => {
+    expect(HIDDEN_LAYERS.has('distress_overlays')).toBe(true);
+    expect(HIDDEN_LAYERS.has('towers')).toBe(false);
+    expect(HIDDEN_LAYERS.has('solar_facilities')).toBe(false);
   });
 });
 

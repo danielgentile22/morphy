@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import { app } from '../lib/stores.svelte';
   import { filterModel } from '../lib/filter-model.svelte';
+  import { archivedAntennas } from '../lib/archived-antennas.svelte';
   import type { FilterModel } from '../lib/filter-model';
   import type { OwnerFilterRecord } from '../lib/owners-filter-index';
   import type { TowerFeature } from '../lib/towers';
@@ -50,7 +51,8 @@
       (m.assessedValue ? 1 : 0) +
       (m.heightMin > 0 ? 1 : 0) +
       (m.activeOnly ? 1 : 0) +
-      (m.structureCountMin > 1 ? 1 : 0),
+      (m.structureCountMin > 1 ? 1 : 0) +
+      (archivedAntennas.show ? 1 : 0),
   );
 
   function toggle(panel: Panel): void {
@@ -232,6 +234,17 @@
           value={m.structureCountMin} oninput={(e) => setNum('structureCountMin', Number(e.currentTarget.value))} />
 
         <label class="check"><input type="checkbox" checked={m.activeOnly} onchange={(e) => setBool('activeOnly', e.currentTarget.checked)} /> Active towers only</label>
+
+        <!-- Per-antenna archive (UI overhaul round 2): off = archived antennas
+             are hidden from the map + list; on = reveal them (to recover one). -->
+        <label class="check">
+          <input
+            type="checkbox"
+            checked={archivedAntennas.show}
+            onchange={(e) => archivedAntennas.setShow(e.currentTarget.checked)}
+            data-testid="show-archived"
+          /> Show archived antennas
+        </label>
 
         {#if filterModel.countyOptions.length}
           <span class="plabel">County</span>

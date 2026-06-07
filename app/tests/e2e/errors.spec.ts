@@ -8,15 +8,15 @@ test('a failed layer fetch disables its toggle, the app still loads', async ({ p
   page.on('pageerror', (e) => pageErrors.push(e.message));
 
   // Make one layer's GeoJSON unreachable.
-  await page.route('**/composite/05/distress_overlays.geojson', (route) => route.abort());
-  await page.goto('/?state=05');
+  await page.route('**/composite/05/solar_facilities.geojson', (route) => route.abort());
+  await page.goto('/?state=05#/explore');
 
   // The app still boots — a single missing layer is tolerated.
   await expect(page.locator('h1')).toHaveText('Arkansas');
   await expect(page.getByTestId('summary-card')).toBeVisible();
 
-  // The distress-overlays toggle is disabled and marked unavailable.
-  const toggle = page.getByTestId('layer-toggle-distress_overlays');
+  // The solar-facilities toggle is disabled and marked unavailable.
+  const toggle = page.getByTestId('layer-toggle-solar_facilities');
   await expect(toggle).toBeDisabled();
   await expect(page.locator('.toggle', { has: toggle })).toContainText('unavailable');
 
@@ -25,7 +25,7 @@ test('a failed layer fetch disables its toggle, the app still loads', async ({ p
 
 test('an unreachable index.json shows an actionable error screen', async ({ page }) => {
   await page.route('**/composite/index.json', (route) => route.abort());
-  await page.goto('/');
+  await page.goto('/#/explore');
 
   const err = page.getByTestId('boot-error');
   await expect(err).toBeVisible();
@@ -38,7 +38,7 @@ test('a malformed catalog shows an error screen', async ({ page }) => {
   await page.route('**/composite/05/catalog.json', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '{"oops":true}' }),
   );
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
 
   const err = page.getByTestId('boot-error');
   await expect(err).toBeVisible();

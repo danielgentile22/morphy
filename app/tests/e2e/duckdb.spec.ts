@@ -11,7 +11,7 @@ async function waitForEngine(page: Page): Promise<void> {
 }
 
 test('DuckDB-WASM counts every AR parcel', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitForEngine(page);
   const total = await page.evaluate(() => (window as any).__duckDb.count(''));
   // AR has 2,116,976 parcels (catalog.json).
@@ -19,7 +19,7 @@ test('DuckDB-WASM counts every AR parcel', async ({ page }) => {
 });
 
 test('a WHERE clause narrows the count', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitForEngine(page);
   const result = await page.evaluate(async () => {
     const db = (window as any).__duckDb;
@@ -35,7 +35,7 @@ test('a WHERE clause narrows the count', async ({ page }) => {
 });
 
 test('matchingIds and a parcel row fetch work', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitForEngine(page);
   const out = await page.evaluate(async () => {
     const db = (window as any).__duckDb;
@@ -53,7 +53,7 @@ test('matchingIds and a parcel row fetch work', async ({ page }) => {
 });
 
 test('a 3-filter compound query is within the 500 ms median budget', async ({ page }) => {
-  await page.goto('/?state=05');
+  await page.goto('/?state=05#/explore');
   await waitForEngine(page);
   // Warm the engine, then measure the median of repeated compound queries.
   const median = await page.evaluate(async () => {

@@ -5,47 +5,45 @@
   import StateSelector from './components/StateSelector.svelte';
   import SummaryCard from './components/SummaryCard.svelte';
   import LayerPanel from './components/LayerPanel.svelte';
-  import Legend from './components/Legend.svelte';
   import TopFilterBar from './components/TopFilterBar.svelte';
   import DetailsPanel from './components/DetailsPanel.svelte';
-  import Candidates from './components/Candidates.svelte';
-  import MyLeads from './components/MyLeads.svelte';
+  import Dashboard from './components/Dashboard.svelte';
+  import Leads from './components/Leads.svelte';
   import LeadPage from './components/LeadPage.svelte';
+  import ExploreList from './components/ExploreList.svelte';
+  import TowerDetail from './components/TowerDetail.svelte';
+  import ScoringPanel from './components/ScoringPanel.svelte';
   import SignIn from './components/SignIn.svelte';
   import { leads } from './lib/leads-store.svelte';
+  import { dashboard } from './lib/dashboard-store.svelte';
+  import { archivedAntennas } from './lib/archived-antennas.svelte';
   import { auth } from './lib/auth-store.svelte';
   import { buildUrl } from './lib/url';
+  import {
+    parseRoute,
+    sectionOf,
+    SECTION_HASH,
+    type Route,
+    type Section,
+  } from './lib/nav';
 
   // Captured synchronously, before any effect can rewrite the URL.
   const initialSearch = location.search;
 
   let showHelp = $state(false);
 
-  // Lightweight hash routing layered over the existing map app. The map
-  // (`.layout`) stays mounted; the Lead surfaces render as an overlay on
-  // top for #/candidates and #/lead/:key, so switching never tears down
-  // MapLibre/DuckDB (ADR-061: the map instance persists across routes).
-  type Route =
-    | { name: 'map' }
-    | { name: 'candidates' }
-    | { name: 'leads' }
-    | { name: 'lead'; key: string };
-  function parseRoute(): Route {
-    const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-    if (parts[0] === 'lead' && parts[1]) return { name: 'lead', key: decodeURIComponent(parts[1]) };
-    if (parts[0] === 'leads') return { name: 'leads' };
-    if (parts[0] === 'candidates') return { name: 'candidates' };
-    return { name: 'map' };
-  }
-  let route = $state<Route>(parseRoute());
-  function goMap(): void {
-    location.hash = '';
-  }
-  function goCandidates(): void {
-    location.hash = '#/candidates';
-  }
-  function goLeads(): void {
-    location.hash = '#/leads';
+  // Three-section hash routing (UI overhaul P1 / #104, ADR-065):
+  // Dashboard · Explore · Leads, with Dashboard sub-pages. The Explore map
+  // layout stays mounted at all times — the other sections render as an
+  // opaque surface on top of it — so MapLibre/DuckDB never tear down on a
+  // nav (ADR-061 map persistence). The app opens on the Dashboard.
+  let route = $state<Route>(parseRoute(location.hash));
+  let section = $derived<Section>(sectionOf(route));
+  // Explore's two lenses (#108): the map and the ranked tower list. The map
+  // stays mounted; the list renders over it.
+  let exploreView = $state<'map' | 'list'>('map');
+  function go(section: Section): void {
+    location.hash = SECTION_HASH[section];
   }
 
   // Boot the data layer only once a *verified* session exists (#85): no data
@@ -60,20 +58,15 @@
     }
   });
 
-  // Keep the Candidates count badge fresh once we're on a Lead surface
-  // (covers a deep link straight to #/lead/:key without visiting the list).
-  // Gated on the verified session — the Lead routes require sign-in.
+  // Live nav counts + attention badge — load once signed in and on every
+  // sign-in transition, so the Explore / Leads / Dashboard badges are correct.
   $effect(() => {
-    if (route.name !== 'map' && auth.verified && leads.candidatesStatus === 'idle') {
-      void leads.loadCandidates();
+    if (auth.verified) {
+      void leads.loadCounts();
+      void dashboard.loadAttention();
+      // The set of archived antennas the map + list exclude (round 2).
+      void archivedAntennas.hydrate();
     }
-  });
-
-  // Live nav counts — load once signed in and on every sign-in transition, so
-  // the Candidates / My-Leads badges are correct on every surface (incl. the
-  // map launchers) before either list is opened.
-  $effect(() => {
-    if (auth.verified) void leads.loadCounts();
   });
 
   /** True when the event originates from a text-entry control — keyboard
@@ -96,19 +89,26 @@
     // Inert while typing — e.g. Escape in the owner-search box must clear
     // the field, not the map selection.
     if (isTypingTarget(e)) return;
+    if (e.key === '?') {
+      showHelp = !showHelp;
+      return;
+    }
+    if (e.key === 'Escape' && showHelp) {
+      showHelp = false;
+      return;
+    }
+    // The map-centric shortcuts only act inside Explore (where the map lives).
+    if (section !== 'explore') return;
     if (e.key === 'Escape') {
-      if (showHelp) showHelp = false;
-      else app.clearSelection();
+      app.clearSelection();
     } else if (e.key === 'f') {
       e.preventDefault();
       document.querySelector<HTMLInputElement>('[data-testid="owner-search"]')?.focus();
-    } else if (e.key === '?') {
-      showHelp = !showHelp;
     }
   }
 
   function onHashChange(): void {
-    route = parseRoute();
+    route = parseRoute(location.hash);
   }
 
   onMount(() => {
@@ -124,19 +124,22 @@
     };
   });
 
-  // Keep the URL a shareable deep link — state, selected parcel, filters.
-  // Gated on urlSyncReady so it cannot erase the deep-link before boot
-  // has restored it. Skipped on the Lead routes so it never strips the hash.
+  // Keep the URL a shareable deep link — state, selected parcel, filters live
+  // in the query string; the section lives in the hash. Only sync while in
+  // Explore (the map), and always preserve the section hash so the sync never
+  // strips it. Gated on urlSyncReady so it can't erase the deep-link before
+  // boot has restored it.
   $effect(() => {
-    if (route.name !== 'map') return;
+    if (section !== 'explore') return;
     if (!app.urlSyncReady) return;
     const sel = app.selection;
     const selectedId =
       sel?.kind === 'parcel' && typeof sel.props.parcel_id === 'string'
         ? sel.props.parcel_id
         : null;
-    const next = buildUrl(location.pathname, app.activeFips, selectedId, app.filters);
-    if (next !== location.pathname + location.search) {
+    const next =
+      buildUrl(location.pathname, app.activeFips, selectedId, app.filters) + location.hash;
+    if (next !== location.pathname + location.search + location.hash) {
       history.replaceState(null, '', next);
     }
   });
@@ -144,12 +147,9 @@
 
 {#if !auth.verified}
   <!-- Full-screen sign-in gate (#85): until a verified session exists, nothing
-       else mounts — no map, no navigation, no panels, no data fetches. -->
+       else mounts — no map, no navigation, no panels, no data fetches. The
+       SignIn card carries the Morphy Consulting branding (round 2 cleanup). -->
   <div class="gate" data-testid="auth-gate">
-    <header class="gate-header">
-      <h1>Ground-Lease Triage</h1>
-      <p class="gate-sub">Parcels &amp; infrastructure — renegotiation candidates</p>
-    </header>
     {#if auth.restoring}
       <p class="gate-checking" data-testid="gate-checking">Checking session…</p>
     {:else}
@@ -157,47 +157,84 @@
     {/if}
   </div>
 {:else}
-  <div class="layout">
-    <aside class="sidebar">
-      <header class="app-header">
-        <h1>{app.activeState?.name ?? 'Pilot Map'}</h1>
-        <p class="subtitle">Parcels &amp; infrastructure — renegotiation candidates</p>
-        <p class="signed-in-as">
-          <span data-testid="map-nav-user">
-            {auth.team ? `${auth.email} · ${auth.team}` : auth.email}
-          </span>
-          <button class="signout-link" data-testid="map-signout" onclick={() => auth.signOut()}>
-            Sign out
-          </button>
-        </p>
-      </header>
-
-      {#if app.notice}
-        <div class="notice" role="status">
-          <span>{app.notice}</span>
-          <button class="notice-close" onclick={() => app.dismissNotice()} aria-label="Dismiss">
-            ×
-          </button>
-        </div>
-      {/if}
-
-      <div class="sidebar-scroll">
-        <section class="panel">
-          <StateSelector />
-        </section>
-        {#if app.status === 'ready'}
-          <SummaryCard />
-          <LayerPanel />
-          <Legend />
-        {/if}
+  <div class="shell">
+    <nav class="topnav" data-testid="topnav">
+      <span class="brand">Ground-Lease Triage</span>
+      <div class="tabs" role="tablist" aria-label="Sections">
+        <button
+          class="tab"
+          class:on={section === 'dashboard'}
+          data-testid="nav-dashboard"
+          role="tab"
+          aria-selected={section === 'dashboard'}
+          onclick={() => go('dashboard')}
+        >
+          Dashboard{#if dashboard.count}<span class="nbadge" data-testid="attention-badge">{dashboard.count}</span>{/if}
+        </button>
+        <button
+          class="tab"
+          class:on={section === 'explore'}
+          data-testid="nav-explore"
+          role="tab"
+          aria-selected={section === 'explore'}
+          onclick={() => go('explore')}
+        >
+          Explore{#if leads.candidatesCount}<span class="nbadge">{leads.candidatesCount}</span>{/if}
+        </button>
+        <button
+          class="tab"
+          class:on={section === 'leads'}
+          data-testid="nav-leads"
+          role="tab"
+          aria-selected={section === 'leads'}
+          onclick={() => go('leads')}
+        >
+          Leads{#if leads.myLeadsCount}<span class="nbadge">{leads.myLeadsCount}</span>{/if}
+        </button>
       </div>
+      <span class="nav-user" data-testid="nav-user">
+        {auth.team ? `${auth.email} · ${auth.team}` : auth.email}
+      </span>
+      <button class="signout" data-testid="signout" onclick={() => auth.signOut()}>Sign out</button>
+    </nav>
 
-      <footer class="app-footer">
-        Prototype · local use only · data is PII (owner names + addresses)
-      </footer>
-    </aside>
+    <div class="shell-body">
+      <!-- Explore: the map layout stays mounted at all times so MapLibre /
+           DuckDB never tear down on a section change (ADR-061 / #104). The
+           other sections render as an opaque surface over it (below). -->
+      <div class="explore-layout">
+        <aside class="sidebar">
+          <header class="app-header">
+            <h1>{app.activeState?.name ?? 'Explore'}</h1>
+            <p class="subtitle">Parcels &amp; infrastructure — renegotiation candidates</p>
+          </header>
 
-    <main class="stage">
+          {#if app.notice}
+            <div class="notice" role="status">
+              <span>{app.notice}</span>
+              <button class="notice-close" onclick={() => app.dismissNotice()} aria-label="Dismiss">
+                ×
+              </button>
+            </div>
+          {/if}
+
+          <div class="sidebar-scroll">
+            <section class="panel">
+              <StateSelector />
+            </section>
+            {#if app.status === 'ready'}
+              <SummaryCard />
+              <ScoringPanel />
+              <LayerPanel />
+            {/if}
+          </div>
+
+          <footer class="app-footer">
+            Prototype · local use only · data is PII (owner names + addresses)
+          </footer>
+        </aside>
+
+        <main class="stage">
       {#if app.status === 'error'}
         <div class="error-screen" data-testid="boot-error">
           <div class="error-card">
@@ -211,70 +248,72 @@
           </div>
         </div>
       {:else}
-        {#if app.status === 'ready'}
+        {#if app.status === 'ready' && section === 'explore'}
+          <!-- The top filter bar drives the Explore map + tower list only.
+               Dashboard/Leads/Lead have their own (or no) filtering, so the
+               bar is gated to Explore — elsewhere it was dead and overlapped
+               the page heading. -->
           <TopFilterBar />
+          {#if route.name === 'explore'}
+            <div class="explore-views" role="tablist" aria-label="Explore view">
+              <button
+                class="vbtn"
+                class:on={exploreView === 'map'}
+                data-testid="explore-view-map"
+                role="tab"
+                aria-selected={exploreView === 'map'}
+                onclick={() => (exploreView = 'map')}
+              >
+                Map
+              </button>
+              <button
+                class="vbtn"
+                class:on={exploreView === 'list'}
+                data-testid="explore-view-list"
+                role="tab"
+                aria-selected={exploreView === 'list'}
+                onclick={() => (exploreView = 'list')}
+              >
+                List
+              </button>
+            </div>
+          {/if}
         {/if}
         <div class="map-wrap">
           <MapView />
           <DetailsPanel />
-          <div class="launchers">
-            <button class="launcher" data-testid="open-candidates" onclick={goCandidates}>
-              Candidates{#if leads.candidatesCount}
-                <span class="lc-badge">{leads.candidatesCount}</span>
-              {/if}
-            </button>
-            <button class="launcher" data-testid="open-my-leads-map" onclick={goLeads}>
-              My Leads{#if leads.myLeadsCount}
-                <span class="lc-badge">{leads.myLeadsCount}</span>
-              {/if}
-            </button>
-          </div>
           {#if app.status === 'loading'}
             <div class="loading-pill" data-testid="loading">Loading…</div>
           {/if}
+          <!-- Tower-grained Explore (#108): the ranked list and a tower's
+               read-only detail peek render over the still-mounted map. -->
+          {#if route.name === 'tower'}
+            <div class="explore-overlay" data-testid="explore-overlay">
+              <TowerDetail cid={route.cid} asr={route.asr} />
+            </div>
+          {:else if route.name === 'explore' && exploreView === 'list'}
+            <div class="explore-overlay" data-testid="explore-overlay">
+              <ExploreList />
+            </div>
+          {/if}
         </div>
       {/if}
-    </main>
+        </main>
+      </div>
 
-    {#if route.name !== 'map'}
-      <div class="lead-overlay" data-testid="lead-overlay">
-        <nav class="lead-nav">
-          <span class="brand">Ground-Lease Triage</span>
-          <button class="navtab" onclick={goMap}>Map</button>
-          <button class="navtab" class:on={route.name === 'candidates'} onclick={goCandidates}>
-            Candidates
-            {#if leads.candidatesCount}<span class="lc-badge">{leads.candidatesCount}</span>{/if}
-          </button>
-          <button
-            class="navtab"
-            class:on={route.name === 'leads'}
-            data-testid="open-my-leads"
-            onclick={goLeads}
-          >
-            My Leads
-            {#if leads.myLeadsCount}<span class="lc-badge">{leads.myLeadsCount}</span>{/if}
-          </button>
-          <span class="nav-user" data-testid="nav-user">
-            {auth.team ? `${auth.email} · ${auth.team}` : auth.email}
-          </span>
-          <button class="navtab signout" data-testid="signout" onclick={() => auth.signOut()}>
-            Sign out
-          </button>
-        </nav>
-        {#if route.name === 'candidates'}
-          <TopFilterBar />
-        {/if}
-        <div class="lead-content">
-          {#if route.name === 'candidates'}
-            <Candidates />
+      <!-- Dashboard / Leads / owner page render over the (still-mounted) map. -->
+      {#if section !== 'explore'}
+        <div class="surface" data-testid="section-surface">
+          {#if route.name === 'dashboard'}
+            <Dashboard sub={route.sub} />
           {:else if route.name === 'leads'}
-            <MyLeads />
+            <Leads />
           {:else if route.name === 'lead'}
             <LeadPage displayClusterId={route.key} />
           {/if}
         </div>
-      </div>
-    {/if}
+      {/if}
+    </div>
 
     {#if showHelp}
       <div class="help-overlay" role="dialog" aria-label="Keyboard shortcuts" data-testid="help">
@@ -309,26 +348,97 @@
     gap: 4px;
     background: var(--bg);
   }
-  .gate-header {
-    text-align: center;
-  }
-  .gate-header h1 {
-    font-size: 22px;
-  }
-  .gate-sub {
-    margin: 4px 0 0;
-    font-size: 12.5px;
-    color: var(--muted);
-  }
   .gate-checking {
     margin-top: 24px;
     font-size: 13px;
     color: var(--muted);
   }
 
-  .layout {
+  /* Three-section shell (#104): a fixed top nav over a body that holds the
+     always-mounted Explore map layout + the section surfaces. */
+  .shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  .topnav {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 9px 18px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 30;
+  }
+  .topnav .brand {
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .tabs {
+    display: flex;
+    gap: 6px;
+  }
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text-2);
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .tab.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .nbadge {
+    background: var(--panel-2);
+    border-radius: 999px;
+    padding: 0 7px;
+    font-size: 11px;
+    color: var(--text-2);
+  }
+  .tab.on .nbadge {
+    background: rgba(255, 255, 255, 0.28);
+    color: #fff;
+  }
+  .nav-user {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .signout {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 12px;
+    color: var(--muted);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .shell-body {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+  }
+  /* The map layout fills the body and is never unmounted. */
+  .explore-layout {
     display: flex;
     height: 100%;
+  }
+  /* A section other than Explore: an opaque panel covering the map, which
+     stays mounted underneath (so returning to Explore keeps pan/zoom). */
+  .surface {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    background: var(--bg);
+    overflow: hidden;
   }
 
   .sidebar {
@@ -353,26 +463,6 @@
     font-size: 12px;
     color: var(--muted);
   }
-  /* Who's signed in + sign-out, visible on the map view (the lead overlay
-     has its own nav-user) — sign-out works from any view (#85). */
-  .signed-in-as {
-    margin: 8px 0 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    color: var(--text-2);
-  }
-  .signout-link {
-    background: none;
-    border: none;
-    padding: 0;
-    font-size: 12px;
-    color: var(--muted);
-    text-decoration: underline;
-    cursor: pointer;
-  }
-
   .notice {
     display: flex;
     align-items: flex-start;
@@ -421,6 +511,35 @@
     flex: 1;
     position: relative;
   }
+  /* Explore map/list toggle — a thin bar under the filter bar. */
+  .explore-views {
+    display: flex;
+    gap: 6px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .explore-views .vbtn {
+    padding: 4px 14px;
+    font-size: 12.5px;
+    border: 1px solid var(--border-strong);
+    background: var(--panel);
+    color: var(--text-2);
+    border-radius: 999px;
+  }
+  .explore-views .vbtn.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  /* The Explore list / tower detail, layered over the still-mounted map. */
+  .explore-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 15;
+    background: var(--bg);
+    overflow: hidden;
+  }
 
   .loading-pill {
     position: absolute;
@@ -435,86 +554,6 @@
     font-size: 12px;
     color: var(--muted);
     box-shadow: var(--shadow);
-  }
-
-  /* Entry points into the Lead surfaces. Top-left of the map stage, clear
-     of the sidebar and the top-right details panel. */
-  .launchers {
-    position: absolute;
-    top: 12px;
-    left: 12px;
-    z-index: 20;
-    display: flex;
-    gap: 8px;
-  }
-  .launcher {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 7px 14px;
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 999px;
-    font-size: 12.5px;
-    font-weight: 600;
-    box-shadow: var(--shadow);
-  }
-  .lc-badge {
-    background: rgba(255, 255, 255, 0.28);
-    border-radius: 999px;
-    padding: 0 6px;
-    font-size: 11px;
-  }
-
-  .lead-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    background: var(--bg);
-    display: flex;
-    flex-direction: column;
-  }
-  .lead-nav {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 9px 18px;
-    background: var(--panel);
-    border-bottom: 1px solid var(--border);
-  }
-  .lead-nav .brand {
-    font-weight: 600;
-    font-size: 14px;
-    margin-right: 6px;
-  }
-  .navtab {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 12px;
-    border: 1px solid var(--border);
-    background: var(--panel);
-    color: var(--text-2);
-    border-radius: 999px;
-    font-size: 12.5px;
-  }
-  .navtab.on {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-  }
-  .nav-user {
-    margin-left: auto;
-    font-size: 12px;
-    color: var(--text-2);
-  }
-  .navtab.signout {
-    color: var(--text-2);
-  }
-  .lead-content {
-    flex: 1;
-    overflow-y: auto;
   }
 
   .error-screen {

@@ -51,7 +51,12 @@ OWNERS_INDEX_FILENAME = "owners_index.json"
 # spectrum licensee(s) on the tower (``carrier_name`` / ``callsign`` /
 # ``license_expiry`` / ``confidence_tag``), carried from #24's composite. A
 # stale (pre-v4) index simply omits the field; readers default it to [].
-OWNERS_INDEX_SCHEMA_VERSION = 4
+# v5 (UI overhaul P1 / #105, ADR-067): each tower structure gains ``score`` —
+# the tower's own interestingness, projected from its underlying parcel's
+# ``interestingness_score``. Different towers sit on different parcels, so
+# same-owner towers can rank differently in Explore. A stale (pre-v5) index
+# omits the field; readers default it to None.
+OWNERS_INDEX_SCHEMA_VERSION = 5
 
 OWNERS_FILTER_FILENAME = "owners_filter.json"
 
@@ -374,7 +379,12 @@ class CrossStateOwnerResolver:
 
     def _holding(self, rec: dict, towers_by_asr: dict[str, dict]) -> dict:
         bbox = _parse_bbox(rec.get("geom_bbox"))
-        structures = self._structures(rec.get("infrastructure_summary"), towers_by_asr)
+        # Each tower's own score = its parcel's interestingness (#105). All
+        # towers on this parcel share it; towers on other parcels differ.
+        parcel_score = _to_float(rec.get("_score"))
+        structures = self._structures(
+            rec.get("infrastructure_summary"), towers_by_asr, parcel_score
+        )
         return {
             "parcel_id": str(rec.get("parcel_id") or ""),
             "state": self._abbr(rec.get("state_fips", "")),
@@ -390,7 +400,9 @@ class CrossStateOwnerResolver:
         }
 
     @staticmethod
-    def _structures(raw, towers_by_asr: dict[str, dict]) -> list[dict]:
+    def _structures(
+        raw, towers_by_asr: dict[str, dict], parcel_score: float | None = None
+    ) -> list[dict]:
         out: list[dict] = []
         for item in _parse_json_list(raw):
             kind = str(item.get("type", ""))
@@ -411,6 +423,9 @@ class CrossStateOwnerResolver:
                         # ULS licensee(s) on the tower (Slice A / #28); [] when
                         # the tower has no tower-attr match or no carriers.
                         "carriers": _normalize_carriers(t.get("carriers")),
+                        # Per-tower interestingness = the parcel's score (#105);
+                        # None when the parcel had no score (a stale index).
+                        "score": (None if parcel_score is None else round(parcel_score, 4)),
                     }
                 )
             elif kind == "solar":

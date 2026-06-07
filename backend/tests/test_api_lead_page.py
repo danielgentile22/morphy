@@ -63,6 +63,7 @@ SAMPLE = {
                             "lon": -90.4,
                             "active": True,
                             "structure_kind": "TOWER",
+                            "score": 0.91,
                             "carriers": [
                                 {
                                     "carrier_name": "AT&T",
@@ -110,6 +111,9 @@ def test_lead_detail_includes_holdings_mailing_and_tallest(client: TestClient) -
     ar = next(h for h in body["holdings"] if h["state"] == "AR")
     assert ar["structures"][0]["height_m"] == 120.0
     assert ar["point"] == [-90.405, 35.025]
+    # per-tower score (#105) survives the response_model boundary — an
+    # undeclared field would be silently dropped here.
+    assert ar["structures"][0]["score"] == 0.91
     # carriers (Slice A / #28) survive the response_model boundary — a field
     # absent from the Structure schema would be silently dropped here.
     carriers = ar["structures"][0]["carriers"]
@@ -150,6 +154,35 @@ def test_log_contact_attempt_appears_in_the_stream(client: TestClient) -> None:
     assert len(attempts) == 1
     assert (attempts[0]["channel"], attempts[0]["outcome"]) == ("phone", "left voicemail")
     assert attempts[0]["occurred_on"] == "2026-05-30"
+
+
+def test_outbound_attempt_defaults_direction_through_response_model(client: TestClient) -> None:
+    # A touch with no direction round-trips as outbound — guards the
+    # ContactAttemptOut.direction declaration (an undeclared field would be
+    # silently dropped by response_model).
+    r = client.post(f"/api/leads/{CID}/attempts", json={"channel": "phone", "outcome": "x"})
+    assert r.status_code == 200
+    assert r.json()["attempts"][0]["direction"] == "outbound"
+
+
+def test_log_reply_is_inbound_and_does_not_change_status(client: TestClient) -> None:
+    r = client.post(
+        f"/api/leads/{CID}/attempts",
+        json={"channel": "email", "outcome": "interested", "direction": "inbound"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["attempts"][0]["direction"] == "inbound"
+    # logging a reply never advances the Lead's status (#106 / ADR-066)
+    assert body["status"] == "new"
+
+
+def test_attempt_rejects_a_bad_direction(client: TestClient) -> None:
+    r = client.post(
+        f"/api/leads/{CID}/attempts",
+        json={"channel": "email", "outcome": "x", "direction": "sideways"},
+    )
+    assert r.status_code == 422
 
 
 def test_status_change_and_manual_attempt_share_one_stream(client: TestClient) -> None:

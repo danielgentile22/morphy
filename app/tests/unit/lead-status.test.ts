@@ -60,18 +60,32 @@ describe('lead status ladder', () => {
     }
   });
 
-  it('treats terminal statuses as terminal', () => {
+  it('marks in_business + uninterested as closed lanes, but only in_business is transition-locked', () => {
     expect([...TERMINAL_STATUSES].sort()).toEqual(['in_business', 'uninterested']);
+    // in_business (won) is the one true terminal — no outgoing move but the identity save.
     for (const s of STATUSES) {
-      expect(canTransition('uninterested', s === 'uninterested' ? s : s)).toBe(s === 'uninterested');
-      expect(canTransition('in_business', s === 'in_business' ? s : s)).toBe(s === 'in_business');
+      expect(canTransition('in_business', s)).toBe(s === 'in_business');
+    }
+  });
+
+  it('reopens Uninterested to any status (a lost/parked lead is never stranded)', () => {
+    for (const s of STATUSES) {
+      expect(canTransition('uninterested', s)).toBe(true); // every status incl. the identity save
     }
   });
 
   it('nextStatuses lists the current status plus legal moves, in ladder order', () => {
     expect(nextStatuses('new')).toEqual(['new', 'researching']);
     expect(nextStatuses('contacted')).toEqual(['contacted', 'interested', 'uninterested']);
-    expect(nextStatuses('uninterested')).toEqual(['uninterested']);
+    // Uninterested can reopen anywhere → its whole ladder, in order.
+    expect(nextStatuses('uninterested')).toEqual([
+      'new',
+      'researching',
+      'contacted',
+      'interested',
+      'in_business',
+      'uninterested',
+    ]);
   });
 
   it('validateTransition throws InvalidTransition on an illegal move', () => {
@@ -113,10 +127,14 @@ describe('kanban lanes + drag transitions', () => {
     expect(canTransition('contacted', 'in_business')).toBe(false);
   });
 
-  it('rejects dragging backward or out of a closed lane', () => {
+  it('rejects dragging backward on the active ladder + out of the won lane', () => {
     expect(canTransition('contacted', 'researching')).toBe(false);
     expect(canTransition('interested', 'contacted')).toBe(false);
-    expect(canTransition('uninterested', 'researching')).toBe(false);
-    expect(canTransition('in_business', 'interested')).toBe(false);
+    expect(canTransition('in_business', 'interested')).toBe(false); // won is locked
+  });
+
+  it('allows dragging a card back out of the Uninterested lane (reopen)', () => {
+    expect(canTransition('uninterested', 'researching')).toBe(true);
+    expect(canTransition('uninterested', 'contacted')).toBe(true);
   });
 });

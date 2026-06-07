@@ -51,6 +51,51 @@ class LeadStore:
         )
         return list(self.session.scalars(stmt))
 
+    def tenant_attempts(self) -> list[ContactAttempt]:
+        """Every activity row for this tenant, newest first — the read model
+        the Dashboard derivations (Attention #111, Calendar/History #112,
+        Stats #113) assemble over."""
+        stmt = (
+            select(ContactAttempt)
+            .where(ContactAttempt.tenant_id == self.tenant_id)
+            .order_by(ContactAttempt.occurred_on.desc(), ContactAttempt.id.desc())
+        )
+        return list(self.session.scalars(stmt))
+
+    def latest_flags(self) -> dict[str, str]:
+        """``display_cluster_id → triggering ASR`` for every Lead with a
+        ``channel='flag'`` activity row — the antenna that sparked pursuit
+        (#109, ADR-067/D2). Latest flag per owner wins. One query for the
+        whole worklist (no N+1)."""
+        stmt = (
+            select(ContactAttempt)
+            .where(
+                ContactAttempt.tenant_id == self.tenant_id,
+                ContactAttempt.channel == "flag",
+            )
+            .order_by(ContactAttempt.occurred_on.asc(), ContactAttempt.id.asc())
+        )
+        # Iterate oldest→newest so the last write per cid is the latest flag.
+        out: dict[str, str] = {}
+        for a in self.session.scalars(stmt):
+            if a.outcome:
+                out[a.display_cluster_id] = a.outcome
+        return out
+
+    def list_replies(self, display_cluster_id: str) -> list[ContactAttempt]:
+        """Inbound activity (replies) for a Lead — the events the Dashboard
+        attention feed + auto follow-up rule key on (#106, ADR-066)."""
+        stmt = (
+            select(ContactAttempt)
+            .where(
+                ContactAttempt.tenant_id == self.tenant_id,
+                ContactAttempt.display_cluster_id == display_cluster_id,
+                ContactAttempt.direction == "inbound",
+            )
+            .order_by(ContactAttempt.occurred_on.desc(), ContactAttempt.id.desc())
+        )
+        return list(self.session.scalars(stmt))
+
     # ── writes ─────────────────────────────────────────────────────────────
     def get_or_create(self, display_cluster_id: str) -> Lead:
         lead = self.get_lead(display_cluster_id)
@@ -75,6 +120,7 @@ class LeadStore:
         status: str | None = None,
         notes: str | None = None,
         contact: dict[str, str] | None = None,
+        logged_by_user_id: int | None = None,
     ) -> Lead:
         """Set status, notes, and/or contact fields for a Lead, creating it
         at New if needed.
@@ -87,7 +133,7 @@ class LeadStore:
         lead = self.get_or_create(display_cluster_id)
         if status is not None and status != lead.status:
             validate_transition(lead.status, status)
-            self._log_status_change(display_cluster_id, lead.status, status)
+            self._log_status_change(display_cluster_id, lead.status, status, logged_by_user_id)
             lead.status = status
         if notes is not None:
             lead.notes = notes
@@ -95,6 +141,40 @@ class LeadStore:
             for field in self.CONTACT_FIELDS:
                 if field in contact and contact[field] is not None:
                     setattr(lead, field, contact[field])
+        self.session.commit()
+        self.session.refresh(lead)
+        return lead
+
+    def pursue(
+        self,
+        display_cluster_id: str,
+        *,
+        trigger_asr: str = "",
+        logged_by_user_id: int | None = None,
+    ) -> Lead:
+        """Pursue an owner from Explore (#109, ADR-067/D2): advance New →
+        Researching (auto-logging the status row) and record the triggering
+        antenna as a ``channel='flag'`` activity row — so "why are we calling
+        them?" survives without a schema change. An owner already off New is
+        left at its status; an additional trigger may still be flagged.
+        Idempotent on the status side (re-pursuing never illegally advances)."""
+        lead = self.get_or_create(display_cluster_id)
+        if lead.status == INITIAL_STATUS:
+            self._log_status_change(
+                display_cluster_id, lead.status, "researching", logged_by_user_id
+            )
+            lead.status = "researching"
+        if trigger_asr:
+            self.session.add(
+                ContactAttempt(
+                    tenant_id=self.tenant_id,
+                    display_cluster_id=display_cluster_id,
+                    occurred_on=date.today(),
+                    channel="flag",
+                    outcome=trigger_asr,
+                    logged_by_user_id=logged_by_user_id,
+                )
+            )
         self.session.commit()
         self.session.refresh(lead)
         return lead
@@ -107,7 +187,15 @@ class LeadStore:
         outcome: str = "",
         note: str = "",
         occurred_on: date | None = None,
+        direction: str = "outbound",
+        logged_by_user_id: int | None = None,
     ) -> ContactAttempt:
+        """Append an activity event. ``direction='inbound'`` records a *reply*
+        (#106); the default ``'outbound'`` is a touch we made. ``logged_by_user_id``
+        attributes it to a teammate (#112). Creates the Lead at New if absent
+        (logging a reply must never advance status — a reply can arrive with no
+        status change)."""
+        self.get_or_create(display_cluster_id)
         attempt = ContactAttempt(
             tenant_id=self.tenant_id,
             display_cluster_id=display_cluster_id,
@@ -115,13 +203,17 @@ class LeadStore:
             channel=channel,
             outcome=outcome,
             note=note,
+            direction=direction,
+            logged_by_user_id=logged_by_user_id,
         )
         self.session.add(attempt)
         self.session.commit()
         self.session.refresh(attempt)
         return attempt
 
-    def _log_status_change(self, display_cluster_id: str, frm: str, to: str) -> None:
+    def _log_status_change(
+        self, display_cluster_id: str, frm: str, to: str, logged_by_user_id: int | None = None
+    ) -> None:
         self.session.add(
             ContactAttempt(
                 tenant_id=self.tenant_id,
@@ -130,5 +222,6 @@ class LeadStore:
                 channel="status",
                 outcome=f"{frm}→{to}",
                 note="",
+                logged_by_user_id=logged_by_user_id,
             )
         )
