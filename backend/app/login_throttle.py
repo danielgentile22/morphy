@@ -16,6 +16,7 @@ distinct keys can't grow the map without bound.
 
 from __future__ import annotations
 
+import threading
 import time
 from collections import defaultdict, deque
 from collections.abc import Callable
@@ -44,34 +45,45 @@ class LoginThrottle:
         self._clock = clock
         self._failures: dict[Key, deque[float]] = defaultdict(deque)
         self._ops = 0
+        # The login route runs in FastAPI's sync threadpool, so the single
+        # process-wide throttle is mutated from multiple worker threads. A lock
+        # over the read-modify-(prune/delete) sequences keeps a concurrent
+        # failed-login spray from racing a bucket prune/delete (PERF-040). The
+        # internal helpers below run with this held — they never re-acquire it.
+        self._lock = threading.Lock()
 
     def is_blocked(self, key: Key) -> bool:
         """True if ``key`` has ``>= max_failures`` failures inside the window."""
-        return self._recent(key) >= self._max
+        with self._lock:
+            return self._recent(key) >= self._max
 
     def record_failure(self, key: Key) -> None:
         """Note a failed attempt for ``key`` at the current time."""
-        self._failures[key].append(self._clock())
-        self._maybe_sweep()
+        with self._lock:
+            self._failures[key].append(self._clock())
+            self._maybe_sweep()
 
     def reset(self, key: Key) -> None:
         """Clear a key's failures — called on a successful login."""
-        self._failures.pop(key, None)
+        with self._lock:
+            self._failures.pop(key, None)
 
     def retry_after(self, key: Key) -> float:
         """Seconds until ``key`` clears (0.0 when it isn't currently blocked).
 
         Once blocked, the key frees up when its oldest in-window failure exits
         the window, dropping the count back under the limit."""
-        if self._recent(key) < self._max:  # prunes expired entries as a side effect
-            return 0.0
-        oldest = self._failures[key][0]
-        return max(0.0, self._window - (self._clock() - oldest))
+        with self._lock:
+            if self._recent(key) < self._max:  # prunes expired entries as a side effect
+                return 0.0
+            oldest = self._failures[key][0]
+            return max(0.0, self._window - (self._clock() - oldest))
 
     def clear(self) -> None:
         """Drop all state (test isolation)."""
-        self._failures.clear()
-        self._ops = 0
+        with self._lock:
+            self._failures.clear()
+            self._ops = 0
 
     def _recent(self, key: Key) -> int:
         """Count this key's failures within the window, pruning older ones; drop

@@ -83,7 +83,15 @@ def annotate(
 
     geo = target[["geometry"]].reset_index()
     if filter_invalid_target_geom:
-        geo = geo[geo.geometry.notna() & geo.geometry.is_valid]
+        # Reuse the precomputed geometry_valid column when present (PERF-028) —
+        # the normalizer already stored geometry.notna() & geometry.is_valid, so
+        # this skips recomputing the expensive GEOS validity once per category
+        # sjoin. Fall back to recomputing when the target lacks the column (e.g.
+        # the tower feed never filters, so it never reaches here without it).
+        if "geometry_valid" in target.columns:
+            geo = geo[target["geometry_valid"].fillna(False).astype(bool).to_numpy()]
+        else:
+            geo = geo[geo.geometry.notna() & geo.geometry.is_valid]
 
     per_target: dict[int, set[str]] = {}
     for cat in cats:
@@ -99,7 +107,9 @@ def annotate(
             per_target.setdefault(int(idx), set()).add(cat if cat is not None else "_hit_")
 
     out = target.copy()
+    # Resolve each row's hit-set ONCE, then derive every column from that single
+    # list (PERF-029) — was one full-index Python walk per derived column.
+    sets = [per_target.get(int(i), set()) for i in out.index]
     for col_name, fn in spec.derived_columns.items():
-        # bind fn per-iteration (lambda is consumed immediately by .map)
-        out[col_name] = out.index.map(lambda i, fn=fn: fn(per_target.get(int(i), set())))
+        out[col_name] = [fn(s) for s in sets]
     return out

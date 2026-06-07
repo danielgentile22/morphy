@@ -51,6 +51,14 @@
 	# so client-side routes (deep links / refreshes) resolve.
 	handle {
 		root * {$SITE_ROOT:/srv/dist}
+		# Vite emits content-hashed, immutable filenames under /assets/* — cache
+		# them hard so a repeat visit never revalidates the MapLibre/DuckDB
+		# chunks (PERF-019). Scoped to /assets/* only: index.html (and anything
+		# else at the root) stays revalidated, so a new deploy is picked up at
+		# once. Non-PII, hashed bundle assets — distinct from /data/processed/*,
+		# which stays private/no-store above.
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
 		try_files {path} /index.html
 		file_server
 	}

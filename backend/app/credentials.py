@@ -158,3 +158,11 @@ class CredentialsFile:
             self._users = load(self.path)
             self._signature = signature
         return self._users
+
+    @property
+    def signature(self) -> tuple[int, int] | None:
+        """The (mtime_ns, size) of the last-read file — ``None`` if absent.
+
+        Changes whenever the file changes, so callers can key a per-request
+        memo on it and have a file edit invalidate the memo (PERF-025)."""
+        return self._signature

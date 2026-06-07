@@ -19,7 +19,7 @@ from datetime import date, timedelta
 from .lead_store import LeadStore
 from .models import Task
 from .settings_store import SettingsStore
-from .task_store import DONE_STATUS, TaskStore
+from .task_store import TaskStore
 
 # Lead is still "awaiting" a reply at these statuses (D12). Interested / In
 # Business / Uninterested are resolved — no chase.
@@ -66,19 +66,11 @@ class AutoFollowUpRule:
     def cancel_on_reply(self, cid: str) -> int:
         """An inbound reply cancels the lead's open auto follow-up(s). Returns
         how many were cancelled (deleted)."""
-        cancelled = 0
-        for t in self.tasks.list_filtered(lead_cluster_id=cid, source="auto"):
-            if t.status != DONE_STATUS:
-                self.tasks.delete(t.id)
-                cancelled += 1
-        return cancelled
+        return self.tasks.cancel_open(cid, "auto")
 
     # ── helpers ───────────────────────────────────────────────────────────────
     def _has_open_auto(self, cid: str) -> bool:
-        return any(
-            t.status != DONE_STATUS
-            for t in self.tasks.list_filtered(lead_cluster_id=cid, source="auto")
-        )
+        return self.tasks.has_open(cid, "auto")
 
     def _has_reply_since(self, cid: str, anchor: date) -> bool:
         return any(r.occurred_on >= anchor for r in self.leads.list_replies(cid))

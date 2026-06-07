@@ -28,6 +28,7 @@ class OwnersIndexService:
         self.index_path = index_path
         self._owners: list[dict] = []
         self._by_id: dict[str, dict] = {}
+        self._order: dict[str, int] = {}
         self._alpha: float = 0.1
         self.reload()
 
@@ -36,15 +37,21 @@ class OwnersIndexService:
         backend still boots; Candidates is simply empty until the
         precompute runs)."""
         if not self.index_path.exists():
-            self._owners, self._by_id = [], {}
+            self._owners, self._by_id, self._order = [], {}, {}
             return
-        data = json.loads(self.index_path.read_text())
+        # read_bytes → json.loads(bytes) skips the intermediate str decode and
+        # frees the ~43 MB transient sooner than read_text (PERF-026).
+        data = json.loads(self.index_path.read_bytes())
         owners = data.get("owners", [])
         # The precompute already sorts by score desc; sort defensively so
         # ranking never depends on file order.
         owners = sorted(owners, key=lambda o: o.get("score", 0.0), reverse=True)
         self._owners = owners
         self._by_id = {o["display_cluster_id"]: o for o in owners}
+        # Score-sorted position of each owner — lets get_owner's fast path order a
+        # merge group's members exactly as effective() would (which appends them
+        # in self._owners order), keeping single-owner merges byte-identical.
+        self._order = {o["display_cluster_id"]: i for i, o in enumerate(owners)}
         # The cluster-score rollup constant (ADR-056) — reused when a manual
         # merge re-rolls a combined owner's score; default matches the precompute.
         self._alpha = float(data.get("alpha", 0.1))
@@ -137,10 +144,28 @@ class OwnersIndexService:
         self, display_cluster_id: str, merges: OwnerMergeService | None = None
     ) -> dict | None:
         """The (effective) owner for a cluster id, resolving any merge first so
-        a merged-away source id still finds its surviving owner."""
-        _, by_id = self.effective(merges)
-        root = merges.resolve(display_cluster_id) if merges is not None else display_cluster_id
-        return by_id.get(root)
+        a merged-away source id still finds its surviving owner.
+
+        Single-owner fast path (PERF-009): never rebuild + re-sort the whole
+        16k index just to return one owner. With no overrides — or when the
+        resolved root is its own singleton group — the raw owner *is* the
+        effective owner. Only a genuine merge group (>1 member) is recombined,
+        and only that group, byte-identically to ``effective()``'s per-group
+        merge.
+        """
+        if merges is None:
+            return self._by_id.get(display_cluster_id)
+        root = merges.resolve(display_cluster_id)
+        members = merges.members_of(root)
+        if len(members) == 1:
+            return self._by_id.get(root)
+        member_owners = [self._by_id[m] for m in members if m in self._by_id]
+        if not member_owners:
+            return None
+        # Order members exactly as effective() would (self._owners order) so the
+        # merged owner — notably its concatenated holdings — is identical.
+        member_owners.sort(key=lambda o: self._order.get(o["display_cluster_id"], 0))
+        return self._merge_group(root, member_owners)
 
     def list_candidates(
         self,
@@ -199,12 +224,15 @@ class OwnersIndexService:
         New), so the two partition the index. Counts the *true* totals
         (uncapped by any list ``limit``) in one pass.
         """
-        owners, _ = self.effective(merges)
-        status_by_id = store.status_map()
+        owners, by_id = self.effective(merges)
+        status_map = store.status_map()
+        # The two buckets partition the index, so my_leads is fully determined by
+        # the (tiny) persisted-lead set: an index owner off New (PERF-005). The
+        # ``cid in by_id`` guard keeps an orphan lead (a persisted cid no longer
+        # an effective owner) from being counted — exact parity with iterating
+        # owners, but O(persisted leads) instead of O(all owners).
         my_leads = sum(
-            1
-            for owner in owners
-            if status_by_id.get(owner["display_cluster_id"], INITIAL_STATUS) != INITIAL_STATUS
+            1 for cid, status in status_map.items() if status != INITIAL_STATUS and cid in by_id
         )
         return {"candidates": len(owners) - my_leads, "my_leads": my_leads}
 
@@ -230,8 +258,9 @@ class OwnersIndexService:
         root = owner["display_cluster_id"]
         members = merges.members_of(root) if merges is not None else {root}
         lead = store.get_lead(root)  # the surviving target row is authoritative
-        attempts = [a for m in members for a in store.list_attempts(m)]
-        attempts.sort(key=lambda a: (a.occurred_on, a.id), reverse=True)
+        # One IN-query across the merged members, DB-ordered newest-first
+        # (PERF-022) — was a query-per-member + a Python re-sort.
+        attempts = store.list_attempts_for(members)
         # Trigger antenna (#109): the latest flag row's ASR (attempts are
         # newest-first, so the first flag is the latest).
         trigger_asr = next((a.outcome for a in attempts if a.channel == "flag" and a.outcome), "")

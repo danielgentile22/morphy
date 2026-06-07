@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from .models import Task
@@ -74,6 +74,41 @@ class TaskStore:
             .order_by(Task.created_at.desc(), Task.id.desc())
         )
         return list(self.session.scalars(stmt))
+
+    def has_open(self, lead_cluster_id: str, source: str) -> bool:
+        """True if this lead has at least one non-done task from ``source``.
+
+        A status-filtered EXISTS/COUNT (PERF-023) — the auto-follow-up rule's
+        'is there already an open chase?' test, instead of hydrating every auto
+        task for the lead and filtering in Python."""
+        stmt = (
+            select(func.count())
+            .select_from(Task)
+            .where(
+                Task.tenant_id == self.tenant_id,
+                Task.lead_cluster_id == lead_cluster_id,
+                Task.source == source,
+                Task.status != DONE_STATUS,
+            )
+            .limit(1)
+        )
+        return bool(self.session.scalar(stmt))
+
+    def cancel_open(self, lead_cluster_id: str, source: str) -> int:
+        """Delete this lead's non-done tasks from ``source``; return how many.
+
+        One tenant+lead+source+status DELETE (PERF-023) — the cancel-on-reply
+        path, instead of loading then deleting row-by-row."""
+        result = self.session.execute(
+            delete(Task).where(
+                Task.tenant_id == self.tenant_id,
+                Task.lead_cluster_id == lead_cluster_id,
+                Task.source == source,
+                Task.status != DONE_STATUS,
+            )
+        )
+        self.session.commit()
+        return int(result.rowcount or 0)
 
     # ── writes ───────────────────────────────────────────────────────────────
     def create(

@@ -78,6 +78,13 @@ class ScoringStore {
     this.activePresetId = null;
   }
 
+  /** Apply several weight changes in one config update — one scoreById rebuild
+   *  instead of one per key, used by the debounced slider commit (PERF-003). */
+  setWeights(partial: Partial<ScoreWeights>): void {
+    this.config = { useDefault: false, weights: { ...this.config.weights, ...partial } };
+    this.activePresetId = null;
+  }
+
   // ── named presets (#115, tenant-shared) ──────────────────────────────────
   async loadPresets(): Promise<void> {
     try {

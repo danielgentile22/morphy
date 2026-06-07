@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rankedTowerRows } from '../../src/lib/tower-list';
+import { rankedTowerRows, countMatchingTowers } from '../../src/lib/tower-list';
 import type { TowerFeature } from '../../src/lib/towers';
 
 function tower(asr: string, cid: string, opts: Partial<TowerFeature['properties']> = {}): TowerFeature {
@@ -95,5 +95,22 @@ describe('rankedTowerRows (UI overhaul / #108)', () => {
       active: false,
       score: 0.9,
     });
+  });
+});
+
+describe('countMatchingTowers (PERF-007) matches rankedTowerRows length', () => {
+  const archived = { asrs: new Set(['T2']), show: false };
+  const cases: Array<[string, TowerFeature[], ReadonlySet<string> | null, typeof archived | undefined]> = [
+    ['no filter', [tower('T1', 'a'), tower('T2', 'b'), tower('T3', 'c')], null, undefined],
+    ['cluster subset', [tower('T1', 'a'), tower('T2', 'b'), tower('T3', 'c')], new Set(['a', 'c']), undefined],
+    ['empty set keeps nothing', [tower('T1', 'a'), tower('T2', 'b')], new Set<string>(), undefined],
+    ['archived hidden', [tower('T1', 'a'), tower('T2', 'b'), tower('T3', 'c')], null, archived],
+    ['archived shown', [tower('T1', 'a'), tower('T2', 'b')], null, { asrs: new Set(['T2']), show: true }],
+    ['dedups repeated (cid,asr)', [tower('000400', 'a'), tower('000400', 'a'), tower('T2', 'b')], null, undefined],
+  ];
+  it.each(cases)('count == rows.length: %s', (_label, features, matching, arch) => {
+    expect(countMatchingTowers(features, matching, arch)).toBe(
+      rankedTowerRows(features, matching, scoreOf, arch).length,
+    );
   });
 });

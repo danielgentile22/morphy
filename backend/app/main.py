@@ -340,9 +340,11 @@ def candidates(
     limit: int = Query(default=200, ge=1, le=2000),
 ) -> CandidatesResponse:
     rows = owners_index.list_candidates(store, limit=limit, merges=merges)
+    # model_construct skips the in-route validation pass on our own trusted
+    # index rows (PERF-024); response_model still validates once on the way out.
     return CandidatesResponse(
         count=len(rows),
-        candidates=[OwnerSummary(**r) for r in rows],
+        candidates=[OwnerSummary.model_construct(**r) for r in rows],
     )
 
 
@@ -353,7 +355,7 @@ def my_leads(
     limit: int = Query(default=2000, ge=1, le=20000),
 ) -> MyLeadsResponse:
     rows = owners_index.list_my_leads(store, limit=limit, merges=merges)
-    return MyLeadsResponse(count=len(rows), leads=[OwnerSummary(**r) for r in rows])
+    return MyLeadsResponse(count=len(rows), leads=[OwnerSummary.model_construct(**r) for r in rows])
 
 
 @app.get("/api/counts", response_model=CountsResponse)
@@ -825,10 +827,13 @@ def stats(
     + state breakdowns. No new write data."""
     owners, _ = owners_index.effective(merges)
     status_by_id = store.status_map()
+    # StatsService only reads ``states`` (membership + iteration), never mutates
+    # it — so pass the index's own list rather than copying it 16k times per call
+    # (PERF-017, the safe slice of the finding).
     leads = [
         LeadRow(
             cid=o["display_cluster_id"],
-            states=list(o.get("states") or []),
+            states=o.get("states") or [],
             status=status_by_id.get(o["display_cluster_id"], "new"),
         )
         for o in owners
@@ -884,9 +889,13 @@ def activity(
     it chronologically; Calendar buckets it by date. Includes the recent-
     activity digest (last contact + last reply)."""
     names = _tenant_user_names(db, tenant_id)
+    # Resolve the effective index once per request (PERF-009) — the per-row
+    # owner_name_of then does O(1) lookups instead of rebuilding the merged
+    # index for every activity row.
+    _, by_id = owners_index.effective(merges)
     svc = ActivityService(
         store,
-        owner_name_of=lambda cid: (owners_index.get_owner(cid, merges) or {}).get("owner_name", ""),
+        owner_name_of=lambda cid: (by_id.get(merges.resolve(cid)) or {}).get("owner_name", ""),
         member_name_of=lambda uid: names.get(uid, "") if uid is not None else "",
     )
     events = svc.events(
@@ -963,7 +972,9 @@ def _parse_iso_date(value: str | None) -> date | None:
 
 
 def _task_to_out(task) -> TaskOut:
-    return TaskOut(
+    # Trusted ORM row → skip the in-route validation pass (PERF-024); the
+    # /api/tasks response_model still validates once authoritatively.
+    return TaskOut.model_construct(
         id=task.id,
         title=task.title,
         description=task.description,

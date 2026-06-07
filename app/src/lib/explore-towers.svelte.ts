@@ -11,7 +11,7 @@ import { app } from './stores.svelte';
 import { filterModel } from './filter-model.svelte';
 import { scoring } from './scoring-store.svelte';
 import { archivedAntennas } from './archived-antennas.svelte';
-import { rankedTowerRows, type TowerListRow } from './tower-list';
+import { countMatchingTowers, rankedTowerRows, type TowerListRow } from './tower-list';
 
 class ExploreTowers {
   /** The filtered, archived-aware, de-duplicated, score-ranked tower rows —
@@ -25,8 +25,16 @@ class ExploreTowers {
     ),
   );
 
-  /** How many towers match the active filters — the sidebar Towers tile. */
-  count = $derived(this.rows.length);
+  /** How many towers match the active filters — the sidebar Towers tile. Uses
+   *  the cheap count-only pass (PERF-007), so reading the tile never forces the
+   *  ranked-row sort; that stays reserved for ExploreList, which reads `rows`. */
+  count = $derived(
+    countMatchingTowers(
+      app.towerPoints?.features ?? [],
+      filterModel.matchingClusterIds,
+      archivedAntennas.filter,
+    ),
+  );
 }
 
 export const exploreTowers = new ExploreTowers();

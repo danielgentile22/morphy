@@ -108,6 +108,51 @@ def test_missing_source_no_ops():
     assert "in_oz" not in out.columns
 
 
+# ── PERF-028: reuse the precomputed geometry_valid column ────────────────────
+def _derived(df):
+    cols = list(PARCEL_TO_DISTRESS_SPEC.derived_columns)
+    s = df.sort_values("parcel_id_full")
+    return {c: list(s[c]) for c in cols}
+
+
+def test_geometry_valid_column_reuse_matches_recompute():
+    """When the parcel target carries geometry_valid (= actual validity, the
+    production invariant), annotate filters by the column instead of recomputing
+    GEOS validity — and the result is identical to the recompute path."""
+    from preprocess.annotators.spatial_attribute import annotate as sa_annotate
+
+    overlays = _distress_overlays()
+    # Column present + accurate (all geometries valid).
+    with_col = _parcels()
+    with_col["geometry_valid"] = [True, True, True]
+    out_col = sa_annotate(
+        with_col, overlays, PARCEL_TO_DISTRESS_SPEC, filter_invalid_target_geom=True
+    )
+    # No column → falls back to recomputing notna() & is_valid.
+    out_recompute = sa_annotate(
+        _parcels(), overlays, PARCEL_TO_DISTRESS_SPEC, filter_invalid_target_geom=True
+    )
+    assert _derived(out_col) == _derived(out_recompute)
+
+
+def test_geometry_valid_false_excludes_parcel_from_sjoin():
+    """A row flagged geometry_valid=False is dropped from the sjoin (the column
+    is authoritative), so it gets the empty-set derivation — B is normally in
+    OZ + QCT but is excluded here."""
+    from preprocess.annotators.spatial_attribute import annotate as sa_annotate
+
+    flagged = _parcels()
+    flagged["geometry_valid"] = [True, False, True]  # B marked invalid
+    out = sa_annotate(
+        flagged, _distress_overlays(), PARCEL_TO_DISTRESS_SPEC, filter_invalid_target_geom=True
+    )
+    out = out.set_index("parcel_id_full")
+    assert out.loc["A", "in_oz"]  # A still matched
+    assert not out.loc["B", "in_oz"]  # B excluded despite valid geometry
+    assert not out.loc["B", "in_qct"]
+    assert out.loc["B", "distress_overlays"] == []
+
+
 def test_legacy_join_names_still_registered():
     names = {j.name for j in all_joins()}
     assert "ParcelToDistressJoin" in names

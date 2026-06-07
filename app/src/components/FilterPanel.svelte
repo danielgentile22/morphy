@@ -20,6 +20,50 @@
   const m = $derived(filterModel.model);
   const stateOptions = $derived(app.index?.states ?? []);
 
+  // ── debounced numeric commits (PERF-002) ───────────────────────────────
+  // Each slider tick used to commit immediately, and every commit rescans
+  // 16,237 owners + re-clusters 80,814 towers — ~20× per drag. Keep the thumb
+  // responsive via a local mirror, and debounce the (expensive) model commit.
+  const FILTER_DEBOUNCE_MS = 140;
+  let scoreMinLocal = $state(filterModel.model.scoreMin);
+  let portfolioMinLocal = $state(filterModel.model.portfolioMin);
+  let heightMinLocal = $state(filterModel.model.heightMin);
+  let structureCountMinLocal = $state(filterModel.model.structureCountMin);
+  // Keep the mirrors in step when the model changes elsewhere (reset, a saved
+  // default, a deep link) so the thumbs follow.
+  $effect(() => void (scoreMinLocal = filterModel.model.scoreMin));
+  $effect(() => void (portfolioMinLocal = filterModel.model.portfolioMin));
+  $effect(() => void (heightMinLocal = filterModel.model.heightMin));
+  $effect(() => void (structureCountMinLocal = filterModel.model.structureCountMin));
+
+  let commitTimer: ReturnType<typeof setTimeout> | null = null;
+  let pending: Partial<FilterModel> = {};
+  function commitDebounced(patch: Partial<FilterModel>): void {
+    pending = { ...pending, ...patch };
+    if (commitTimer) clearTimeout(commitTimer);
+    commitTimer = setTimeout(flushCommit, FILTER_DEBOUNCE_MS);
+  }
+  function flushCommit(): void {
+    if (commitTimer) {
+      clearTimeout(commitTimer);
+      commitTimer = null;
+    }
+    if (Object.keys(pending).length === 0) return;
+    filterModel.updateFilter(pending);
+    pending = {};
+  }
+  function cancelPending(): void {
+    if (commitTimer) {
+      clearTimeout(commitTimer);
+      commitTimer = null;
+    }
+    pending = {};
+  }
+  function resetFilters(): void {
+    cancelPending(); // a queued slider commit must not resurrect a reset value
+    filterModel.reset();
+  }
+
   // Per-filter "is this constraining?" flags — drive the active dot on each
   // collapsible header so a tucked-away filter still announces itself.
   const distressActive = $derived(
@@ -36,7 +80,7 @@
     filterModel.updateFilter({ [key]: next } as Partial<FilterModel>);
   }
   function setNum(key: 'scoreMin' | 'portfolioMin' | 'heightMin' | 'structureCountMin', v: number): void {
-    filterModel.updateFilter({ [key]: v } as Partial<FilterModel>);
+    commitDebounced({ [key]: v } as Partial<FilterModel>);
   }
   function setBool(key: 'inOz' | 'inQct' | 'persistentPoverty' | 'activeOnly', v: boolean): void {
     filterModel.updateFilter({ [key]: v } as Partial<FilterModel>);
@@ -56,6 +100,7 @@
 
   $effect(() => () => {
     if (timer) clearTimeout(timer);
+    flushCommit(); // commit any in-flight slider value before unmount (collapse)
   });
 
   function onSearchInput(e: Event): void {
@@ -72,9 +117,16 @@
   function runSearch(): void {
     const q = term.trim().toLowerCase();
     ownerHits = filterModel.searchOwners(term, 6);
-    asrHits = (app.towerPoints?.features ?? [])
-      .filter((f) => f.properties.asr.toLowerCase().includes(q))
-      .slice(0, 5) as TowerFeature[];
+    // Short-circuit after 5 ASR hits instead of scanning all 80,814 features
+    // (PERF-035) — the popover shows at most 5 anyway.
+    const hits: TowerFeature[] = [];
+    for (const f of app.towerPoints?.features ?? []) {
+      if (f.properties.asr.toLowerCase().includes(q)) {
+        hits.push(f as TowerFeature);
+        if (hits.length >= 5) break;
+      }
+    }
+    asrHits = hits;
     searchOpen = ownerHits.length > 0 || asrHits.length > 0;
   }
   function pickOwner(o: OwnerFilterRecord): void {
@@ -100,7 +152,7 @@
     <button
       class="reset"
       disabled={!filterModel.active}
-      onclick={() => filterModel.reset()}
+      onclick={resetFilters}
       data-testid="reset-filters"
     >
       Reset
@@ -204,10 +256,10 @@
       {#if m.scoreMin > 0}<span class="dot"></span>{/if}
     </summary>
     <div class="group-body">
-      <span class="glabel">Minimum: {m.scoreMin.toFixed(2)}</span>
+      <span class="glabel">Minimum: {scoreMinLocal.toFixed(2)}</span>
       <input
-        type="range" min="0" max="1" step="0.05" value={m.scoreMin}
-        oninput={(e) => setNum('scoreMin', Number(e.currentTarget.value))}
+        type="range" min="0" max="1" step="0.05" value={scoreMinLocal}
+        oninput={(e) => { scoreMinLocal = Number(e.currentTarget.value); setNum('scoreMin', scoreMinLocal); }}
         data-testid="score-slider"
       />
     </div>
@@ -237,9 +289,10 @@
       {#if m.portfolioMin > 1}<span class="dot"></span>{/if}
     </summary>
     <div class="group-body">
-      <span class="glabel">Min parcels: {m.portfolioMin}</span>
+      <span class="glabel">Min parcels: {portfolioMinLocal}</span>
       <input type="range" min="1" max={Math.max(filterModel.extents.portfolioMax, 1)} step="1"
-        value={m.portfolioMin} oninput={(e) => setNum('portfolioMin', Number(e.currentTarget.value))} />
+        value={portfolioMinLocal}
+        oninput={(e) => { portfolioMinLocal = Number(e.currentTarget.value); setNum('portfolioMin', portfolioMinLocal); }} />
     </div>
   </details>
 
@@ -267,9 +320,10 @@
       {#if m.heightMin > 0}<span class="dot"></span>{/if}
     </summary>
     <div class="group-body">
-      <span class="glabel">Min: {m.heightMin > 0 ? feet(m.heightMin) : 'any'}</span>
+      <span class="glabel">Min: {heightMinLocal > 0 ? feet(heightMinLocal) : 'any'}</span>
       <input type="range" min="0" max={Math.max(filterModel.extents.heightMax, 1)} step="1"
-        value={m.heightMin} oninput={(e) => setNum('heightMin', Number(e.currentTarget.value))} />
+        value={heightMinLocal}
+        oninput={(e) => { heightMinLocal = Number(e.currentTarget.value); setNum('heightMin', heightMinLocal); }} />
     </div>
   </details>
 
@@ -280,9 +334,10 @@
       {#if m.structureCountMin > 1}<span class="dot"></span>{/if}
     </summary>
     <div class="group-body">
-      <span class="glabel">Min: {m.structureCountMin}</span>
+      <span class="glabel">Min: {structureCountMinLocal}</span>
       <input type="range" min="1" max={Math.max(filterModel.extents.structureCountMax, 1)} step="1"
-        value={m.structureCountMin} oninput={(e) => setNum('structureCountMin', Number(e.currentTarget.value))} />
+        value={structureCountMinLocal}
+        oninput={(e) => { structureCountMinLocal = Number(e.currentTarget.value); setNum('structureCountMin', structureCountMinLocal); }} />
     </div>
   </details>
 

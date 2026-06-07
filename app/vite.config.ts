@@ -49,10 +49,23 @@ export default defineConfig({
     },
   },
   build: {
-    // The bundle is MapLibre + DuckDB-WASM glue + the app in one chunk
-    // (~360 kB gzipped). For a localhost-served tool that is a non-issue,
-    // and the heavy DuckDB WASM binary is already a separate lazy asset.
     chunkSizeWarningLimit: 1600,
+    rollupOptions: {
+      output: {
+        // Split the heavy vendor libs into their own chunks (PERF-004) so an
+        // app-code deploy no longer re-hashes (and busts the cache for) the
+        // MapLibre + DuckDB bytes — and the browser can download vendor + app
+        // in parallel. The app `index` chunk drops ~388 KB → ~51 KB gzip.
+        // Function form (not the object form) — this build runs on Rolldown
+        // (Vite 8), which only accepts a manualChunks function.
+        manualChunks(id: string): string | undefined {
+          if (id.includes('node_modules/maplibre-gl')) return 'maplibre';
+          if (id.includes('node_modules/@duckdb/duckdb-wasm')) return 'duckdb';
+          if (id.includes('node_modules/pmtiles')) return 'pmtiles';
+          return undefined;
+        },
+      },
+    },
   },
   test: {
     environment: 'jsdom',

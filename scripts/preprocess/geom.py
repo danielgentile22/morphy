@@ -90,8 +90,10 @@ def add_polygon_derivatives(
         gdf["geom_area_m2"] = None
 
     # Bounding box as a JSON-serializable list [minx, miny, maxx, maxy].
+    # Vectorized (PERF-020): one numpy round-trip instead of a row-wise Python
+    # lambda over every parcel — same list-of-4-floats per row, order preserved.
     bounds = gdf.geometry.bounds
-    gdf["geom_bbox"] = bounds.apply(lambda r: [r["minx"], r["miny"], r["maxx"], r["maxy"]], axis=1)
+    gdf["geom_bbox"] = bounds[["minx", "miny", "maxx", "maxy"]].to_numpy().tolist()
 
     # Simplified geometry — Douglas-Peucker @ tolerance. preserve_topology=True
     # to avoid self-intersections.

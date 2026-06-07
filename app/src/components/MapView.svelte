@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import maplibregl from 'maplibre-gl';
+  // MapLibre's stylesheet rides this (lazily-loaded) map chunk instead of the
+  // boot bundle, so it doesn't block first paint on the Dashboard (PERF-036).
+  import 'maplibre-gl/dist/maplibre-gl.css';
   import type {
     ExpressionSpecification,
     MapGeoJSONFeature,
@@ -476,6 +479,13 @@
     attachTowerHandlers();
   }
 
+  /** The FeatureCollection last handed to the tower source — lets us skip a
+   *  redundant setData (which forces a full 80k-point re-cluster) when the
+   *  filtered result is reference-identical to what's already drawn (PERF-010).
+   *  filterTowers returns the *same* fc when nothing narrows it, so an unrelated
+   *  re-run of the tower effect no longer re-clusters. */
+  let lastTowerData: FeatureCollection<Point, TowerProps> | null = null;
+
   /** Add (first time) or refresh the tower source data, keep it on top, and
    *  honour the `towers` visibility toggle. */
   function syncTowerLayers(): void {
@@ -491,10 +501,11 @@
     );
     if (!towerLayersAdded) {
       addTowerLayers(data);
-    } else {
+    } else if (data !== lastTowerData) {
       const src = map.getSource(TOWERS_SRC) as maplibregl.GeoJSONSource | undefined;
       src?.setData(data);
     }
+    lastTowerData = data;
     ensureTowersOnTop();
     applyTowerVisibility();
   }
@@ -567,11 +578,15 @@
 
   // Build the national solar layer once its data loads; keep its visibility in
   // step with the Structure-type filter (the single control for solar now).
+  // Solar data is fetched lazily the first time the layer is enabled (PERF-014)
+  // — boot no longer downloads ~2.7 MB of solar GeoJSON for a layer that's
+  // hidden by default.
   $effect(() => {
     void app.solarPoints;
     void filterModel.model;
     if (!map || !ready) return;
     untrack(() => {
+      if (showSolarLayer(filterModel.model)) void app.loadSolar();
       addSolarLayer();
       applySolarVisibility();
     });

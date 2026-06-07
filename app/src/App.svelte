@@ -1,19 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { app } from './lib/stores.svelte';
-  import MapView from './components/MapView.svelte';
   import FilterPanel from './components/FilterPanel.svelte';
   import StatStrip from './components/StatStrip.svelte';
   import DetailsPanel from './components/DetailsPanel.svelte';
   import Dashboard from './components/Dashboard.svelte';
-  import Leads from './components/Leads.svelte';
-  import LeadPage from './components/LeadPage.svelte';
-  import ExploreList from './components/ExploreList.svelte';
-  import TowerDetail from './components/TowerDetail.svelte';
   import ScoringPanel from './components/ScoringPanel.svelte';
   import SignIn from './components/SignIn.svelte';
-  import Settings from './components/Settings.svelte';
   import UserMenu from './components/UserMenu.svelte';
+  // Off-first-paint route components are dynamically imported at their render
+  // sites (PERF-012) so they land in their own chunks instead of the entry
+  // bundle: Leads, LeadPage, ExploreList, TowerDetail, Settings. Dashboard stays
+  // eager — it's the landing view. (Pairs with the PERF-004 manualChunks split.)
   import { leads } from './lib/leads-store.svelte';
   import { dashboard } from './lib/dashboard-store.svelte';
   import { archivedAntennas } from './lib/archived-antennas.svelte';
@@ -77,6 +75,20 @@
     if (auth.verified && !booted) {
       booted = true;
       void app.boot();
+    }
+  });
+
+  // Lazily reveal + boot the heavy Explore map stack only once the user actually
+  // reaches a map-bearing route (PERF-001): MapView + the filter sidebar mount,
+  // and app.bootMap() pulls the tower parquet + parcel tiles. A Dashboard
+  // landing never pays for any of it. Once shown the map is never unmounted
+  // (ADR-061 map persistence), so this latch only ever flips false → true.
+  let mapEverShown = $state(false);
+  $effect(() => {
+    if (!auth.verified) return;
+    if (section === 'explore' || route.name === 'tower' || route.name === 'lead') {
+      mapEverShown = true;
+      void app.bootMap();
     }
   });
 
@@ -257,10 +269,15 @@
             {/if}
 
             <div class="sidebar-scroll">
-              <StatStrip />
-              <FilterPanel />
-              {#if app.status === 'ready'}
-                <ScoringPanel />
+              <!-- Deferred with the map (PERF-001): FilterPanel.onMount is what
+                   eagerly fetches the 10.6 MB owners filter index, so it must not
+                   mount on the Dashboard landing. -->
+              {#if mapEverShown}
+                <StatStrip />
+                <FilterPanel />
+                {#if app.status === 'ready'}
+                  <ScoringPanel />
+                {/if}
               {/if}
             </div>
           </aside>
@@ -307,20 +324,33 @@
           </div>
         {/if}
         <div class="map-wrap">
-          <MapView />
+          <!-- The map only ever mounts after the first map-bearing route (PERF-001);
+               it then persists for the session (ADR-061). Lazy-imported so the
+               MapLibre + DuckDB chunk (and maplibre CSS, PERF-036) stay off the
+               landing critical path. -->
+          {#if mapEverShown}
+            {#await import('./components/MapView.svelte') then m}
+              <m.default />
+            {/await}
+          {/if}
           <DetailsPanel />
-          {#if app.status === 'loading'}
+          {#if app.status === 'loading' || app.towersStatus === 'loading'}
             <div class="loading-pill" data-testid="loading">Loading…</div>
           {/if}
           <!-- Tower-grained Explore (#108): the ranked list and a tower's
-               read-only detail peek render over the still-mounted map. -->
+               read-only detail peek render over the still-mounted map. Both are
+               lazy-loaded (PERF-012). -->
           {#if route.name === 'tower'}
             <div class="explore-overlay" data-testid="explore-overlay">
-              <TowerDetail cid={route.cid} asr={route.asr} />
+              {#await import('./components/TowerDetail.svelte') then m}
+                <m.default cid={route.cid} asr={route.asr} />
+              {/await}
             </div>
           {:else if route.name === 'explore' && exploreView === 'list'}
             <div class="explore-overlay" data-testid="explore-overlay">
-              <ExploreList />
+              {#await import('./components/ExploreList.svelte') then m}
+                <m.default />
+              {/await}
             </div>
           {/if}
         </div>
@@ -332,13 +362,19 @@
       {#if section !== 'explore'}
         <div class="surface" data-testid="section-surface">
           {#if route.name === 'settings'}
-            <Settings />
+            {#await import('./components/Settings.svelte') then m}
+              <m.default />
+            {/await}
           {:else if route.name === 'dashboard'}
             <Dashboard sub={route.sub} />
           {:else if route.name === 'leads'}
-            <Leads />
+            {#await import('./components/Leads.svelte') then m}
+              <m.default />
+            {/await}
           {:else if route.name === 'lead'}
-            <LeadPage displayClusterId={route.key} />
+            {#await import('./components/LeadPage.svelte') then m}
+              <m.default displayClusterId={route.key} />
+            {/await}
           {/if}
         </div>
       {/if}

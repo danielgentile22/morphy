@@ -112,12 +112,24 @@ class FilterModelStore {
     }
   }
 
+  // Lowercased owner names, built once after the index loads — so a search
+  // doesn't re-lowercase all 16k names on every keystroke-settled query
+  // (PERF-035). Rebuilt if the owners array changes (it loads once, 0 → N).
+  private _lowered: { rec: OwnerFilterRecord; lname: string }[] | null = null;
+  private loweredOwners(): { rec: OwnerFilterRecord; lname: string }[] {
+    if (this._lowered === null || this._lowered.length !== this.owners.length) {
+      this._lowered = this.owners.map((o) => ({ rec: o, lname: o.owner_name.toLowerCase() }));
+    }
+    return this._lowered;
+  }
+
   /** Owner-name search (case-insensitive substring), ranked by score. */
   searchOwners(term: string, limit = 8): OwnerFilterRecord[] {
     const q = term.trim().toLowerCase();
     if (q.length < 2) return [];
-    return this.owners
-      .filter((o) => o.owner_name.toLowerCase().includes(q))
+    return this.loweredOwners()
+      .filter(({ lname }) => lname.includes(q))
+      .map(({ rec }) => rec)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
   }

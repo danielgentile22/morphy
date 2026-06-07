@@ -7,7 +7,7 @@ it. At most one default per tenant (set_default clears the others).
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from .models import ScoringPreset
@@ -61,6 +61,17 @@ class ScoringPresetStore:
         return True
 
     def _clear_other_defaults(self, keep_id: int) -> None:
-        for p in self.list():
-            if p.id != keep_id and p.is_default:
-                p.is_default = False
+        # One targeted UPDATE instead of SELECT-all + per-row ORM mutation
+        # (PERF-034). ``synchronize_session="evaluate"`` flips the flag on any
+        # already-loaded preset in this session too, so the identity map stays
+        # consistent without an extra fetch.
+        self.session.execute(
+            update(ScoringPreset)
+            .where(
+                ScoringPreset.tenant_id == self.tenant_id,
+                ScoringPreset.id != keep_id,
+                ScoringPreset.is_default.is_(True),
+            )
+            .values(is_default=False)
+            .execution_options(synchronize_session="evaluate"),
+        )

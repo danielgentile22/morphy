@@ -17,11 +17,53 @@
     void scoring.loadPresets();
   });
 
+  // ── debounced weight commits (PERF-003) ────────────────────────────────
+  // Each weight tick rebuilt the 16k-entry score map AND re-sorted the 80k-row
+  // Explore set + the Leads/MyLeads worklists. Keep the thumb responsive via a
+  // local mirror and debounce the commit (one batched setWeights at the end).
+  const SCORING_DEBOUNCE_MS = 140;
+  let localWeights = $state<ScoreWeights>({ ...scoring.weights });
+  // Re-sync when the store's weights change elsewhere (preset apply, reset).
+  $effect(() => void (localWeights = { ...scoring.weights }));
+
+  let weightTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingWeights: Partial<ScoreWeights> = {};
+  function onWeightInput(key: keyof ScoreWeights, value: number): void {
+    localWeights = { ...localWeights, [key]: value };
+    pendingWeights = { ...pendingWeights, [key]: value };
+    if (weightTimer) clearTimeout(weightTimer);
+    weightTimer = setTimeout(flushWeights, SCORING_DEBOUNCE_MS);
+  }
+  function flushWeights(): void {
+    if (weightTimer) {
+      clearTimeout(weightTimer);
+      weightTimer = null;
+    }
+    if (Object.keys(pendingWeights).length === 0) return;
+    scoring.setWeights(pendingWeights);
+    pendingWeights = {};
+  }
+  function cancelWeights(): void {
+    if (weightTimer) {
+      clearTimeout(weightTimer);
+      weightTimer = null;
+    }
+    pendingWeights = {};
+  }
+  // Flush an in-flight drag before the panel unmounts (sidebar collapse).
+  $effect(() => () => flushWeights());
+
+  function resetScoring(): void {
+    cancelWeights();
+    scoring.reset();
+  }
+
   async function save(): Promise<void> {
     const ok = await scoring.save(newName.trim());
     if (ok) newName = '';
   }
   function onPickPreset(e: Event): void {
+    cancelWeights(); // a queued slider commit must not clobber the picked preset
     const v = (e.currentTarget as HTMLSelectElement).value;
     if (v === '') scoring.reset();
     else {
@@ -78,7 +120,7 @@
         Save
       </button>
     </div>
-    <button class="reset" data-testid="scoring-reset" onclick={() => scoring.reset()}>
+    <button class="reset" data-testid="scoring-reset" onclick={resetScoring}>
       ↺ Reset to default
     </button>
   {/if}
@@ -93,10 +135,10 @@
           max="1"
           step="0.05"
           data-testid="weight-{f.key}"
-          value={scoring.weights[f.key as keyof ScoreWeights]}
-          oninput={(e) => scoring.setWeight(f.key, Number(e.currentTarget.value))}
+          value={localWeights[f.key as keyof ScoreWeights]}
+          oninput={(e) => onWeightInput(f.key as keyof ScoreWeights, Number(e.currentTarget.value))}
         />
-        <span class="wval">{scoring.weights[f.key as keyof ScoreWeights].toFixed(2)}</span>
+        <span class="wval">{localWeights[f.key as keyof ScoreWeights].toFixed(2)}</span>
       </label>
     {/each}
   </div>

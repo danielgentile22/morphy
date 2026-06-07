@@ -51,13 +51,53 @@ class LeadStore:
         )
         return list(self.session.scalars(stmt))
 
-    def tenant_attempts(self) -> list[ContactAttempt]:
+    def tenant_attempts(
+        self,
+        *,
+        lead: str | None = None,
+        member: int | None = None,
+        channel: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        exclude_channels: tuple[str, ...] = (),
+    ) -> list[ContactAttempt]:
         """Every activity row for this tenant, newest first — the read model
         the Dashboard derivations (Attention #111, Calendar/History #112,
-        Stats #113) assemble over."""
+        Stats #113) assemble over.
+
+        The optional filters (PERF-008) push the History/Calendar narrowing into
+        SQL so a date/lead/member-scoped query returns weeks of rows, not the
+        whole history. With no arguments this is the original tenant-wide stream.
+        """
+        stmt = select(ContactAttempt).where(ContactAttempt.tenant_id == self.tenant_id)
+        if lead:
+            stmt = stmt.where(ContactAttempt.display_cluster_id == lead)
+        if member is not None:
+            stmt = stmt.where(ContactAttempt.logged_by_user_id == member)
+        if channel:
+            stmt = stmt.where(ContactAttempt.channel == channel)
+        for excluded in exclude_channels:
+            stmt = stmt.where(ContactAttempt.channel != excluded)
+        if date_from is not None:
+            stmt = stmt.where(ContactAttempt.occurred_on >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(ContactAttempt.occurred_on <= date_to)
+        stmt = stmt.order_by(ContactAttempt.occurred_on.desc(), ContactAttempt.id.desc())
+        return list(self.session.scalars(stmt))
+
+    def list_attempts_for(self, display_cluster_ids: set[str]) -> list[ContactAttempt]:
+        """All attempts for any of ``display_cluster_ids``, newest first — one
+        IN-query for a merged owner's members instead of N per-member queries
+        (PERF-022). The DB does the ordering (no Python re-sort), served by the
+        ``(tenant_id, display_cluster_id, occurred_on, id)`` composite index."""
+        if not display_cluster_ids:
+            return []
         stmt = (
             select(ContactAttempt)
-            .where(ContactAttempt.tenant_id == self.tenant_id)
+            .where(
+                ContactAttempt.tenant_id == self.tenant_id,
+                ContactAttempt.display_cluster_id.in_(display_cluster_ids),
+            )
             .order_by(ContactAttempt.occurred_on.desc(), ContactAttempt.id.desc())
         )
         return list(self.session.scalars(stmt))

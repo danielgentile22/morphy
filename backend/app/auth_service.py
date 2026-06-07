@@ -70,6 +70,17 @@ def login(session: Session, *, username: str, password: str) -> Principal:
     return _principal_for(session, users, result.username, result.team)
 
 
+# Per-process memo of the resolved (username, team, file) → Principal mapping
+# (PERF-025). The file presence + team check still runs on EVERY request below
+# (the ADR-062/063 authority invariant); only the two DB id-resolution queries
+# (tenant-by-name + user-by-email) are skipped on a hit. Keyed on the credentials
+# file signature *and* the request's engine identity, so a file edit OR a
+# different DB (e.g. a test's fresh in-memory engine) is a cache miss — never a
+# stale identity. Cleared whenever the file signature moves, bounding growth.
+_principal_cache: dict[tuple, Principal] = {}
+_principal_cache_sig: list = [object()]
+
+
 def resolve_principal(session: Session, username: str) -> Principal:
     """Authorize ``username`` for this request — the file is authoritative.
 
@@ -80,7 +91,18 @@ def resolve_principal(session: Session, username: str) -> Principal:
     entry = users.get(credentials.normalize(username))
     if entry is None:
         raise NotAuthorized("no longer authorized")
-    return _principal_for(session, users, entry.username, entry.team)
+    sig = _credentials_file.signature
+    if sig != _principal_cache_sig[0]:
+        # The file changed (or first call) — drop any now-stale resolutions.
+        _principal_cache.clear()
+        _principal_cache_sig[0] = sig
+    key = (entry.username, entry.team, sig, id(session.bind))
+    cached = _principal_cache.get(key)
+    if cached is not None:
+        return cached
+    principal = _principal_for(session, users, entry.username, entry.team)
+    _principal_cache[key] = principal
+    return principal
 
 
 def _principal_for(

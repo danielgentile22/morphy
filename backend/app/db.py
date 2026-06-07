@@ -62,6 +62,22 @@ _ADDITIVE_MIGRATIONS: tuple[tuple[str, dict[str, str]], ...] = (
     ("app_user", _USER_ADDED_COLUMNS),
 )
 
+# Composite indexes added after their tables first shipped (PERF-006 / PERF-023).
+# ``create_all`` builds these on a *fresh* DB (they're declared in the models'
+# ``__table_args__``) but cannot add them to an already-created table — so we
+# issue ``CREATE INDEX IF NOT EXISTS`` (valid on SQLite + Postgres, idempotent
+# on a fresh DB where create_all already made them). Each maps an index name to
+# its (table, columns) so the DDL stays in sync with the model declarations.
+_ADDED_INDEXES: tuple[tuple[str, str, str], ...] = (
+    ("ix_attempt_tenant_occurred", "contact_attempt", "tenant_id, occurred_on, id"),
+    (
+        "ix_attempt_tenant_cid_occurred",
+        "contact_attempt",
+        "tenant_id, display_cluster_id, occurred_on, id",
+    ),
+    ("ix_task_tenant_created", "task", "tenant_id, created_at, id"),
+)
+
 
 def make_engine(url: str | None = None) -> Engine:
     """Build an engine; SQLite gets the cross-thread connect args FastAPI needs."""
@@ -88,6 +104,7 @@ def init_db(eng: Engine | None = None) -> None:
     target = eng or engine
     Base.metadata.create_all(target)
     _migrate_added_columns(target)
+    _ensure_added_indexes(target)
 
 
 def _migrate_added_columns(eng: Engine) -> None:
@@ -104,6 +121,17 @@ def _migrate_added_columns(eng: Engine) -> None:
         with eng.begin() as conn:
             for name, ddl in missing.items():
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+
+
+def _ensure_added_indexes(eng: Engine) -> None:
+    """Create composite indexes added to already-existing tables (idempotent)."""
+    insp = inspect(eng)
+    table_names = set(insp.get_table_names())
+    with eng.begin() as conn:
+        for name, table, columns in _ADDED_INDEXES:
+            if table not in table_names:
+                continue  # create_all built it fresh, indexes included
+            conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({columns})"))
 
 
 def get_db() -> Iterator[Session]:

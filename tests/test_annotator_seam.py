@@ -18,6 +18,7 @@ import pandas as pd
 
 # Force registration of every Join.
 from preprocess import registry  # noqa: F401
+from preprocess.annotators import county_score
 from preprocess.base import ComposeContext
 from preprocess.joins.county_score_lookup import CountyScoreLookupJoin
 from preprocess.joins.spatial_attribute import PARCEL_TO_DISTRESS_SPEC, SpatialAttributeJoin
@@ -95,7 +96,10 @@ def _by_id(df: pd.DataFrame, cols: list[str]) -> dict:
 def test_county_score_whole_layer_matches_per_chunk():
     parcels, scores = _parcels(), _scores()
     whole = _whole_layer_county_score(parcels, scores)
-    chunked = _chunked(parcels, lambda c: apply_county_score(c, scores))
+    # apply_county_score takes a prepared rollup now (PERF-021), mirroring how
+    # the Composer hoists prepare() once before the shard loop.
+    prepared = county_score.prepare(scores)
+    chunked = _chunked(parcels, lambda c: apply_county_score(c, prepared))
     cols = ["distress_tier", "persistent_poverty"]
     assert _by_id(whole, cols) == _by_id(chunked, cols)
     # And the values are actually populated (not a degenerate all-equal pass).

@@ -111,41 +111,66 @@ export class AppStore {
 
   // ── async boot ────────────────────────────────────────────────────────
 
-  /** Boot the whole anchor set: index → national towers + solar (kicked off in
-   *  parallel) → probe each state's parcel tiles. No active state. */
+  /** Idempotent: resolve once, shared by boot() + bootMap(). */
+  private indexPromise: Promise<void> | null = null;
+  /** Guards the heavy map-layer load so it runs at most once. */
+  private mapBooted = false;
+
+  /** Light boot — load only the composite index (needed for map framing + the
+   *  static Solar tile). The heavy map stack (towers, parcel tiles, solar) is
+   *  deferred to bootMap(), fired when the map is first shown, so a session that
+   *  lands on the Dashboard never downloads/parses ~20 MB of map assets it
+   *  doesn't render (PERF-001). */
   async boot(): Promise<void> {
+    await this.ensureIndex();
+  }
+
+  private async ensureIndex(): Promise<void> {
+    if (this.indexPromise) return this.indexPromise;
     this.status = 'loading';
     this.errorMessage = null;
-    try {
-      const index = await loadIndex();
-      if (index.states.length === 0) {
-        throw new Error(
-          'composite/index.json lists no states. Run ' +
-            '`python scripts/preprocess.py --app-assets` to generate it.',
-        );
+    this.indexPromise = (async () => {
+      try {
+        const index = await loadIndex();
+        if (index.states.length === 0) {
+          throw new Error(
+            'composite/index.json lists no states. Run ' +
+              '`python scripts/preprocess.py --app-assets` to generate it.',
+          );
+        }
+        this.index = index;
+        // Towers + parcels are always on (the Layers panel was retired); solar
+        // visibility is derived from the Structure-type filter in MapView.
+        this.layerVisible = { towers: true, [BASE_PARCELS]: true };
+        this.status = 'ready';
+      } catch (e) {
+        this.status = 'error';
+        this.errorMessage = errMsg(e);
       }
-      this.index = index;
-      // National layers — independent of any one state; render when ready.
-      void this.loadTowers();
-      void this.loadSolar();
-      // Probe each anchor state's parcel tiles → the per-state vector sources.
-      const fipsList = index.states.map((s) => s.fips);
-      const probeEntries = await Promise.all(
-        fipsList.map(async (fips) => [fips, await probeResource(pmtilesUrl(fips))] as const),
-      );
-      this.parcelSources = computeParcelSources(index.states, Object.fromEntries(probeEntries));
-      if (this.parcelSources.length === 0) {
-        this.notice =
-          'No parcel tiles are reachable — the map shows towers and solar only. ' +
-          'Is the data server running?';
-      }
-      // Towers + parcels are always on (the Layers panel was retired); solar
-      // visibility is derived from the Structure-type filter in MapView.
-      this.layerVisible = { towers: true, [BASE_PARCELS]: true };
-      this.status = 'ready';
-    } catch (e) {
-      this.status = 'error';
-      this.errorMessage = errMsg(e);
+    })();
+    return this.indexPromise;
+  }
+
+  /** Heavy boot — the national tower layer + per-state parcel-tile probes,
+   *  loaded the first time the map is shown (PERF-001). Solar stays lazy until
+   *  its layer is enabled (PERF-014). Idempotent: runs at most once. */
+  async bootMap(): Promise<void> {
+    if (this.mapBooted) return;
+    this.mapBooted = true;
+    await this.ensureIndex();
+    if (!this.index) return; // index failed → error screen already shown
+    // National tower layer — independent of any one state; renders when ready.
+    void this.loadTowers();
+    // Probe each anchor state's parcel tiles → the per-state vector sources.
+    const fipsList = this.index.states.map((s) => s.fips);
+    const probeEntries = await Promise.all(
+      fipsList.map(async (fips) => [fips, await probeResource(pmtilesUrl(fips))] as const),
+    );
+    this.parcelSources = computeParcelSources(this.index.states, Object.fromEntries(probeEntries));
+    if (this.parcelSources.length === 0) {
+      this.notice =
+        'No parcel tiles are reachable — the map shows towers and solar only. ' +
+        'Is the data server running?';
     }
   }
 

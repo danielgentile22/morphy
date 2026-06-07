@@ -161,20 +161,35 @@ class MainWindow(QMainWindow):
         current/ directory has files but whose manifest entry has no
         local_version. Returns the number of newly-detected installs.
         """
+
+        def scan(cur) -> tuple[list[str], int]:
+            """One rglob → (relative file paths, total bytes) — PERF-033. Was
+            an rglob for the file list + a separate directory_bytes walk."""
+            files: list[str] = []
+            total = 0
+            for p in cur.rglob("*"):
+                try:
+                    if p.is_file() and not p.is_symlink():
+                        files.append(str(p.relative_to(RAW_ROOT)))
+                        total += p.stat().st_size
+                except OSError:
+                    continue
+            return files, total
+
         n_detected = 0
         for s in self._sources:
             entry = self._manifest.entry(s.id)
             cur = current_dir(s.id)
-            has_files = directory_bytes(cur) > 0
+            # Cheap existence probe — stop at the first real file instead of
+            # summing every byte under current/ just to answer ">0" (PERF-033).
+            has_files = cur.exists() and any(
+                p.is_file() and not p.is_symlink() for p in cur.rglob("*")
+            )
             if has_files and not entry.local_version:
-                files = [
-                    str(p.relative_to(RAW_ROOT))
-                    for p in cur.rglob("*")
-                    if p.is_file() and not p.is_symlink()
-                ]
+                files, total = scan(cur)
                 entry.local_version = "manual"
                 entry.status = "ok"
-                entry.bytes = directory_bytes(cur)
+                entry.bytes = total
                 entry.files = files
                 entry.error = None
                 if entry.fetched_at is None:
@@ -190,14 +205,10 @@ class MainWindow(QMainWindow):
                 # Stale failure stamp: files were re-installed manually
                 # after a prior auto-fetch failed. Clear the failure so the
                 # UI matches disk reality. Refresh the file inventory too.
-                files = [
-                    str(p.relative_to(RAW_ROOT))
-                    for p in cur.rglob("*")
-                    if p.is_file() and not p.is_symlink()
-                ]
+                files, total = scan(cur)
                 entry.status = "ok"
                 entry.error = None
-                entry.bytes = directory_bytes(cur)
+                entry.bytes = total
                 entry.files = files
                 n_detected += 1
             elif not has_files and entry.local_version and entry.status == "ok":
@@ -592,7 +603,10 @@ class MainWindow(QMainWindow):
         item.setText(COL_STATUS, label)
         item.setForeground(COL_STATUS, color)
 
-        size_bytes = directory_bytes(current_dir(source.id))
+        # Cached manifest size instead of re-statting current/ on every redraw
+        # (PERF-032) — the manifest is the single writer, kept current by
+        # fetch/rescan, so this is authoritative and O(1).
+        size_bytes = entry.bytes
         item.setText(COL_SIZE, human_bytes(size_bytes) if size_bytes else "—")
 
         item.setText(COL_LOCAL, entry.local_version or "—")
@@ -620,7 +634,10 @@ class MainWindow(QMainWindow):
         self._refresh_attention_panel()
 
     def _refresh_header(self) -> None:
-        total = directory_bytes(RAW_ROOT)
+        # Sum the cached per-source manifest bytes instead of re-walking the
+        # whole 55 GB raw tree every 5 s on the UI thread (PERF-031). The
+        # manifest is updated on every fetch/rescan, so this stays accurate.
+        total = sum(self._manifest.entry(s.id).bytes for s in self._sources)
         n_installed = sum(1 for s in self._sources if self._manifest.entry(s.id).is_installed())
         self.lbl_storage.setText(
             f"Total raw data: <b>{human_bytes(total)}</b>  "

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -61,6 +61,22 @@ class ContactAttempt(Base):
     """
 
     __tablename__ = "contact_attempt"
+
+    # Composite indexes covering the hot read paths (PERF-006): the
+    # ``ORDER BY occurred_on DESC, id DESC`` streams are served directly by an
+    # index range scan instead of a TEMP B-TREE filesort. ``tenant_attempts``
+    # (tenant-wide stream) uses the first; ``list_attempts`` (one owner) the
+    # second. SQLite/Postgres scan ASC indexes backwards, so DESC is served.
+    __table_args__ = (
+        Index("ix_attempt_tenant_occurred", "tenant_id", "occurred_on", "id"),
+        Index(
+            "ix_attempt_tenant_cid_occurred",
+            "tenant_id",
+            "display_cluster_id",
+            "occurred_on",
+            "id",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
@@ -167,6 +183,10 @@ class Task(Base):
     """
 
     __tablename__ = "task"
+
+    # Serves ``list``/``list_filtered``'s ``ORDER BY created_at DESC, id DESC``
+    # without a TEMP B-TREE filesort at production task counts (PERF-023).
+    __table_args__ = (Index("ix_task_tenant_created", "tenant_id", "created_at", "id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)

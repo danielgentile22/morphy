@@ -69,10 +69,12 @@ class _StubBackend(BaseHTTPRequestHandler):
 def caddy_base(tmp_path_factory: pytest.TempPathFactory):
     tmp = tmp_path_factory.mktemp("caddy-edge")
 
-    # Built SPA bundle.
+    # Built SPA bundle, including a content-hashed asset under /assets/*.
     site = tmp / "dist"
     site.mkdir()
     (site / "index.html").write_bytes(_SPA_MARKER)
+    (site / "assets").mkdir()
+    (site / "assets" / "index-abc123.js").write_bytes(b"console.log('app')")
 
     # Fixture "volume": served composite under processed/, plus the DB and
     # users.txt at the volume root (outside the web-served subtree).
@@ -159,6 +161,23 @@ def test_unknown_route_falls_back_to_the_spa(caddy_base: str) -> None:
     status, _hdrs, body = _get(caddy_base, "/leads/some/deep/client-route")
     assert status == 200
     assert body == _SPA_MARKER
+
+
+def test_hashed_assets_get_immutable_cache_headers(caddy_base: str) -> None:
+    # PERF-019: content-hashed /assets/* are immutable, so repeat visits hit
+    # cache instead of revalidating the big MapLibre/DuckDB chunks.
+    status, hdrs, _body = _get(caddy_base, "/assets/index-abc123.js")
+    assert status == 200
+    cc = hdrs.get("cache-control", "")
+    assert "immutable" in cc
+    assert "max-age=31536000" in cc
+
+
+def test_index_html_stays_revalidated(caddy_base: str) -> None:
+    # The immutable rule must be scoped to /assets/* — index.html must NOT be
+    # hard-cached, so a new deploy is picked up immediately.
+    _status, hdrs, _body = _get(caddy_base, "/")
+    assert "immutable" not in hdrs.get("cache-control", "")
 
 
 def test_api_is_reverse_proxied_to_the_backend(caddy_base: str) -> None:

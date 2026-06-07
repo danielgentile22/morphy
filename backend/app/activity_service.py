@@ -54,6 +54,17 @@ class ActivityService:
         self.leads = leads
         self._owner_name_of = owner_name_of or (lambda _cid: "")
         self._member_name_of = member_name_of or (lambda _uid: "")
+        # The unfiltered (dismiss-excluded) tenant stream, fetched at most once
+        # per request and shared by digest() + the no-filter events() path
+        # (PERF-008) — was two independent full scans + filesorts.
+        self._stream_cache: list | None = None
+
+    def _stream(self) -> list:
+        if self._stream_cache is None:
+            self._stream_cache = self.leads.tenant_attempts(
+                exclude_channels=tuple(_EXCLUDED_CHANNELS)
+            )
+        return self._stream_cache
 
     def events(
         self,
@@ -65,43 +76,45 @@ class ActivityService:
         date_to: date | None = None,
     ) -> list[ActivityEvent]:
         """The activity stream (newest first), narrowed by any subset of
-        lead / member / channel / date range."""
-        out: list[ActivityEvent] = []
-        for a in self.leads.tenant_attempts():  # newest-first
-            if a.channel in _EXCLUDED_CHANNELS:
-                continue
-            if lead and a.display_cluster_id != lead:
-                continue
-            if member is not None and a.logged_by_user_id != member:
-                continue
-            if channel and a.channel != channel:
-                continue
-            if date_from is not None and a.occurred_on < date_from:
-                continue
-            if date_to is not None and a.occurred_on > date_to:
-                continue
-            out.append(
-                ActivityEvent(
-                    id=a.id,
-                    date=a.occurred_on.isoformat(),
-                    kind=_kind(a.channel, a.direction),
-                    channel=a.channel,
-                    cluster_id=a.display_cluster_id,
-                    owner_name=self._owner_name_of(a.display_cluster_id),
-                    logged_by_user_id=a.logged_by_user_id,
-                    member_name=self._member_name_of(a.logged_by_user_id),
-                    summary=a.outcome,
-                )
+        lead / member / channel / date range.
+
+        Filters are pushed into SQL (PERF-008) so a scoped query is proportional
+        to its result; the common unfiltered call reuses the cached tenant
+        stream that digest() also reads, so a single request scans once.
+        """
+        if lead or member is not None or channel or date_from is not None or date_to is not None:
+            rows = self.leads.tenant_attempts(
+                lead=lead,
+                member=member,
+                channel=channel,
+                date_from=date_from,
+                date_to=date_to,
+                exclude_channels=tuple(_EXCLUDED_CHANNELS),
             )
-        return out
+        else:
+            rows = self._stream()
+        return [
+            ActivityEvent(
+                id=a.id,
+                date=a.occurred_on.isoformat(),
+                kind=_kind(a.channel, a.direction),
+                channel=a.channel,
+                cluster_id=a.display_cluster_id,
+                owner_name=self._owner_name_of(a.display_cluster_id),
+                logged_by_user_id=a.logged_by_user_id,
+                member_name=self._member_name_of(a.logged_by_user_id),
+                summary=a.outcome,
+            )
+            for a in rows
+        ]
 
     def digest(self) -> dict[str, str | None]:
         """Compact recent-activity facts for the Calendar digest: the most
         recent outbound touch + inbound reply dates ('last contact 3d ago,
-        last reply yesterday')."""
+        last reply yesterday'). Always over the unfiltered recent stream."""
         last_contact: str | None = None
         last_reply: str | None = None
-        for a in self.leads.tenant_attempts():  # newest-first
+        for a in self._stream():  # newest-first, dismiss already excluded
             if a.channel in _EXCLUDED_CHANNELS:
                 continue
             if last_reply is None and a.direction == "inbound":

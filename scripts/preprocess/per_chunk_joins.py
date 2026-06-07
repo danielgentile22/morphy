@@ -55,13 +55,15 @@ def apply_parcel_hosts_infra(
     )
 
 
-def apply_county_score(chunk: gpd.GeoDataFrame, scores: pd.DataFrame | None) -> gpd.GeoDataFrame:
-    """Roll county_score up + copy distress columns onto a parcel chunk.
+def apply_county_score(chunk: gpd.GeoDataFrame, prepared: pd.DataFrame | None) -> gpd.GeoDataFrame:
+    """Copy distress columns onto a parcel chunk from an already-prepared
+    county_score rollup.
 
-    ``prepare`` runs per chunk here (county_score is a small table, so the
-    rollup is cheap); the whole-layer feed hoists it once instead.
+    The ``prepare`` rollup is chunk-independent, so the Composer hoists it
+    *once* before the shard loop and passes the result here (PERF-021) — was
+    re-rolled per shard (~67× for FL). Pass ``county_score.prepare(scores)``.
     """
-    return county_score.annotate(chunk, county_score.prepare(scores))
+    return county_score.annotate(chunk, prepared)
 
 
 def apply_parcel_to_distress(

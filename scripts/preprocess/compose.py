@@ -46,7 +46,7 @@ import geopandas as gpd
 import pandas as pd
 
 from . import COMPOSITE_ROOT
-from .annotators import owner_cluster
+from .annotators import county_score, owner_cluster
 from .base import (
     OUTPUT_BASENAMES,
     SPATIAL_TYPES,
@@ -117,59 +117,79 @@ def _build_owner_cluster_lookup(state_fips: str) -> pd.DataFrame:
 # ── Tower / solar / billboard pre-pass (sjoin against parcel shards) ──────
 
 
-def _build_infra_to_parcel_lookup(
-    infra: gpd.GeoDataFrame,
+# Parcel columns renamed onto the infra row when a match is found.
+_INFRA_PARCEL_RENAME = {
+    "owner_name": "parcel_owner",
+    "assessed_value": "parcel_value",
+    "acreage": "parcel_acreage",
+    "land_use_code": "parcel_use_code",
+}
+
+
+def _valid_parcel_mask(chunk: gpd.GeoDataFrame):
+    """Boolean mask of host-eligible parcels. Reuses the precomputed
+    ``geometry_valid`` column (set at normalize time, PERF-028) when present;
+    falls back to recomputing the (expensive) GEOS validity otherwise. Invalid/
+    null-geom parcels can't host infrastructure and would corrupt the sjoin —
+    they stay in the parcel output (geometry_valid=False), just skipped here."""
+    if "geometry_valid" in chunk.columns:
+        return chunk["geometry_valid"].fillna(False).astype(bool)
+    return chunk.geometry.notna() & chunk.geometry.is_valid
+
+
+def _build_infra_to_parcel_lookups(
+    specs: dict[str, tuple[gpd.GeoDataFrame | None, list[str]]],
     state_fips: str,
-    *,
-    keep_cols: list[str],
-) -> dict[int, dict]:
-    """For each row of `infra`, find the parcel it intersects (any shard).
+) -> dict[str, dict[int, dict]]:
+    """For every infra layer in `specs`, find the parcel each infra row sits in
+    — in ONE pass over the parcel shards (PERF-016).
 
-    Returns a dict: infra row index → dict of parcel columns to attach
-    (parcel_id_full, parcel_owner, parcel_value, parcel_acreage,
-    parcel_use_code — whichever exist on parcels). Empty when infra has
-    no matches or no geometry.
+    `specs` maps a layer name → (infra GeoDataFrame, keep_cols). The shard set +
+    parcel geometry are the heaviest data in the ETL and are identical across
+    layers, so they're read, GEOS-validated, and STRtree-indexed once and the
+    (small, differing) infra layers all sjoin against the same shard — instead
+    of re-reading every shard once per layer (towers + solar = 2 full sweeps → 1).
 
-    The sjoin runs once per shard, so peak memory stays bounded to one
-    shard's parcel geometry plus the (small) infra geometry.
+    Returns {name: {infra_row_index: attach_dict}}; a None/empty layer → {}.
+    Peak memory stays bounded to one shard plus the (small) infra geometries.
     """
-    if infra is None or len(infra) == 0:
-        return {}
-    out: dict[int, dict] = {}
-    infra_geo = infra[["geometry"]].reset_index()
+    out: dict[str, dict[int, dict]] = {name: {} for name in specs}
+    # Prepare the small infra right-frames once; drop empty/missing layers.
+    active = {
+        name: (infra[["geometry"]].reset_index(), keep_cols)
+        for name, (infra, keep_cols) in specs.items()
+        if infra is not None and len(infra) > 0
+    }
+    if not active:
+        return out
     for _label, chunk in iter_state_parcel_shards(state_fips):
-        present = [c for c in keep_cols if c in chunk.columns]
         if "geometry" not in chunk.columns:
             continue
-        right = chunk[[*present, "geometry"]].rename(
-            columns={
-                "owner_name": "parcel_owner",
-                "assessed_value": "parcel_value",
-                "acreage": "parcel_acreage",
-                "land_use_code": "parcel_use_code",
-            }
-        )
-        # Exclude invalid/null-geom parcels from the spatial match — they can't
-        # host infrastructure and would corrupt the sjoin. They remain in the
-        # parcel output (geometry_valid=False); this just skips them here.
-        right = right[right.geometry.notna() & right.geometry.is_valid]
-        try:
-            hit = gpd.sjoin(infra_geo, right, how="inner", predicate="within")
-        except Exception as e:  # noqa: BLE001 — bad shard mustn't kill the loop
-            log.warning("infra→parcel sjoin failed on a shard: %s", e)
+        # Validity computed once per shard, shared by every infra layer.
+        valid_chunk = chunk[_valid_parcel_mask(chunk)]
+        if len(valid_chunk) == 0:
             continue
-        for row in hit.itertuples(index=False):
-            row_d = row._asdict() if hasattr(row, "_asdict") else dict(row)
-            idx = int(row_d.get("index", -1))
-            if idx < 0:
+        for name, (infra_geo, keep_cols) in active.items():
+            present = [c for c in keep_cols if c in valid_chunk.columns]
+            right = valid_chunk[[*present, "geometry"]].rename(columns=_INFRA_PARCEL_RENAME)
+            try:
+                hit = gpd.sjoin(infra_geo, right, how="inner", predicate="within")
+            except Exception as e:  # noqa: BLE001 — bad shard mustn't kill the loop
+                log.warning("infra→parcel sjoin failed on a shard for %s: %s", name, e)
                 continue
-            # Skip the sjoin index_right + the geometry column
-            attach = {
-                k: v for k, v in row_d.items() if k not in {"index", "index_right", "geometry"}
-            }
-            # First match wins — a tower in two overlapping parcels is rare
-            # and `compose` today doesn't disambiguate either.
-            out.setdefault(idx, attach)
+            lookup = out[name]
+            for row in hit.itertuples(index=False):
+                row_d = row._asdict() if hasattr(row, "_asdict") else dict(row)
+                idx = int(row_d.get("index", -1))
+                if idx < 0:
+                    continue
+                # Skip the sjoin index_right + the geometry column.
+                attach = {
+                    k: v for k, v in row_d.items() if k not in {"index", "index_right", "geometry"}
+                }
+                # First match wins — a tower in two overlapping parcels is rare
+                # and `compose` today doesn't disambiguate either.
+                lookup.setdefault(idx, attach)
     return out
 
 
@@ -232,29 +252,28 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
     owner_lookup = _build_owner_cluster_lookup(state.fips)
     log.info("owner-cluster pre-pass: %d parcels indexed", len(owner_lookup))
 
-    # 3-4. Infra→parcel pre-pass --------------------------------------------
+    # 3-4. Infra→parcel pre-pass (one shard pass for all layers — PERF-016) ---
     log.info("infra→parcel sjoin pre-pass…")
-    tower_lookup = _build_infra_to_parcel_lookup(
-        ctx.get("tower"),
+    infra_lookups = _build_infra_to_parcel_lookups(
+        {
+            "tower": (
+                ctx.get("tower"),
+                [
+                    "parcel_id_full",
+                    "owner_name",
+                    "assessed_value",
+                    "acreage",
+                    "land_use_code",
+                ],
+            ),
+            "solar": (ctx.get("solar_facility"), ["parcel_id_full", "owner_name"]),
+            "billboard": (ctx.get("billboard"), ["parcel_id_full", "owner_name"]),
+        },
         state.fips,
-        keep_cols=[
-            "parcel_id_full",
-            "owner_name",
-            "assessed_value",
-            "acreage",
-            "land_use_code",
-        ],
     )
-    solar_lookup = _build_infra_to_parcel_lookup(
-        ctx.get("solar_facility"),
-        state.fips,
-        keep_cols=["parcel_id_full", "owner_name"],
-    )
-    billboard_lookup = _build_infra_to_parcel_lookup(
-        ctx.get("billboard"),
-        state.fips,
-        keep_cols=["parcel_id_full", "owner_name"],
-    )
+    tower_lookup = infra_lookups["tower"]
+    solar_lookup = infra_lookups["solar"]
+    billboard_lookup = infra_lookups["billboard"]
     log.info(
         "infra→parcel lookups: towers=%d, solar=%d, billboards=%d",
         len(tower_lookup),
@@ -289,6 +308,10 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
     )
 
     # 6. Per-chunk loop -----------------------------------------------------
+    # Hoist the county_score rollup out of the shard loop (PERF-021): it's a
+    # groupby over the small, chunk-independent county_score table, so computing
+    # it once and reusing it per shard is identical output, far less work.
+    county_score_prepared = county_score.prepare(ctx.get("county_score"))
     view_aggregators = _build_view_aggregators()
     skipped_views: list[str] = []
     for v in all_views():
@@ -315,7 +338,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
             solar_summary,
             billboard_summary,
         )
-        chunk = apply_county_score(chunk, ctx.get("county_score"))
+        chunk = apply_county_score(chunk, county_score_prepared)
         chunk = apply_parcel_to_distress(chunk, ctx.get("distress_overlay"))
         chunk = attach_owner_cluster(chunk, owner_lookup)
         chunk = apply_interestingness_score(chunk)

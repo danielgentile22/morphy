@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import geopandas as gpd
 import pandas as pd
+from preprocess.annotators import county_score
 from preprocess.per_chunk_joins import apply_county_score
 from shapely.geometry import Point
 
@@ -33,7 +34,9 @@ def test_apply_county_score_overwrites_placeholders_without_suffix_collision():
             "persistent_poverty": [True, False],
         }
     )
-    out = apply_county_score(chunk, scores)
+    # apply_county_score now takes an already-prepared rollup (PERF-021 hoists
+    # county_score.prepare out of the shard loop); prepare it here.
+    out = apply_county_score(chunk, county_score.prepare(scores))
 
     assert list(out["distress_tier"]) == ["distressed", "distressed", "competitive"]
     assert [bool(v) for v in out["persistent_poverty"]] == [True, True, False]
