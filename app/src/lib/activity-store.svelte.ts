@@ -46,7 +46,7 @@ interface ActivityResponse {
   last_reply_on: string | null;
 }
 
-class ActivityStore {
+export class ActivityStore {
   events = $state<ActivityEvent[]>([]);
   status = $state<'idle' | 'loading' | 'ready' | 'error'>('idle');
   lastContactOn = $state<string | null>(null);
@@ -58,7 +58,20 @@ class ActivityStore {
 
   filter = $state<ActivityFilter>(emptyActivityFilter());
 
-  async load(): Promise<void> {
+  // Coalesce concurrent in-flight loads into one request (PRD #125 / #127):
+  // stacking History + Calendar on one Dashboard makes both call load() on
+  // mount, which would otherwise fire two identical /activity fetches. Only
+  // *concurrent* loads share this promise — it clears on settle, so a later
+  // load (Dashboard re-open, a filter change) still refetches fresh data.
+  private loading: Promise<void> | null = null;
+
+  load(): Promise<void> {
+    return (this.loading ??= this.runLoad().finally(() => {
+      this.loading = null;
+    }));
+  }
+
+  private async runLoad(): Promise<void> {
     this.status = 'loading';
     try {
       const qs = queryString(this.filter);

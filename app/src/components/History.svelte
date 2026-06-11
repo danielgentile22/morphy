@@ -7,6 +7,11 @@
   import { tasks } from '../lib/tasks-store.svelte';
   import { leadHash } from '../lib/nav';
 
+  // Suppressed (heading={false}) when embedded in the single scrolling
+  // Dashboard, which supplies one uniform section heading (PRD #125). Default
+  // true keeps the standalone render self-titled.
+  let { heading = true }: { heading?: boolean } = $props();
+
   onMount(() => {
     void activity.load();
     void tasks.loadUsers(); // member filter options
@@ -32,7 +37,7 @@
 
 <div class="history" data-testid="history">
   <header class="head">
-    <h2>History</h2>
+    {#if heading}<h2>History</h2>{/if}
     <span class="sub">Everything done — the full activity log.</span>
   </header>
 

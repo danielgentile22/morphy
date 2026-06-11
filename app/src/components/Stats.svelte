@@ -7,6 +7,11 @@
   import { tasks } from '../lib/tasks-store.svelte';
   import { auth } from '../lib/auth-store.svelte';
 
+  // Suppressed (heading={false}) when embedded in the single scrolling
+  // Dashboard, which supplies one uniform section heading (PRD #125); the
+  // filter bar stays. Default true keeps the standalone render self-titled.
+  let { heading = true }: { heading?: boolean } = $props();
+
   interface Stats {
     funnel: Record<string, number>;
     conversion: Record<string, number>;
@@ -61,7 +66,7 @@
 
 <div class="stats" data-testid="stats">
   <header class="head">
-    <h2>Stats</h2>
+    {#if heading}<h2>Stats</h2>{/if}
     <div class="filterbar" data-testid="stats-filter">
       <input type="date" aria-label="From" bind:value={filter.dateFrom} onchange={load} />
       <input type="date" aria-label="To" bind:value={filter.dateTo} onchange={load} />

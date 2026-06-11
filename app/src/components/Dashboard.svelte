@@ -1,15 +1,17 @@
 <script lang="ts">
-  // Dashboard — the landing hub of digests, each expandable to a sub-page
-  // (UI overhaul P1 / #104, ADR-065). This slice ships the shell: a digest
-  // grid + sub-route scaffold. The digests fill with data in later slices
-  // (Attention/Tasks #111, Calendar/History #112, Stats #113).
+  // Dashboard — a single scrolling page that renders all five views in full,
+  // in fixed order: Attention → Tasks → Calendar → History → Stats (PRD #125,
+  // supersedes the ADR-065 digest-hub + sub-pages model). The Attention feed is
+  // the headline at the top; below it the full, interactive Tasks / Calendar /
+  // History / Stats workspaces are stacked inline, each under one uniform
+  // section heading.
+  //
+  // The `#/dashboard/<view>` deep link is preserved but repurposed as a scroll
+  // anchor (the `sub` prop names a scroll target, not a page) — wired in #128.
   import { onMount } from 'svelte';
   import type { DashboardSub } from '../lib/nav';
   import { dashboardHash, leadHash } from '../lib/nav';
   import { dashboard } from '../lib/dashboard-store.svelte';
-  import { tasks } from '../lib/tasks-store.svelte';
-  import { isTaskInDigest } from '../lib/task-filter';
-  import { activity } from '../lib/activity-store.svelte';
   import Tasks from './Tasks.svelte';
   import History from './History.svelte';
   import Calendar from './Calendar.svelte';
@@ -17,212 +19,130 @@
 
   let { sub }: { sub: DashboardSub } = $props();
 
-  // The digest hub loads the attention feed + tasks for the Tasks digest.
+  // The inlined views self-load their data in their own onMount; the Dashboard
+  // only loads the Attention feed it renders directly. Re-opening the Dashboard
+  // refreshes attention (and the views refetch via their guarded loaders, so no
+  // duplicate concurrent fetches — #127).
   onMount(() => {
-    if (sub === 'home') {
-      void dashboard.loadAttention();
-      void tasks.load();
-      void activity.load(); // for the Calendar digest (last contact / reply)
-    }
+    void dashboard.loadAttention();
   });
 
-  const today = new Date().toISOString().slice(0, 10);
-  const digestTasks = $derived(tasks.tasks.filter((t) => isTaskInDigest(t, today)));
-
-  interface Digest {
-    sub: Exclude<DashboardSub, 'home'>;
-    title: string;
-    blurb: string;
-  }
-  const DIGESTS: Digest[] = [
-    {
-      sub: 'tasks',
-      title: 'Tasks',
-      blurb: 'Due today/tomorrow + high-priority follow-ups and todos.',
-    },
-    {
-      sub: 'calendar',
-      title: 'Calendar',
-      blurb: 'Recent + upcoming activity and task due-dates on a time-grid.',
-    },
-    {
-      sub: 'history',
-      title: 'History',
-      blurb: 'Everything done — the full chronological activity log.',
-    },
-    {
-      sub: 'stats',
-      title: 'Stats',
-      blurb: 'Funnel, reply rate, win rate, outreach volume.',
-    },
-  ];
-  const SUB_TITLES: Record<Exclude<DashboardSub, 'home'>, string> = {
-    tasks: 'Tasks',
-    calendar: 'Calendar',
-    history: 'History',
-    stats: 'Stats',
+  // Stable anchor id per inline view — keyed off the view name so the preserved
+  // `#/dashboard/<view>` deep link can scroll to it (#128).
+  const SECTION_ID: Record<Exclude<DashboardSub, 'home'>, string> = {
+    tasks: 'dash-tasks',
+    calendar: 'dash-calendar',
+    history: 'dash-history',
+    stats: 'dash-stats',
   };
+
+  let rootEl = $state<HTMLElement>();
+
+  function scrollToSub(s: DashboardSub): void {
+    if (s === 'home') {
+      rootEl?.scrollTo({ top: 0 });
+    } else {
+      document.getElementById(SECTION_ID[s])?.scrollIntoView({ block: 'start' });
+    }
+  }
+
+  // The `#/dashboard/<view>` hash is a scroll target now, not a page selector
+  // (#128): land on the named section on mount and whenever the deep-link `sub`
+  // changes (e.g. the Attention overdue-task links and the Lead page's "Add one
+  // in Tasks" link both point at #/dashboard/tasks). The inlined views load
+  // async and reflow, so re-scroll across a short settle window to keep the
+  // target in view; cancel pending scrolls on the next change / unmount.
+  $effect(() => {
+    const target = sub;
+    const timers = [0, 80, 240].map((ms) => setTimeout(() => scrollToSub(target), ms));
+    return () => timers.forEach(clearTimeout);
+  });
 </script>
 
-<div class="dashboard" data-testid="dashboard">
-  {#if sub === 'home'}
-    <header class="head">
-      <h2>Dashboard</h2>
-      <p class="sub">What needs your attention, and what's been done. Open any digest for the full view.</p>
-    </header>
+<div class="dashboard" data-testid="dashboard" data-target={sub} bind:this={rootEl}>
+  <!-- Attention — the headline, full-width at the top (data behavior unchanged). -->
+  <section class="view attention" data-testid="digest-attention" aria-label="Attention">
+    <h2 class="view-h">
+      Attention{#if dashboard.count}<span class="abadge" data-testid="attention-count">{dashboard.count}</span>{/if}
+    </h2>
+    {#if dashboard.status === 'loading'}
+      <p class="placeholder">Loading…</p>
+    {:else if dashboard.items.length === 0}
+      <p class="placeholder">Nothing here</p>
+    {:else}
+      <ul class="attn-list" data-testid="attention-list">
+        {#each dashboard.items as it (it.kind + (it.cluster_id || it.task_id))}
+          <li class="attn-item" data-kind={it.kind}>
+            {#if it.kind === 'reply'}
+              <span class="attn-icon">↩</span>
+              <a class="attn-link" href={leadHash(it.cluster_id)}>{it.title}</a>
+              <span class="attn-when">{it.when}</span>
+              <button
+                class="dismiss"
+                data-testid="dismiss-{it.cluster_id}"
+                onclick={() => dashboard.dismiss(it.cluster_id)}
+              >
+                dismiss
+              </button>
+            {:else}
+              <span class="attn-icon overdue">⏰</span>
+              <a class="attn-link" href={dashboardHash('tasks')}>{it.title}</a>
+              <span class="attn-when">due {it.when}</span>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
 
-    <!-- Attention is the headline digest — full-width across the top. -->
-    <section class="digest attention" data-testid="digest-attention" aria-label="Attention">
-      <div class="digest-head">
-        <h3>Attention{#if dashboard.count}<span class="abadge" data-testid="attention-count">{dashboard.count}</span>{/if}</h3>
-      </div>
-      {#if dashboard.status === 'loading'}
-        <p class="placeholder">Loading…</p>
-      {:else if dashboard.items.length === 0}
-        <p class="placeholder">Nothing here</p>
-      {:else}
-        <ul class="attn-list" data-testid="attention-list">
-          {#each dashboard.items as it (it.kind + (it.cluster_id || it.task_id))}
-            <li class="attn-item" data-kind={it.kind}>
-              {#if it.kind === 'reply'}
-                <span class="attn-icon">↩</span>
-                <a class="attn-link" href={leadHash(it.cluster_id)}>{it.title}</a>
-                <span class="attn-when">{it.when}</span>
-                <button
-                  class="dismiss"
-                  data-testid="dismiss-{it.cluster_id}"
-                  onclick={() => dashboard.dismiss(it.cluster_id)}
-                >
-                  dismiss
-                </button>
-              {:else}
-                <span class="attn-icon overdue">⏰</span>
-                <a class="attn-link" href={dashboardHash('tasks')}>{it.title}</a>
-                <span class="attn-when">due {it.when}</span>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </section>
+  <section id={SECTION_ID.tasks} class="view" data-section="tasks" aria-label="Tasks">
+    <h2 class="view-h">Tasks</h2>
+    <Tasks />
+  </section>
 
-    <div class="grid">
-      {#each DIGESTS as d (d.sub)}
-        <a class="digest" data-testid="digest-{d.sub}" href={dashboardHash(d.sub)}>
-          <div class="digest-head">
-            <h3>{d.title}{#if d.sub === 'tasks' && digestTasks.length}<span class="abadge">{digestTasks.length}</span>{/if}</h3>
-          </div>
-          {#if d.sub === 'tasks' && digestTasks.length}
-            <ul class="mini" data-testid="tasks-digest">
-              {#each digestTasks.slice(0, 4) as t (t.id)}
-                <li><span class="mini-prio" class:high={t.priority === 'high'}></span>{t.title}</li>
-              {/each}
-            </ul>
-          {:else if d.sub === 'calendar'}
-            <p class="placeholder" data-testid="calendar-digest-home">
-              Last contact: <strong>{activity.lastContactOn ?? '—'}</strong><br />
-              Last reply: <strong>{activity.lastReplyOn ?? '—'}</strong>
-            </p>
-          {:else}
-            <p class="placeholder">{d.blurb}</p>
-          {/if}
-          <span class="expand">Open {d.title} →</span>
-        </a>
-      {/each}
-    </div>
-  {:else}
-    <header class="head">
-      <a class="back" href={dashboardHash('home')}>‹ Dashboard</a>
-      <h2>{SUB_TITLES[sub]}</h2>
-    </header>
-    <section class="subpage" data-testid="dashboard-subpage" data-sub={sub}>
-      {#if sub === 'tasks'}
-        <Tasks />
-      {:else if sub === 'history'}
-        <History />
-      {:else if sub === 'calendar'}
-        <Calendar />
-      {:else if sub === 'stats'}
-        <Stats />
-      {:else}
-        <p class="placeholder">
-          The full <strong>{SUB_TITLES[sub]}</strong> workspace lands in a later slice. The
-          Dashboard sub-route scaffold (deep links + back/forward) is in place.
-        </p>
-      {/if}
-    </section>
-  {/if}
+  <section id={SECTION_ID.calendar} class="view" data-section="calendar" aria-label="Calendar">
+    <h2 class="view-h">Calendar</h2>
+    <Calendar heading={false} />
+  </section>
+
+  <section id={SECTION_ID.history} class="view" data-section="history" aria-label="History">
+    <h2 class="view-h">History</h2>
+    <History heading={false} />
+  </section>
+
+  <section id={SECTION_ID.stats} class="view" data-section="stats" aria-label="Stats">
+    <h2 class="view-h">Stats</h2>
+    <Stats heading={false} />
+  </section>
 </div>
 
 <style>
   .dashboard {
     height: 100%;
     overflow-y: auto;
-    padding: 18px 22px 40px;
+    padding: 18px 22px 60px;
     max-width: 1100px;
   }
-  .head {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    flex-wrap: wrap;
+  /* Each stacked view is a section with one uniform heading; a top rule and
+     spacing separate it from the one above as you scroll. */
+  .view {
+    padding-top: 22px;
+    margin-top: 22px;
+    border-top: 1px solid var(--border);
   }
-  h2 {
+  /* The headline Attention section sits flush at the very top — no rule above. */
+  .view.attention {
+    padding-top: 0;
+    margin-top: 0;
+    border-top: none;
+  }
+  .view-h {
     font-size: 18px;
-  }
-  .sub {
-    margin: 4px 0 16px;
-    font-size: 12.5px;
-    color: var(--text-2);
-  }
-  .back {
-    font-size: 12.5px;
-    color: var(--accent);
-    text-decoration: none;
-  }
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 14px;
-    margin-top: 14px;
-  }
-  .digest {
-    display: block;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 14px 16px;
-    text-decoration: none;
-    color: inherit;
-  }
-  a.digest:hover {
-    border-color: var(--accent);
-  }
-  .digest.attention {
-    background: var(--panel-2);
-  }
-  .digest-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-  .digest-head h3 {
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-2);
+    margin-bottom: 14px;
   }
   .placeholder {
     font-size: 12.5px;
     color: var(--muted);
-  }
-  .expand {
-    display: inline-block;
-    margin-top: 10px;
-    font-size: 12px;
-    color: var(--accent);
   }
   .abadge {
     display: inline-block;
@@ -275,35 +195,5 @@
     font-size: 11px;
     color: var(--text-2);
     cursor: pointer;
-  }
-  .mini {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    font-size: 12px;
-  }
-  .mini li {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 0;
-    color: var(--text-2);
-  }
-  .mini-prio {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--border-strong);
-    flex-shrink: 0;
-  }
-  .mini-prio.high {
-    background: var(--danger);
-  }
-  .subpage {
-    margin-top: 14px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 18px 20px;
   }
 </style>

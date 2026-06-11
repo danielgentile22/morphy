@@ -7,6 +7,12 @@
   import { tasks } from '../lib/tasks-store.svelte';
   import { leadHash } from '../lib/nav';
 
+  // When embedded in the single scrolling Dashboard (PRD #125) the Dashboard
+  // supplies one uniform section heading, so it passes heading={false} to
+  // suppress this component's own <h2> and avoid a double title. Default true
+  // keeps the standalone render self-titled.
+  let { heading = true }: { heading?: boolean } = $props();
+
   const now = new Date();
   let year = $state(now.getUTCFullYear());
   let month = $state(now.getUTCMonth()); // 0-based
@@ -65,7 +71,7 @@
 
 <div class="calendar" data-testid="calendar">
   <header class="head">
-    <h2>Calendar</h2>
+    {#if heading}<h2>Calendar</h2>{/if}
     <div class="digest" data-testid="calendar-digest">
       Last contact: <b>{activity.lastContactOn ?? '—'}</b> · Last reply:
       <b>{activity.lastReplyOn ?? '—'}</b>

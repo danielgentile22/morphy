@@ -30,7 +30,7 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-class TasksStore {
+export class TasksStore {
   tasks = $state<Task[]>([]);
   status = $state<Loadable>('idle');
   error = $state<string | null>(null);
@@ -51,7 +51,21 @@ class TasksStore {
     return u ? u.name : `user ${id}`;
   }
 
-  async load(): Promise<void> {
+  // Coalesce concurrent in-flight loads into one request each (PRD #125 / #127):
+  // a single-page Dashboard stacks views that all call load() / loadUsers() on
+  // mount (tasks: Tasks + Calendar; users: Tasks + History + Stats). Each guard
+  // holds one in-flight promise that concurrent callers share, cleared on settle
+  // so a later load still refetches (no cross-load caching).
+  private loading: Promise<void> | null = null;
+  private loadingUsers: Promise<void> | null = null;
+
+  load(): Promise<void> {
+    return (this.loading ??= this.runLoad().finally(() => {
+      this.loading = null;
+    }));
+  }
+
+  private async runLoad(): Promise<void> {
     this.status = 'loading';
     this.error = null;
     try {
@@ -63,7 +77,13 @@ class TasksStore {
     }
   }
 
-  async loadUsers(): Promise<void> {
+  loadUsers(): Promise<void> {
+    return (this.loadingUsers ??= this.runLoadUsers().finally(() => {
+      this.loadingUsers = null;
+    }));
+  }
+
+  private async runLoadUsers(): Promise<void> {
     try {
       this.users = (await fetchUsers()).users;
     } catch (e) {
