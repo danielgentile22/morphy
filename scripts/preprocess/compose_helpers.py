@@ -8,8 +8,10 @@ every shard into memory at the end of the run.
 This module supplies:
   - `iter_state_parcel_shards`  — yields `(label, GeoDataFrame)` per
     normalized parcel shard for one state.
-  - A `ChunkAggregator` protocol + four ready-made implementations
-    that cover every existing View pattern.
+  - A `ChunkAggregator` protocol + ready-made implementations that cover
+    every existing View pattern. county_summary is DuckDB-backed
+    (PRD #135 stage 2): its consume() is a no-op and finalize() runs one
+    SQL rollup over the composite shards the chunk loop just wrote.
   - `aggregator_for_view` — picks the right aggregator (or None when the
     view can't stream and must be skipped or rebuilt from disk).
 """
@@ -24,6 +26,7 @@ from typing import Any, Protocol
 import geopandas as gpd
 import pandas as pd
 
+from . import duck
 from .base import OUTPUT_BASENAMES, View, all_normalizers
 
 log = logging.getLogger("preprocess.compose")
@@ -482,7 +485,7 @@ def aggregator_for_view(view: View) -> ChunkAggregator | None:
             min_value=0.0,
         )
     if name == "county_summary":
-        return _county_summary_aggregator()
+        return CountySummarySQLAggregator()
     if name == "owner_clusters":
         return _owner_clusters_aggregator()
     if name == "state_summary":
@@ -490,66 +493,142 @@ def aggregator_for_view(view: View) -> ChunkAggregator | None:
     return None  # caller falls back
 
 
-def _county_summary_aggregator() -> ChunkAggregator:
-    """Faithful streaming reproduction of CountySummaryView."""
+# ── county_summary: one SQL rollup over the written shards (PRD #135) ─────
 
-    class _CountySummary(GroupbyChunkAggregator):
-        def consume(self, chunk: gpd.GeoDataFrame) -> None:
-            if "county_fips" not in chunk.columns:
-                return
-            df = chunk.copy()
-            df["_any_infra"] = (
-                df.get("has_tower", False).fillna(False)
-                | df.get("has_solar", False).fillna(False)
-                | df.get("has_billboard", False).fillna(False)
-            )
-            df["_llc"] = (df.get("owner_kind", "") == "llc").astype(int)
-            partial = (
-                df.groupby("county_fips")
-                .agg(
-                    parcel_count=("parcel_id_full", "size"),
-                    total_assessed_value=("assessed_value", "sum"),
-                    total_acres=("acreage", "sum"),
-                    tower_count=("tower_count", "sum"),
-                    solar_count=("solar_count", "sum"),
-                    billboard_count=("billboard_count", "sum"),
-                    parcels_hosting_infra=("_any_infra", "sum"),
-                    parcels_in_oz=("in_oz", "sum"),
-                    parcels_in_qct=("in_qct", "sum"),
-                    distress_tier=("distress_tier", "first"),
-                    persistent_poverty=("persistent_poverty", "any"),
-                    llc_owner_count=("_llc", "sum"),
-                )
-                .reset_index()
-            )
-            self._partials.append(partial)
 
-        def finalize(self, _ctx: Any) -> pd.DataFrame | None:
-            if not self._partials:
-                return None
-            combined = pd.concat(self._partials, ignore_index=True)
-            result = (
-                combined.groupby("county_fips")
-                .agg(
-                    parcel_count=("parcel_count", "sum"),
-                    total_assessed_value=("total_assessed_value", "sum"),
-                    total_acres=("total_acres", "sum"),
-                    tower_count=("tower_count", "sum"),
-                    solar_count=("solar_count", "sum"),
-                    billboard_count=("billboard_count", "sum"),
-                    parcels_hosting_infra=("parcels_hosting_infra", "sum"),
-                    parcels_in_oz=("parcels_in_oz", "sum"),
-                    parcels_in_qct=("parcels_in_qct", "sum"),
-                    distress_tier=("distress_tier", "first"),
-                    persistent_poverty=("persistent_poverty", "any"),
-                    llc_owner_count=("llc_owner_count", "sum"),
-                )
-                .reset_index()
-            )
-            return result.sort_values("parcels_hosting_infra", ascending=False)
+# Columns the retired streaming aggregator's named-agg list required; a
+# chunk missing any of them raised in consume() and contributed nothing,
+# so a shard whose schema lacks one is excluded from the rollup too.
+_COUNTY_SUMMARY_REQUIRED = frozenset(
+    {
+        "county_fips",
+        "parcel_id_full",
+        "assessed_value",
+        "acreage",
+        "tower_count",
+        "solar_count",
+        "billboard_count",
+        "in_oz",
+        "in_qct",
+        "distress_tier",
+        "persistent_poverty",
+    }
+)
 
-    # _agg unused at the parent level (we overrode both methods); pass {}.
-    return _CountySummary(name="county_summary", by="county_fips", agg={})
+
+def _sum_sql(col: str, *, int_like: bool, boolean: bool = False) -> str:
+    """Mirror pandas' named-agg sum dtype behavior: integer/bool columns sum
+    to int64 (no NaN possible / True counts as 1), float columns to float64
+    with NULLs skipped and an all-NULL group summing to 0."""
+    expr = f'CAST(p."{col}" AS BIGINT)' if boolean else f'p."{col}"'
+    target = "BIGINT" if int_like else "DOUBLE"
+    return f"CAST(coalesce(sum({expr}), 0) AS {target})"
+
+
+def county_summary_rollup(paths: list[Path]) -> pd.DataFrame | None:
+    """The county_summary view as one GROUP BY over annotated parcel shards.
+
+    Replaces the streaming partial-groupby aggregator (PRD #135 stage 2);
+    equivalence to it is pinned by tests/test_duckdb_equivalence.py:
+
+      - a shard missing any required column contributes nothing (the
+        streaming consume() raised per chunk and the loop skipped it);
+      - has_tower / has_solar / has_billboard / owner_kind are optional
+        with the same defaults the pandas ``.get()`` calls supplied;
+      - ``distress_tier`` "first" / ``persistent_poverty`` "any" are
+        county-constant by construction (one county_score rollup annotates
+        every chunk), read in deterministic file order;
+      - rows ordered by parcels_hosting_infra desc. Within ties the legacy
+        order was a pandas quicksort artifact (sort_values' default kind is
+        unstable) — non-contractual; this engine pins ties to county_fips
+        asc, so the file is deterministic going forward;
+      - sums mirror the source dtype (int64 stays int64, floats skip NULLs).
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    eligible: list[Path] = []
+    col_types: dict[str, list] = {}
+    for p in paths:
+        try:
+            schema = pq.read_schema(p)
+        except Exception as e:  # noqa: BLE001 — one bad shard mustn't abort
+            log.warning("county_summary rollup: skipping unreadable shard %s: %s", p, e)
+            continue
+        cols = set(schema.names)
+        if not _COUNTY_SUMMARY_REQUIRED <= cols:
+            continue
+        eligible.append(p)
+        for name in schema.names:
+            col_types.setdefault(name, []).append(schema.field(name).type)
+    if not eligible:
+        return None
+
+    def int_like(col: str) -> bool:
+        return all(pa.types.is_integer(t) or pa.types.is_boolean(t) for t in col_types[col])
+
+    def is_bool(col: str) -> bool:
+        return all(pa.types.is_boolean(t) for t in col_types[col])
+
+    union_cols = set(col_types)
+    flags = {
+        c: (f'coalesce(p."{c}", FALSE)' if c in union_cols else "FALSE")
+        for c in ("has_tower", "has_solar", "has_billboard")
+    }
+    any_infra = f"({flags['has_tower']} OR {flags['has_solar']} OR {flags['has_billboard']})"
+    llc = (
+        "CAST(coalesce(sum(CASE WHEN p.owner_kind = 'llc' THEN 1 ELSE 0 END), 0) AS BIGINT)"
+        if "owner_kind" in union_cols
+        else "CAST(0 AS BIGINT)"
+    )
+    paths_sql = ", ".join(duck.sql_str(str(p)) for p in eligible)
+    query = f"""
+        SELECT
+          p.county_fips,
+          CAST(count(*) AS BIGINT) AS parcel_count,
+          {_sum_sql("assessed_value", int_like=int_like("assessed_value"))} AS total_assessed_value,
+          {_sum_sql("acreage", int_like=int_like("acreage"))} AS total_acres,
+          {_sum_sql("tower_count", int_like=int_like("tower_count"))} AS tower_count,
+          {_sum_sql("solar_count", int_like=int_like("solar_count"))} AS solar_count,
+          {_sum_sql("billboard_count", int_like=int_like("billboard_count"))} AS billboard_count,
+          CAST(coalesce(sum(CASE WHEN {any_infra} THEN 1 ELSE 0 END), 0) AS BIGINT)
+            AS parcels_hosting_infra,
+          {_sum_sql("in_oz", int_like=int_like("in_oz"), boolean=is_bool("in_oz"))} AS parcels_in_oz,
+          {_sum_sql("in_qct", int_like=int_like("in_qct"), boolean=is_bool("in_qct"))} AS parcels_in_qct,
+          first(p.distress_tier ORDER BY p.filename, p.file_row_number)
+            FILTER (WHERE p.distress_tier IS NOT NULL) AS distress_tier,
+          coalesce(bool_or(p.persistent_poverty), FALSE) AS persistent_poverty,
+          {llc} AS llc_owner_count
+        FROM read_parquet([{paths_sql}],
+                          union_by_name=true, filename=true, file_row_number=true) p
+        WHERE p.county_fips IS NOT NULL
+        GROUP BY p.county_fips
+        ORDER BY parcels_hosting_infra DESC, p.county_fips ASC
+    """
+    with duck.session() as con:
+        return con.execute(query).df()
+
+
+class CountySummarySQLAggregator:
+    """county_summary under the DuckDB engine (PRD #135 stage 2).
+
+    ``consume`` is deliberately a no-op: by finalize time the chunk loop
+    has written every annotated shard to ``composite/<fips>/parcels/``,
+    so the per-county rollup runs as a single out-of-core GROUP BY over
+    those files instead of accumulating per-chunk partials.
+    """
+
+    name = "county_summary"
+
+    def consume(self, chunk: gpd.GeoDataFrame) -> None:
+        pass
+
+    def finalize(self, ctx: Any) -> pd.DataFrame | None:
+        # Deferred import — picks up monkeypatched roots, like _normalized_root.
+        from . import COMPOSITE_ROOT
+
+        shard_dir = COMPOSITE_ROOT / ctx.state_fips / OUTPUT_BASENAMES.get("parcel", "parcel")
+        return county_summary_rollup(sorted(shard_dir.glob("*.parquet")))
 
 
 def _owner_clusters_aggregator() -> ChunkAggregator:

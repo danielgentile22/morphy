@@ -152,7 +152,7 @@ def parcel_shards(*, normalized_root: Path | None = None) -> list[ParcelShard]:
     return shards
 
 
-def _sql_str(value: str) -> str:
+def sql_str(value: str) -> str:
     """Quote a string as a SQL literal (single quotes doubled)."""
     return "'" + value.replace("'", "''") + "'"
 
@@ -181,9 +181,9 @@ def register_state_parcels(
     shards = parcel_shards(normalized_root=normalized_root)
     if not shards:
         return []
-    paths_sql = ", ".join(_sql_str(str(s.path)) for s in shards)
+    paths_sql = ", ".join(sql_str(str(s.path)) for s in shards)
     shard_map_sql = ", ".join(
-        f"({_sql_str(str(s.path))}, {s.seq}, {_sql_str(s.label)})" for s in shards
+        f"({sql_str(str(s.path))}, {s.seq}, {sql_str(s.label)})" for s in shards
     )
     con.execute(
         f"""
@@ -196,7 +196,7 @@ def register_state_parcels(
                           union_by_name=true, filename=true, file_row_number=true) p
         JOIN (VALUES {shard_map_sql}) AS m(__path, __shard_seq, __shard_label)
           ON p.filename = m.__path
-        WHERE p.state_fips = {_sql_str(state_fips)}
+        WHERE p.state_fips = {sql_str(state_fips)}
         """
     )
     return shards

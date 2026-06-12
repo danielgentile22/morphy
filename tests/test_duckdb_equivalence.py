@@ -293,3 +293,229 @@ def test_equivalence_no_parcel_shards(edge_fixture, monkeypatch):
     specs = {"tower": (towers, TOWER_KEEP)}
     result = _assert_equivalent(specs, "30")  # fixture shards are all state 05
     assert result == {"tower": {}}
+
+
+# ═══ Stage 2: county_summary rollup ════════════════════════════════════════
+#
+# Equivalence definition (fixed before the migration):
+#
+# 1. **Row set** — one row per county_fips present in eligible shards; rows
+#    with null county_fips are dropped (pandas groupby dropna ≡ WHERE
+#    county_fips IS NOT NULL). A shard whose schema lacks any required
+#    column contributes nothing (streaming consume() raised per chunk and
+#    the loop skipped it ≡ schema-filtered file list).
+# 2. **Cells** — integer counts, strings, and booleans are exactly equal,
+#    with matching dtypes after the parquet round-trip; float sums agree to
+#    rel 1e-12 (summation order differs between per-chunk partials and one
+#    scan — defined tolerance per the PRD).
+# 3. **distress_tier "first" / persistent_poverty "any"** — county-constant
+#    by construction (one county_score rollup annotates every chunk), so
+#    first-non-null is order-free; the DuckDB side still reads in
+#    deterministic file order.
+# 4. **Order** — columns in the legacy named-agg order; rows by
+#    parcels_hosting_infra desc. Tie order is NOT part of the contract:
+#    legacy used pandas sort_values' default (unstable quicksort), so ties
+#    landed in artifact order — the real-data MT check surfaced this. The
+#    DuckDB engine pins ties to county_fips asc (deterministic); the
+#    harness compares under that canonical re-sort and separately asserts
+#    the produced file is already in it. The index is not part of the
+#    contract (write_parquet drops it).
+
+
+class _LegacyCountySummaryAggregator:
+    """Frozen streaming aggregator (compose_helpers.py @ 5344d6c, verbatim
+    consume/finalize bodies; the GroupbyChunkAggregator plumbing it
+    inherited reduced to the _partials list)."""
+
+    name = "county_summary"
+
+    def __init__(self) -> None:
+        self._partials: list[pd.DataFrame] = []
+
+    def consume(self, chunk: gpd.GeoDataFrame) -> None:
+        if "county_fips" not in chunk.columns:
+            return
+        df = chunk.copy()
+        df["_any_infra"] = (
+            df.get("has_tower", False).fillna(False)
+            | df.get("has_solar", False).fillna(False)
+            | df.get("has_billboard", False).fillna(False)
+        )
+        df["_llc"] = (df.get("owner_kind", "") == "llc").astype(int)
+        partial = (
+            df.groupby("county_fips")
+            .agg(
+                parcel_count=("parcel_id_full", "size"),
+                total_assessed_value=("assessed_value", "sum"),
+                total_acres=("acreage", "sum"),
+                tower_count=("tower_count", "sum"),
+                solar_count=("solar_count", "sum"),
+                billboard_count=("billboard_count", "sum"),
+                parcels_hosting_infra=("_any_infra", "sum"),
+                parcels_in_oz=("in_oz", "sum"),
+                parcels_in_qct=("in_qct", "sum"),
+                distress_tier=("distress_tier", "first"),
+                persistent_poverty=("persistent_poverty", "any"),
+                llc_owner_count=("_llc", "sum"),
+            )
+            .reset_index()
+        )
+        self._partials.append(partial)
+
+    def finalize(self, _ctx) -> pd.DataFrame | None:
+        if not self._partials:
+            return None
+        combined = pd.concat(self._partials, ignore_index=True)
+        result = (
+            combined.groupby("county_fips")
+            .agg(
+                parcel_count=("parcel_count", "sum"),
+                total_assessed_value=("total_assessed_value", "sum"),
+                total_acres=("total_acres", "sum"),
+                tower_count=("tower_count", "sum"),
+                solar_count=("solar_count", "sum"),
+                billboard_count=("billboard_count", "sum"),
+                parcels_hosting_infra=("parcels_hosting_infra", "sum"),
+                parcels_in_oz=("parcels_in_oz", "sum"),
+                parcels_in_qct=("parcels_in_qct", "sum"),
+                distress_tier=("distress_tier", "first"),
+                persistent_poverty=("persistent_poverty", "any"),
+                llc_owner_count=("llc_owner_count", "sum"),
+            )
+            .reset_index()
+        )
+        return result.sort_values("parcels_hosting_infra", ascending=False)
+
+
+def _replay_legacy_county_summary(paths) -> pd.DataFrame | None:
+    """Feed shard files to the frozen aggregator the way compose did:
+    consume() exceptions are swallowed per chunk (compose logged + skipped)."""
+    agg = _LegacyCountySummaryAggregator()
+    for p in paths:
+        chunk = gpd.read_parquet(p)
+        try:
+            agg.consume(chunk)
+        except Exception:  # noqa: BLE001 — mirrors compose's per-chunk guard
+            pass
+    return agg.finalize(None)
+
+
+def _canonical_order(df: pd.DataFrame) -> pd.DataFrame:
+    return df.sort_values(
+        ["parcels_hosting_infra", "county_fips"], ascending=[False, True], kind="stable"
+    ).reset_index(drop=True)
+
+
+def _assert_county_summary_equivalent(actual: pd.DataFrame, expected: pd.DataFrame) -> None:
+    # Cells/dtypes/columns must match under the canonical order (legacy tie
+    # order was a quicksort artifact — see criterion 4); the produced frame
+    # must additionally already BE in canonical order (new-engine determinism).
+    pd.testing.assert_frame_equal(
+        _canonical_order(actual), _canonical_order(expected), rtol=1e-12, atol=0
+    )
+    pd.testing.assert_frame_equal(actual.reset_index(drop=True), _canonical_order(actual))
+
+
+def test_county_summary_equivalence_via_compose(fixture_dirs, registered_normalizers, tmp_path):
+    """Full compose writes views/county_summary.parquet through the DuckDB
+    rollup; the frozen streaming aggregator replayed over the same composite
+    shards must produce the identical artifact."""
+    from preprocess.compose import ComposeConfig, compose
+    from preprocess.io import write_parquet
+
+    compose(ComposeConfig(state=STATE))
+    comp_root = fixture_dirs["composite"]
+    produced = pd.read_parquet(comp_root / "05" / "views" / "county_summary.parquet")
+
+    shard_paths = sorted((comp_root / "05" / "parcels").glob("*.parquet"))
+    legacy = _replay_legacy_county_summary(shard_paths)
+    assert legacy is not None
+    # Round-trip the legacy frame through the same writer so dtype coercions
+    # (the file contract) are compared, not in-memory quirks.
+    write_parquet(legacy, tmp_path / "legacy_county_summary.parquet")
+    expected = pd.read_parquet(tmp_path / "legacy_county_summary.parquet")
+
+    _assert_county_summary_equivalent(produced, expected)
+    # Not vacuous: the fixture spans 4 counties with towers in 05001 + 05005.
+    assert len(produced) == 4
+    by_county = produced.set_index("county_fips")
+    assert int(by_county.loc["05001", "parcels_hosting_infra"]) == 1
+    assert int(by_county.loc["05005", "tower_count"]) == 1
+    assert by_county.loc["05001", "distress_tier"] == "distressed"
+
+
+def test_county_summary_equivalence_synthetic_edges(tmp_path):
+    """Hand-built annotated-shaped shards exercising the stage-2 definition:
+    NaN sums, null county dropped, owner_kind/llc counting, a required-column-
+    missing shard excluded by both engines, county-constant distress."""
+    from preprocess.compose_helpers import county_summary_rollup
+
+    def shard(rows, drop=()):
+        gdf = gpd.GeoDataFrame(
+            {
+                "county_fips": [r[0] for r in rows],
+                "parcel_id_full": [r[1] for r in rows],
+                "assessed_value": [r[2] for r in rows],
+                "acreage": [r[3] for r in rows],
+                "tower_count": [r[4] for r in rows],
+                "solar_count": 0,
+                "billboard_count": 0,
+                "has_tower": [r[4] > 0 for r in rows],
+                "has_solar": False,
+                "has_billboard": [r[5] for r in rows],
+                "in_oz": [r[6] for r in rows],
+                "in_qct": False,
+                "distress_tier": [r[7] for r in rows],
+                "persistent_poverty": [r[8] for r in rows],
+                "owner_kind": [r[9] for r in rows],
+                "geometry": [Point(0, 0)] * len(rows),
+            },
+            crs="EPSG:4326",
+        )
+        return gdf.drop(columns=list(drop))
+
+    s1 = shard(
+        [
+            ("11111", "X1", 100.5, 1.25, 1, False, True, "distressed", True, "llc"),
+            ("11111", "X2", float("nan"), 2.0, 0, False, False, "distressed", True, "individual"),
+            ("22222", "X3", 50.0, 0.5, 0, True, False, "", False, ""),
+            (None, "X4", 10.0, 0.1, 0, False, False, "", False, ""),  # null county → dropped
+        ]
+    )
+    s2 = shard(
+        [
+            ("11111", "X5", 200.25, 3.5, 2, False, True, "distressed", True, "llc"),
+            ("22222", "X6", 75.0, 1.0, 0, False, False, "", False, "individual"),
+        ]
+    )
+    # Missing a required column (acreage): consume() raised → chunk skipped;
+    # the rollup must exclude the file the same way.
+    s3 = shard([("33333", "X7", 1.0, 9.9, 5, True, True, "at-risk", True, "llc")], drop=["acreage"])
+
+    paths = []
+    for i, s in enumerate((s1, s2, s3)):
+        p = tmp_path / f"shard_{i}.parquet"
+        write_geoparquet(s, p)
+        paths.append(p)
+
+    ducked = county_summary_rollup(paths)
+    legacy = _replay_legacy_county_summary(paths)
+    assert ducked is not None and legacy is not None
+    _assert_county_summary_equivalent(ducked, legacy)
+
+    by_county = ducked.set_index("county_fips")
+    assert list(by_county.index) == ["11111", "22222"]  # 33333 excluded, null dropped
+    assert int(by_county.loc["11111", "parcel_count"]) == 3
+    assert by_county.loc["11111", "total_assessed_value"] == pytest.approx(300.75)
+    assert int(by_county.loc["11111", "llc_owner_count"]) == 2
+    assert int(by_county.loc["11111", "parcels_in_oz"]) == 2
+    assert bool(by_county.loc["11111", "persistent_poverty"]) is True
+    assert int(by_county.loc["22222", "parcels_hosting_infra"]) == 1  # billboard counts as infra
+
+
+def test_county_summary_rollup_no_eligible_shards(tmp_path):
+    """No files / no eligible files → None from both engines (view skipped)."""
+    from preprocess.compose_helpers import county_summary_rollup
+
+    assert county_summary_rollup([]) is None
+    assert _replay_legacy_county_summary([]) is None
