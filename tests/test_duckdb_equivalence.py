@@ -519,3 +519,231 @@ def test_county_summary_rollup_no_eligible_shards(tmp_path):
 
     assert county_summary_rollup([]) is None
     assert _replay_legacy_county_summary([]) is None
+
+
+# ═══ Stage 3: owner-cluster pre-pass ═══════════════════════════════════════
+#
+# Equivalence definition (fixed before the migration):
+#
+# 1. **Cluster set** — identical owner_cluster_id index (unique; the
+#    un-clusterable "" key excluded). A shard missing any OWNER_COLS column
+#    contributes nothing (the legacy column-projected pd.read_parquet raised
+#    and the shard was skipped ≡ shard-eligibility filter).
+# 2. **Sizes** — owner_cluster_size exactly equal, int64.
+# 3. **Value totals** — owner_cluster_value_total within rel 1e-12 (float
+#    summation order differs between one concat-sum and SQL+fallback partial
+#    sums), float64. assessed_value coercion: non-numeric/None → 0
+#    (pd.to_numeric(errors="coerce").fillna(0) ≡ coalesce(TRY_CAST, 0)).
+# 4. **Key recipe** — stored *_norm values nonblank → used verbatim, keyed
+#    substr(sha1(name||'|'||addr),1,12) (DuckDB sha1 ≡ hashlib over UTF-8);
+#    blank/absent norm with a non-blank raw → that ROW routes through the
+#    live cluster.py recipe in Python (never re-implemented in SQL), and
+#    cross-engine rows summing into the same cluster combine. Blank
+#    detection is whitespace-strip; stored norms are whitespace-collapsed
+#    at normalize time, so trim() parity holds.
+# 5. **Empty** — no shards / no eligible shards / nothing clusterable →
+#    the same empty lookup frame (columns + index name).
+
+
+def _legacy_iter_state_parcel_shards_columns(state_fips, columns):
+    """Frozen column-projected shard iterator (compose_helpers.py @ 95932ce,
+    verbatim semantics — deleted from production with stage 3). Resolves
+    all_normalizers/NORMALIZED_ROOT through the live modules so the
+    fixtures' monkeypatching applies."""
+    import preprocess as preprocess_pkg
+    import preprocess.compose_helpers as helpers_mod
+    from preprocess.base import OUTPUT_BASENAMES
+
+    root = preprocess_pkg.NORMALIZED_ROOT
+    parcel_basename = OUTPUT_BASENAMES.get("parcel", "parcel")
+    cols = list(dict.fromkeys([*columns, "state_fips"]))
+
+    parcel_sources = [n for n in helpers_mod.all_normalizers() if "parcel" in n.canonical_types]
+    for n in parcel_sources:
+        src_dir = root / n.source_id / parcel_basename
+        if not src_dir.is_dir():
+            continue
+        for shard_path in sorted(src_dir.glob("*.parquet")):
+            try:
+                df = pd.read_parquet(shard_path, columns=cols)
+            except Exception:  # noqa: BLE001 — missing column ⇒ shard skipped
+                continue
+            slice_ = df[df["state_fips"] == state_fips]
+            if len(slice_) == 0:
+                continue
+            yield f"{n.source_id}__{shard_path.stem}", slice_.copy()
+
+
+def _legacy_build_owner_cluster_lookup(state_fips: str) -> pd.DataFrame:
+    """Frozen legacy pre-pass: stream OWNER_COLS projections into the live
+    owner_cluster.prepare (the reference recipe both engines share)."""
+    from preprocess.annotators import owner_cluster
+
+    frames = (
+        df
+        for _label, df in _legacy_iter_state_parcel_shards_columns(
+            state_fips, owner_cluster.OWNER_COLS
+        )
+    )
+    return owner_cluster.prepare(frames)
+
+
+def _assert_owner_lookup_equivalent(state_fips: str) -> pd.DataFrame:
+    from preprocess.compose import _build_owner_cluster_lookup
+
+    legacy = _legacy_build_owner_cluster_lookup(state_fips)
+    ducked = _build_owner_cluster_lookup(state_fips)
+    pd.testing.assert_frame_equal(ducked.sort_index(), legacy.sort_index(), rtol=1e-12, atol=0)
+    return ducked
+
+
+def test_owner_lookup_equivalence_on_property_fixtures(fixture_dirs, registered_normalizers):
+    """Both engines over the standard fixture state — the shared owner
+    (two parcels, two sources) must aggregate to one cluster of size 2."""
+    from preprocess.cluster import cluster_id, normalize_address, normalize_owner_name
+
+    result = _assert_owner_lookup_equivalent(STATE.fips)
+    assert len(result) > 0
+    shared = cluster_id(
+        normalize_owner_name("SHARED LANDOWNER LLC"), normalize_address("123 MAIN ST")
+    )
+    assert int(result.loc[shared, "owner_cluster_size"]) == 2
+    assert result.loc[shared, "owner_cluster_value_total"] == pytest.approx(250_000.0)
+
+
+@pytest.fixture
+def owner_edge_fixture(tmp_path, monkeypatch):
+    """Owner-column edge cases across two sources.
+
+    src_one/owners_a (full owner cols, norms populated):
+      r1/r2 — same stored norms                  → SQL path, cluster size 2
+      r3 — blank norms, raw name+addr present    → Python fallback; its key
+           EQUALS r1/r2's (raw normalizes to the same norms) → sizes sum 3
+      r4 — blank norms, blank raws               → "" key, excluded
+      r5 — blank norms, noise-only raw name      → fallback normalizes to "",
+           addr blank → "" key, excluded
+      r6 — name norm good, addr norm blank + raw → fallback row mixing a
+           verbatim stored norm with a live-normalized addr
+      r7 — assessed_value None                   → 0 toward its total
+    src_one/owners_b — mailing_addr column MISSING → whole shard excluded
+      (legacy projected read raised); its unique owner must not appear.
+    src_two/owners_c — same norms as r1 (cross-source sum), assessed_value
+      stored as VARCHAR ("250.25" sums; "N/A" → 0).
+    """
+    from preprocess.cluster import normalize_address, normalize_owner_name
+
+    norm_root = tmp_path / "normalized"
+    norm_root.mkdir()
+    monkeypatch.setattr(preprocess, "NORMALIZED_ROOT", norm_root)
+
+    n_shared = normalize_owner_name("SHARED LANDOWNER LLC")
+    a_shared = normalize_address("123 MAIN ST")
+
+    def df(rows, columns):
+        return pd.DataFrame(rows, columns=columns)
+
+    cols = [
+        "owner_name_norm",
+        "mailing_addr_norm",
+        "owner_name",
+        "mailing_addr",
+        "assessed_value",
+        "state_fips",
+    ]
+    shard_a = df(
+        [
+            (n_shared, a_shared, "Shared Landowner LLC", "123 Main St", 100.0, "05"),
+            (n_shared, a_shared, "SHARED LANDOWNER LLC", "123 MAIN ST", 50.5, "05"),
+            # Raw normalizes to the same norms as r1/r2 (undotted LLC — the
+            # dotted form survives punctuation-stripping as stray tokens).
+            ("", "", "Shared Landowner LLC", "123 Main Street", 25.25, "05"),
+            ("", "", "", "", 99.0, "05"),
+            ("", "", "LLC", None, 7.0, "05"),
+            (normalize_owner_name("GOOD OWNER"), "", "Good Owner", "77 Pine Road", 10.0, "05"),
+            (n_shared, a_shared, "SHARED LANDOWNER LLC", "123 MAIN ST", None, "05"),
+        ],
+        cols,
+    )
+    shard_b = df(
+        [
+            (
+                normalize_owner_name("ONLY IN B"),
+                normalize_address("9 B ST"),
+                "Only In B",
+                None,
+                1.0,
+                "05",
+            )
+        ],
+        cols,
+    ).drop(columns=["mailing_addr"])
+    shard_c = df(
+        [
+            (n_shared, a_shared, "SHARED LANDOWNER LLC", "123 MAIN ST", "250.25", "05"),
+            (n_shared, a_shared, "SHARED LANDOWNER LLC", "123 MAIN ST", "N/A", "05"),
+        ],
+        cols,
+    )
+    from preprocess.io import write_parquet
+
+    write_parquet(shard_a, norm_root / "src_one" / "parcels" / "owners_a.parquet")
+    write_parquet(shard_b, norm_root / "src_one" / "parcels" / "owners_b.parquet")
+    write_parquet(shard_c, norm_root / "src_two" / "parcels" / "owners_c.parquet")
+
+    class _SrcOne(Normalizer):
+        source_id = "src_one"
+        canonical_types = ["parcel"]
+
+        def normalize(self, raw_dir, out_dir):  # pragma: no cover
+            raise NotImplementedError
+
+    class _SrcTwo(Normalizer):
+        source_id = "src_two"
+        canonical_types = ["parcel"]
+
+        def normalize(self, raw_dir, out_dir):  # pragma: no cover
+            raise NotImplementedError
+
+    fixture = [_SrcOne(), _SrcTwo()]
+    import preprocess.base as base_mod
+    import preprocess.compose as compose_mod
+    import preprocess.compose_helpers as helpers_mod
+
+    for mod in (base_mod, compose_mod, helpers_mod):
+        monkeypatch.setattr(mod, "all_normalizers", lambda: fixture)
+    return norm_root
+
+
+def test_owner_lookup_equivalence_edge_cases(owner_edge_fixture):
+    from preprocess.cluster import cluster_id, normalize_address, normalize_owner_name
+
+    result = _assert_owner_lookup_equivalent("05")
+
+    shared = cluster_id(
+        normalize_owner_name("SHARED LANDOWNER LLC"), normalize_address("123 MAIN ST")
+    )
+    # r1 + r2 + r7 (SQL) + r3 (Python fallback) + shard_c's two rows = 6.
+    assert int(result.loc[shared, "owner_cluster_size"]) == 6
+    # 100.0 + 50.5 + 0 (None) + 25.25 + 250.25 + 0 ("N/A")
+    assert result.loc[shared, "owner_cluster_value_total"] == pytest.approx(426.0)
+    # The owner unique to the column-poor shard must be absent (shard skipped).
+    only_b = cluster_id(normalize_owner_name("ONLY IN B"), normalize_address("9 B ST"))
+    assert only_b not in result.index
+    # The mixed row (stored name norm + live-normalized addr) keys correctly.
+    mixed = cluster_id(normalize_owner_name("GOOD OWNER"), normalize_address("77 Pine Road"))
+    assert int(result.loc[mixed, "owner_cluster_size"]) == 1
+    # Un-clusterable rows (r4 blank-blank, r5 noise-only name) are excluded:
+    # the only clusters are shared / mixed.
+    assert set(result.index) == {shared, mixed}
+
+
+def test_owner_lookup_no_shards(owner_edge_fixture):
+    """A state with no shards → the same empty lookup frame from both."""
+    from preprocess.compose import _build_owner_cluster_lookup
+
+    legacy = _legacy_build_owner_cluster_lookup("30")
+    ducked = _build_owner_cluster_lookup("30")
+    pd.testing.assert_frame_equal(ducked, legacy)
+    assert list(ducked.columns) == ["owner_cluster_size", "owner_cluster_value_total"]
+    assert ducked.index.name == "owner_cluster_id"
+    assert len(ducked) == 0

@@ -15,10 +15,10 @@ readers (facets, tiles) handle the layout.
 Sequence:
   1. Load ancillary tables (towers, solar, billboard, distress_overlay,
      county_score). All small enough to stay in memory.
-  2. **Owner-cluster pre-pass** — scan every parcel shard, projecting
-     to owner-related columns only. Compute cluster_id + sizes +
-     value totals across the whole state. Store the parcel_id_full →
-     cluster lookup.
+  2. **Owner-cluster pre-pass** — one DuckDB aggregation over the
+     sharded parquet (PRD #135) computes cluster sizes + value totals
+     across the whole state; rows needing the Python re-normalization
+     fallback are the only ones that surface into pandas.
   3. **Infra→parcel pre-pass** — one DuckDB spatial join over the
      sharded parquet (PRD #135) finds the host parcel for every tower /
      solar / billboard row; only matched rows surface into pandas.
@@ -59,11 +59,7 @@ from .base import (
 )
 from .catalog_builder import build_catalog, geom_type, schema_summary
 from .catalog_schema import validate_catalog
-from .compose_helpers import (
-    aggregator_for_view,
-    iter_state_parcel_shards,
-    iter_state_parcel_shards_columns,
-)
+from .compose_helpers import aggregator_for_view, iter_state_parcel_shards
 from .geographies import StateGeography
 from .io import (
     dual_write_spatial,
@@ -91,27 +87,98 @@ class ComposeConfig:
     skip_joins: list[str] = field(default_factory=list)
 
 
-# ── Owner-cluster pre-pass ────────────────────────────────────────────────
+# ── Owner-cluster pre-pass (DuckDB aggregation, PRD #135) ─────────────────
+
+
+def _blank_sql(col: str) -> str:
+    return f'(p."{col}" IS NULL OR trim(p."{col}") = \'\')'
+
+
+def _nonblank_sql(col: str) -> str:
+    return f'(p."{col}" IS NOT NULL AND trim(p."{col}") != \'\')'
 
 
 def _build_owner_cluster_lookup(state_fips: str) -> pd.DataFrame:
-    """Scan every parcel shard for owner columns; emit cluster-keyed totals.
+    """Whole-state owner_cluster_id → (size, value_total) aggregate — one
+    DuckDB aggregation over the sharded parquet (PRD #135 stage 3; replaced
+    the per-shard column-projection scan).
 
-    Thin streaming feed over ``owner_cluster.prepare``: it yields one
-    shard's owner columns at a time (memory bounded to one shard — ADR-050,
-    ~tens of MB for an 11 M-parcel state) and the annotator accumulates
-    the cluster-keyed aggregate. Returns a DataFrame indexed by
-    ``owner_cluster_id`` (always unique, so safe to ``.map`` against even
-    when parcel_id_full duplicates across shards — FL FDOR NAL).
+    The owner-key recipe stays in :mod:`preprocess.cluster` (its single
+    home). Rows whose stored ``owner_name_norm`` / ``mailing_addr_norm``
+    are usable verbatim — the overwhelming majority; normalizers compute
+    them for every row — are keyed in SQL with the exact ``cluster_id``
+    recipe over the stored norms (``substr(sha1(name || '|' || addr), 1,
+    12)``; sha1-of-UTF-8 matches hashlib). The rare rows that need the
+    re-normalization fallback (blank norm with a non-blank raw value) are
+    pulled into pandas and keyed through the live ``owner_cluster.prepare``
+    — the Python recipe is never re-implemented in SQL. Both partial
+    aggregates then combine.
 
-    The per-row ``owner_cluster_id`` is recomputed on each chunk by
-    ``owner_cluster.annotate``; this only supplies the global aggregates
-    that need a whole-state pass.
+    Semantics preserved from the streaming pre-pass (equivalence pinned by
+    tests/test_duckdb_equivalence.py):
+      - a shard missing any owner column contributes nothing (the legacy
+        column-projected read raised and the shard was skipped);
+      - parcels with no clusterable owner/address (key == "") are excluded;
+      - assessed_value coerces non-numeric → 0 (TRY_CAST ≡ to_numeric).
+
+    Returns a DataFrame indexed by ``owner_cluster_id`` (always unique, so
+    safe to ``.map`` against even when parcel_id_full duplicates across
+    shards — FL FDOR NAL). The per-row ``owner_cluster_id`` is recomputed
+    on each chunk by ``owner_cluster.annotate``; this only supplies the
+    global aggregates that need a whole-state pass.
     """
-    frames = (
-        df for _label, df in iter_state_parcel_shards_columns(state_fips, owner_cluster.OWNER_COLS)
+    empty = owner_cluster.prepare([])
+    with duck.session() as con:
+        shards = duck.register_state_parcels(con, state_fips)
+        owner_set = set(owner_cluster.OWNER_COLS)
+        eligible = [s.seq for s in shards if owner_set <= set(s.columns)]
+        if not eligible:
+            return empty
+        in_eligible = f"p.__shard_seq IN ({', '.join(str(q) for q in eligible)})"
+        name_val = (
+            f"CASE WHEN NOT {_blank_sql('owner_name_norm')} THEN p.\"owner_name_norm\" ELSE '' END"
+        )
+        addr_val = (
+            f"CASE WHEN NOT {_blank_sql('mailing_addr_norm')} "
+            f"THEN p.\"mailing_addr_norm\" ELSE '' END"
+        )
+        needs_python = (
+            f"(({_blank_sql('owner_name_norm')} AND {_nonblank_sql('owner_name')}) "
+            f"OR ({_blank_sql('mailing_addr_norm')} AND {_nonblank_sql('mailing_addr')}))"
+        )
+        key = (
+            f"CASE WHEN {name_val} = '' AND {addr_val} = '' THEN '' "
+            f"ELSE substr(sha1({name_val} || '|' || {addr_val}), 1, 12) END"
+        )
+        sql_agg = con.execute(
+            f"""
+            SELECT {key} AS owner_cluster_id,
+                   CAST(count(*) AS BIGINT) AS owner_cluster_size,
+                   CAST(sum(coalesce(TRY_CAST(p."assessed_value" AS DOUBLE), 0.0)) AS DOUBLE)
+                     AS owner_cluster_value_total
+            FROM "{duck.PARCELS_VIEW}" p
+            WHERE {in_eligible} AND NOT {needs_python} AND {key} != ''
+            GROUP BY 1
+            """
+        ).df()
+        fallback_cols = ", ".join(f'p."{c}"' for c in owner_cluster.OWNER_COLS)
+        fallback = con.execute(
+            f'SELECT {fallback_cols} FROM "{duck.PARCELS_VIEW}" p '
+            f"WHERE {in_eligible} AND {needs_python}"
+        ).df()
+    parts = [sql_agg]
+    if len(fallback) > 0:
+        parts.append(owner_cluster.prepare([fallback]).reset_index())
+    combined = pd.concat(parts, ignore_index=True)
+    if len(combined) == 0:
+        return empty
+    out = combined.groupby("owner_cluster_id").agg(
+        owner_cluster_size=("owner_cluster_size", "sum"),
+        owner_cluster_value_total=("owner_cluster_value_total", "sum"),
     )
-    return owner_cluster.prepare(frames)
+    out["owner_cluster_size"] = out["owner_cluster_size"].astype(int)
+    out["owner_cluster_value_total"] = out["owner_cluster_value_total"].astype(float)
+    return out
 
 
 # ── Tower / solar / billboard pre-pass (DuckDB spatial join, PRD #135) ────
@@ -289,7 +356,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
     )
 
     # 2. Owner-cluster pre-pass ---------------------------------------------
-    log.info("owner-cluster pre-pass — scanning shards for owner columns…")
+    log.info("owner-cluster pre-pass (DuckDB)…")
     owner_lookup = _build_owner_cluster_lookup(state.fips)
     log.info("owner-cluster pre-pass: %d parcels indexed", len(owner_lookup))
 

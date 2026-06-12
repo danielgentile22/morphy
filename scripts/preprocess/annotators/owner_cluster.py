@@ -10,8 +10,8 @@ single county chunk can't compute alone:
 
   - :func:`prepare` consumes an *iterable* of frames carrying owner
     columns and returns the owner_cluster_id-keyed aggregate. The
-    streaming Composer passes per-shard owner-column projections (memory
-    bounded to one shard — ADR-050); a whole-layer caller passes
+    Composer's DuckDB pre-pass (PRD #135) passes only the rows needing
+    the Python re-normalization fallback; a whole-layer caller passes
     ``[parcels]``.
   - :func:`annotate` computes the per-row cluster_id on the frame itself
     and maps size/value from that aggregate.

@@ -12,11 +12,12 @@ These tests assert that property in two complementary ways:
    next one. Asserted by an iterator that checks live counts on each
    yield.
 
-Since PRD #135 stage 1 the bound is tighter still: the infra→parcel
-pre-pass runs as a DuckDB spatial join over the sharded parquet, so the
-pandas chunk path reads each shard exactly **once** per compose (the
-chunk loop) instead of twice (pre-pass + loop). The first test pins
-that count.
+Since PRD #135 stages 1 + 3 the bound is tighter still: the infra→parcel
+pre-pass runs as a DuckDB spatial join and the owner-cluster pre-pass as
+a DuckDB aggregation, both over the sharded parquet — so the pandas path
+(`iter_state_parcel_shards`, now the only pandas shard reader) touches
+each shard exactly **once** per compose (the chunk loop). The first test
+pins that count.
 
 Both tests reuse the fixture state from the property test module so the
 end-to-end shape is identical.

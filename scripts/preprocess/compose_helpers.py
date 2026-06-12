@@ -90,42 +90,6 @@ def iter_state_parcel_shards(
             yield label, gpd.GeoDataFrame(slice_.copy(), geometry="geometry", crs="EPSG:4326")
 
 
-def iter_state_parcel_shards_columns(
-    state_fips: str,
-    columns: list[str],
-    *,
-    normalized_root: Path | None = None,
-) -> Iterator[tuple[str, pd.DataFrame]]:
-    """Same as `iter_state_parcel_shards` but reads only the requested columns.
-
-    Used by the owner-cluster pre-pass to scan all shards while loading
-    only owner-related fields into memory — a 5-million-row state's
-    pre-pass should consume well under 1 GB even before the chunk loop.
-
-    Geometry is NEVER requested here; output is a plain DataFrame.
-    """
-    root = normalized_root if normalized_root is not None else _normalized_root()
-    parcel_basename = OUTPUT_BASENAMES.get("parcel", "parcel")
-    cols = list(dict.fromkeys([*columns, "state_fips"]))  # ensure state_fips present
-
-    parcel_sources = [n for n in all_normalizers() if "parcel" in n.canonical_types]
-    for n in parcel_sources:
-        src_dir = root / n.source_id / parcel_basename
-        if not src_dir.is_dir():
-            continue
-        for shard_path in sorted(src_dir.glob("*.parquet")):
-            try:
-                df = pd.read_parquet(shard_path, columns=cols)
-            except Exception as e:  # noqa: BLE001
-                log.warning("skipping unreadable shard %s: %s", shard_path, e)
-                continue
-            slice_ = df[df["state_fips"] == state_fips]
-            if len(slice_) == 0:
-                continue
-            label = f"{n.source_id}__{shard_path.stem}"
-            yield label, slice_.copy()
-
-
 # ── Chunk aggregator protocol ──────────────────────────────────────────────
 
 
