@@ -1,10 +1,5 @@
 name: test
 
-# Populated in Section 6 of the production-readiness plan; this scaffold
-# exists from Section 2 so that `main` already has the workflow file
-# when tests land. Until Section 6 ships, the job is a no-op that always
-# passes so PRs aren't blocked.
-
 on:
   push:
     branches: [main]
@@ -17,37 +12,26 @@ concurrency:
 
 jobs:
   pytest:
-    name: pytest (placeholder until Section 6)
+    name: pytest (full suite)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 10 min (not 5): a cold uv cache downloads the GIS stack + PySide6
+    # before the ~1 min suite; warm-cache runs finish well under 5.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
-      - name: Check if tests directory exists
-        id: check_tests
-        run: |
-          if [ -d tests ]; then
-            echo "has_tests=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_tests=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Skip (no tests yet)
-        if: steps.check_tests.outputs.has_tests == 'false'
-        run: echo "No tests/ directory yet — Section 6 of the production-readiness plan will populate this."
-
-      - uses: actions/setup-python@v6
-        if: steps.check_tests.outputs.has_tests == 'true'
+      # uv pins the interpreter from .python-version (3.11) and installs the
+      # exact versions in uv.lock; the action caches ~/.cache/uv keyed on the
+      # lockfile (PRD #132). Exact tag: setup-uv publishes no floating major.
+      - uses: astral-sh/setup-uv@v8.2.0
         with:
-          python-version: "3.11"
-          cache: pip
+          enable-cache: true
 
-      - name: Install
-        if: steps.check_tests.outputs.has_tests == 'true'
-        run: |
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
+      # All dependency groups + the project itself (editable) — the editable
+      # install is what makes fetch/preprocess importable with zero sys.path
+      # manipulation; tests/test_no_sys_path_hacks.py guards the latter.
+      - name: Sync environment (locked)
+        run: uv sync --locked
 
       - name: Run pytest
-        if: steps.check_tests.outputs.has_tests == 'true'
-        run: pytest --cov=scripts.preprocess --cov-report=term-missing
+        run: uv run --no-sync pytest --cov --cov-report=term-missing

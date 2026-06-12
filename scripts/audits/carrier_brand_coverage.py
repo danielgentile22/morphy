@@ -29,13 +29,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from preprocess.carrier_brands import carrier_for
 
 REPO = Path(__file__).resolve().parents[2]
 NORM = REPO / "data" / "processed" / "normalized"
-import sys  # noqa: E402 — keep imports near use; this is a throwaway script
-
-sys.path.insert(0, str(REPO / "scripts"))
-from preprocess.carrier_brands import carrier_for  # noqa: E402
 
 BANDS = {
     "cellular": NORM / "fcc_uls_cellular",

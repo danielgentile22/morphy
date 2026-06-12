@@ -21,7 +21,6 @@ puller's manifest at read time (for raw_local_version tracking).
 from __future__ import annotations
 
 import logging
-import sys
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -69,11 +68,6 @@ __all__ = [
     "utcnow_iso",
     "write_quality_report",
 ]
-
-# Make the sibling 'fetch' package importable when running as a script.
-SCRIPTS_DIR = Path(__file__).resolve().parents[1]
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
 
 log = logging.getLogger("preprocess")
 

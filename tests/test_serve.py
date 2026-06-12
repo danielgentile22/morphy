@@ -7,14 +7,8 @@ a parser bug here would surface as silent fetch failures in the map app.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-
-from serve import _parse_byte_range  # noqa: E402
+from serve import _parse_byte_range
 
 SIZE = 1000
 

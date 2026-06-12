@@ -24,9 +24,14 @@
 ## Quick start
 
 ```bash
-python3.11 -m venv .venv
+# One-time: install uv (https://docs.astral.sh/uv/getting-started/installation/)
+brew install uv
+
+# One command = the whole working environment: creates .venv on Python 3.11
+# from uv.lock (exact pinned versions, all dependency groups) and installs
+# fetch/preprocess editable so imports work with no path hacks (PRD #132).
+uv sync
 source .venv/bin/activate
-pip install -r requirements.txt
 ```
 
 ### 1. Pull raw data
@@ -134,10 +139,10 @@ pilot/
 ├── CONTEXT.md                Canonical product language (glossary)
 ├── CLAUDE.md                 AI-agent orientation
 ├── PROJECT_BRIEF.md          Business case
-├── requirements.txt
+├── pyproject.toml            Project + dependency groups (uv; uv.lock pins exact versions)
 ├── app/                      Svelte 5 + MapLibre map app
 ├── app_puller/               PySide6 desktop puller
-├── backend/                  DESIGN ONLY — NOT YET IMPLEMENTED (Slice 4; no code on disk). Planned: FastAPI + Postgres + S3 + Claude API
+├── backend/                  FastAPI + SQLAlchemy lead-triage write-layer (auth, teams-as-tenants; SQLite dev / Postgres) — see backend/README.md
 ├── scripts/
 │   ├── preprocess.py         CLI wrapper
 │   ├── preprocess/           Normalizer/Join/View framework

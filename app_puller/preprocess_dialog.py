@@ -7,9 +7,6 @@ streams progress signals.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 from PySide6.QtCore import QThread
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -28,11 +25,6 @@ from PySide6.QtWidgets import (
 
 from .theme import Palette
 from .workers import PreprocessWorker, make_thread, stop_thread
-
-# Make scripts/ importable for accessing the preprocess registry.
-_SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
 
 
 class PreprocessDialog(QDialog):

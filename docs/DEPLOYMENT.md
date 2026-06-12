@@ -43,10 +43,11 @@ All four surfaces run locally on a developer's machine (the hosted app is §8):
 git clone git@github.com:<user>/pilot.git
 cd pilot
 
-# Python environment
-python3.11 -m venv .venv
+# Python environment — uv creates .venv on Python 3.11 from uv.lock
+# (exact pinned versions, all dependency groups, editable project install).
+# Install uv once: https://docs.astral.sh/uv/getting-started/installation/
+uv sync
 source .venv/bin/activate
-pip install -r requirements.txt
 
 # Verify installation
 python scripts/verify_raw.py     # No raw data yet — expect "missing" rows
@@ -240,7 +241,7 @@ Secrets (`AUTH_JWT_SECRET`, the `LITESTREAM_*` R2 keys + bucket/endpoint, `ANTHR
 | `deploy.sh` | `code` (`fly deploy`; **refuses a dirty working tree** — `ALLOW_DIRTY=1` overrides), `data` (laptop → R2 → volume via `scripts/sync_composite.py`, mirror, **dry-run by default**), `all`, `smoke`. | `shellcheck` clean |
 | `scripts/sync_composite.py` | Owns the served-composite include/exclude contract (drops `*/parcels/` compose-inputs, keeps `parcels.pmtiles`); drives rclone (mirror / dry-run / idempotent). | `tests/test_sync_composite.py` (real rclone) |
 
-**Image dependency decision (PRD #96).** The image installs **`backend/requirements.txt`** (the slim FastAPI/uvicorn/SQLAlchemy/PyJWT set), **not** the root `requirements.txt` — the latter carries geopandas/shapely/pyproj/PySide6 used only by the preprocess pipeline, which never runs in this image. (The PRD's fallback "extract a slim subset" was unnecessary: that subset already existed as `backend/requirements.txt`.) **Not** systemd units (that was the bare-VM path, not taken).
+**Image dependency decision (PRD #96, storage amended by PRD #132).** The image installs the **`backend` dependency group exported from `uv.lock`** (the slim FastAPI/uvicorn/SQLAlchemy/PyJWT/psycopg set, hash-pinned to the same locked graph CI tests), **not** the pipeline groups — those carry geopandas/shapely/pyproj/PySide6 used only by preprocess, which never runs in this image. The old `backend/requirements.txt` is retired; the group lives in the root `pyproject.toml`. **Not** systemd units (that was the bare-VM path, not taken).
 
 ### Provisioning runbook (operator — needs your hands)
 
@@ -420,8 +421,8 @@ Not built. Tracked in [ROADMAP.md](./ROADMAP.md) → Phase 3.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Puller crashes on launch | PySide6 version mismatch | `pip install --upgrade --force-reinstall PySide6==6.7.3` |
-| Preprocess fails: `ImportError: openpyxl` | Missing optional dep | `pip install -r requirements.txt` (openpyxl is now required) |
+| Puller crashes on launch | PySide6 version mismatch | `uv sync` (the lock pins PySide6 6.7.3) |
+| Preprocess fails: `ImportError: openpyxl` | Out-of-date environment | `uv sync` (openpyxl is in the pipeline group) |
 | Map app shows "Could not load the map data" | Data server down | Start `python scripts/serve.py 8765` from the repo root — not `http.server` (it has no Range support) |
 | Stale manifest disagrees with disk | Interrupted run | `python scripts/preprocess.py --rebuild-manifest` |
 | Tests fail with "no such fixture" | New fixture not created | Run `pytest --collect-only` to see test IDs; check `tests/fixtures/` |

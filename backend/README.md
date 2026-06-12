@@ -292,8 +292,8 @@ Auth environment variables:
 ## Run
 
 ```bash
+uv sync                                          # .venv from uv.lock — the backend group carries fastapi/sqlalchemy/uvicorn/PyJWT/psycopg
 source .venv/bin/activate
-pip install -r backend/requirements.txt          # fastapi, sqlalchemy, uvicorn, PyJWT (+ optional psycopg/testcontainers)
 
 # 1. precompute the owners index (reads the composed anchor states on disk)
 python scripts/preprocess.py --app-assets         # ensures parcels_attr.parquet exists

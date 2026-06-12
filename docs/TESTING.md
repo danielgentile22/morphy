@@ -31,9 +31,12 @@ For a co-founder-facing product, automated tests serve four purposes:
 
 ## 3. Test layout
 
-`conftest.py` (at the repo root) puts `scripts/` on `sys.path` so tests
-import as `from preprocess.X` / `from fetch.X`. Tests are organized
-by *feature*, not by stage — one file per major surface area.
+The editable install that `uv sync` performs (PRD #132) makes `preprocess`
+/ `fetch` (and the `scripts/` top-level modules) importable as normal
+packages — there is no path bootstrapping anywhere, and
+`tests/test_no_sys_path_hacks.py` fails the suite if `sys.path`
+manipulation reappears. Tests are organized by *feature*, not by stage —
+one file per major surface area.
 
 ```
 tests/
@@ -139,12 +142,12 @@ Notable gaps to fill (carried as future commits, not as "design"):
 ## 6. How to run
 
 ```bash
-# Local — full suite
+# Local — full suite (uv sync once to build .venv from uv.lock)
 source .venv/bin/activate
 pytest
 
-# With coverage
-pytest --cov=scripts.preprocess --cov-report=term-missing
+# With coverage (sources configured in pyproject [tool.coverage.run])
+pytest --cov --cov-report=term-missing
 
 # Subset
 pytest tests/test_compose_property.py -v

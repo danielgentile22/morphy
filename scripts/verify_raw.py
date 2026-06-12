@@ -16,11 +16,8 @@ Usage:
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent))
 
 from fetch import RAW_ROOT
 from fetch.registry import all_sources

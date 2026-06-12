@@ -21,20 +21,13 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
-from pathlib import Path
-
-# Bootstrap: when run as a script (not -m), add scripts/ to sys.path.
-SCRIPTS_DIR = Path(__file__).resolve().parent
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
 
 # Import registry so all @register_normalizer/_join/_view decorators fire.
-from preprocess import registry  # noqa: F401, E402
-from preprocess.base import all_joins, all_views  # noqa: E402
-from preprocess.geographies import get_state  # noqa: E402
-from preprocess.manifest import PreprocessManifest, rebuild_from_disk  # noqa: E402
-from preprocess.runner import (  # noqa: E402
+from preprocess import registry  # noqa: F401
+from preprocess.base import all_joins, all_views
+from preprocess.geographies import get_state
+from preprocess.manifest import PreprocessManifest, rebuild_from_disk
+from preprocess.runner import (
     run_all,
     run_compose_all,
     run_compose_one,

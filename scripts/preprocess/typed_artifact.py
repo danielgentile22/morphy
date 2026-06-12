@@ -75,7 +75,7 @@ def validate_against_schema(
     except ImportError:  # pragma: no cover — dev-deps always present in CI
         log.warning(
             "jsonschema not installed; skipping %s validation. "
-            "Install requirements-dev.txt to enable strict checking.",
+            "Run `uv sync` to enable strict checking.",
             label,
         )
         return

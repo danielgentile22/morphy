@@ -19,16 +19,18 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v6
+      # uv pins the interpreter from .python-version (3.11) and installs the
+      # exact versions in uv.lock; the action caches ~/.cache/uv keyed on the
+      # lockfile (PRD #132). Exact tag: setup-uv publishes no floating major.
+      - uses: astral-sh/setup-uv@v8.2.0
         with:
-          python-version: "3.11"
-          cache: pip
+          enable-cache: true
 
-      - name: Install ruff
-        run: pip install "ruff>=0.6"
+      - name: Install dev tools (locked)
+        run: uv sync --locked --only-group dev
 
       - name: Lint
-        run: ruff check .
+        run: uv run --no-sync ruff check .
 
       - name: Format check
-        run: ruff format --check .
+        run: uv run --no-sync ruff format --check .

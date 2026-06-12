@@ -30,13 +30,18 @@ COPY --from=caddy:2.11 /usr/bin/caddy /usr/local/bin/caddy
 COPY --from=litestream/litestream:0.5.11 /usr/local/bin/litestream /usr/local/bin/litestream
 COPY --from=rclone/rclone:1.74 /usr/local/bin/rclone /usr/local/bin/rclone
 
-# Backend Python deps: the SLIM backend set (FastAPI/uvicorn/SQLAlchemy/PyJWT),
-# NOT the root requirements.txt — that carries geopandas/shapely/pyproj/PySide6
-# used only by the preprocess pipeline, which never runs in this image. (PRD #96
-# "image dependency decision": the slim subset already exists as
-# backend/requirements.txt, so we use it rather than the heavy root set.)
-COPY backend/requirements.txt /tmp/backend-requirements.txt
-RUN pip install --no-cache-dir -r /tmp/backend-requirements.txt
+# Backend Python deps from the same locked graph CI tested (PRD #132): export
+# the `backend` dependency group from uv.lock (hash-pinned) and install it
+# system-wide. The uv binary is bind-mounted for this step only, so it never
+# lands in an image layer. The group stays the slim FastAPI/uvicorn/SQLAlchemy/
+# PyJWT/psycopg set — pipeline GIS + GUI weight never enters this image
+# (PRD #96 "image dependency decision", upheld).
+COPY pyproject.toml uv.lock /tmp/uv-project/
+RUN --mount=from=ghcr.io/astral-sh/uv:0.11.21,source=/uv,target=/usr/local/bin/uv \
+    cd /tmp/uv-project \
+    && uv export --frozen --only-group backend --no-emit-project -o backend-requirements.txt \
+    && uv pip install --system --no-cache -r backend-requirements.txt \
+    && rm -rf /tmp/uv-project
 
 # App code, the built SPA, the data-sync contract (run on the machine for the
 # R2->volume leg), and the process configs.

@@ -1,17 +1,12 @@
-"""``python -m app_puller`` entry point."""
+"""``python -m app_puller`` entry point.
+
+The ``fetch`` package (and the scripts/ top-level modules) resolve via the
+editable install that ``uv sync`` performs — no path bootstrapping here.
+"""
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-# Make ``scripts/`` importable so the fetch package resolves whether the
-# app is launched from the project root or via the .app bundle later.
-HERE = Path(__file__).resolve().parent
-PROJECT_ROOT = HERE.parent
-sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
-
-from app_puller.main_window import run  # noqa: E402
+from app_puller.main_window import run
 
 if __name__ == "__main__":
     raise SystemExit(run())

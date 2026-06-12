@@ -218,16 +218,9 @@ class PreprocessWorker(QObject):
         self._force_rebuild = force_rebuild
 
     def run(self) -> None:
-        # Import here so PreprocessWorker can sit in workers.py without
-        # forcing the preprocess package to load until the user clicks the
-        # button (keeps app startup fast).
-        import sys
-        from pathlib import Path
-
-        scripts_dir = Path(__file__).resolve().parent.parent / "scripts"
-        if str(scripts_dir) not in sys.path:
-            sys.path.insert(0, str(scripts_dir))
-
+        # The preprocess import stays deferred (below) so PreprocessWorker can
+        # sit in workers.py without loading the GIS stack until the user
+        # clicks the button (keeps app startup fast).
         success = True
         outcome_data: dict = {}
         try:
