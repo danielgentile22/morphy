@@ -13,15 +13,9 @@ next request) and the identity-only JWT (the cookie holds the same token).
 
 from __future__ import annotations
 
-import contextlib
-from collections.abc import Iterator
-from pathlib import Path
-
 from backend.app.auth import SESSION_COOKIE
-from backend.app.config import settings
-from backend.app.password import hash_password
 
-from ._helpers import api, auth_header
+from ._helpers import api, auth_header, temp_credential
 
 SAMPLE = {
     "schema_version": 1,
@@ -50,18 +44,6 @@ SAMPLE = {
 }
 
 CID = "nat0000aaaa"
-
-
-@contextlib.contextmanager
-def extra_user(username: str, password: str, team: str = "devteam") -> Iterator[Path]:
-    """Append a credential line to the test file; restore afterward."""
-    creds = Path(settings.credentials_path)
-    original = creds.read_text()
-    creds.write_text(original + f"{username}:{hash_password(password)}:{team}\n")
-    try:
-        yield creds
-    finally:
-        creds.write_text(original)
 
 
 def login_response(client, username: str = "dev", password: str = "dev"):
@@ -97,7 +79,7 @@ def test_the_cookie_alone_authenticates_api_requests() -> None:
 def test_the_cookie_outranks_a_bearer_header() -> None:
     # The PRD fixes the precedence: cookie first. With both present, the
     # cookie's identity wins — deterministic, never header-dependent.
-    with extra_user("alice", "pw"), api(SAMPLE) as (client, _eng, _sender):
+    with api(SAMPLE) as (client, eng, _sender), temp_credential(eng, "alice", "pw"):
         dev_token = login_response(client, "dev", "dev").json()["access_token"]
         login_response(client, "alice", "pw")  # jar now holds alice's cookie
         me = client.get("/api/auth/me", headers=auth_header(dev_token)).json()
@@ -131,11 +113,11 @@ def test_logout_without_a_session_is_harmless() -> None:
 
 # ── per-request authority survives the transport change ──────────────────────
 def test_a_removed_users_cookie_dies_on_their_next_request() -> None:
-    with api(SAMPLE) as (client, _eng, _sender):
-        with extra_user("alice", "pw"):
+    with api(SAMPLE) as (client, eng, _sender):
+        with temp_credential(eng, "alice", "pw"):
             login_response(client, "alice", "pw")
             assert client.get("/api/candidates").status_code == 200
-        # alice is gone from the file — her unexpired cookie is not enough.
+        # alice's credential is gone — her unexpired cookie is not enough.
         assert client.get("/api/candidates").status_code == 401
         assert client.get("/api/auth/me").status_code == 401
 

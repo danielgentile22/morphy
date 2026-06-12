@@ -55,6 +55,7 @@ from .auth_service import login as login_user
 from .auto_followup_rule import AutoFollowUpRule
 from .config import settings
 from .credentials import normalize_username
+from .credentials_store import CredentialsError, ensure_fail_closed_boot
 from .db import get_db, init_db
 from .lead_status import InvalidTransition
 from .lead_store import LeadStore
@@ -107,13 +108,18 @@ from .stats_service import ActivityRow, LeadRow, StatsService
 from .task_store import InvalidTaskPriority, InvalidTaskStatus, TaskStore, label_list
 from .tenant_service import TenantService
 from .user_settings_store import KNOWN_KEYS, UserSettingsStore
-from .users import ChangePasswordOutcome, UsersFileError
+from .users import ChangePasswordOutcome
 from .users import change_password as users_change_password
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     init_db()
+    # Fail-closed boot (PRD #130, preserving the ADR-062/063 posture): outside
+    # dev mode the app refuses to serve without a real signing secret and at
+    # least one credential row; an empty table one-shot-imports the legacy
+    # users.txt (cutover) or seeds dev/dev (dev mode).
+    ensure_fail_closed_boot()
     yield
 
 
@@ -302,17 +308,16 @@ def logout(response: Response) -> None:
 
 
 @app.get("/api/auth/check", status_code=204)
-def auth_check(token: str = Depends(session_token)) -> None:
+def auth_check(token: str = Depends(session_token), db: Session = Depends(get_db)) -> None:
     """Forward-auth seam for the edge (PRD #130): Caddy asks this before
     serving any byte under ``/data/processed/*``. Validates the session
     (cookie first, bearer fallback) and re-checks the username against the
-    credentials file — per-request authority extends to the data plane, so a
+    credential table — per-request authority extends to the data plane, so a
     removed user loses file access on their next fetch. 204 on success, 401
-    otherwise. Deliberately no DB hit — tile/parquet fetches arrive in
-    bursts, and presence in the credentials file is the whole of the
-    authority check."""
+    otherwise. One indexed SELECT — no tenant/user resolution, since the
+    edge only needs yes/no."""
     username = decode_access_token(token)
-    if not is_authorized(username):
+    if not is_authorized(db, username):
         raise HTTPException(
             status_code=401,
             detail="not authenticated",
@@ -401,19 +406,20 @@ def update_my_settings(
 def change_my_password(
     body: PasswordChange,
     principal: Principal = Depends(current_principal),
+    db: Session = Depends(get_db),
 ) -> None:
     """Self-service password change (PRD #121). Routes through the *one*
-    sanctioned atomic writer (``users.change_password`` → ``set_password``);
-    wrong current password → 401 (the file untouched), success is live on the
-    next request via the per-request ``CredentialsFile`` reload."""
+    sanctioned runtime writer (``users.change_password`` → the store's
+    password writer); wrong current password → 401 (nothing written),
+    success is live on the next login attempt."""
     try:
         outcome = users_change_password(
-            settings.credentials_path,
+            db,
             principal.email,
             body.current_password,
             body.new_password,
         )
-    except UsersFileError as exc:
+    except CredentialsError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if outcome is ChangePasswordOutcome.WRONG_CURRENT:
         raise HTTPException(status_code=401, detail="Current password is incorrect")

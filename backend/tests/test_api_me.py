@@ -4,20 +4,13 @@
 Drives the real HTTP surface the SPA uses (sign in → bearer token → call),
 asserting the user-scoped behavior a teammate would feel: defaults before any
 write, settings isolated between two teammates on the *same* board, display-name
-updates, and the security-critical password change (wrong current → 401, the
-file untouched; success → the new credential is live on the next login).
+updates, and the security-critical password change (wrong current → 401,
+nothing written; success → the new credential is live on the next login).
 """
 
 from __future__ import annotations
 
-import contextlib
-from collections.abc import Iterator
-from pathlib import Path
-
-from backend.app.config import settings
-from backend.app.password import hash_password
-
-from ._helpers import api, auth_header
+from ._helpers import api, auth_header, seed_credential
 
 SAMPLE = {
     "schema_version": 1,
@@ -46,21 +39,6 @@ SAMPLE = {
 }
 
 
-@contextlib.contextmanager
-def users_file(*lines: str) -> Iterator[None]:
-    creds = Path(settings.credentials_path)
-    original = creds.read_text()
-    creds.write_text("\n".join(lines) + "\n")
-    try:
-        yield
-    finally:
-        creds.write_text(original)
-
-
-def cred(username: str, password: str, team: str) -> str:
-    return f"{username}:{hash_password(password)}:{team}"
-
-
 def sign_in(client, username: str, password: str) -> dict:
     r = client.post("/api/auth/login", json={"username": username, "password": password})
     assert r.status_code == 200, r.text
@@ -70,7 +48,8 @@ def sign_in(client, username: str, password: str) -> dict:
 
 # ── GET/PUT /api/me/settings ──────────────────────────────────────────────────
 def test_get_settings_returns_sane_defaults_for_a_fresh_user() -> None:
-    with users_file(cred("alice", "pw", "acme")), api(SAMPLE) as (client, _eng, _s):
+    with api(SAMPLE) as (client, eng, _s):
+        seed_credential(eng, "alice", "pw", "acme")
         h = sign_in(client, "alice", "pw")
         body = client.get("/api/me/settings", headers=h).json()
         assert body == {
@@ -85,7 +64,8 @@ def test_get_settings_returns_sane_defaults_for_a_fresh_user() -> None:
 
 
 def test_put_settings_upserts_some_keys_and_returns_resolved() -> None:
-    with users_file(cred("alice", "pw", "acme")), api(SAMPLE) as (client, _eng, _s):
+    with api(SAMPLE) as (client, eng, _s):
+        seed_credential(eng, "alice", "pw", "acme")
         h = sign_in(client, "alice", "pw")
         r = client.put(
             "/api/me/settings",
@@ -106,7 +86,8 @@ def test_put_settings_upserts_some_keys_and_returns_resolved() -> None:
 def test_put_settings_ignores_explicit_null_values() -> None:
     # An explicit null means "leave unchanged" — it must never store the string
     # "None" (which would read back as a garbage theme).
-    with users_file(cred("alice", "pw", "acme")), api(SAMPLE) as (client, _eng, _s):
+    with api(SAMPLE) as (client, eng, _s):
+        seed_credential(eng, "alice", "pw", "acme")
         h = sign_in(client, "alice", "pw")
         client.put("/api/me/settings", headers=h, json={"theme": "dark"})
         r = client.put("/api/me/settings", headers=h, json={"theme": None, "basemap": "voyager"})
@@ -117,17 +98,17 @@ def test_put_settings_ignores_explicit_null_values() -> None:
 
 def test_put_settings_persists_opaque_blobs_verbatim() -> None:
     blob = '{"states":["AR","MT"],"assessedValue":[1000,50000]}'
-    with users_file(cred("alice", "pw", "acme")), api(SAMPLE) as (client, _eng, _s):
+    with api(SAMPLE) as (client, eng, _s):
+        seed_credential(eng, "alice", "pw", "acme")
         h = sign_in(client, "alice", "pw")
         client.put("/api/me/settings", headers=h, json={"filter_default": blob})
         assert client.get("/api/me/settings", headers=h).json()["filter_default"] == blob
 
 
 def test_settings_are_isolated_between_teammates_on_one_board() -> None:
-    with (
-        users_file(cred("alice", "pw-a", "team-rocket"), cred("bob", "pw-b", "team-rocket")),
-        api(SAMPLE) as (client, _eng, _s),
-    ):
+    with api(SAMPLE) as (client, eng, _s):
+        seed_credential(eng, "alice", "pw-a", "team-rocket")
+        seed_credential(eng, "bob", "pw-b", "team-rocket")
         alice = sign_in(client, "alice", "pw-a")
         bob = sign_in(client, "bob", "pw-b")
 
@@ -145,7 +126,8 @@ def test_settings_require_authentication() -> None:
 
 # ── PUT /api/me (display name) ────────────────────────────────────────────────
 def test_display_name_is_blank_by_default_and_settable() -> None:
-    with users_file(cred("alice", "pw", "acme")), api(SAMPLE) as (client, _eng, _s):
+    with api(SAMPLE) as (client, eng, _s):
+        seed_credential(eng, "alice", "pw", "acme")
         h = sign_in(client, "alice", "pw")
         assert client.get("/api/auth/me", headers=h).json()["display_name"] == ""
 
@@ -158,7 +140,8 @@ def test_display_name_is_blank_by_default_and_settable() -> None:
 
 # ── POST /api/me/password ─────────────────────────────────────────────────────
 def test_password_change_wrong_current_is_401_and_login_unaffected() -> None:
-    with users_file(cred("alice", "right-pw", "acme")), api(SAMPLE) as (client, _eng, _s):
+    with api(SAMPLE) as (client, eng, _s):
+        seed_credential(eng, "alice", "right-pw", "acme")
         h = sign_in(client, "alice", "right-pw")
         r = client.post(
             "/api/me/password",
@@ -176,7 +159,8 @@ def test_password_change_wrong_current_is_401_and_login_unaffected() -> None:
 
 
 def test_password_change_success_makes_the_new_credential_live() -> None:
-    with users_file(cred("alice", "old-pw", "acme")), api(SAMPLE) as (client, _eng, _s):
+    with api(SAMPLE) as (client, eng, _s):
+        seed_credential(eng, "alice", "old-pw", "acme")
         h = sign_in(client, "alice", "old-pw")
         r = client.post(
             "/api/me/password",

@@ -2,28 +2,24 @@
 driven through real auth (Slice 2 / #48, re-keyed on teams by #86/#88).
 
 Two users on two different teams, each authenticated through the real
-login route against the credentials file (the only way to reach a tenant
-since #88 — a JWT cannot claim one). Every data route asserts "team A
-cannot read / write / list team B's data". The store-level twin of these
-checks lives in ``test_tenant_isolation.py``; the login-driven team
-behaviors (sharing, inheritance, re-homing) live in ``test_teams.py``.
+login route against the credential table (the only way to reach a tenant
+since #88 — a JWT cannot claim one; storage moved to the DB by PRD #130).
+Every data route asserts "team A cannot read / write / list team B's data".
+The store-level twin of these checks lives in ``test_tenant_isolation.py``;
+the login-driven team behaviors (sharing, inheritance, re-homing) live in
+``test_teams.py``.
 
 Run with ``pytest -k tenant_isolation``.
 """
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.config import settings
-from backend.app.password import hash_password
-
-from .._helpers import api, auth_header
+from .._helpers import api, auth_header, seed_credential
 
 CID = "nat0000aaaa"
 
@@ -54,33 +50,18 @@ SAMPLE = {
 }
 
 
-@contextlib.contextmanager
-def _users_file(*lines: str) -> Iterator[None]:
-    creds = Path(settings.credentials_path)
-    original = creds.read_text()
-    creds.write_text("\n".join(lines) + "\n")
-    try:
-        yield
-    finally:
-        creds.write_text(original)
-
-
 @pytest.fixture
 def two_tenants() -> Iterator[tuple[TestClient, dict, dict]]:
     """A client plus per-tenant auth headers for two users on two teams.
 
-    Both sessions come from the real login route against the credentials
-    file — since #88 the file is the only source of tenancy (an identity-only
+    Both sessions come from the real login route against the credential
+    table — since #88 it is the only source of tenancy (an identity-only
     JWT cannot carry or forge a tenant), so this is exactly the isolation
     boundary under test.
     """
-    with (
-        _users_file(
-            f"user-a:{hash_password('pw-a')}:team-a",
-            f"user-b:{hash_password('pw-b')}:team-b",
-        ),
-        api(SAMPLE) as (client, _eng, _sender),
-    ):
+    with api(SAMPLE) as (client, eng, _sender):
+        seed_credential(eng, "user-a", "pw-a", "team-a")
+        seed_credential(eng, "user-b", "pw-b", "team-b")
 
         def login(username: str, password: str) -> dict:
             r = client.post("/api/auth/login", json={"username": username, "password": password})

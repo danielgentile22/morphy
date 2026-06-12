@@ -12,27 +12,9 @@ Caddy binary.
 
 from __future__ import annotations
 
-import contextlib
-from collections.abc import Iterator
-from pathlib import Path
-
-from backend.app.config import settings
-from backend.app.password import hash_password
-
-from ._helpers import api, auth_header, login
+from ._helpers import api, auth_header, login, temp_credential
 
 SAMPLE = {"schema_version": 1, "count": 0, "owners": []}
-
-
-@contextlib.contextmanager
-def extra_user(username: str, password: str, team: str = "devteam") -> Iterator[None]:
-    creds = Path(settings.credentials_path)
-    original = creds.read_text()
-    creds.write_text(original + f"{username}:{hash_password(password)}:{team}\n")
-    try:
-        yield
-    finally:
-        creds.write_text(original)
 
 
 def test_no_session_is_401() -> None:
@@ -60,10 +42,11 @@ def test_a_garbage_token_is_401() -> None:
 
 
 def test_a_removed_users_data_access_dies_on_their_next_fetch() -> None:
-    # Per-request authority on the data plane: the file decides, every time.
-    with api(SAMPLE) as (client, _eng, _sender):
-        with extra_user("alice", "pw"):
+    # Per-request authority on the data plane: the credential table decides,
+    # every time.
+    with api(SAMPLE) as (client, eng, _sender):
+        with temp_credential(eng, "alice", "pw"):
             client.post("/api/auth/login", json={"username": "alice", "password": "pw"})
             assert client.get("/api/auth/check").status_code == 204
-        # alice is out of the file — her unexpired cookie no longer unlocks data.
+        # alice's credential is gone — her unexpired cookie no longer unlocks data.
         assert client.get("/api/auth/check").status_code == 401

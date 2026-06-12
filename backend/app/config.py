@@ -1,4 +1,4 @@
-"""Backend settings — environment-driven, fail-closed outside dev.
+"""Backend settings — environment-driven; fail-closed enforcement at boot.
 
 A database URL, the path to the static owners index, and the
 username/password auth knobs (Slice 1 / #76 — ADR-055). The default
@@ -6,20 +6,21 @@ database is a local SQLite file so the backend runs with zero external
 services; point ``DATABASE_URL`` at Postgres (``postgresql+psycopg://…``)
 in deploy/CI.
 
-Credentials live in a git-ignored plain-text file (#84, PRD #83): one
-``username:hash:team`` line per user, default ``backend/users.txt``,
-overridable via ``APP_USERS_FILE`` (production secret stores can mount
-files). The old ``APP_USERS`` env var is gone — the file is the one source
-of truth.
+Credentials live in the app database (PRD #130, amending ADR-063's storage
+— the ``credential`` table is the only credential source; manage it with
+``python -m app.users``). ``APP_USERS_FILE`` remains only as the one-shot
+migration source: an empty credential table at boot imports it
+(``credentials_store.ensure_fail_closed_boot``), after which the file is
+never consulted.
 
-Auth posture is gated on a single switch, ``AUTH_DEV_MODE`` (default
-**off** — the safe state). With it off (prod), ``from_env`` refuses to
-build without a real ``AUTH_JWT_SECRET`` **and** a credentials file with at
-least one valid entry — so a deploy can be neither open nor impossible to
-log into. With it on, the zero-config local loop is preserved: an ephemeral
-per-process secret and a built-in ``dev``/``dev`` login seeded **through the
-same file-parsing code path** (a temp credentials file), so dev mode cannot
-hide parsing bugs. The real secret store lands with #16.
+The fail-closed posture is unchanged but now enforced at **startup** rather
+than import (the table can't be checked before the engine exists, and the
+user-management CLI must be importable without a configured secret): with
+``AUTH_DEV_MODE`` off (default — the safe state), the app refuses to *serve*
+without a real ``AUTH_JWT_SECRET`` and at least one credential row. With it
+on, the zero-config loop is preserved: an ephemeral per-process secret and a
+built-in ``dev``/``dev`` login seeded **through the same store-writer path**
+as the CLI, so dev mode cannot hide credential-resolution bugs.
 """
 
 from __future__ import annotations
@@ -27,19 +28,14 @@ from __future__ import annotations
 import logging
 import os
 import secrets
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import credentials
-from .password import hash_password
-
 _log = logging.getLogger(__name__)
 
-# Zero-config dev credential, written to a temp credentials file when
-# AUTH_DEV_MODE is on and the configured file has no valid entry — so local
-# runs and CI need no setup. Not a secret — it only unlocks the ephemeral,
-# dev-only JWT secret.
+# Zero-config dev credential, seeded into the credential table at boot when
+# AUTH_DEV_MODE is on and no credential exists — so local runs and CI need no
+# setup. Not a secret — it only unlocks the ephemeral, dev-only JWT secret.
 DEV_USERNAME = "dev"
 DEV_PASSWORD = "dev"
 DEV_TEAM = "dev"
@@ -48,8 +44,7 @@ DEV_TEAM = "dev"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 COMPOSITE_ROOT = PROJECT_ROOT / "data" / "processed" / "composite"
 
-# The real credentials file lives in the backend directory (git-ignored; a
-# committed users.txt.example documents the format).
+# The legacy credentials file (import source only; git-ignored).
 DEFAULT_CREDENTIALS_PATH = PROJECT_ROOT / "backend" / "users.txt"
 
 
@@ -60,19 +55,6 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _write_dev_credentials_file() -> Path:
-    """Seed the built-in dev login into a temp credentials file.
-
-    Dev mode goes through the exact same file-parsing path as production
-    (PRD #83 user story 28) — never an in-memory shortcut that could hide
-    parsing bugs."""
-    fd, name = tempfile.mkstemp(prefix="pilot-dev-users-", suffix=".txt")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write("# AUTH_DEV_MODE built-in dev credential (ephemeral; not a secret)\n")
-        f.write(f"{DEV_USERNAME}:{hash_password(DEV_PASSWORD)}:{DEV_TEAM}\n")
-    return Path(name)
-
-
 @dataclass(frozen=True)
 class Settings:
     database_url: str
@@ -80,10 +62,14 @@ class Settings:
     cors_origins: tuple[str, ...]
     # ── auth (ADR-055) ──────────────────────────────────────────────────────
     jwt_secret: str
+    # True when no AUTH_JWT_SECRET was provided and a per-process secret was
+    # generated. Outside dev mode this fails the boot check — the app must
+    # never serve with a secret that rotates on restart.
+    jwt_secret_is_ephemeral: bool
     jwt_algorithm: str
     session_ttl_days: int
-    # Master safety switch. False (default) = prod posture: fail closed.
-    # True = local dev: ephemeral secret + built-in dev/dev login.
+    # Master safety switch. False (default) = prod posture: fail closed at
+    # boot. True = local dev: ephemeral secret + built-in dev/dev login.
     dev_mode: bool
     # Login brute-force throttle (Slice 2 / #77): after ``login_throttle_max``
     # failed sign-ins for one (ip, username) within
@@ -93,8 +79,8 @@ class Settings:
     # state; resets on restart.
     login_throttle_max: int
     login_throttle_window_seconds: float
-    # The credentials file (#84): ``username:hash:team`` lines, the only
-    # credential source. Login re-reads it, so edits apply without restart.
+    # The legacy users.txt (PRD #130): consulted ONLY by the one-shot boot
+    # import when the credential table is empty. Never read per request.
     credentials_path: Path
 
     @staticmethod
@@ -106,28 +92,7 @@ class Settings:
         explicit_secret = os.environ.get("AUTH_JWT_SECRET")
         credentials_path = Path(os.environ.get("APP_USERS_FILE", str(DEFAULT_CREDENTIALS_PATH)))
 
-        if not dev_mode:
-            # Fail closed: an instance that can't authenticate safely must never
-            # boot. Require BOTH a real signing secret and a credentials file
-            # with >=1 valid entry, so a deploy can be neither open nor
-            # impossible to log into.
-            problems = []
-            if not explicit_secret:
-                problems.append("AUTH_JWT_SECRET must be set (no ephemeral secret outside dev)")
-            if not credentials.load(credentials_path):
-                problems.append(
-                    f"credentials file {credentials_path} must exist and contain at least "
-                    "one valid 'username:hash:team' line "
-                    "(generate a hash with `python -m app.password`)"
-                )
-            if problems:
-                raise RuntimeError(
-                    "Auth misconfigured with AUTH_DEV_MODE off: "
-                    + "; ".join(problems)
-                    + ". Provide these from the host secret store, or set "
-                    "AUTH_DEV_MODE=1 for the local dev loop."
-                )
-        else:
+        if dev_mode:
             # Never log the secret value itself — note only whether it's the
             # ephemeral fallback.
             _log.warning(
@@ -135,10 +100,6 @@ class Settings:
                 "Never run this in production.",
                 "ephemeral JWT secret" if not explicit_secret else "fixed dev secret",
             )
-            # Seed the built-in dev login unless the configured file already
-            # has a valid credential — through the same file-parsing path.
-            if not credentials.load(credentials_path):
-                credentials_path = _write_dev_credentials_file()
 
         return Settings(
             database_url=os.environ.get("DATABASE_URL", default_db),
@@ -153,9 +114,12 @@ class Settings:
                 ).split(",")
                 if o.strip()
             ),
-            # In prod ``explicit_secret`` is guaranteed set (we raised above);
-            # the ephemeral fallback only ever fires in dev. Never log it.
+            # Outside dev the boot check refuses to serve on the ephemeral
+            # fallback (jwt_secret_is_ephemeral) — building Settings itself
+            # must stay side-effect free so tooling (the users CLI) can import
+            # config without a secret. Never log it.
             jwt_secret=explicit_secret or secrets.token_urlsafe(32),
+            jwt_secret_is_ephemeral=explicit_secret is None,
             jwt_algorithm="HS256",
             session_ttl_days=int(os.environ.get("AUTH_SESSION_TTL_DAYS", "30")),
             dev_mode=dev_mode,

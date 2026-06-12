@@ -1,28 +1,22 @@
-"""Teams as tenants (#86, PRD #83).
+"""Teams as tenants (#86, PRD #83; DB credentials PRD #130).
 
 A team IS a tenant: the `tenant` table records id + unique normalized name,
-teams are find-or-created in credentials-file order (so the first team in the
-file receives tenant 1 and inherits the pre-teams lead board), and login
-resolves the user's team to its tenant. Teammates share one board; different
-teams' boards are invisible to each other — enforced by the existing
-tenant scoping, driven here through real logins.
+teams are find-or-created in credential-registration order (so the first
+registered team receives tenant 1 and inherits the pre-teams lead board —
+``id`` order replaced file order), and login resolves the user's team to its
+tenant. Teammates share one board; different teams' boards are invisible to
+each other — enforced by the existing tenant scoping, driven here through
+real logins.
 """
 
 from __future__ import annotations
 
-import contextlib
-from collections.abc import Iterator
-from pathlib import Path
-
 from sqlalchemy.orm import Session
 
-from backend.app import credentials
-from backend.app.config import settings
 from backend.app.models import Lead, Tenant
-from backend.app.password import hash_password
 from backend.app.tenant_service import TenantService
 
-from ._helpers import api, auth_header
+from ._helpers import api, auth_header, seed_credential, set_credential_team
 
 # A tiny owners index so the data routes resolve (one owner, status New).
 SAMPLE = {
@@ -54,26 +48,6 @@ SAMPLE = {
 CID = "nat0000aaaa"
 
 
-# ── credentials-file helpers ──────────────────────────────────────────────────
-@contextlib.contextmanager
-def users_file(*lines: str) -> Iterator[None]:
-    """Replace the test credentials file's content; restore afterward.
-
-    Login re-reads the file, so the swapped users are live immediately.
-    """
-    creds = Path(settings.credentials_path)
-    original = creds.read_text()
-    creds.write_text("\n".join(lines) + "\n")
-    try:
-        yield
-    finally:
-        creds.write_text(original)
-
-
-def cred(username: str, password: str, team: str) -> str:
-    return f"{username}:{hash_password(password)}:{team}"
-
-
 def sign_in(client, username: str, password: str) -> dict:
     r = client.post("/api/auth/login", json={"username": username, "password": password})
     assert r.status_code == 200, r.text
@@ -81,8 +55,8 @@ def sign_in(client, username: str, password: str) -> dict:
     return auth_header(r.json()["access_token"])
 
 
-# ── team registration (file order) ────────────────────────────────────────────
-def test_teams_register_in_file_order_first_team_gets_tenant_1(new_session) -> None:
+# ── team registration (registration order) ────────────────────────────────────
+def test_teams_register_in_order_first_team_gets_tenant_1(new_session) -> None:
     svc = TenantService(new_session())
     tenants = svc.register_teams(["team-original", "team-second", "team-third"])
     assert tenants["team-original"].id == 1
@@ -106,34 +80,17 @@ def test_a_new_team_appended_later_gets_a_new_tenant_not_an_existing_one(new_ses
     assert tenants["newteam"].id == 2
 
 
-def test_teams_in_file_order_helper_is_first_appearance_order() -> None:
-    users = credentials.parse(
-        "\n".join(
-            [
-                f"alice:{hash_password('a')}:team-b",
-                f"bob:{hash_password('b')}:team-a",
-                f"carol:{hash_password('c')}:team-b",  # team-b already seen
-            ]
-        )
-    )
-    assert credentials.teams_in_file_order(users) == ["team-b", "team-a"]
-
-
 # ── login resolves the team to its tenant ─────────────────────────────────────
 def test_login_lands_each_user_on_their_teams_tenant() -> None:
-    with (
-        users_file(
-            cred("dev", "dev", "devteam"),
-            cred("alice", "pw-a", "team-rocket"),
-            cred("carol", "pw-c", "team-plasma"),
-        ),
-        api(SAMPLE) as (client, _eng, _sender),
-    ):
+    with api(SAMPLE) as (client, eng, _sender):
+        # api() seeded dev/devteam first; alice + carol register after.
+        seed_credential(eng, "alice", "pw-a", "team-rocket")
+        seed_credential(eng, "carol", "pw-c", "team-plasma")
         dev_me = client.get("/api/auth/me", headers=sign_in(client, "dev", "dev")).json()
         alice_me = client.get("/api/auth/me", headers=sign_in(client, "alice", "pw-a")).json()
         carol_me = client.get("/api/auth/me", headers=sign_in(client, "carol", "pw-c")).json()
 
-        # File order: devteam → 1, team-rocket → 2, team-plasma → 3.
+        # Registration order: devteam → 1, team-rocket → 2, team-plasma → 3.
         assert dev_me["tenant_id"] == 1
         assert alice_me["tenant_id"] == 2
         assert carol_me["tenant_id"] == 3
@@ -145,15 +102,10 @@ def test_login_lands_each_user_on_their_teams_tenant() -> None:
 
 # ── shared board / isolation, driven through real logins ──────────────────────
 def test_teammates_share_one_board_and_other_teams_are_isolated() -> None:
-    with (
-        users_file(
-            cred("dev", "dev", "devteam"),
-            cred("alice", "pw-a", "team-rocket"),
-            cred("bob", "pw-b", "team-rocket"),
-            cred("carol", "pw-c", "team-plasma"),
-        ),
-        api(SAMPLE) as (client, _eng, _sender),
-    ):
+    with api(SAMPLE) as (client, eng, _sender):
+        seed_credential(eng, "alice", "pw-a", "team-rocket")
+        seed_credential(eng, "bob", "pw-b", "team-rocket")
+        seed_credential(eng, "carol", "pw-c", "team-plasma")
         alice = sign_in(client, "alice", "pw-a")
         bob = sign_in(client, "bob", "pw-b")
         carol = sign_in(client, "carol", "pw-c")
@@ -193,14 +145,9 @@ def test_owner_merges_are_per_team() -> None:
             {**SAMPLE["owners"][0], "display_cluster_id": "nat0000bbbb", "owner_name": "B LLC"},
         ],
     }
-    with (
-        users_file(
-            cred("dev", "dev", "devteam"),
-            cred("alice", "pw-a", "team-rocket"),
-            cred("carol", "pw-c", "team-plasma"),
-        ),
-        api(two_owner_sample) as (client, _eng, _sender),
-    ):
+    with api(two_owner_sample) as (client, eng, _sender):
+        seed_credential(eng, "alice", "pw-a", "team-rocket")
+        seed_credential(eng, "carol", "pw-c", "team-plasma")
         alice = sign_in(client, "alice", "pw-a")
         carol = sign_in(client, "carol", "pw-c")
 
@@ -218,22 +165,17 @@ def test_owner_merges_are_per_team() -> None:
 
 
 # ── the first team inherits the pre-teams board ───────────────────────────────
-def test_first_team_in_file_inherits_pre_existing_tenant_1_lead_state() -> None:
-    with (
-        users_file(
-            cred("dev", "dev", "devteam"),
-            cred("carol", "pw-c", "team-plasma"),
-        ),
-        api(SAMPLE) as (client, eng, _sender),
-    ):
+def test_first_registered_team_inherits_pre_existing_tenant_1_lead_state() -> None:
+    with api(SAMPLE) as (client, eng, _sender):
+        seed_credential(eng, "carol", "pw-c", "team-plasma")
         # Pre-teams data: a lead advanced under tenant 1 before the tenant
         # table ever existed (no Tenant row points at it).
         with Session(bind=eng, future=True) as s:
             s.add(Lead(tenant_id=1, display_cluster_id=CID, status="contacted", notes="old"))
             s.commit()
 
-        # dev is the FIRST team in the file → devteam registers as tenant 1 →
-        # the old board is theirs.
+        # dev is the FIRST registered credential → devteam registers as
+        # tenant 1 → the old board is theirs.
         dev = sign_in(client, "dev", "dev")
         view = client.get(f"/api/leads/{CID}", headers=dev).json()
         assert view["status"] == "contacted"
@@ -244,35 +186,26 @@ def test_first_team_in_file_inherits_pre_existing_tenant_1_lead_state() -> None:
         assert client.get(f"/api/leads/{CID}", headers=carol).json()["status"] == "new"
 
 
-# ── team changes in the file re-home the user ─────────────────────────────────
+# ── team changes in the store re-home the user ────────────────────────────────
 def test_changing_a_users_team_re_homes_them_on_next_login() -> None:
-    with api(SAMPLE) as (client, _eng, _sender):
-        with users_file(
-            cred("dev", "dev", "devteam"),
-            cred("alice", "pw-a", "team-rocket"),
-        ):
-            alice = sign_in(client, "alice", "pw-a")
-            client.put(f"/api/leads/{CID}", headers=alice, json={"status": "researching"})
-            assert client.get("/api/auth/me", headers=alice).json()["team"] == "team-rocket"
+    with api(SAMPLE) as (client, eng, _sender):
+        seed_credential(eng, "alice", "pw-a", "team-rocket")
+        alice = sign_in(client, "alice", "pw-a")
+        client.put(f"/api/leads/{CID}", headers=alice, json={"status": "researching"})
+        assert client.get("/api/auth/me", headers=alice).json()["team"] == "team-rocket"
 
         # The admin moves alice to a different team.
-        with users_file(
-            cred("dev", "dev", "devteam"),
-            cred("alice", "pw-a", "team-plasma"),
-        ):
-            alice2 = sign_in(client, "alice", "pw-a")
-            me = client.get("/api/auth/me", headers=alice2).json()
-            assert me["team"] == "team-plasma"
-            # She now operates on the new team's (empty) board…
-            assert client.get(f"/api/leads/{CID}", headers=alice2).json()["status"] == "new"
+        set_credential_team(eng, "alice", "team-plasma")
+        alice2 = sign_in(client, "alice", "pw-a")
+        me = client.get("/api/auth/me", headers=alice2).json()
+        assert me["team"] == "team-plasma"
+        # She now operates on the new team's (empty) board…
+        assert client.get(f"/api/leads/{CID}", headers=alice2).json()["status"] == "new"
 
         # …and team-rocket's data was not moved or deleted.
-        with users_file(
-            cred("dev", "dev", "devteam"),
-            cred("bob", "pw-b", "team-rocket"),
-        ):
-            bob = sign_in(client, "bob", "pw-b")
-            assert client.get(f"/api/leads/{CID}", headers=bob).json()["status"] == "researching"
+        seed_credential(eng, "bob", "pw-b", "team-rocket")
+        bob = sign_in(client, "bob", "pw-b")
+        assert client.get(f"/api/leads/{CID}", headers=bob).json()["status"] == "researching"
 
 
 # ── concurrent registration of the same new team ─────────────────────────────

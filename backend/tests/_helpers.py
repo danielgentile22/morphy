@@ -1,11 +1,13 @@
 """Shared HTTP-test scaffolding (not collected — no ``test_`` prefix).
 
 ``api(sample)`` yields a ``TestClient`` over a fresh in-memory SQLite DB with
-a seeded owners index and the ``get_db`` dependency overridden, plus the
-engine for inspection. ``login`` drives the real ``POST /api/auth/login`` with
-the ``dev``/``dev`` credential conftest seeds into the temp credentials file
-(#84) and returns a session JWT, so tests authenticate exactly the way the
-SPA does.
+a seeded owners index, the ``get_db`` dependency overridden, and the
+``dev``/``dev``/``devteam`` credential seeded into the ``credential`` table
+(PRD #130 — the DB is the only credential source) so ``devteam`` registers
+as tenant 1, mirroring the old first-line-of-the-file behavior. ``login``
+drives the real ``POST /api/auth/login`` and returns a session JWT, so tests
+authenticate exactly the way the SPA does. ``temp_credential`` adds/removes
+extra users through the same store writers the CLI uses.
 """
 
 from __future__ import annotations
@@ -21,9 +23,39 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from backend.app import main
+from backend.app import credentials_store, main
 from backend.app.config import settings
 from backend.app.db import Base, get_db
+
+
+def seed_credential(eng: Engine, username: str, password: str, team: str) -> None:
+    """Add a credential through the same writer the CLI uses (live on the
+    user's next login/request — no restart, per-request authority)."""
+    with Session(bind=eng, future=True) as session:
+        credentials_store.add(session, username, team, password)
+
+
+def remove_credential(eng: Engine, username: str) -> None:
+    with Session(bind=eng, future=True) as session:
+        credentials_store.remove(session, username)
+
+
+def set_credential_team(eng: Engine, username: str, team: str) -> None:
+    with Session(bind=eng, future=True) as session:
+        credentials_store.set_team(session, username, team)
+
+
+@contextlib.contextmanager
+def temp_credential(
+    eng: Engine, username: str, password: str, team: str = "devteam"
+) -> Iterator[None]:
+    """A credential that exists only inside the block — the DB-era successor
+    to appending/removing a users.txt line."""
+    seed_credential(eng, username, password, team)
+    try:
+        yield
+    finally:
+        remove_credential(eng, username)
 
 
 @contextlib.contextmanager
@@ -38,6 +70,8 @@ def api(sample: dict) -> Iterator[tuple[TestClient, Engine, None]]:
         future=True,
     )
     Base.metadata.create_all(eng)
+    # The built-in test login, seeded first so devteam owns tenant 1 (#86).
+    seed_credential(eng, "dev", "dev", "devteam")
 
     def _override_db() -> Iterator[Session]:
         db = Session(bind=eng, future=True)

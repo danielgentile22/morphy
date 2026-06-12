@@ -155,6 +155,39 @@ class AntennaOverride(Base):
     )
 
 
+class Credential(Base):
+    """A sign-in credential — the only credential source (PRD #130, amending
+    ADR-063's *storage*; its authority invariants stand).
+
+    One row replaces one ``users.txt`` line: normalized unique username, the
+    self-describing PBKDF2 hash (``password.hash_password``), normalized team
+    name. Deliberately **not** tenant-scoped — like ``Tenant`` itself, a
+    credential is what *determines* the tenant (via its team), so it sits
+    upstream of the tenant_id rule.
+
+    ``id`` order is registration order, replacing file order for
+    teams-as-tenants (#86): teams register first-appearance by id, so the
+    first credential's team owns tenant 1 (the one-shot import preserves file
+    order). Living in the app DB means Litestream's continuous replication
+    now covers credentials — the backup gap the interim users.txt copy
+    papered over.
+
+    A brand-new table, so ``create_all`` builds it on any DB — no additive
+    migration entry needed.
+    """
+
+    __tablename__ = "credential"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    team: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+
 class Tenant(Base):
     """A team — the unit of lead-board sharing and isolation (#86, PRD #83).
 

@@ -1,9 +1,11 @@
-"""Unit tests for credentials-file parsing + authentication (#84, PRD #83).
+"""Unit tests for users.txt parsing (#84; import-source-only since PRD #130).
 
-The credentials file is the only credential source: one ``username:hash:team``
-line per user, ``#`` comments, malformed lines skipped. Usernames and teams
-are normalized (trimmed + lowercased). A line without a team is not a valid
-credential.
+The file format survives as the one-shot migration source (``python -m
+app.users import-file`` + the empty-table boot import): one
+``username:hash:team`` line per user, ``#`` comments, malformed lines
+skipped. Usernames and teams are normalized (trimmed + lowercased). A line
+without a team is not a valid credential. Authentication itself now lives in
+``credentials_store`` (see test_credentials_store.py).
 """
 
 from __future__ import annotations
@@ -11,8 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from backend.app import credentials
-from backend.app.credentials import AuthOutcome
-from backend.app.password import hash_password
+from backend.app.password import hash_password, verify_password
 
 
 def _write(tmp_path: Path, *lines: str) -> Path:
@@ -89,26 +90,16 @@ def test_duplicate_usernames_last_line_wins(tmp_path: Path) -> None:
     users = credentials.load(f)
     assert list(users) == ["alice"]
     assert users["alice"].team == "team-two"
-    assert credentials.authenticate(users, "alice", "new").ok
-    assert not credentials.authenticate(users, "alice", "old").ok
+    assert verify_password("new", users["alice"].encoded_hash)
+    assert not verify_password("old", users["alice"].encoded_hash)
 
 
-# ── authentication ────────────────────────────────────────────────────────────
-def test_correct_credentials_return_username_and_team(tmp_path: Path) -> None:
-    f = _write(tmp_path, f"alice:{hash_password('pw1')}:acme")
-    result = credentials.authenticate(credentials.load(f), "ALICE", "pw1")
-    assert result.outcome is AuthOutcome.SUCCESS
-    assert result.ok
-    assert result.username == "alice"
-    assert result.team == "acme"
-
-
-def test_wrong_password_and_unknown_user_are_distinguishable(tmp_path: Path) -> None:
-    f = _write(tmp_path, f"alice:{hash_password('pw1')}:acme")
-    users = credentials.load(f)
-    assert credentials.authenticate(users, "alice", "bad").outcome is AuthOutcome.WRONG_PASSWORD
-    assert credentials.authenticate(users, "carol", "pw1").outcome is AuthOutcome.UNKNOWN_USER
-
-
-def test_authenticating_against_no_entries_is_unknown_user() -> None:
-    assert credentials.authenticate({}, "anyone", "x").outcome is AuthOutcome.UNKNOWN_USER
+def test_parse_preserves_file_order(tmp_path: Path) -> None:
+    # The import relies on insertion order = file order for team→tenant
+    # inheritance (#86): the first team in the file must register first.
+    f = _write(
+        tmp_path,
+        f"zed:{hash_password('z')}:last-alphabetically-first-in-file",
+        f"alice:{hash_password('a')}:acme",
+    )
+    assert list(credentials.load(f)) == ["zed", "alice"]

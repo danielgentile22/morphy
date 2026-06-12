@@ -1,19 +1,16 @@
-"""Username/password login over HTTP (Slice 1 / #76, credentials file #84).
+"""Username/password login over HTTP (Slice 1 / #76; DB credentials PRD #130).
 
 Pins the externally observable auth behavior: a wrong password and an unknown
 username are *distinguishable* 401s, a valid credential mints a usable JWT,
-every data route rejects an unauthenticated caller, the credentials file is
+every data route rejects an unauthenticated caller, the credential table is
 the live credential source (a user added to it can sign in without a restart),
-and two distinct usernames share the one tenant (until teams land, #86). The
-reused JWT seam (create/decode) is checked directly.
+and two usernames on one team share the one tenant (#86). The reused JWT seam
+(create/decode) is checked directly.
 """
 
 from __future__ import annotations
 
-import contextlib
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import jwt
 import pytest
@@ -21,11 +18,9 @@ from fastapi import HTTPException
 
 from backend.app import main
 from backend.app.auth import create_access_token, decode_access_token
-from backend.app.config import settings
 from backend.app.login_throttle import LoginThrottle
-from backend.app.password import hash_password
 
-from ._helpers import FakeClock, api, auth_header, login
+from ._helpers import FakeClock, api, auth_header, login, temp_credential
 
 # A tiny owners index so the data routes resolve (one owner, status New).
 SAMPLE = {
@@ -82,7 +77,7 @@ def test_valid_credentials_return_a_jwt_and_grant_access() -> None:
         assert client.get("/api/candidates", headers=headers).status_code == 200
         me = client.get("/api/auth/me", headers=headers).json()
         assert me["email"] == "dev"  # the username is the opaque identity
-        # dev's team is the first (only) team in the conftest-seeded file →
+        # dev's team is the first-registered team (api() seeds it first) →
         # it registers as tenant 1 (#86).
         assert me["tenant_id"] == 1
 
@@ -181,39 +176,27 @@ def test_successful_login_resets_the_throttle() -> None:
             )
 
 
-# ── the credentials file is the live credential source (#84) ─────────────────
-@contextlib.contextmanager
-def extra_user(username: str, password: str, team: str = "devteam") -> Iterator[None]:
-    """Append a credential line to the file and remove it afterward. Login
-    re-reads the file, so the new user is signable-in immediately."""
-    creds = Path(settings.credentials_path)
-    original = creds.read_text()
-    creds.write_text(original + f"{username}:{hash_password(password)}:{team}\n")
-    try:
-        yield
-    finally:
-        creds.write_text(original)
-
-
-def test_a_user_added_to_the_file_can_sign_in_without_restart() -> None:
-    with api(SAMPLE) as (client, _eng, _sender):
-        # Not in the file yet → the specific unknown-username 401.
+# ── the credential table is the live credential source (PRD #130) ────────────
+def test_a_user_added_to_the_store_can_sign_in_without_restart() -> None:
+    with api(SAMPLE) as (client, eng, _sender):
+        # No credential row yet → the specific unknown-username 401.
         r = client.post("/api/auth/login", json={"username": "alice", "password": "wonderland"})
         assert r.status_code == 401
         assert r.json()["detail"] == "Unknown username"
-        # Added to the file → signs in on the very next attempt (no restart).
-        with extra_user("alice", "wonderland"):
+        # Added (the same writer the CLI uses) → signs in on the very next
+        # attempt (no restart).
+        with temp_credential(eng, "alice", "wonderland"):
             r = client.post("/api/auth/login", json={"username": "alice", "password": "wonderland"})
             assert r.status_code == 200
-        # Removed from the file → back to unknown-username on new logins.
+        # Removed → back to unknown-username on new logins.
         r = client.post("/api/auth/login", json={"username": "alice", "password": "wonderland"})
         assert r.status_code == 401
 
 
 def test_two_usernames_share_one_tenant() -> None:
-    # Two usernames on the same team (extra_user defaults to dev's "devteam")
-    # share one tenant — the teams-as-tenants board sharing (#86).
-    with extra_user("alice", "wonderland"), api(SAMPLE) as (client, _eng, _sender):
+    # Two usernames on the same team (temp_credential defaults to dev's
+    # "devteam") share one tenant — the teams-as-tenants board sharing (#86).
+    with api(SAMPLE) as (client, eng, _sender), temp_credential(eng, "alice", "wonderland"):
 
         def identity(username: str, password: str) -> tuple[dict, str]:
             token = client.post(

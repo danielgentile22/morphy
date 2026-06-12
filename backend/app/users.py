@@ -1,6 +1,7 @@
-"""User-management CLI for the credentials file (#87, PRD #83).
+"""User-management CLI for the credential table (#87, PRD #83; DB-backed
+since PRD #130).
 
-The administrator's surface for users.txt — never generate, paste, or read
+The administrator's surface for credentials — never generate, paste, or read
 a hash by hand:
 
     cd backend && python -m app.users add <username> <team>     # hidden password prompt
@@ -8,205 +9,73 @@ a hash by hand:
     cd backend && python -m app.users list
     cd backend && python -m app.users set-password <username>   # hidden password prompt
     cd backend && python -m app.users set-team <username> <team>
+    cd backend && python -m app.users import-file <path>        # one-shot users.txt migration
 
-The file defaults to ``backend/users.txt``; override with ``--file`` or the
-``APP_USERS_FILE`` env var (same variable the backend reads). Writes are
-atomic (temp file + rename, the repo-wide convention) and preserve comments
-and line order — order matters, because the first team in the file owns
-tenant 1 (#86). The CLI never prints a password or a hash.
+    The same subcommands as the file era, now writing the ``credential``
+table in the app database (``DATABASE_URL``, same default as the backend —
+on the Fly machine that's the volume DB Litestream replicates). Changes are
+authoritative on the user's next request (ADR-063 per-request authority,
+storage amended by PRD #130). The CLI never prints a password or a hash.
 
-Deliberately does NOT import ``config``: building Settings runs the
-fail-closed boot check, and ``add`` is how the very file that check
-requires gets created in the first place.
+``import-file`` migrates a ``username:hash:team`` users.txt in file order
+(so the first team keeps tenant 1, #86) and refuses to run over a non-empty
+table — it is a cutover, never a merge.
+
+The command functions live in ``credentials_store``; this module is the
+argparse/getpass shell plus the thin re-exports the API routes use.
 """
 
 from __future__ import annotations
 
 import argparse
 import enum
-import os
 import sys
-import tempfile
 from pathlib import Path
 
-from . import credentials
-from .password import hash_password, verify_password
+from sqlalchemy.orm import Session
 
-# backend/app/users.py → parents[1] = backend/
-DEFAULT_FILE = Path(__file__).resolve().parents[1] / "users.txt"
-
-
-class UsersFileError(Exception):
-    """A user-facing CLI error (bad input, missing user, duplicate)."""
+from . import credentials, credentials_store
+from .credentials_store import CredentialsError
 
 
 class ChangePasswordOutcome(enum.Enum):
     """The result of a self-service password change (PRD #121). ``WRONG_CURRENT``
-    is the only *soft* failure (the file is left untouched); a missing user or an
-    empty new password raise ``UsersFileError`` like the rest of this module."""
+    is the only *soft* failure (nothing written); a missing user or an empty new
+    password raise ``CredentialsError`` like the rest of the store."""
 
     OK = "ok"
     WRONG_CURRENT = "wrong_current"
 
 
-# ── public command functions (the testable API) ──────────────────────────────
-def add_user(file: Path | str, username: str, team: str, password: str) -> None:
-    """Append a new credential line. The new user can sign in immediately."""
-    username_n, team_n = _valid_username(username), _valid_team(team)
-    if not password:
-        raise UsersFileError("password must not be empty")
-    lines = _read_lines(file)
-    if _find_user_line(lines, username_n) is not None:
-        raise UsersFileError(
-            f"user '{username_n}' already exists (use set-password / set-team to change it)"
-        )
-    lines.append(f"{username_n}:{hash_password(password)}:{team_n}")
-    _write_atomic(file, lines)
-
-
-def remove_user(file: Path | str, username: str) -> None:
-    """Delete a user's line. Their next sign-in attempt fails."""
-    lines = _read_lines(file)
-    idx = _require_user_line(lines, username)
-    del lines[idx]
-    _write_atomic(file, lines)
-
-
-def list_users(file: Path | str) -> list[tuple[str, str]]:
-    """``(username, team)`` pairs in file order — never passwords or hashes."""
-    return [(e.username, e.team) for e in credentials.load(Path(file)).values()]
-
-
-def set_password(file: Path | str, username: str, password: str) -> None:
-    """Replace a user's hash in place (their line keeps its position)."""
-    if not password:
-        raise UsersFileError("password must not be empty")
-    lines = _read_lines(file)
-    idx = _require_user_line(lines, username)
-    entry = _entry_of(lines[idx])
-    lines[idx] = f"{entry.username}:{hash_password(password)}:{entry.team}"
-    _write_atomic(file, lines)
-
-
 def change_password(
-    file: Path | str, username: str, current: str, new: str
+    session: Session, username: str, current: str, new: str
 ) -> ChangePasswordOutcome:
     """Self-service password change (PRD #121): verify ``current``, then rotate.
 
-    The one *sanctioned* runtime caller of ``set_password`` — it never writes a
-    line by hand. The current password is checked first (constant-time) so a
-    wrong guess returns ``WRONG_CURRENT`` and leaves the file byte-for-byte
-    unchanged. On success ``set_password`` does the atomic rewrite, preserving
-    the user's team + file position and bumping mtime so the per-request
-    ``CredentialsFile`` cache reloads. An empty ``new`` (or an unknown user)
-    raises ``UsersFileError``."""
-    lines = _read_lines(file)
-    idx = _require_user_line(lines, username)
-    entry = _entry_of(lines[idx])
-    if not verify_password(current, entry.encoded_hash):
-        return ChangePasswordOutcome.WRONG_CURRENT
-    set_password(file, username, new)
-    return ChangePasswordOutcome.OK
-
-
-def set_team(file: Path | str, username: str, team: str) -> None:
-    """Move a user to another team (their line keeps its position)."""
-    team_n = _valid_team(team)
-    lines = _read_lines(file)
-    idx = _require_user_line(lines, username)
-    entry = _entry_of(lines[idx])
-    lines[idx] = f"{entry.username}:{entry.encoded_hash}:{team_n}"
-    _write_atomic(file, lines)
-
-
-# ── helpers ───────────────────────────────────────────────────────────────────
-def _valid_username(username: str) -> str:
-    name = credentials.normalize(username)
-    if not name:
-        raise UsersFileError("username must not be empty")
-    if ":" in name:
-        raise UsersFileError("username must not contain ':' (the field separator)")
-    return name
-
-
-def _valid_team(team: str) -> str:
-    name = credentials.normalize(team)
-    if not name:
-        raise UsersFileError("team must not be empty")
-    if ":" in name:
-        raise UsersFileError("team must not contain ':' (the field separator)")
-    return name
-
-
-def _read_lines(file: Path | str) -> list[str]:
-    path = Path(file)
-    if not path.is_file():
-        return []
-    return path.read_text(encoding="utf-8").splitlines()
-
-
-def _write_atomic(file: Path | str, lines: list[str]) -> None:
-    """Temp file + rename in the same directory — a crash mid-write can never
-    truncate or corrupt the live file, and no temp file with hash material
-    is ever left behind."""
-    path = Path(file)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".users-", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + ("\n" if lines else ""))
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
-
-
-def _find_user_line(lines: list[str], username: str) -> int | None:
-    """Index of the credential line for ``username`` (normalized), or None."""
-    canonical = credentials.normalize(username)
-    for i, line in enumerate(lines):
-        entry = credentials.parse(line)
-        if canonical in entry:
-            return i
-    return None
-
-
-def _require_user_line(lines: list[str], username: str) -> int:
-    idx = _find_user_line(lines, username)
-    if idx is None:
-        raise UsersFileError(f"no user '{credentials.normalize(username)}' in the file")
-    return idx
-
-
-def _entry_of(line: str) -> credentials.CredentialEntry:
-    return next(iter(credentials.parse(line).values()))
+    The one sanctioned runtime caller of the store's password writer. A wrong
+    current password returns ``WRONG_CURRENT`` and writes nothing."""
+    if credentials_store.change_password(session, username, current, new):
+        return ChangePasswordOutcome.OK
+    return ChangePasswordOutcome.WRONG_CURRENT
 
 
 # ── CLI shell ─────────────────────────────────────────────────────────────────
-def _resolve_file(arg: str | None) -> Path:
-    if arg:
-        return Path(arg)
-    env = os.environ.get("APP_USERS_FILE")
-    return Path(env) if env else DEFAULT_FILE
-
-
 def _prompt_password() -> str:  # pragma: no cover - interactive prompt
     import getpass
 
     password = getpass.getpass("Password: ")
     if not password:
-        raise UsersFileError("password must not be empty")
+        raise CredentialsError("password must not be empty")
     if getpass.getpass("Confirm: ") != password:
-        raise UsersFileError("passwords do not match")
+        raise CredentialsError("passwords do not match")
     return password
 
 
 def _main(argv: list[str]) -> int:  # pragma: no cover - thin argparse/getpass shell
     parser = argparse.ArgumentParser(
         prog="python -m app.users",
-        description="Manage the backend credentials file (users.txt).",
+        description="Manage backend credentials (the credential table in the app DB).",
     )
-    parser.add_argument("--file", help="path to the credentials file (default: backend/users.txt)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_add = sub.add_parser("add", help="add a user (prompts for a password)")
@@ -225,37 +94,55 @@ def _main(argv: list[str]) -> int:  # pragma: no cover - thin argparse/getpass s
     p_setteam.add_argument("username")
     p_setteam.add_argument("team")
 
+    p_import = sub.add_parser(
+        "import-file",
+        help="one-shot migration: import a users.txt (username:hash:team lines) in file order",
+    )
+    p_import.add_argument("path")
+
     args = parser.parse_args(argv[1:])
-    file = _resolve_file(args.file)
+
+    # Imported here (not module top) so `--help` and argument errors never
+    # touch the database.
+    from .db import SessionLocal, init_db
+
+    init_db()  # the credential table must exist before any command
 
     try:
-        if args.command == "add":
-            add_user(file, args.username, args.team, _prompt_password())
-            print(
-                f"added '{credentials.normalize(args.username)}' "
-                f"to team '{credentials.normalize(args.team)}' in {file}"
-            )
-        elif args.command == "remove":
-            remove_user(file, args.username)
-            print(f"removed '{credentials.normalize(args.username)}' from {file}")
-        elif args.command == "list":
-            entries = list_users(file)
-            if not entries:
-                print(f"no users in {file}")
-            else:
-                width = max(len(u) for u, _ in entries)
-                for username, team in entries:
-                    print(f"{username:<{width}}  {team}")
-        elif args.command == "set-password":
-            set_password(file, args.username, _prompt_password())
-            print(f"password updated for '{credentials.normalize(args.username)}'")
-        elif args.command == "set-team":
-            set_team(file, args.username, args.team)
-            print(
-                f"'{credentials.normalize(args.username)}' moved "
-                f"to team '{credentials.normalize(args.team)}'"
-            )
-    except UsersFileError as exc:
+        with SessionLocal() as session:
+            if args.command == "add":
+                credentials_store.add(session, args.username, args.team, _prompt_password())
+                print(
+                    f"added '{credentials.normalize(args.username)}' "
+                    f"to team '{credentials.normalize(args.team)}'"
+                )
+            elif args.command == "remove":
+                credentials_store.remove(session, args.username)
+                print(f"removed '{credentials.normalize(args.username)}'")
+            elif args.command == "list":
+                entries = credentials_store.list_users(session)
+                if not entries:
+                    print("no users")
+                else:
+                    width = max(len(u) for u, _ in entries)
+                    for username, team in entries:
+                        print(f"{username:<{width}}  {team}")
+            elif args.command == "set-password":
+                credentials_store.set_password(session, args.username, _prompt_password())
+                print(f"password updated for '{credentials.normalize(args.username)}'")
+            elif args.command == "set-team":
+                credentials_store.set_team(session, args.username, args.team)
+                print(
+                    f"'{credentials.normalize(args.username)}' moved "
+                    f"to team '{credentials.normalize(args.team)}'"
+                )
+            elif args.command == "import-file":
+                entries = list(credentials.load(Path(args.path)).values())
+                if not entries:
+                    raise CredentialsError(f"no valid credential lines in {args.path}")
+                n = credentials_store.import_entries(session, entries)
+                print(f"imported {n} user(s) from {args.path}")
+    except CredentialsError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0
