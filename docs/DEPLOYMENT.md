@@ -236,7 +236,8 @@ Secrets (`AUTH_JWT_SECRET`, the `LITESTREAM_*` R2 keys + bucket/endpoint, `ANTHR
 | `.dockerignore` | Keeps the 15 GB `data/` and the real `users.txt` out of the build context. | — |
 | `fly.toml` | One machine, US region, 10 GB volume at `/data`, `[env]`, `/api/health` check, `min_machines_running=1`, `auto_stop_machines=off`. | — |
 | `Caddyfile` | SPA fallback; `/data/processed/*` Range/206 + gzip + `Cache-Control: private, no-store`; `/api/*` → uvicorn; HSTS; DB/`users.txt` never served. | `tests/test_caddy_serving.py` (real caddy) |
-| `supervisord.conf` | Runs uvicorn + Caddy + Litestream in the one machine; all logs → stdout (`fly logs`). | — |
+| `supervisord.conf` | Runs uvicorn + Caddy + Litestream + the users.txt backup loop in the one machine; all logs → stdout (`fly logs`). | — |
+| `scripts/backup_users.sh` | **Interim** (PRD #130 stage 1, retired at stage 4): copies `users.txt` to the Litestream R2 bucket every 5 min — the one piece of state Litestream doesn't replicate. Env-driven; exits 0 when unconfigured. | `tests/test_users_backup.py` (real rclone) + `shellcheck` clean |
 | `litestream.yml` | Continuous SQLite → R2 replication (env-driven; same file for prod + the drill). | `tests/test_litestream_restore.py` (real litestream + minio) |
 | `deploy.sh` | `code` (`fly deploy`; **refuses a dirty working tree** — `ALLOW_DIRTY=1` overrides), `data` (laptop → R2 → volume via `scripts/sync_composite.py`, mirror, **dry-run by default**), `all`, `smoke`. | `shellcheck` clean |
 | `scripts/sync_composite.py` | Owns the served-composite include/exclude contract (drops `*/parcels/` compose-inputs, keeps `parcels.pmtiles`); drives rclone (mirror / dry-run / idempotent). | `tests/test_sync_composite.py` (real rclone) |
