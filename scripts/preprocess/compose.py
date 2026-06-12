@@ -19,18 +19,18 @@ Sequence:
      to owner-related columns only. Compute cluster_id + sizes +
      value totals across the whole state. Store the parcel_id_full →
      cluster lookup.
-  3. **Tower-to-parcel pre-pass** — iterate parcel shards, sjoin each
-     chunk against the (small) tower table, accumulate tower → parcel
-     matches. Apply to the tower table after the loop.
-  4. Same pre-pass for solar / billboard sjoins.
-  5. **Per-chunk loop** — for each parcel shard:
+  3. **Infra→parcel pre-pass** — one DuckDB spatial join over the
+     sharded parquet (PRD #135) finds the host parcel for every tower /
+     solar / billboard row; only matched rows surface into pandas.
+     Applied to the in-memory infra tables after the chunk loop.
+  4. **Per-chunk loop** — for each parcel shard:
         a. Run parcel-touching joins (ParcelHostsInfra,
            CountyScoreToParcel, ParcelToDistress, OwnerCluster from
            lookup, InterestingnessScore).
         b. Feed the annotated chunk to every streaming view aggregator.
         c. Write `composite/<fips>/parcels/<label>.parquet`.
-  6. Run non-parcel-touching joins on towers / solar / billboard.
-  7. Finalize view aggregators; write view outputs + catalog.
+  5. Run non-parcel-touching joins on towers / solar / billboard.
+  6. Finalize view aggregators; write view outputs + catalog.
 
 Joins that don't fit the chunked pattern (e.g. arbitrary new joins
 declared by a future contributor) are skipped with a warning.
@@ -45,7 +45,7 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 
-from . import COMPOSITE_ROOT
+from . import COMPOSITE_ROOT, duck
 from .annotators import county_score, owner_cluster
 from .base import (
     OUTPUT_BASENAMES,
@@ -114,7 +114,7 @@ def _build_owner_cluster_lookup(state_fips: str) -> pd.DataFrame:
     return owner_cluster.prepare(frames)
 
 
-# ── Tower / solar / billboard pre-pass (sjoin against parcel shards) ──────
+# ── Tower / solar / billboard pre-pass (DuckDB spatial join, PRD #135) ────
 
 
 # Parcel columns renamed onto the infra row when a match is found.
@@ -126,15 +126,23 @@ _INFRA_PARCEL_RENAME = {
 }
 
 
-def _valid_parcel_mask(chunk: gpd.GeoDataFrame):
-    """Boolean mask of host-eligible parcels. Reuses the precomputed
-    ``geometry_valid`` column (set at normalize time, PERF-028) when present;
-    falls back to recomputing the (expensive) GEOS validity otherwise. Invalid/
-    null-geom parcels can't host infrastructure and would corrupt the sjoin —
-    they stay in the parcel output (geometry_valid=False), just skipped here."""
-    if "geometry_valid" in chunk.columns:
-        return chunk["geometry_valid"].fillna(False).astype(bool)
-    return chunk.geometry.notna() & chunk.geometry.is_valid
+def _host_eligible_sql(shards: list[duck.ParcelShard]) -> str:
+    """SQL predicate selecting host-eligible parcel rows.
+
+    Per-shard semantics preserved from the streaming pre-pass: a shard
+    carrying the normalize-time ``geometry_valid`` column (PERF-028) trusts
+    it (NULL → False); a shard without it falls back to GEOS validity.
+    Invalid/null-geom parcels can't host infrastructure and would corrupt
+    the join — they stay in the parcel output, just excluded here."""
+    flag = 'coalesce(p."geometry_valid", FALSE)'
+    geos = "(p.geometry IS NOT NULL AND ST_IsValid(p.geometry))"
+    flagged = [s.seq for s in shards if "geometry_valid" in s.columns]
+    if not flagged:
+        return geos
+    if len(flagged) == len(shards):
+        return flag
+    seqs = ", ".join(str(q) for q in flagged)
+    return f"(CASE WHEN p.__shard_seq IN ({seqs}) THEN {flag} ELSE {geos} END)"
 
 
 def _build_infra_to_parcel_lookups(
@@ -142,54 +150,87 @@ def _build_infra_to_parcel_lookups(
     state_fips: str,
 ) -> dict[str, dict[int, dict]]:
     """For every infra layer in `specs`, find the parcel each infra row sits in
-    — in ONE pass over the parcel shards (PERF-016).
+    — one DuckDB spatial join over the state's sharded parquet (PRD #135).
 
-    `specs` maps a layer name → (infra GeoDataFrame, keep_cols). The shard set +
-    parcel geometry are the heaviest data in the ETL and are identical across
-    layers, so they're read, GEOS-validated, and STRtree-indexed once and the
-    (small, differing) infra layers all sjoin against the same shard — instead
-    of re-reading every shard once per layer (towers + solar = 2 full sweeps → 1).
+    `specs` maps a layer name → (infra GeoDataFrame, keep_cols). All layers
+    ride one query (one parcel sweep, one R-tree — the single-pass property
+    PERF-016 established), and the engine is out-of-core: parcel shards never
+    load into pandas here; only the small infra geometries go in and only the
+    matched rows come back.
+
+    Semantics preserved from the streaming pre-pass this replaced
+    (equivalence pinned by tests/test_duckdb_equivalence.py):
+      - host-eligible parcels only (see `_host_eligible_sql`);
+      - first match wins, in canonical shard order then within-shard row
+        order — a tower in two overlapping parcels is rare and this stage
+        never disambiguated beyond first-encountered;
+      - a keep-column is attached iff the matched shard's schema has it, so
+        per-shard schema variance behaves exactly as before.
 
     Returns {name: {infra_row_index: attach_dict}}; a None/empty layer → {}.
-    Peak memory stays bounded to one shard plus the (small) infra geometries.
     """
     out: dict[str, dict[int, dict]] = {name: {} for name in specs}
-    # Prepare the small infra right-frames once; drop empty/missing layers.
     active = {
-        name: (infra[["geometry"]].reset_index(), keep_cols)
+        name: (infra, keep_cols)
         for name, (infra, keep_cols) in specs.items()
         if infra is not None and len(infra) > 0
     }
     if not active:
         return out
-    for _label, chunk in iter_state_parcel_shards(state_fips):
-        if "geometry" not in chunk.columns:
-            continue
-        # Validity computed once per shard, shared by every infra layer.
-        valid_chunk = chunk[_valid_parcel_mask(chunk)]
-        if len(valid_chunk) == 0:
-            continue
-        for name, (infra_geo, keep_cols) in active.items():
-            present = [c for c in keep_cols if c in valid_chunk.columns]
-            right = valid_chunk[[*present, "geometry"]].rename(columns=_INFRA_PARCEL_RENAME)
-            try:
-                hit = gpd.sjoin(infra_geo, right, how="inner", predicate="within")
-            except Exception as e:  # noqa: BLE001 — bad shard mustn't kill the loop
-                log.warning("infra→parcel sjoin failed on a shard for %s: %s", name, e)
-                continue
-            lookup = out[name]
-            for row in hit.itertuples(index=False):
-                row_d = row._asdict() if hasattr(row, "_asdict") else dict(row)
-                idx = int(row_d.get("index", -1))
-                if idx < 0:
-                    continue
-                # Skip the sjoin index_right + the geometry column.
-                attach = {
-                    k: v for k, v in row_d.items() if k not in {"index", "index_right", "geometry"}
-                }
-                # First match wins — a tower in two overlapping parcels is rare
-                # and `compose` today doesn't disambiguate either.
-                lookup.setdefault(idx, attach)
+    with duck.session() as con:
+        shards = duck.register_state_parcels(con, state_fips)
+        if not shards:
+            return out
+        union_cols = set().union(*(s.columns for s in shards))
+        if "geometry" not in union_cols:
+            return out
+        infra_rows = pd.concat(
+            [
+                pd.DataFrame(
+                    {
+                        "layer": name,
+                        "infra_idx": [int(i) for i in infra.index],
+                        "wkb": infra.geometry.to_wkb(),
+                    }
+                )
+                for name, (infra, _keep) in active.items()
+            ],
+            ignore_index=True,
+        )
+        con.register("__infra_rows", infra_rows)
+        con.execute(
+            "CREATE OR REPLACE TEMP TABLE __infra_geo AS "
+            "SELECT layer, infra_idx, ST_GeomFromWKB(wkb) AS geom FROM __infra_rows"
+        )
+        keep_union = [
+            c
+            for c in dict.fromkeys(c for _, keep in active.values() for c in keep)
+            if c in union_cols
+        ]
+        attach_sql = "".join(f', p."{c}" AS "{_INFRA_PARCEL_RENAME.get(c, c)}"' for c in keep_union)
+        rows = con.execute(
+            f"""
+            WITH hits AS (
+              SELECT i.layer, i.infra_idx, p.__shard_seq{attach_sql},
+                     ROW_NUMBER() OVER (
+                       PARTITION BY i.layer, i.infra_idx
+                       ORDER BY p.__shard_seq, p.__row_idx
+                     ) AS rn
+              FROM __infra_geo i
+              JOIN "{duck.PARCELS_VIEW}" p ON ST_Within(i.geom, p.geometry)
+              WHERE {_host_eligible_sql(shards)}
+            )
+            SELECT * EXCLUDE (rn) FROM hits WHERE rn = 1
+            ORDER BY __shard_seq, infra_idx
+            """
+        ).fetchall()
+        shard_cols = {s.seq: frozenset(s.columns) for s in shards}
+        keep_by_layer = {name: set(keep) for name, (_infra, keep) in active.items()}
+        for layer, idx, seq, *values in rows:
+            have = shard_cols[seq] & keep_by_layer[layer]
+            out[layer][int(idx)] = {
+                _INFRA_PARCEL_RENAME.get(c, c): v for c, v in zip(keep_union, values) if c in have
+            }
     return out
 
 
@@ -252,8 +293,8 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
     owner_lookup = _build_owner_cluster_lookup(state.fips)
     log.info("owner-cluster pre-pass: %d parcels indexed", len(owner_lookup))
 
-    # 3-4. Infra→parcel pre-pass (one shard pass for all layers — PERF-016) ---
-    log.info("infra→parcel sjoin pre-pass…")
+    # 3. Infra→parcel pre-pass (one DuckDB spatial join, all layers — PRD #135)
+    log.info("infra→parcel pre-pass (DuckDB)…")
     infra_lookups = _build_infra_to_parcel_lookups(
         {
             "tower": (
@@ -281,7 +322,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
         len(billboard_lookup),
     )
 
-    # 5. Build per-parcel reverse maps (parcel_id_full → infra counts +
+    #    Build per-parcel reverse maps (parcel_id_full → infra counts +
     #    summary list) from the lookups built above. This replaces the
     #    iter-over-infra-rows logic of ParcelHostsInfraJoin without
     #    needing a single in-memory parcel table.
@@ -307,7 +348,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
         owner_col="owner",
     )
 
-    # 6. Per-chunk loop -----------------------------------------------------
+    # 4. Per-chunk loop -----------------------------------------------------
     # Hoist the county_score rollup out of the shard loop (PERF-021): it's a
     # groupby over the small, chunk-independent county_score table, so computing
     # it once and reusing it per shard is identical output, far less work.
@@ -363,7 +404,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
 
     log.info("chunk loop done: %d shards, %d parcels", shard_count, total_parcel_rows)
 
-    # 7. Apply infra→parcel lookups onto the in-memory infra tables, then
+    # 5. Apply infra→parcel lookups onto the in-memory infra tables, then
     #    run non-parcel-touching joins (CountyScoreToTower etc.) via the
     #    standard registry — they don't need parcels in ctx.
     if ctx.has("tower"):
@@ -401,7 +442,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
             log.error("✗ post-chunk join %s failed: %s", j.name, e)
             ctx.warnings.append(f"join {j.name} failed: {e}")
 
-    # 8. Write non-parcel canonical-type outputs (towers, solar, billboard,
+    # 6. Write non-parcel canonical-type outputs (towers, solar, billboard,
     #    distress_overlay, county_score, etc.) using the same logic as
     #    `compose.compose()`.
     output_files: list[Path] = []
@@ -423,7 +464,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
             output_files.append(p)
         counts[ct] = len(table)
 
-    # 9. Finalize streaming views + run non-streaming views in-memory.
+    # 7. Finalize streaming views + run non-streaming views in-memory.
     views_built: list[str] = []
     view_meta: dict[str, dict] = {}
     aggregators_by_name = {a.name: a for a in view_aggregators}
@@ -482,7 +523,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
             }
         log.info("✓ view %s (%d rows)", v.name, len(result))
 
-    # 10. Catalog + summary (sharded layer descriptor for parcels).
+    # 8. Catalog + summary (sharded layer descriptor for parcels).
     catalog = build_catalog(
         state,
         ctx,

@@ -14,6 +14,8 @@ CLAUDE.md §5.7 (adding a normalizer), §8 (code conventions).
 - `normalizers/<source>.py` — `@register_normalizer`, declares `canonical_types`.
 - `normalizers/state_parcels.py` (+ `state_parcel_adapters/`) — per-state field maps.
 - `joins/`, `views/` — spatial joins + filtering views.
+- `duck.py` — DuckDB session helper (PRD #135): connection + spatial extension +
+  sharded-parquet registration. **The only module that manages DuckDB connections.**
 - `owners_index.py` — the cross-state owners index (schema-versioned; backend reads it).
 - `cluster.py` — conservative owner clustering (errs toward *not* merging).
 - `app_assets.py`, `tiles.py` — index.json / facets / parquet / PMTiles writers.
@@ -29,6 +31,11 @@ CLAUDE.md §5.7 (adding a normalizer), §8 (code conventions).
 - **Never bake owner merge/split overrides into the parquet.** Raw cluster ids stay
   untouched; overrides are a backend read-time concern.
 - Clustering stays conservative: a false merge is a wrong-person call.
+- **DuckDB stages must be output-equivalent to what they replaced** (PRD #135):
+  define the per-stage equivalence (rows, key columns, aggregates) before
+  migrating, pin it with a legacy-vs-DuckDB harness test
+  (`tests/test_duckdb_equivalence.py`), and delete the streaming code the stage
+  made dead. Geometry repair/reprojection stays in geopandas at normalize time.
 
 ## Patterns
 New normalizer: create `normalizers/<source>.py`, `@register_normalizer`, declare

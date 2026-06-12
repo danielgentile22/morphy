@@ -17,7 +17,9 @@ dependencies = []
 # Preprocess / GIS pipeline. pyarrow powers GeoParquet (v3 dual-write);
 # openpyxl powers pandas.read_excel (ARC distressed, EIA 860/860M, FDOT
 # billboards); jsonschema validates typed artifacts at pipeline runtime
-# (scripts/preprocess/typed_artifact.py), not just in tests.
+# (scripts/preprocess/typed_artifact.py), not just in tests. duckdb is the
+# heavy-lift compose engine (PRD #135); duckdb-extension-spatial ships the
+# spatial extension as a locked wheel so sessions never download at runtime.
 pipeline = [
     "geopandas>=0.14",
     "shapely>=2.0",
@@ -26,6 +28,8 @@ pipeline = [
     "pyarrow>=15",
     "openpyxl>=3.1",
     "jsonschema>=4.21",
+    "duckdb>=1.5.3",
+    "duckdb-extension-spatial>=1.5.3",
 ]
 # Desktop puller. PySide6 6.7.x is the LTS branch that works reliably on
 # macOS arm64; 6.11.x had a cocoa-plugin load issue on this machine.

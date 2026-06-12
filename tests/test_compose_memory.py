@@ -12,6 +12,12 @@ These tests assert that property in two complementary ways:
    next one. Asserted by an iterator that checks live counts on each
    yield.
 
+Since PRD #135 stage 1 the bound is tighter still: the infra→parcel
+pre-pass runs as a DuckDB spatial join over the sharded parquet, so the
+pandas chunk path reads each shard exactly **once** per compose (the
+chunk loop) instead of twice (pre-pass + loop). The first test pins
+that count.
+
 Both tests reuse the fixture state from the property test module so the
 end-to-end shape is identical.
 """
@@ -63,6 +69,14 @@ def test_chunk_loop_releases_each_chunk_after_processing(
     # Also assert we actually iterated more than one chunk so the test
     # isn't trivially passing on an empty fixture.
     assert len(chunk_refs) >= 2, "fixture should yield ≥2 shards"
+    # The new bound (PRD #135 stage 1): the pandas path touches each shard
+    # exactly once per compose — the chunk loop. The infra→parcel pre-pass
+    # runs in DuckDB and must not re-read shards through this iterator
+    # (4 = the fixture's 2 sources × 2 shards).
+    assert len(chunk_refs) == 4, (
+        f"expected exactly one pandas read per shard (4), got {len(chunk_refs)} — "
+        "a second pass over the shards crept back into compose"
+    )
 
 
 def test_chunks_dont_outlive_two_iterations(fixture_dirs, registered_normalizers, monkeypatch):
