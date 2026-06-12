@@ -81,6 +81,18 @@ _principal_cache: dict[tuple, Principal] = {}
 _principal_cache_sig: list = [object()]
 
 
+def is_authorized(username: str) -> bool:
+    """File-presence check only — the data-plane forward-auth seam (PRD #130).
+
+    The edge asks this on every ``/data/processed/*`` fetch (tiles, parquet
+    ranges — bursts of requests), so it deliberately skips the DB: identity
+    came from the verified JWT, and presence in the credentials file is the
+    whole of the per-request authority invariant. Removing a user gates their
+    data access on their very next fetch, same as the API routes."""
+    users = _credentials_file.current()
+    return credentials.normalize(username) in users
+
+
 def resolve_principal(session: Session, username: str) -> Principal:
     """Authorize ``username`` for this request — the file is authoritative.
 

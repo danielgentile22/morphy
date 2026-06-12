@@ -27,8 +27,17 @@
 		reverse_proxy {$BACKEND_UPSTREAM:127.0.0.1:8000}
 	}
 
-	# Served composite (PII): byte-range friendly, never cached anywhere.
+	# Served composite (PII): byte-range friendly, never cached anywhere, and
+	# gated behind the session (PRD #130).
 	handle /data/processed/* {
+		# Before serving a single byte, ask the backend whether this request is
+		# authenticated (PRD #130): the session cookie rides along on MapLibre
+		# tile fetches, PMTiles range requests, and DuckDB-WASM parquet reads,
+		# so the gate is invisible to a signed-in browser. On a non-2xx the
+		# backend's 401 is returned and the file is never touched.
+		forward_auth {$BACKEND_UPSTREAM:127.0.0.1:8000} {
+			uri /api/auth/check
+		}
 		# Volume is mounted at /data and the served subtree is /data/processed,
 		# so the URL path /data/processed/X maps 1:1 onto the filesystem when the
 		# root is "/". The test points DATA_WEB_ROOT at its fixture volume's parent.

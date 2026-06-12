@@ -4,7 +4,11 @@ Boots the *real* repo-root ``Caddyfile`` (env-parameterised) against a fixture
 volume + SPA bundle + a stub backend, and asserts the externally observable
 behavior the deploy depends on:
 
-  * a Range request to ``/data/processed/*`` returns 206 + Content-Range;
+  * ``/data/processed/*`` is gated by ``forward_auth`` → ``/api/auth/check``
+    (PRD #130): an unauthenticated request gets 401 and zero file bytes; a
+    session cookie (or bearer header) gets the file — Range/206 intact;
+  * a Range request to ``/data/processed/*`` (authenticated) returns 206 +
+    Content-Range;
   * an unknown route falls back to the SPA's index.html;
   * ``/api/*`` is reverse-proxied to the backend;
   * ``/data/processed/*`` responses are ``Cache-Control: private, no-store``;
@@ -41,6 +45,12 @@ _USERS_MARKER = b"alice:$hash$:acme\n"
 _SPA_MARKER = b"<!doctype html><title>pilot-spa</title>"
 _TILE_BYTES = bytes(range(256)) * 8  # 2048 deterministic bytes
 
+# The session the stub backend accepts (the real token semantics live in the
+# backend's own test suite; the edge contract only cares about 2xx vs 401).
+_SESSION_TOKEN = "edge-test-session"
+_COOKIE = {"Cookie": f"pilot_session={_SESSION_TOKEN}"}
+_BEARER = {"Authorization": f"Bearer {_SESSION_TOKEN}"}
+
 
 def _free_port() -> int:
     s = socket.socket()
@@ -51,9 +61,28 @@ def _free_port() -> int:
 
 
 class _StubBackend(BaseHTTPRequestHandler):
-    """Stands in for uvicorn so the reverse-proxy hop has something to hit."""
+    """Stands in for uvicorn so the reverse-proxy hop has something to hit.
+
+    Implements the forward-auth seam (PRD #130): ``/api/auth/check`` answers
+    204 when the request carries the test session (cookie or bearer), 401
+    otherwise — which is exactly the contract the real endpoint exposes.
+    """
 
     def do_GET(self) -> None:  # noqa: N802 — http.server API
+        if self.path.startswith("/api/auth/check"):
+            cookie = self.headers.get("Cookie", "")
+            bearer = self.headers.get("Authorization", "")
+            if f"pilot_session={_SESSION_TOKEN}" in cookie or bearer == f"Bearer {_SESSION_TOKEN}":
+                self.send_response(204)
+                self.end_headers()
+            else:
+                body = b'{"detail":"not authenticated"}'
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            return
         body = b'{"status":"ok","via":"stub-backend"}'
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -146,11 +175,51 @@ def _get(host_port: str, path: str, headers: dict[str, str] | None = None):
     return resp.status, hdrs, body
 
 
-def test_range_request_to_composite_returns_206(caddy_base: str) -> None:
+# ── the data-plane gate (PRD #130) ───────────────────────────────────────────
+def test_unauthenticated_composite_request_is_refused(caddy_base: str) -> None:
+    # The exposure this PRD closes: before forward_auth, anyone who knew a URL
+    # could download the owner-PII composite. Now: 401, zero file bytes.
+    status, _hdrs, body = _get(caddy_base, "/data/processed/composite/05/parcels.pmtiles")
+    assert status == 401
+    assert _TILE_BYTES[0:16] not in body
+
+
+def test_unauthenticated_range_request_is_refused_too(caddy_base: str) -> None:
+    # The probe that found the exposure was a Range request returning 206.
     status, hdrs, body = _get(
         caddy_base,
         "/data/processed/composite/05/parcels.pmtiles",
         {"Range": "bytes=0-3"},
+    )
+    assert status == 401
+    assert "content-range" not in hdrs
+    assert body != _TILE_BYTES[0:4]
+
+
+def test_a_garbage_session_is_refused(caddy_base: str) -> None:
+    status, _hdrs, body = _get(
+        caddy_base,
+        "/data/processed/composite/05/parcels.pmtiles",
+        {"Cookie": "pilot_session=not-the-session"},
+    )
+    assert status == 401
+    assert _TILE_BYTES[0:16] not in body
+
+
+def test_a_bearer_header_also_passes_the_gate(caddy_base: str) -> None:
+    # The transition path (tests, curl): Authorization still authenticates.
+    status, _hdrs, body = _get(caddy_base, "/data/processed/composite/05/parcels.pmtiles", _BEARER)
+    assert status == 200
+    assert body == _TILE_BYTES
+
+
+def test_range_request_to_composite_returns_206(caddy_base: str) -> None:
+    # Authenticated Range/206 must survive the gate — PMTiles + DuckDB-WASM
+    # depend on it (the PRD's done-bar pairs this with the 401 above).
+    status, hdrs, body = _get(
+        caddy_base,
+        "/data/processed/composite/05/parcels.pmtiles",
+        {"Range": "bytes=0-3", **_COOKIE},
     )
     assert status == 206
     assert hdrs.get("content-range", "").startswith("bytes 0-3/")
@@ -187,7 +256,7 @@ def test_api_is_reverse_proxied_to_the_backend(caddy_base: str) -> None:
 
 
 def test_composite_responses_are_not_cacheable(caddy_base: str) -> None:
-    status, hdrs, _ = _get(caddy_base, "/data/processed/composite/05/parcels.pmtiles")
+    status, hdrs, _ = _get(caddy_base, "/data/processed/composite/05/parcels.pmtiles", _COOKIE)
     assert status == 200
     assert hdrs.get("cache-control") == "private, no-store"
 

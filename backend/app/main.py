@@ -3,6 +3,7 @@
 Surface:
   POST /api/auth/login           username/password → session JWT (httpOnly cookie + body)
   POST /api/auth/logout          clear the session cookie (PRD #130)
+  GET  /api/auth/check           forward-auth seam for the edge /data gate (PRD #130)
   GET  /api/auth/me              the authenticated tenant + email
   GET  /api/health               liveness (public)
   GET  /api/candidates           owners at New, ranked by interestingness
@@ -46,8 +47,10 @@ from .auth import (
     create_access_token,
     current_principal,
     current_tenant_id,
+    decode_access_token,
+    session_token,
 )
-from .auth_service import InvalidCredentials
+from .auth_service import InvalidCredentials, is_authorized
 from .auth_service import login as login_user
 from .auto_followup_rule import AutoFollowUpRule
 from .config import settings
@@ -296,6 +299,25 @@ def logout(response: Response) -> None:
     not just dropped client state. No auth required: clearing an absent or
     invalid cookie is harmless and must never fail."""
     response.delete_cookie(SESSION_COOKIE, path="/")
+
+
+@app.get("/api/auth/check", status_code=204)
+def auth_check(token: str = Depends(session_token)) -> None:
+    """Forward-auth seam for the edge (PRD #130): Caddy asks this before
+    serving any byte under ``/data/processed/*``. Validates the session
+    (cookie first, bearer fallback) and re-checks the username against the
+    credentials file — per-request authority extends to the data plane, so a
+    removed user loses file access on their next fetch. 204 on success, 401
+    otherwise. Deliberately no DB hit — tile/parquet fetches arrive in
+    bursts, and presence in the credentials file is the whole of the
+    authority check."""
+    username = decode_access_token(token)
+    if not is_authorized(username):
+        raise HTTPException(
+            status_code=401,
+            detail="not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 def _me_response(principal: Principal, db: Session) -> MeResponse:

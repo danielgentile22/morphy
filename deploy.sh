@@ -9,7 +9,9 @@
 #           and mirrors (files dropped by a recompose are removed). Uses the
 #           tested contract in scripts/sync_composite.py.
 #   all     code, then data
-#   smoke   post-deploy checks: SPA loads, /data serves 206 on Range, /api lives
+#   smoke   post-deploy checks: SPA loads, unauthenticated /data is REFUSED
+#           (401/403 — the PRD #130 gate; this exposure must never regress),
+#           /api lives
 #
 # Safety: `data` is DRY-RUN by default (reports, writes nothing). Pass --apply
 # (or DRY_RUN=0) to actually transfer. The R2->volume leg runs inside the
@@ -108,10 +110,16 @@ smoke() {
   code="$(curl -fsS -o /dev/null -w '%{http_code}' "${APP_URL}/")" || die "SPA request failed"
   log "SPA          -> ${code}"
 
-  code="$(curl -fsS -r 0-3 -o /dev/null -w '%{http_code}' \
-    "${APP_URL}/data/processed/composite/index.json")" || die "data Range request failed"
-  [[ "${code}" == "206" ]] || die "expected 206 on Range request, got ${code}"
-  log "data Range   -> 206"
+  # The PRD #130 exposure probe: an unauthenticated Range request to the
+  # served composite must be REFUSED. This is the request that returned 206
+  # with owner PII before the forward_auth gate — it must never again. (No
+  # -f: a 401/403 is the *expected* outcome, not a curl failure. The
+  # authenticated 206 path is pinned by tests/test_caddy_serving.py.)
+  code="$(curl -sS -r 0-3 -o /dev/null -w '%{http_code}' \
+    "${APP_URL}/data/processed/composite/index.json")" || die "data probe request failed"
+  [[ "${code}" == "401" || "${code}" == "403" ]] \
+    || die "expected 401/403 on unauthenticated data request, got ${code} — PII GATE IS OPEN"
+  log "data unauth  -> ${code} (gated)"
 
   code="$(curl -fsS -o /dev/null -w '%{http_code}' "${APP_URL}/api/health")" \
     || die "api/health request failed"
