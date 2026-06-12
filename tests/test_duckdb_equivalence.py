@@ -998,3 +998,162 @@ def test_facets_equivalence_single_file_layout(tmp_path):
     _assert_facets_outputs_equivalent(state_dir, legacy_dir, produced)
     attr = pd.read_parquet(state_dir / "parcels_attr.parquet")
     assert list(attr["parcel_id_full"]) == ["C2", "C1"]
+
+
+# ═══ Stage 5: owners-index input scan ══════════════════════════════════════
+#
+# Equivalence definition (fixed before the migration):
+#
+# 1. **The contract is the final document** — build_owners_index over the
+#    same composite root must produce an identical dict (generated_at
+#    excluded) whether the per-state Lead-universe scan runs through the
+#    legacy full-width pandas read + mask or the DuckDB predicate-pushdown
+#    scan. That covers row content, scan order (file order per state, so
+#    score-tie owner ordering is reproduced), per-state column presence
+#    (INDEX_INPUT_COLUMNS ∩ available), null structure flags ≡ False, and
+#    a state with no structure-bearing rows staying out of `states`.
+# 2. **The resolver is shared, not frozen** — CrossStateOwnerResolver and
+#    its recipes (mode-based names, holdings/JSON assembly, mailing pick)
+#    stay in pandas/Python; only the scan that feeds it changed engines.
+# 3. Schema version (v5) and both output filenames are untouched.
+
+
+def _legacy_read_state_parcels(state_dir):
+    """Frozen legacy Lead-universe scan (owners_index.py @ 04ad69a,
+    verbatim semantics): full-width column-projected pandas read, then
+    the has_tower/has_solar mask."""
+    from preprocess.owners_index import INDEX_INPUT_COLUMNS, pq_columns
+
+    attr = state_dir / "parcels_attr.parquet"
+    if not attr.exists():
+        return pd.DataFrame()
+    cols = pq_columns(attr)
+    wanted = [c for c in INDEX_INPUT_COLUMNS if c in cols]
+    df = pd.read_parquet(attr, columns=wanted)
+    has_tower = df.get("has_tower", False)
+    has_solar = df.get("has_solar", False)
+    mask = pd.Series(has_tower, index=df.index).fillna(False).astype(bool) | pd.Series(
+        has_solar, index=df.index
+    ).fillna(False).astype(bool)
+    return df[mask].copy()
+
+
+def _build_owners_index_with(reader, root, alpha=None):
+    """build_owners_index with the per-state scan swapped in — the rest of
+    the driver (state iteration, towers enrichment, resolver) is the live
+    shared code, per criterion 2."""
+    from preprocess import owners_index as oi
+
+    kwargs = {} if alpha is None else {"alpha": alpha}
+    real = oi._read_state_parcels
+    oi._read_state_parcels = reader
+    try:
+        return oi.build_owners_index(root, **kwargs)
+    finally:
+        oi._read_state_parcels = real
+
+
+def _strip_generated_at(index: dict) -> dict:
+    out = dict(index)
+    out.pop("generated_at", None)
+    return out
+
+
+def test_owners_index_equivalence_via_compose(fixture_dirs, registered_normalizers):
+    """compose → facets → owners index, with the legacy scan vs the DuckDB
+    scan feeding the same shared resolver."""
+    from preprocess.compose import ComposeConfig, compose
+    from preprocess.facets import build_facets
+    from preprocess.owners_index import _read_state_parcels, build_owners_index
+
+    compose(ComposeConfig(state=STATE))
+    comp_root = fixture_dirs["composite"]
+    build_facets("05", composite_root=comp_root)
+
+    new_index = build_owners_index(comp_root)
+    legacy_index = _build_owners_index_with(_legacy_read_state_parcels, comp_root)
+    assert _strip_generated_at(new_index) == _strip_generated_at(legacy_index)
+
+    # Not vacuous: the Lead universe is the two tower-bearing parcels
+    # (A001 + B003), each its own owner → two Leads with one holding each.
+    assert new_index["states"] == ["05"]
+    assert new_index["count"] == 2
+    by_name = {o["owner_name"]: o for o in new_index["owners"]}
+    assert set(by_name) == {"SHARED LANDOWNER LLC", "EVE LLC"}
+    for o in new_index["owners"]:
+        assert o["tower_count"] == 1
+        assert len(o["holdings"]) == 1
+        assert o["holdings"][0]["structures"][0]["type"] == "tower"
+
+    # The scan itself: only structure-bearing rows surface into pandas.
+    lead_rows = _read_state_parcels(comp_root / "05")
+    assert len(lead_rows) == 2
+
+
+def test_owners_index_scan_edge_cases(tmp_path):
+    """Direct scan equivalence on hand-built parcels_attr files: null
+    flags, a missing has_solar column, no flag columns at all, and a
+    state with zero structure-bearing rows."""
+    from preprocess.owners_index import _read_state_parcels
+
+    def write_attr(dirname, df):
+        d = tmp_path / dirname
+        d.mkdir()
+        df.to_parquet(d / "parcels_attr.parquet", index=False)
+        return d
+
+    s_nulls = write_attr(
+        "nulls",
+        pd.DataFrame(
+            {
+                "owner_name": ["A", "B", "C", "D"],
+                "owner_name_norm": ["A", "B", "C", "D"],
+                "state_fips": ["05"] * 4,
+                "has_tower": pd.array([True, None, False, None], dtype="boolean"),
+                "has_solar": pd.array([None, True, None, False], dtype="boolean"),
+                "tower_count": [1, 0, 0, 0],
+            }
+        ),
+    )
+    s_no_solar_col = write_attr(
+        "nosolar",
+        pd.DataFrame(
+            {
+                "owner_name": ["E", "F"],
+                "owner_name_norm": ["E", "F"],
+                "state_fips": ["05", "05"],
+                "has_tower": [False, True],
+                "tower_count": [0, 2],
+            }
+        ),
+    )
+    s_no_flags = write_attr(
+        "noflags",
+        pd.DataFrame({"owner_name": ["G"], "owner_name_norm": ["G"], "state_fips": ["05"]}),
+    )
+    s_empty_universe = write_attr(
+        "emptyuni",
+        pd.DataFrame(
+            {
+                "owner_name": ["H"],
+                "owner_name_norm": ["H"],
+                "state_fips": ["05"],
+                "has_tower": [False],
+                "has_solar": [False],
+            }
+        ),
+    )
+
+    for d in (s_nulls, s_no_solar_col, s_no_flags, s_empty_universe):
+        new = _read_state_parcels(d)
+        old = _legacy_read_state_parcels(d)
+        assert len(new) == len(old)
+        if len(old) > 0:
+            assert list(new.columns) == list(old.columns)
+            assert new["owner_name"].tolist() == old["owner_name"].tolist()
+    assert _read_state_parcels(s_nulls)["owner_name"].tolist() == ["A", "B"]
+    assert _read_state_parcels(s_no_solar_col)["owner_name"].tolist() == ["F"]
+    assert len(_read_state_parcels(s_no_flags)) == 0
+    assert len(_read_state_parcels(s_empty_universe)) == 0
+    # Missing file → empty frame, like legacy.
+    assert len(_read_state_parcels(tmp_path / "absent")) == 0

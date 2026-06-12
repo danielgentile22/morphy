@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import COMPOSITE_ROOT
+from . import COMPOSITE_ROOT, duck
 from .app_assets import iter_composed_states
 from .cluster import cross_state_owner_key, normalized_owner_cols
 
@@ -508,23 +508,32 @@ class CrossStateOwnerResolver:
 def _read_state_parcels(state_dir: Path) -> pd.DataFrame:
     """Read the structure-bearing parcels for one state.
 
-    Uses the slim ``parcels_attr.parquet`` the facets step writes (small,
-    attribute-only). Returns only parcels that host a tower or solar
-    facility — the Lead universe (a ground-lease lead must have an asset)
-    and what keeps the index a few thousand owners rather than millions.
+    One DuckDB scan over the slim ``parcels_attr.parquet`` with the
+    structure filter pushed down (PRD #135 stage 5): only the Lead
+    universe — parcels hosting a tower or solar facility, a few thousand
+    rows — surfaces into pandas, instead of every parcel row in the state
+    being read and then mask-filtered. The downstream resolver (rollups +
+    holdings assembly over those few thousand rows) stays in pandas; its
+    recipes are Python-grade and the scan was the memory tax.
+
+    Null flags count as False and a state missing both flag columns
+    yields nothing, exactly like the mask it replaced (equivalence pinned
+    by tests/test_duckdb_equivalence.py on the final index document).
     """
     attr = state_dir / "parcels_attr.parquet"
     if not attr.exists():
         return pd.DataFrame()
     cols = pq_columns(attr)
     wanted = [c for c in INDEX_INPUT_COLUMNS if c in cols]
-    df = pd.read_parquet(attr, columns=wanted)
-    has_tower = df.get("has_tower", False)
-    has_solar = df.get("has_solar", False)
-    mask = pd.Series(has_tower, index=df.index).fillna(False).astype(bool) | pd.Series(
-        has_solar, index=df.index
-    ).fillna(False).astype(bool)
-    return df[mask].copy()
+    flags = [c for c in ("has_tower", "has_solar") if c in cols]
+    if not wanted or not flags:
+        return pd.DataFrame()
+    select = ", ".join(f'p."{c}"' for c in wanted)
+    where = " OR ".join(f'coalesce(p."{c}", FALSE)' for c in flags)
+    with duck.session() as con:
+        return con.execute(
+            f"SELECT {select} FROM read_parquet({duck.sql_str(str(attr))}) p WHERE {where}"
+        ).df()
 
 
 def pq_columns(path: Path) -> set[str]:
