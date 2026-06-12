@@ -24,13 +24,20 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from .auth_service import NotAuthorized, Principal, resolve_principal
 from .config import settings
 from .db import get_db
+
+# Where the session JWT rides (PRD #130): an httpOnly/Secure/SameSite=Lax
+# cookie set by the login route. Page scripts can't read it, and it travels
+# automatically on same-origin fetches (MapLibre tiles, PMTiles ranges,
+# DuckDB-WASM parquet reads) — which is what lets the edge gate /data without
+# any auth-header plumbing in the frontend data libraries.
+SESSION_COOKIE = "pilot_session"
 
 # HTTPBearer with auto_error off so we control the response: a missing or
 # malformed credential is a 401 (not Starlette's default 403), with the
@@ -81,16 +88,29 @@ def decode_access_token(token: str) -> str:
 
 
 # ── FastAPI dependencies ────────────────────────────────────────────────────
-def current_principal(
+def session_token(
+    request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> str:
+    """The session JWT for this request: the cookie first (the SPA's
+    transport, PRD #130), then ``Authorization: Bearer`` (tests, curl,
+    transition). 401 when neither is present."""
+    cookie = request.cookies.get(SESSION_COOKIE)
+    if cookie:
+        return cookie
+    if creds is not None and creds.credentials:
+        return creds.credentials
+    raise _UNAUTHENTICATED
+
+
+def current_principal(
+    token: str = Depends(session_token),
     db: Session = Depends(get_db),
 ) -> Principal:
-    """Verify the bearer JWT, then authorize its username against the
-    credentials file (#88). Rejects with 401 when the token is invalid OR
-    the username has been removed from the file."""
-    if creds is None or not creds.credentials:
-        raise _UNAUTHENTICATED
-    username = decode_access_token(creds.credentials)
+    """Verify the session JWT (cookie or bearer), then authorize its username
+    against the credentials file (#88). Rejects with 401 when the token is
+    invalid OR the username has been removed from the file."""
+    username = decode_access_token(token)
     try:
         return resolve_principal(db, username)
     except NotAuthorized as exc:

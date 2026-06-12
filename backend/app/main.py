@@ -1,7 +1,8 @@
 """FastAPI app — the thin Lead write-layer.
 
 Surface:
-  POST /api/auth/login           username/password → short-lived session JWT
+  POST /api/auth/login           username/password → session JWT (httpOnly cookie + body)
+  POST /api/auth/logout          clear the session cookie (PRD #130)
   GET  /api/auth/me              the authenticated tenant + email
   GET  /api/health               liveness (public)
   GET  /api/candidates           owners at New, ranked by interestingness
@@ -29,15 +30,23 @@ import json
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import date
+from urllib.parse import urlsplit
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from .activity_service import ActivityService
 from .antenna_store import AntennaStore
 from .attention_service import DISMISS_CHANNEL, AttentionService
-from .auth import Principal, create_access_token, current_principal, current_tenant_id
+from .auth import (
+    SESSION_COOKIE,
+    Principal,
+    create_access_token,
+    current_principal,
+    current_tenant_id,
+)
 from .auth_service import InvalidCredentials
 from .auth_service import login as login_user
 from .auto_followup_rule import AutoFollowUpRule
@@ -112,6 +121,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def csrf_origin_check(request: Request, call_next):
+    """Cross-site request forgery guard (PRD #130): with the session riding in
+    a cookie, a mutating request must come from our own origin.
+
+    SameSite=Lax already blocks cross-site cookie sends on non-GET; this is the
+    backstop. Browsers always attach ``Origin`` to non-GET requests — when it's
+    present (or ``Referer`` as fallback) it must match the request's own host
+    or a configured dev origin (the Vite proxy rewrites Host, so dev shows up
+    as a cors_origins entry). A request with neither header is a non-browser
+    client (curl, tests) — no ambient cookie context, so it passes; no
+    token-dance CSRF machinery for a same-origin internal tool.
+    """
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        source = request.headers.get("origin") or request.headers.get("referer")
+        if source and not _same_origin(source, request):
+            return JSONResponse(status_code=403, content={"detail": "cross-origin request refused"})
+    return await call_next(request)
+
+
+def _same_origin(source: str, request: Request) -> bool:
+    """True when ``source`` (an Origin or Referer URL) is one of ours: the
+    request's own Host, or an allowed dev origin from ``cors_origins``."""
+    if any(source == o or source.startswith(o + "/") for o in settings.cors_origins):
+        return True
+    return urlsplit(source).netloc == request.headers.get("host", "")
+
 
 # The owners index is static + shared; load once at import.
 owners_index = OwnersIndexService(settings.owners_index_path)
@@ -202,10 +240,17 @@ def health() -> dict:
 def login(
     body: LoginBody,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     throttle: LoginThrottle = Depends(get_login_throttle),
 ) -> TokenResponse:
     """Username/password sign-in: a session JWT on success, a specific 401 otherwise.
+
+    The JWT is set in an httpOnly/Secure/SameSite=Lax cookie (PRD #130 — the
+    SPA's transport; page scripts can never read it) and still returned in the
+    body for non-browser clients (tests, curl). Same identity-only token (#88)
+    either way: tenant/team are re-resolved from the credentials file on every
+    request.
 
     A brute-force throttle (#77) keyed by ``(ip, username)`` short-circuits with
     429 once failures pass the limit within the window — even a correct password
@@ -226,12 +271,31 @@ def login(
         throttle.record_failure(key)
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     throttle.reset(key)  # a real sign-in clears the counter for this key
+    token = create_access_token(principal.email)
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=settings.session_ttl_days * 86400,
+        httponly=True,
+        # Dev runs over plain-HTTP localhost where some browsers drop Secure
+        # cookies; production (dev_mode off) always sets it.
+        secure=not settings.dev_mode,
+        samesite="lax",
+        path="/",
+    )
     return TokenResponse(
-        # Identity-only token (#88): just the username. The tenant/team are
-        # re-resolved from the credentials file on every request.
-        access_token=create_access_token(principal.email),
+        access_token=token,
         expires_in=settings.session_ttl_days * 86400,
     )
+
+
+@app.post("/api/auth/logout", status_code=204)
+def logout(response: Response) -> None:
+    """Sign out: clear the session cookie (PRD #130). After this the browser
+    can no longer fetch the API *or* the gated /data files — actual sign-out,
+    not just dropped client state. No auth required: clearing an absent or
+    invalid cookie is harmless and must never fail."""
+    response.delete_cookie(SESSION_COOKIE, path="/")
 
 
 def _me_response(principal: Principal, db: Session) -> MeResponse:

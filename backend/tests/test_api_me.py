@@ -64,6 +64,7 @@ def cred(username: str, password: str, team: str) -> str:
 def sign_in(client, username: str, password: str) -> dict:
     r = client.post("/api/auth/login", json={"username": username, "password": password})
     assert r.status_code == 200, r.text
+    client.cookies.clear()  # header-driven identities — the cookie would outrank them
     return auth_header(r.json()["access_token"])
 
 

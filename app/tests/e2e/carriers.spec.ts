@@ -101,11 +101,10 @@ const LEAD = {
   ],
 };
 
-/** Seed a signed-in session + mock the Lead backend the harness doesn't run. */
+/** Seed a signed-in session + mock the Lead backend the harness doesn't run.
+ *  Auth rides in an httpOnly cookie (PRD #130) the SPA can't read — mocking
+ *  /api/auth/me to succeed IS a signed-in session as far as the app knows. */
 async function primeLeadBackend(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    localStorage.setItem('pilot.authToken', 'e2e-test-token');
-  });
   await page.route('**/api/**', async (route) => {
     const url = route.request().url();
     if (url.includes('/api/auth/me')) {

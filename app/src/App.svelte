@@ -162,9 +162,9 @@
   }
 
   onMount(() => {
-    // Validate any persisted JWT (populates the signed-in email; a stale
-    // token is dropped via a 401, leaving the full-screen sign-in gate up).
-    // The data layer boots from the $effect above only after verification.
+    // Validate the session cookie (populates the signed-in email; no session
+    // surfaces as a 401, leaving the full-screen sign-in gate up). The data
+    // layer boots from the $effect above only after verification.
     void auth.loadMe();
     window.addEventListener('keydown', onKeydown);
     window.addEventListener('hashchange', onHashChange);

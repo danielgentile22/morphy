@@ -219,6 +219,7 @@ def test_two_usernames_share_one_tenant() -> None:
             token = client.post(
                 "/api/auth/login", json={"username": username, "password": password}
             ).json()["access_token"]
+            client.cookies.clear()  # header-driven identities below
             me = client.get("/api/auth/me", headers=auth_header(token)).json()
             return me, token
 

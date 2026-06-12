@@ -71,6 +71,11 @@ def login(client: TestClient, username: str = "dev", password: str = "dev") -> s
     """
     r = client.post("/api/auth/login", json={"username": username, "password": password})
     r.raise_for_status()
+    # Login also sets the session cookie (PRD #130), and the cookie outranks a
+    # bearer header. Header-driven tests switch identities by swapping headers
+    # on one client, so drop the jar — cookie behavior has its own module
+    # (test_cookie_auth.py).
+    client.cookies.clear()
     return r.json()["access_token"]
 
 

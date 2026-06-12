@@ -7,7 +7,6 @@
 import type { LeadStatus } from './lead-status';
 import type { FilterableOwner } from './filter-model';
 import type { Carrier } from './carrier';
-import { authHeader } from './auth-token';
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api';
 
@@ -215,18 +214,18 @@ export class ApiError extends Error {
   }
 }
 
-/** The shared fetch wrapper: attaches the Bearer JWT, maps non-2xx to an
- *  ApiError carrying the status. Reused by the tasks client (tasks-api.ts) so
- *  every backend call shares one auth + error path. */
+/** The shared fetch wrapper: maps non-2xx to an ApiError carrying the status.
+ *  Auth rides in the httpOnly session cookie (PRD #130), which the browser
+ *  attaches to same-origin requests automatically — no header plumbing here.
+ *  Reused by the tasks client (tasks-api.ts) so every backend call shares one
+ *  error path. */
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
       ...init,
-      // Attach the Bearer JWT to every call; an explicit init.headers wins.
       headers: {
         'Content-Type': 'application/json',
-        ...authHeader(),
         ...(init?.headers as Record<string, string> | undefined),
       },
     });
@@ -350,12 +349,19 @@ export function fetchArchivedAsrs(): Promise<{ asrs: string[] }> {
   return request<{ asrs: string[] }>('/antennas/archived');
 }
 
-// ── auth (Slice 1 / #76) ────────────────────────────────────────────────────
+// ── auth (Slice 1 / #76; cookie sessions PRD #130) ───────────────────────────
+/** Sign in. The response also sets the httpOnly session cookie — the body's
+ *  access_token is unused by the SPA (kept for non-browser clients). */
 export function login(username: string, password: string): Promise<TokenResponse> {
   return request<TokenResponse>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ username, password }),
   });
+}
+
+/** Sign out: the backend clears the session cookie, ending data access too. */
+export function logout(): Promise<void> {
+  return request<void>('/auth/logout', { method: 'POST' });
 }
 
 export function fetchMe(): Promise<MeResponse> {
