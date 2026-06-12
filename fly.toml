@@ -12,9 +12,9 @@ primary_region = "iad"
   dockerfile = "Dockerfile"
 
 [env]
-  # Auth (ADR-063): fail-closed, credentials file + DB on the volume.
+  # Auth (ADR-063 as amended by ADR-069): fail-closed; credentials live in the
+  # DB on the volume (the `credential` table — manage via `python -m app.users`).
   AUTH_DEV_MODE = "0"
-  APP_USERS_FILE = "/data/users.txt"
   # MUST point at the volume — the default repo path is ephemeral in-container
   # and unwatched by Litestream (PRD #96 pinned gotcha #1).
   DATABASE_URL = "sqlite+pysqlite:////data/lead_state.sqlite3"

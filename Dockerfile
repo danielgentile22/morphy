@@ -39,11 +39,9 @@ COPY backend/requirements.txt /tmp/backend-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/backend-requirements.txt
 
 # App code, the built SPA, the data-sync contract (run on the machine for the
-# R2->volume leg), the interim users.txt backup loop (PRD #130 stage 1), and
-# the process configs.
+# R2->volume leg), and the process configs.
 COPY backend/ /srv/backend/
 COPY scripts/sync_composite.py /srv/scripts/sync_composite.py
-COPY --chmod=755 scripts/backup_users.sh /srv/scripts/backup_users.sh
 COPY --from=frontend /app/dist /srv/dist
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY litestream.yml /etc/litestream.yml

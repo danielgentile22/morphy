@@ -203,7 +203,7 @@ Locked in [ADR-055](./adr/0055-hosted-private-backend.md) (supersedes ADR-006 �
 | Database | **SQLite on the Volume** | `DATABASE_URL=sqlite+pysqlite:////data/lead_state.sqlite3`. Tenant isolation is app-level (identical to PG); schema is PG-portable. Avoids Fly Managed PG ($38/mo). Tenant-shaped schema from Day 1 — every table has `tenant_id`. |
 | Object store | **Cloudflare R2** | Backups + (at D+E) lease PDFs; encrypted; private bucket. Also the laptop→R2→volume staging relay for data sync. |
 | Backups | **Litestream → R2** (continuous SQLite) + Fly volume snapshots; restic→R2 for PDFs at D+E | Composite data is disposable (re-compose); precious = SQLite write-layer + lease PDFs. |
-| Auth | **Username/password** (`users.txt` on the Volume) | `APP_USERS_FILE=/data/users.txt`, managed via `fly ssh` + `python -m app.users`; teams = tenants; identity-only HS256 JWTs, file authoritative per request ([ADR-062](./adr/0062-username-password-replaces-magic-link.md) / [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md)). |
+| Auth | **Username/password** (`credential` table in the volume DB) | Managed via `fly ssh` + `python -m app.users`; teams = tenants; identity-only HS256 JWTs in an httpOnly cookie; the credential table is authoritative per request, and Caddy `forward_auth` gates `/data/processed/*` behind it ([ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md) as amended by [ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md)). |
 | Domain + perimeter | **Custom domain via Cloudflare Registrar**; **Cloudflare proxy (orange-cloud), no Access**; SSL Full (strict); cache-bypass `/data/*` | Edge DDoS + WAF + hidden origin + login rate-limiting, no extra user friction. App login stays the auth boundary; Access deferred. |
 | LLM | **Anthropic Claude API** | Sonnet 4.6 default + Opus 4.7 retry for lease extraction ([ADR-059](./adr/0059-llm-lease-extraction.md)); prompt caching on. |
 | Address normalization | **libpostal** (preferred) or **`usaddress`** (fallback) | For owner-cluster strengthening — pick at build time per dep-management friction. |
@@ -215,7 +215,6 @@ Locked in [ADR-055](./adr/0055-hosted-private-backend.md) (supersedes ADR-006 �
 | Variable | Used by | Purpose |
 |---|---|---|
 | `DATABASE_URL` | FastAPI app | `sqlite+pysqlite:////data/lead_state.sqlite3` — **must point at the Volume**, not the default repo path (which is ephemeral in-container and unwatched by Litestream). |
-| `APP_USERS_FILE` | Auth surface | `/data/users.txt` (on the Volume; `username:hash:team` per line, managed via `python -m app.users`). |
 | `AUTH_DEV_MODE` | Auth surface | `0` in prod (fail-closed; the default is already `False`). |
 | `AUTH_JWT_SECRET` | Auth surface | Signs identity-only session JWTs (rotating it revokes every active session). |
 | `OWNERS_INDEX_PATH` | FastAPI app | `/data/processed/composite/owners_index.json` — the owners index ships in the served composite on the Volume, **not** the default repo path. |
@@ -226,18 +225,17 @@ Locked in [ADR-055](./adr/0055-hosted-private-backend.md) (supersedes ADR-006 �
 | `SITE_ROOT` / `DATA_WEB_ROOT` / `BACKEND_UPSTREAM` / `CADDY_PORT` | Caddy | Image defaults (`/srv/dist` · `/` · `127.0.0.1:8000` · `8080`); same names the edge-serving test sets. |
 | `ANTHROPIC_API_KEY` | Lease-extraction worker | Claude API (added at D+E). |
 
-Secrets (`AUTH_JWT_SECRET`, the `LITESTREAM_*` R2 keys + bucket/endpoint, `ANTHROPIC_API_KEY`) go in **Fly secrets**; non-secret env (`AUTH_DEV_MODE`, `APP_USERS_FILE`, `DATABASE_URL`, `OWNERS_INDEX_PATH`, `LITESTREAM_DB_PATH`/`PATH`/`REGION`, the Caddy vars) in `fly.toml [env]`. Never in repo. **No `BACKEND_BASE_URL`** — the map app resolves its API base as `VITE_API_BASE ?? '/api'` (`app/src/lib/leads-api.ts`), so single-origin Caddy needs nothing set, and a later domain change needs no rebuild.
+Secrets (`AUTH_JWT_SECRET`, the `LITESTREAM_*` R2 keys + bucket/endpoint, `ANTHROPIC_API_KEY`) go in **Fly secrets**; non-secret env (`AUTH_DEV_MODE`, `DATABASE_URL`, `OWNERS_INDEX_PATH`, `LITESTREAM_DB_PATH`/`PATH`/`REGION`, the Caddy vars) in `fly.toml [env]`. Never in repo. **No `BACKEND_BASE_URL`** — the map app resolves its API base as `VITE_API_BASE ?? '/api'` (`app/src/lib/leads-api.ts`), so single-origin Caddy needs nothing set, and a later domain change needs no rebuild.
 
 ### Deploy artifacts (issue #96 — built; at the repo root)
 
 | Artifact | Role | Tested by |
 |---|---|---|
 | `Dockerfile` | Multi-stage: node builds `app/dist`; runtime bundles Caddy 2.11 + Litestream 0.5.11 + rclone 1.74 (from their official images) + restic + supervisor + the backend. | Built at `fly deploy` (needs Docker). |
-| `.dockerignore` | Keeps the 15 GB `data/` and the real `users.txt` out of the build context. | — |
+| `.dockerignore` | Keeps the 15 GB `data/` (and any legacy `users.txt`) out of the build context. | — |
 | `fly.toml` | One machine, US region, 10 GB volume at `/data`, `[env]`, `/api/health` check, `min_machines_running=1`, `auto_stop_machines=off`. | — |
-| `Caddyfile` | SPA fallback; `/data/processed/*` Range/206 + gzip + `Cache-Control: private, no-store`; `/api/*` → uvicorn; HSTS; DB/`users.txt` never served. | `tests/test_caddy_serving.py` (real caddy) |
-| `supervisord.conf` | Runs uvicorn + Caddy + Litestream + the users.txt backup loop in the one machine; all logs → stdout (`fly logs`). | — |
-| `scripts/backup_users.sh` | **Interim** (PRD #130 stage 1, retired at stage 4): copies `users.txt` to the Litestream R2 bucket every 5 min — the one piece of state Litestream doesn't replicate. Env-driven; exits 0 when unconfigured. | `tests/test_users_backup.py` (real rclone) + `shellcheck` clean |
+| `Caddyfile` | SPA fallback; `/data/processed/*` gated by `forward_auth` → `/api/auth/check` (ADR-069) with Range/206 + gzip + `Cache-Control: private, no-store`; `/api/*` → uvicorn; HSTS; the DB never served. | `tests/test_caddy_serving.py` (real caddy) |
+| `supervisord.conf` | Runs uvicorn + Caddy + Litestream in the one machine; all logs → stdout (`fly logs`). | — |
 | `litestream.yml` | Continuous SQLite → R2 replication (env-driven; same file for prod + the drill). | `tests/test_litestream_restore.py` (real litestream + minio) |
 | `deploy.sh` | `code` (`fly deploy`; **refuses a dirty working tree** — `ALLOW_DIRTY=1` overrides), `data` (laptop → R2 → volume via `scripts/sync_composite.py`, mirror, **dry-run by default**), `all`, `smoke`. | `shellcheck` clean |
 | `scripts/sync_composite.py` | Owns the served-composite include/exclude contract (drops `*/parcels/` compose-inputs, keeps `parcels.pmtiles`); drives rclone (mirror / dry-run / idempotent). | `tests/test_sync_composite.py` (real rclone) |
@@ -274,14 +272,15 @@ fly secrets set --app "$APP" \
   RCLONE_CONFIG_R2_ENDPOINT=https://<account>.r2.cloudflarestorage.com \
   RCLONE_CONFIG_R2_REGION=auto
 
-# 5. First deploy (remote build). uvicorn FAIL-CLOSES until a credentials file
-#    exists (intended, ADR-063), so /api/health stays red and the machine looks
-#    unhealthy until step 6 — that is expected, not a bug.
+# 5. First deploy (remote build). uvicorn FAIL-CLOSES until a credential row
+#    exists (intended, ADR-063/069), so /api/health stays red and the machine
+#    looks unhealthy until step 6 — that is expected, not a bug.
 FLY_APP="$APP" ./deploy.sh code
 
 # 6. Bootstrap the first user — INTERACTIVE (hidden password prompt; positional
-#    <username> <team>). Writes /data/users.txt on the volume; uvicorn then
-#    self-heals on its next restart (no redeploy needed for later user changes).
+#    <username> <team>). Writes the credential table in the volume DB; uvicorn
+#    then self-heals on its next restart (no redeploy for later user changes).
+#    (Migrating an existing users.txt instead: python -m app.users import-file <path>)
 fly ssh console --app "$APP"
 #   inside the machine:
 #     cd /srv/backend && python -m app.users add <username> <team>
@@ -305,7 +304,7 @@ fly certs add <domain> --app "$APP"               # then `fly certs show <domain
 #    optional rate-limit on /api/auth/login.
 
 # 10. Verify + durability
-FLY_APP="$APP" APP_URL="https://<domain>" ./deploy.sh smoke   # SPA, /data Range→206, /api live
+FLY_APP="$APP" APP_URL="https://<domain>" ./deploy.sh smoke   # SPA 200, unauth /data→401 (gated), /api live
 #    then run /verify for the full login round-trip.
 #    Fly volume snapshots are automatic (daily); extend retention as desired.
 #    Litestream restore drill: tests/test_litestream_restore.py is its rehearsal.
@@ -322,7 +321,7 @@ data on its volume. All commands assume `FLY_APP=morphy-consulting`.
 ```bash
 git checkout main && git pull                       # deploy from a clean, current tree
 FLY_APP=morphy-consulting ./deploy.sh code          # remote build → roll the machine
-FLY_APP=morphy-consulting ./deploy.sh smoke         # SPA 200 · /data 206 · /api/health 200
+FLY_APP=morphy-consulting ./deploy.sh smoke         # SPA 200 · unauth /data 401 · /api/health 200
 ```
 
 `fly deploy` ships the **working tree**, not `git HEAD` — so deploy from a clean
@@ -349,8 +348,10 @@ fly ssh console --app morphy-consulting
   # ... list / remove via `python -m app.users --help`; then `exit`
 ```
 
-The credentials file is authoritative **per request**, so changes apply on the
-next click — never a redeploy, never hand-edit hashes, never commit `users.txt`.
+The credential table is authoritative **per request**, so changes apply on the
+next click — never a redeploy, never hand-edit hashes (ADR-069; the CLI writes
+the same volume DB Litestream replicates, so credentials are in the continuous
+backup).
 
 **Everything else:**
 
@@ -375,7 +376,8 @@ next click — never a redeploy, never hand-edit hashes, never commit `users.txt
   and leaves the volume partial. Let `deploy.sh data` finish (it's idempotent — a
   re-run repairs a partial).
 - **Auth stays fail-closed** ([ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md)) — never `AUTH_DEV_MODE=1` in prod, never put tenant/team claims in
-  the JWT, never web-serve the DB or `users.txt`.
+  the JWT, never web-serve the DB, never weaken the `/data/processed/*`
+  `forward_auth` gate (`deploy.sh smoke` asserts unauth → 401/403).
 - **`/data/*` is PII** — keep it cache-bypassed at Cloudflare (orange-cloud + the
   `/data/*` cache rule); it must never sit at the edge.
 - **Schema changes** ride the additive `init_db` migration until Alembic lands.
@@ -395,7 +397,7 @@ ruff check . && ruff format --check .           # the only real CI gate — run 
 ### PII custody (see [SECURITY.md](./SECURITY.md))
 
 - HTTPS everywhere (Cloudflare + Fly edges, HSTS); origin IP hidden behind Cloudflare.
-- The 4.29 GB of parcel-owner PII stays **same-origin behind the login**; `/data/*` is cache-bypassed at Cloudflare so PII never sits at the edge.
+- The 4.29 GB of parcel-owner PII stays **same-origin behind the login**, enforced at the edge: Caddy `forward_auth` refuses unauthenticated `/data/processed/*` (ADR-069; `deploy.sh smoke` asserts it). `/data/*` is cache-bypassed at Cloudflare so PII never sits at the edge.
 - SQLite + lease PDFs on the encrypted Volume; Litestream replicates SQLite to a private R2 bucket; lease PDFs served via signed download URLs only (at D+E).
 - Session JWTs expire (30-day TTL); rotating `AUTH_JWT_SECRET` revokes every session at once.
 - Multi-tenancy isolation tests gate every PR.

@@ -13,7 +13,6 @@ from __future__ import annotations
 import os
 import tempfile
 from collections.abc import Callable, Iterator
-from pathlib import Path
 
 import pytest
 
@@ -24,17 +23,11 @@ _TMP = tempfile.mkdtemp(prefix="pilot-leadtest-")
 os.environ.setdefault("DATABASE_URL", f"sqlite+pysqlite:///{_TMP}/lead_state.sqlite3")
 os.environ.setdefault("OWNERS_INDEX_PATH", f"{_TMP}/owners_index.json")
 # Deterministic auth in tests: dev posture with a fixed (non-prod) signing
-# secret, and a seeded temp credentials file (#84 — the file is the only
-# credential source). Tests that need extra users append lines to
-# ``settings.credentials_path``; login re-reads the file each time.
+# secret. Credentials live in the DB (ADR-069) — ``_helpers.api()`` seeds the
+# ``dev``/``dev``/``devteam`` credential into each test's engine, and tests
+# add extra users through the same store writers the CLI uses.
 os.environ.setdefault("AUTH_DEV_MODE", "1")
 os.environ.setdefault("AUTH_JWT_SECRET", "test-secret-not-for-prod-but-long-enough-for-hs256")
-
-from backend.app.password import hash_password  # noqa: E402 — safe: never imports config
-
-_USERS_FILE = Path(_TMP) / "users.txt"
-_USERS_FILE.write_text(f"dev:{hash_password('dev')}:devteam\n", encoding="utf-8")
-os.environ.setdefault("APP_USERS_FILE", str(_USERS_FILE))
 
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.engine import Engine  # noqa: E402

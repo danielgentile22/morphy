@@ -1,6 +1,6 @@
 # ADR-063: File-based credentials, teams-as-tenants, and per-request file authority
 
-**Status:** Accepted — **Shipped** via PRD #83 (#84 / PR #89, #85 / PR #90, #86 / PR #91, #87 / PR #93, #88 — this ADR).
+**Status:** Accepted — **Shipped** via PRD #83 (#84 / PR #89, #85 / PR #90, #86 / PR #91, #87 / PR #93, #88 — this ADR). **Storage superseded 2026-06-12** by [ADR-069](0069-credentials-in-db-cookie-sessions-gated-data-plane.md) (PRD #130): credentials now live in the app database's `credential` table, not `users.txt`. The **authority model and invariants stand unchanged** — per-request authority, identity-only JWT, teams-as-tenants (registration order replaces file order), fail-closed boot, CLI-only writes.
 **Supersedes:** the credential-store and revocation portions of [ADR-062](0062-username-password-replaces-magic-link.md) (the `APP_USERS` env secret and its "no server-side revocation" trade-off). The username/password front door, the brute-force throttle, the specific-401 UX, and the fail-closed posture from ADR-062 stand unchanged.
 **Date:** 2026-06-02
 **Pairs with:** [ADR-055](0055-hosted-private-backend.md) (tenant-shaped backend), [ADR-062](0062-username-password-replaces-magic-link.md) (username/password front door).

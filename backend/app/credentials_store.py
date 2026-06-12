@@ -145,27 +145,16 @@ def import_entries(session: Session, entries: list[CredentialEntry]) -> int:
     return len(entries)
 
 
-# ── fail-closed boot (PRD #130, preserving the ADR-062/063 posture) ──────────
+# ── fail-closed boot (ADR-069, preserving the ADR-062/063 posture) ───────────
 def ensure_fail_closed_boot(eng=None, cfg=None) -> None:
-    """Refuse to serve when auth can't work — now keyed on the DB.
+    """Refuse to serve when auth can't work — keyed on the DB.
 
     Called from the app's lifespan after ``init_db``. Outside dev mode it
     requires a real signing secret AND at least one credential row, so a
-    deploy can be neither open nor impossible to log into. An empty table
-    triggers exactly one of:
-
-    * **one-shot import** — the configured users.txt (``APP_USERS_FILE``) has
-      valid entries → they migrate in file order (team→tenant inheritance
-      preserved). This is what makes the storage-cutover deploy seamless:
-      first boot imports, every later boot sees rows. Transitional — removed
-      with the file's retirement.
-    * **dev seed** — dev mode seeds the built-in ``dev``/``dev`` login through
-      the same ``add`` path the CLI uses (PRD #130 user story 13: dev mode
-      must not bypass the production code path).
-    * **refusal** — production with no credentials anywhere: RuntimeError,
-      uvicorn never serves.
+    deploy can be neither open nor impossible to log into. In dev mode an
+    empty table seeds the built-in ``dev``/``dev`` login through the same
+    ``add`` path the CLI uses — dev cannot bypass the production code path.
     """
-    from . import credentials as credentials_file
     from .config import DEV_PASSWORD, DEV_TEAM, DEV_USERNAME, settings
 
     cfg = cfg or settings
@@ -180,16 +169,7 @@ def ensure_fail_closed_boot(eng=None, cfg=None) -> None:
 
     with Session(bind=eng) as session:
         if count(session) == 0:
-            entries = list(credentials_file.load(cfg.credentials_path).values())
-            if entries:
-                imported = import_entries(session, entries)
-                _log.warning(
-                    "one-shot credential migration: imported %d user(s) from %s into the "
-                    "database (PRD #130). The file is no longer consulted at runtime.",
-                    imported,
-                    cfg.credentials_path,
-                )
-            elif cfg.dev_mode:
+            if cfg.dev_mode:
                 add(session, DEV_USERNAME, DEV_TEAM, DEV_PASSWORD)
                 _log.warning(
                     "AUTH_DEV_MODE: seeded the built-in %s/%s login (ephemeral dev credential).",
@@ -199,7 +179,8 @@ def ensure_fail_closed_boot(eng=None, cfg=None) -> None:
             else:
                 problems.append(
                     "no credentials exist — add one with `python -m app.users add "
-                    "<username> <team>`, or point APP_USERS_FILE at a users.txt to import"
+                    "<username> <team>`, or migrate a legacy users.txt with "
+                    "`python -m app.users import-file <path>`"
                 )
 
     if problems:

@@ -22,11 +22,12 @@ backend/app/
   lead_store.py             LeadStore — tenant-scoped CRUD + auto-logged status transitions
   owner_merge_service.py    OwnerMergeService — manual merge/split overrides (display_cluster_id = coalesce(override, raw))
   owners_index_service.py   serves the static index (override-aware) left-joined with the tenant's lead state
-  auth.py                   JWT issue/verify + current_tenant_id (JWT-derived)
+  auth.py                   JWT issue/verify + cookie/bearer extraction + current_tenant_id
   password.py               stdlib PBKDF2-HMAC-SHA256 hashing (no third-party dep; `python -m app.password`)
-  credentials.py            parse + authenticate against the credentials file users.txt (#84)
-  users.py                  user-management CLI for users.txt (`python -m app.users`, #87)
-  tenant_service.py         team → tenant resolution, file-order registration (#86)
+  credentials.py            the users.txt import format — parse/load + shared auth result types (ADR-069)
+  credentials_store.py      the credential table: three-way authenticate, writers, fail-closed boot (ADR-069)
+  users.py                  user-management CLI shell (`python -m app.users`, #87; DB-backed)
+  tenant_service.py         team → tenant resolution, registration-order (#86)
   login_throttle.py         in-process (ip, username) brute-force throttle (Slice 2 / #77)
   auth_service.py           login() (username/password) + user provisioning
   main.py                   FastAPI routes
@@ -89,7 +90,9 @@ are rejected (HTTP 409).
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/auth/login` | **username/password → identity-only session JWT** (the front door, #76/#84/#88); brute-force throttled (#77) |
+| POST | `/api/auth/login` | **username/password → identity-only session JWT** (the front door, #76/#84/#88); sets the `pilot_session` httpOnly cookie (ADR-069) and returns the token in the body for non-browser clients; brute-force throttled (#77) |
+| POST | `/api/auth/logout` | clear the session cookie — ends the browser's API *and* `/data` access (ADR-069) |
+| GET | `/api/auth/check` | forward-auth seam for the edge `/data/processed/*` gate (ADR-069): cookie/bearer valid + username still credentialed → 204, else 401; no body |
 | GET | `/api/auth/me` | the authenticated username + tenant + **team** (#86) |
 | GET | `/api/health` | liveness + owners-indexed count (public) |
 | GET | `/api/candidates?limit=` | owners at New, ranked by interestingness |
@@ -120,48 +123,48 @@ per-tenant. Rebuild both after composing states: `python scripts/preprocess.py
 `OwnerSummary` / `Structure` fields are **defaulted** so a pre-v4 index still
 validates.
 
-Every data route verifies the `Authorization: Bearer <jwt>` (identity), then
-resolves the tenant by re-checking the **credentials file** on that very
-request (`current_tenant_id` → `resolve_principal`, #88 / ADR-063) — the file,
-never the token, decides authorization. An unauthenticated request, or one
-whose username has been removed from the file, is rejected with **401**.
+Every data route verifies the session JWT — the `pilot_session` httpOnly
+cookie first (ADR-069; the SPA's transport), then `Authorization: Bearer`
+(tests, curl) — and resolves the tenant by re-checking the **credential
+table** on that very request (`current_tenant_id` → `resolve_principal`,
+#88 / ADR-063 as amended by ADR-069) — the store, never the token, decides
+authorization. An unauthenticated request, or one whose username has no
+credential row anymore, is rejected with **401**. Non-GET routes additionally
+pass an Origin/Referer CSRF check (cookie transport's backstop; non-browser
+clients without those headers pass).
 
-## User management (users.txt + CLI, #87)
+## User management (the `credential` table + CLI, #87 / ADR-069)
 
-Credentials live in the git-ignored **`backend/users.txt`** (one
-`username:password-hash:team` line per user; format documented by the
-committed `users.txt.example`). **The CLI is the management surface — never
-edit hashes by hand:**
+Credentials live in the app database — the **`credential`** table (normalized
+unique username, self-describing PBKDF2 hash, team) that Litestream already
+replicates. **The CLI is the management surface — never edit hashes by hand:**
 
 ```bash
 cd backend
 python -m app.users add <username> <team>       # prompts for a password (hidden)
-python -m app.users remove <username>           # user is locked out of new sign-ins
+python -m app.users remove <username>           # locked out on their next request
 python -m app.users list                        # usernames + teams only, never hashes
 python -m app.users set-password <username>     # prompts; old password stops working
 python -m app.users set-team <username> <team>  # moves the user to another team's board
+python -m app.users import-file <path>          # one-shot users.txt migration (refuses a non-empty table)
 ```
 
-All writes are atomic (temp file + rename). The file path defaults to
-`backend/users.txt`; point the CLI (and the backend) somewhere else with
-`--file` / the `APP_USERS_FILE` env var. **Line order matters:** the first
-team in the file owns tenant 1 — the original lead board (#86) — so keep the
-original team's users at the top.
+The CLI writes the same `DATABASE_URL` the backend serves from (on the Fly
+machine that's the volume DB). **Registration order matters:** the first
+credential's team owns tenant 1 — the original lead board (#86; `id` order
+replaced file order). `import-file` preserves the file's line order for
+exactly that reason.
 
 **One runtime endpoint is a sanctioned caller of this writer** (PRD #121,
-[ADR-068](../docs/adr/0068-self-service-password-change.md)):
-`POST /api/me/password {current_password, new_password}` lets a signed-in user
-change **their own** password from Settings → Account. It is *not* a second
-file-writing path — it calls `users.change_password`, which verifies the current
-password (constant-time) and then rotates the hash through the same atomic
-`users.set_password` writer (team + line position preserved, mtime bumped so the
-per-request `CredentialsFile` cache reloads — the new password is live on the
-next request). Wrong current password → 401; the file is left byte-for-byte
-unchanged. The username comes from the verified principal, never the body, so a
-caller can only rotate their own credential. "Manage `users.txt` only via the
-`app.users` API" still holds. **Prod caveat:** `users.txt` lives on the Fly
-volume and is **not** Litestream-replicated like the SQLite DB ([ADR-064](../docs/adr/0064-phase1-hosting-fly-sqlite.md));
-snapshot the volume to back up credential changes.
+[ADR-068](../docs/adr/0068-self-service-password-change.md), re-homed onto the
+store by ADR-069): `POST /api/me/password {current_password, new_password}`
+lets a signed-in user change **their own** password from Settings → Account.
+It calls `users.change_password`, which verifies the current password
+(constant-time) and rotates the hash through the same store writer the CLI
+uses (team + registration order untouched — live on the next login attempt).
+Wrong current password → 401; nothing written. The username comes from the
+verified principal, never the body, so a caller can only rotate their own
+credential.
 
 ## Per-user settings (`UserSetting`, PRD #121)
 
@@ -183,32 +186,38 @@ Keys: `theme`, `colorblind`, `basemap`, `view_mode`, `home_view`,
 inspected (same posture as `ScoringPreset.config`). New prefs slot in as new
 keys with no schema change.
 
-## Auth (username/password over a credentials file, ADR-062 + ADR-063)
+## Auth (username/password, ADR-062 + ADR-063 as amended by ADR-069)
 
 The live front door is `POST /api/auth/login {username, password}`. Credentials
-live in the git-ignored **`backend/users.txt`** (one `username:hash:team` line
-per user — see "User management" above; path overridable via `APP_USERS_FILE`).
-Usernames and teams are case-insensitive (trimmed + lowercased); the password is
-verified constant-time against a stdlib PBKDF2-HMAC-SHA256 hash
-(`app/password.py`, no third-party dependency). A wrong password and an unknown
-username are *distinguishable* 401s (a deliberate usability-over-enumeration
-call, with the enumeration exposure bounded by the throttle). In dev
-(`AUTH_DEV_MODE=1`) a built-in `dev`/`dev` credential on a built-in `dev` team
-is seeded **through the same file-parsing path** so the loop needs zero config.
+live in the **`credential` table** (see "User management" above). Usernames and
+teams are case-insensitive (trimmed + lowercased); the password is verified
+constant-time against a stdlib PBKDF2-HMAC-SHA256 hash (`app/password.py`, no
+third-party dependency). A wrong password and an unknown username are
+*distinguishable* 401s (a deliberate usability-over-enumeration call, with the
+enumeration exposure bounded by the throttle). In dev (`AUTH_DEV_MODE=1`) a
+built-in `dev`/`dev` credential on a built-in `dev` team is seeded at boot
+**through the same store-writer path the CLI uses**, so the loop needs zero
+config and dev can't hide credential-resolution bugs.
 
 On success the route mints an HS256 session JWT that carries **identity only**
-(`sub` = the username — no tenant, no team). Send it as
-`Authorization: Bearer <jwt>` on every data route. **The credentials file is
-authoritative on every request** (#88): each request re-checks (mtime-cached)
-that the username is still in the file and resolves its *current* team → that
-team's tenant scopes the request. Consequences:
+(`sub` = the username — no tenant, no team) and sets it in the
+**`pilot_session` httpOnly / Secure / SameSite=Lax cookie** (ADR-069 — the
+SPA's transport; page scripts can never read it, and it rides automatically on
+MapLibre/PMTiles/DuckDB-WASM data fetches, which is what lets Caddy gate
+`/data/processed/*` via `forward_auth` → `GET /api/auth/check`). The body still
+returns the token for non-browser clients; `Authorization: Bearer <jwt>` stays
+accepted, the cookie checked first. `POST /api/auth/logout` clears the cookie.
+**The credential table is authoritative on every request** (#88): each request
+re-checks that the username still has a row and resolves its *current* team →
+that team's tenant scopes the request. Consequences:
 
 - **Removing a user** (`python -m app.users remove`) locks them out on their
-  very next request — no waiting out the session TTL, no restart.
+  very next request — API *and* data plane — no waiting out the session TTL,
+  no restart.
 - **Moving a user to another team** (`set-team`) re-homes their live session on
   its next request; the old team's data is untouched.
 - Nothing a token carries — even forged extra claims signed with a leaked
-  secret — can grant access the file doesn't currently grant.
+  secret — can grant access the store doesn't currently grant.
 
 ### Brute-force throttle (#77)
 
@@ -226,21 +235,21 @@ restart, and is not shared across replicas).
 ### Posture: fail closed (`AUTH_DEV_MODE`)
 
 A single switch gates the auth posture. It is **off by default** (the safe,
-prod state). With it off, the app **refuses to start** unless **both**
-`AUTH_JWT_SECRET` is set **and** the credentials file exists with at least one
-valid `username:hash:team` line — so a deploy can be neither open (no secret)
-nor impossible to log into (no credential). Set `AUTH_DEV_MODE=1` for the
-zero-config local loop (ephemeral secret + built-in `dev`/`dev` login seeded
-through the same file-parsing path), so the dev convenience never leaks into
-prod by accident.
+prod state). With it off, the app **refuses to serve** unless **both**
+`AUTH_JWT_SECRET` is set **and** the credential table has at least one row
+(`credentials_store.ensure_fail_closed_boot`, run at startup) — so a deploy
+can be neither open (no secret) nor impossible to log into (no credential).
+Set `AUTH_DEV_MODE=1` for the zero-config local loop (ephemeral secret +
+built-in `dev`/`dev` login seeded through the same store writer), so the dev
+convenience never leaks into prod by accident.
 
 #### Revocation & the kill switch
 
 Two operational levers, both immediate (no restart, no extra tooling):
 
-- **Revoke one user:** `python -m app.users remove <username>`. The file is
-  authoritative on every request (#88), so they are locked out on their very
-  next click — even with a valid, unexpired session JWT.
+- **Revoke one user:** `python -m app.users remove <username>`. The credential
+  table is authoritative on every request (#88), so they are locked out on
+  their very next click — even with a valid, unexpired session JWT.
 - **Kill every session at once:** rotate `AUTH_JWT_SECRET`. Every already-issued
   JWT was signed by the old secret, so all of them fail verification at once and
   every user must log in again. This is the global panic button for a suspected
@@ -250,35 +259,35 @@ Auth environment variables:
 
 | Var | Default | Purpose |
 |---|---|---|
-| `AUTH_DEV_MODE` | `0` (prod) | **master safety switch.** `1` = local dev (ephemeral secret + built-in `dev`/`dev` login). Off ⇒ the prereqs below are enforced at boot. |
+| `AUTH_DEV_MODE` | `0` (prod) | **master safety switch.** `1` = local dev (ephemeral secret + built-in `dev`/`dev` login). Off ⇒ the prereqs below are enforced at startup. |
 | `AUTH_JWT_SECRET` | _(required off-dev)_ | HS256 signing secret — **set from the host secret store in prod (#16); never commit.** Ephemeral per-process value in dev. Rotating it invalidates every active session (kill switch). |
-| `APP_USERS_FILE` | `backend/users.txt` | path to the credentials file (`username:hash:team` lines; manage with `python -m app.users`). **Never commit the real file.** Prod secret stores can mount it anywhere and point this at it. |
 | `AUTH_LOGIN_THROTTLE_MAX` | `5` | failed logins per `(ip, username)` before 429 within the window |
 | `AUTH_LOGIN_THROTTLE_WINDOW_SECONDS` | `300` | sliding throttle window (block self-clears as it rolls forward; no hard lockout) |
-| `AUTH_SESSION_TTL_DAYS` | `30` | session JWT lifetime — purely a convenience window now; authorization is re-checked against the file on every request (#88) |
+| `AUTH_SESSION_TTL_DAYS` | `30` | session JWT lifetime — purely a convenience window now; authorization is re-checked against the credential table on every request (#88) |
 
 ### Security model & trade-offs
 
-- **JWT in `localStorage` (SPA).** An XSS could read it and exfiltrate the
-  session. Accepted for an internal tool, and mitigated by Svelte's default
-  escaping of all rendered PII (owner names, notes). The more secure
-  alternative — an httpOnly + SameSite cookie with CSRF handling — is
-  deliberately deferred (a larger change touching CORS + the SPA fetch layer).
-- **Sessions are identity-only; the file authorizes every request** (#88,
-  ADR-063). A leaked token is only as useful as the file allows right now:
-  remove the username and the token is dead on the next request. The 30-day
-  TTL bounds how long an *unrevoked* identity stays signed in, nothing more.
+- **The session rides in an httpOnly cookie** (ADR-069) — page scripts can't
+  read it, so an XSS can't exfiltrate the session. CSRF posture: SameSite=Lax
+  plus the Origin/Referer middleware on non-GET routes — no token-dance
+  machinery for a same-origin internal tool.
+- **Sessions are identity-only; the credential table authorizes every
+  request** (#88, ADR-063/069). A leaked token is only as useful as the store
+  allows right now: remove the username and the token is dead on the next
+  request — including `/data` fetches, which the edge gates through
+  `/api/auth/check`. The 30-day TTL bounds how long an *unrevoked* identity
+  stays signed in, nothing more.
 - **No `aud`/`iss` claims.** Fine while one secret signs for one audience; add
   them if this secret is ever shared across services.
 - **Login throttle is per-process.** The brute-force counter lives in memory on
   one VM; it resets on restart and isn't shared across replicas. Acceptable for
   the single-VM deployment — a shared store (Redis) is the move if it ever scales
-  horizontally. (The credentials file itself is replica-safe: every process
-  re-reads the same mounted file.)
+  horizontally. (The credential table itself is replica-safe: every process
+  reads the same DB.)
 - **Prod deploy checklist (ties to #16).** Set `AUTH_DEV_MODE=0`,
-  `AUTH_JWT_SECRET` (host secret store), and mount a credentials file with at
-  least one valid line (`APP_USERS_FILE` if not at the default path). The app
-  refuses to boot otherwise.
+  `AUTH_JWT_SECRET` (host secret store), and create at least one credential
+  (`python -m app.users add`, or `import-file` for a legacy users.txt). The
+  app refuses to serve otherwise.
 
 ## Run
 
@@ -292,7 +301,7 @@ python scripts/preprocess.py --owners-index        # writes composite/owners_ind
 
 # 2. run the API (SQLite dev DB at data/processed/lead_state.sqlite3 by default).
 #    AUTH_DEV_MODE=1 opts into the local loop; without it the app fails closed
-#    (it requires a real AUTH_JWT_SECRET + a credentials file — see "fail closed").
+#    (it requires a real AUTH_JWT_SECRET + ≥1 credential row — see "fail closed").
 AUTH_DEV_MODE=1 uvicorn backend.app.main:app --reload --port 8000
 # health check (public):
 curl localhost:8000/api/health
@@ -307,8 +316,9 @@ curl localhost:8000/api/candidates -H "authorization: Bearer $JWT"   # 200; with
 Point at Postgres instead of SQLite with
 `DATABASE_URL=postgresql+psycopg://user:pass@host/db`. In prod leave
 `AUTH_DEV_MODE` off and follow the deploy checklist above (set
-`AUTH_JWT_SECRET` from the host secret store and mount a real `users.txt`,
-#16) — the app refuses to boot otherwise.
+`AUTH_JWT_SECRET` from the host secret store and create at least one
+credential with `python -m app.users add`) — the app refuses to serve
+otherwise.
 
 ## Test
 

@@ -69,7 +69,6 @@ The currently-binding decisions.
 | [ADR-060](./adr/0060-wv-committed-anchor.md) | West Virginia elevated to a committed Phase-1 anchor |
 | [ADR-061](./adr/0061-lead-centric-triage-redesign.md) | Lead-centric triage UI redesign — cross-state leads, structures-first map, write-layer pulled forward |
 | [ADR-062](./adr/0062-username-password-replaces-magic-link.md) | Username/password login replaces magic-link; magic-link machinery removed |
-| [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md) | File-based credentials (users.txt + CLI), teams-as-tenants, per-request file authority |
 | [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md) | Phase-1 hosting — Fly.io single always-on machine, SQLite-on-volume, Cloudflare front (~$5–8/mo) |
 
 ### Phase 1 UI overhaul (2026-06-06)
@@ -79,9 +78,15 @@ The currently-binding decisions.
 | [ADR-065](./adr/0065-redesign-three-section-ia.md) | Redesigned app IA — three sections (Dashboard · Explore · Leads) + Dashboard digest-hub |
 | [ADR-066](./adr/0066-inbound-event-reply-seam.md) | Replies are provider-agnostic inbound activity events (manual now, Gmail later) |
 | [ADR-067](./adr/0067-tower-grained-explore.md) | Tower-grained Explore + per-tower scoring; owner stays the unit of work (extends ADR-061) |
-| [ADR-068](./adr/0068-self-service-password-change.md) | Self-service password change is a sanctioned runtime caller of `users.set_password` (PRD #121 Settings page) |
+| [ADR-068](./adr/0068-self-service-password-change.md) | Self-service password change is a sanctioned runtime caller of the credentials writer (PRD #121 Settings page; re-homed onto the DB store by ADR-069) |
 
 > ADR-058 (tunable scoring) **amended** the same day — tower-grain + "preset" terminology + tenant-shared storage; the row stays under *Phase 1 product cut*.
+
+### Phase 1 hardening (2026-06-12)
+
+| # | Title |
+|---|---|
+| [ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md) | Credentials move to the app DB; httpOnly-cookie sessions; `/data/processed/*` gated at the edge via `forward_auth` (PRD #130 — amends ADR-063's storage; its authority invariants stand) |
 
 ---
 
@@ -112,6 +117,7 @@ Earlier decisions still partially in force, modified by a later ADR.
 | [ADR-041](./adr/0041-no-llc-unmasking.md) | No LLC unmasking | Narrowed by [ADR-057](./adr/0057-budget-posture-reframed.md) — free SoS officer disclosure in scope; paid skip-trace stays non-goal |
 | [ADR-055](./adr/0055-hosted-private-backend.md) | Hosted-private backend (Slice 4) | Magic-link auth portion superseded by [ADR-062](./adr/0062-username-password-replaces-magic-link.md) (username/password login); platform + managed-Postgres + S3-service portions narrowed by [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md) (Fly.io + SQLite-on-volume + R2); the backend + `tenant_id` Day-1 decision stands |
 | [ADR-062](./adr/0062-username-password-replaces-magic-link.md) | Username/password login replaces magic-link | Credential store (`APP_USERS` env) + "no server-side revocation" trade-off superseded by [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md); the username/password front door, throttle, and fail-closed posture stand |
+| [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md) | File-based credentials (users.txt + CLI), teams-as-tenants, per-request file authority | **Storage superseded** by [ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md) (credentials in the app DB); the authority model — per-request authority, identity-only JWT, teams-as-tenants, fail-closed posture, CLI-only writes — stands unchanged |
 
 ---
 

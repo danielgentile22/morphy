@@ -115,10 +115,10 @@ from .users import change_password as users_change_password
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     init_db()
-    # Fail-closed boot (PRD #130, preserving the ADR-062/063 posture): outside
+    # Fail-closed boot (ADR-069, preserving the ADR-062/063 posture): outside
     # dev mode the app refuses to serve without a real signing secret and at
-    # least one credential row; an empty table one-shot-imports the legacy
-    # users.txt (cutover) or seeds dev/dev (dev mode).
+    # least one credential row; dev mode seeds dev/dev through the same store
+    # writer the CLI uses.
     ensure_fail_closed_boot()
     yield
 

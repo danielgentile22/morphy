@@ -6,15 +6,13 @@ database is a local SQLite file so the backend runs with zero external
 services; point ``DATABASE_URL`` at Postgres (``postgresql+psycopg://…``)
 in deploy/CI.
 
-Credentials live in the app database (PRD #130, amending ADR-063's storage
-— the ``credential`` table is the only credential source; manage it with
-``python -m app.users``). ``APP_USERS_FILE`` remains only as the one-shot
-migration source: an empty credential table at boot imports it
-(``credentials_store.ensure_fail_closed_boot``), after which the file is
-never consulted.
+Credentials live in the app database (ADR-069, amending ADR-063's storage —
+the ``credential`` table is the only credential source; manage it with
+``python -m app.users``; a legacy ``users.txt`` imports via the CLI's
+``import-file``).
 
-The fail-closed posture is unchanged but now enforced at **startup** rather
-than import (the table can't be checked before the engine exists, and the
+The fail-closed posture is unchanged but enforced at **startup** rather than
+import (the table can't be checked before the engine exists, and the
 user-management CLI must be importable without a configured secret): with
 ``AUTH_DEV_MODE`` off (default — the safe state), the app refuses to *serve*
 without a real ``AUTH_JWT_SECRET`` and at least one credential row. With it
@@ -43,9 +41,6 @@ DEV_TEAM = "dev"
 # repo root = backend/app/config.py → parents[2]
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 COMPOSITE_ROOT = PROJECT_ROOT / "data" / "processed" / "composite"
-
-# The legacy credentials file (import source only; git-ignored).
-DEFAULT_CREDENTIALS_PATH = PROJECT_ROOT / "backend" / "users.txt"
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -79,9 +74,6 @@ class Settings:
     # state; resets on restart.
     login_throttle_max: int
     login_throttle_window_seconds: float
-    # The legacy users.txt (PRD #130): consulted ONLY by the one-shot boot
-    # import when the credential table is empty. Never read per request.
-    credentials_path: Path
 
     @staticmethod
     def from_env() -> Settings:
@@ -90,7 +82,6 @@ class Settings:
         )
         dev_mode = _env_bool("AUTH_DEV_MODE", default=False)
         explicit_secret = os.environ.get("AUTH_JWT_SECRET")
-        credentials_path = Path(os.environ.get("APP_USERS_FILE", str(DEFAULT_CREDENTIALS_PATH)))
 
         if dev_mode:
             # Never log the secret value itself — note only whether it's the
@@ -127,7 +118,6 @@ class Settings:
             login_throttle_window_seconds=float(
                 os.environ.get("AUTH_LOGIN_THROTTLE_WINDOW_SECONDS", "300")
             ),
-            credentials_path=credentials_path,
         )
 
 

@@ -559,22 +559,15 @@ verification (ADR-018).
 
 ---
 
-## 🚫 Static map data is served without authentication — pre-hosting blocker
+## ✅ Static map data is served without authentication — RESOLVED in production (PRD #130, ADR-069)
 
-**Added 2026-06-02.**
+**Added 2026-06-02. Resolved 2026-06-12.**
 
-The app-load sign-in gate (#85, PRD #83) ensures an unauthenticated visitor sees only the sign-in screen — the SPA fires **no** data fetch before a session is verified. But the static analytical data itself (parcel parquet, PMTiles, county GeoJSON, `owners_filter.json`) is served by the local data server (`python scripts/serve.py 8765`) with **no authentication of its own**: anyone who can reach that port can fetch parcel-owner names and mailing addresses (PII) directly, bypassing the app entirely. Only the backend API routes (`/api/*`) check a session.
+The exposure: the static analytical data (parcel parquet, PMTiles, county GeoJSON, `owners_filter.json`, `owners_index.json`) was served with no authentication of its own — anyone who knew a URL could fetch parcel-owner PII directly, bypassing the sign-in gate. Verified live before the fix: an unauthenticated range request to the production owners index returned `206` with content.
 
-Implication:
+**The fix (shipped + verified on prod):** the session JWT rides in an httpOnly cookie, and Caddy `forward_auth` asks `GET /api/auth/check` before serving any byte under `/data/processed/*` — per-request authority (ADR-063) now covers the data plane. Regression-gated twice: `tests/test_caddy_serving.py` proves unauth → 401 / authed Range → 206 against the real binary, and `deploy.sh smoke` asserts the unauthenticated probe returns 401/403 after every deploy.
 
-- **Safe now**: local, single-machine use (the data server binds to localhost), and tunnel-based demos where the tunnel only exposes the app preview port.
-- **Risky at hosting**: deploying the data server (or the `/data` proxy) on a reachable host without an auth layer exposes the PII composite to anyone with the URL — the sign-in gate provides no protection for these files.
-- The lead backend's auth (`/api/*`, ADR-055/ADR-062) does not and cannot cover static file serving.
-
-How to mitigate:
-
-1. **At hosting time (the intended fix):** put the static data behind the same reverse proxy that fronts the app, and have the proxy require the session (e.g. validate the session JWT in an auth subrequest, or simply require an authenticated cookie set at sign-in). Track with the production-hosting issue (#16).
-2. Until then, never expose port 8765 (or a `/data` proxy to it) beyond localhost.
+**Still true for local dev:** `python scripts/serve.py 8765` has no auth — never expose port 8765 (or a `/data` proxy to it) beyond localhost.
 
 ---
 
