@@ -1,0 +1,55 @@
+name: frontend
+
+# Gates the map app per PR (PRD #131): type-check, unit tests, and the
+# production build, each as its own step so failures attribute clearly.
+# The build step is deliberate — it is the only step that exercises the
+# bundler config (manual chunks, worker imports) that previously failed
+# only at deploy time.
+#
+# Playwright e2e is deliberately NOT part of this gate: the specs need
+# real anchor-state composites (multi-GB, git-ignored) that CI does not
+# have, so a per-PR e2e job would be permanently red or skipped. E2e
+# stays a local/nightly concern — do not "fix" CI by adding it here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Run only the most-recent commit on a branch; cancel older runs in flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: svelte-check + vitest + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Node 22 matches the Dockerfile frontend build stage (node:22-slim).
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Type-check (svelte-check)
+        run: npm run check
+
+      - name: Unit tests (vitest)
+        run: npm run test:unit
+
+      # `npm run build` would re-run svelte-check before bundling; invoke
+      # vite directly so the type-check step above stays the only one.
+      - name: Production build (vite)
+        run: npx vite build
