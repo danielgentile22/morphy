@@ -53,8 +53,15 @@ the schema, or the owners-index read path.
   give new fields safe defaults (a stale index must still serve), and declare any
   new `Structure`/`OwnerSummary` field on the backend model (undeclared fields are
   silently dropped by `response_model`).
-- Schema changes ride the additive `init_db` migration (`db._migrate_added_columns`)
-  until Alembic.
+- **Schema changes ship as Alembic revisions (PRD #134).** Edit `app/models.py`,
+  then `uv run alembic -c backend/alembic.ini revision --autogenerate -m "..."
+  --rev-id 000N` and *review the output* — autogenerate cannot see data
+  backfills, and SQLite ALTERs run through batch mode (env.py sets
+  `render_as_batch`). `init_db` upgrades to head at app boot (safe: one
+  machine, one writer); a pre-Alembic DB is stamped at the `0001` baseline.
+  Never reintroduce additive column/index back-fill helpers in `db.py`; test
+  fixtures keep fast `create_all`, and `tests/test_migration.py` proves the
+  two paths build identical schemas.
 - **The OpenAPI schema is the frontend's type contract (PRD #133).** After any
   request/response model change, regenerate + commit both generated artifacts:
   `uv run python -m scripts.export_openapi` (→ `backend/openapi.json`) and

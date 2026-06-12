@@ -4,13 +4,18 @@ DB-agnostic: SQLite for local dev (default), Postgres in deploy/CI via
 ``DATABASE_URL``. The ORM models use no dialect-specific types, so the
 tenant-isolation behavior is identical on either backend (isolation is
 application-level — every query filters by ``tenant_id``).
+
+Schema changes ship as Alembic revisions (PRD #134): edit models.py, then
+``uv run alembic -c backend/alembic.ini revision --autogenerate`` and review
+the output. ``init_db`` brings any database to head at app boot.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -21,62 +26,12 @@ class Base(DeclarativeBase):
     pass
 
 
-# Additive columns introduced after a table first shipped that ``create_all``
-# cannot add to an *existing* table (it only creates missing tables). Each
-# value is the full ``ADD COLUMN`` type + constraint DDL (valid on both SQLite
-# and Postgres) — a NOT NULL column carries a DEFAULT to back-fill old rows; a
-# nullable column omits both.
-#
-# Slice 3 / #49 added the editable contact fields to ``lead``.
-_LEAD_ADDED_COLUMNS: dict[str, str] = {
-    "contact_name": "VARCHAR(255) NOT NULL DEFAULT ''",
-    "contact_phone": "VARCHAR(64) NOT NULL DEFAULT ''",
-    "contact_email": "VARCHAR(320) NOT NULL DEFAULT ''",
-    "best_channel": "VARCHAR(32) NOT NULL DEFAULT ''",
-}
-# UI overhaul P2 / #106 added ``direction`` to the activity log; existing rows
-# are outbound touches (the only kind before replies existed).
-_ATTEMPT_ADDED_COLUMNS: dict[str, str] = {
-    "direction": "VARCHAR(16) NOT NULL DEFAULT 'outbound'",
-    # Who logged the activity — the teammate dimension (#112/#113).
-    "logged_by_user_id": "INTEGER",
-}
-# UI overhaul P2 / #110 fleshed out ``task`` (links / assignee / due / priority
-# / labels / source) and added a display name to ``app_user``.
-_TASK_ADDED_COLUMNS: dict[str, str] = {
-    "priority": "VARCHAR(8) NOT NULL DEFAULT 'none'",
-    "due_date": "DATE",
-    "assignee_user_id": "INTEGER",
-    "lead_cluster_id": "VARCHAR(64)",
-    "tower_asr": "VARCHAR(32)",
-    "labels": "VARCHAR(512) NOT NULL DEFAULT ''",
-    "source": "VARCHAR(8) NOT NULL DEFAULT 'manual'",
-}
-_USER_ADDED_COLUMNS: dict[str, str] = {
-    "display_name": "VARCHAR(255) NOT NULL DEFAULT ''",
-}
-_ADDITIVE_MIGRATIONS: tuple[tuple[str, dict[str, str]], ...] = (
-    ("lead", _LEAD_ADDED_COLUMNS),
-    ("contact_attempt", _ATTEMPT_ADDED_COLUMNS),
-    ("task", _TASK_ADDED_COLUMNS),
-    ("app_user", _USER_ADDED_COLUMNS),
-)
-
-# Composite indexes added after their tables first shipped (PERF-006 / PERF-023).
-# ``create_all`` builds these on a *fresh* DB (they're declared in the models'
-# ``__table_args__``) but cannot add them to an already-created table — so we
-# issue ``CREATE INDEX IF NOT EXISTS`` (valid on SQLite + Postgres, idempotent
-# on a fresh DB where create_all already made them). Each maps an index name to
-# its (table, columns) so the DDL stays in sync with the model declarations.
-_ADDED_INDEXES: tuple[tuple[str, str, str], ...] = (
-    ("ix_attempt_tenant_occurred", "contact_attempt", "tenant_id, occurred_on, id"),
-    (
-        "ix_attempt_tenant_cid_occurred",
-        "contact_attempt",
-        "tenant_id, display_cluster_id, occurred_on, id",
-    ),
-    ("ix_task_tenant_created", "task", "tenant_id, created_at, id"),
-)
+# The revision whose schema matches what the retired additive ``init_db``
+# path produced. A database with tables but no ``alembic_version`` was
+# maintained by that path — it is adopted by *stamping* this revision
+# (recording "you are already here"), never by replaying the baseline.
+_BASELINE_REVISION = "0001"
+_ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
 
 def make_engine(url: str | None = None) -> Engine:
@@ -93,45 +48,33 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
 
 def init_db(eng: Engine | None = None) -> None:
-    """Create tables if absent, then apply lightweight additive migrations.
+    """Bring the schema to the current Alembic head (PRD #134).
 
-    Fresh DBs get every column from ``create_all``; an existing DB from an
-    earlier slice gets new columns back-filled by ``_migrate_added_columns``
-    (a stand-in for Alembic, which lands later)."""
-    # Import models so they register on Base.metadata before create_all.
-    from . import models  # noqa: F401
+    A fresh database gets everything by running the migration chain; a
+    pre-Alembic database (tables present, no ``alembic_version``) is stamped
+    at the baseline its schema already matches, then upgraded. Runs at app
+    boot — safe while the deploy is one machine with one writer (ADR-064);
+    if that ever changes, this moves to a release step (docs/DEPLOYMENT.md).
+
+    Ephemeral *test* databases don't come through here: fixtures use
+    ``Base.metadata.create_all`` for speed, and the dedicated migration
+    tests prove the two paths produce the same schema.
+    """
+    from alembic import command
+    from alembic.config import Config
 
     target = eng or engine
-    Base.metadata.create_all(target)
-    _migrate_added_columns(target)
-    _ensure_added_indexes(target)
+    cfg = Config(str(_ALEMBIC_INI))
+    # The running process already imports the app; the ini's prepend_sys_path
+    # is only for CLI invocations, and would otherwise pile a duplicate path
+    # entry onto sys.path at every boot.
+    cfg.set_main_option("prepend_sys_path", "")
+    cfg.attributes["connection"] = target
 
-
-def _migrate_added_columns(eng: Engine) -> None:
-    """Back-fill columns added to already-created tables (additive only)."""
-    insp = inspect(eng)
-    table_names = set(insp.get_table_names())
-    for table, columns in _ADDITIVE_MIGRATIONS:
-        if table not in table_names:
-            continue  # create_all already built it with all columns
-        existing = {c["name"] for c in insp.get_columns(table)}
-        missing = {n: ddl for n, ddl in columns.items() if n not in existing}
-        if not missing:
-            continue
-        with eng.begin() as conn:
-            for name, ddl in missing.items():
-                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
-
-
-def _ensure_added_indexes(eng: Engine) -> None:
-    """Create composite indexes added to already-existing tables (idempotent)."""
-    insp = inspect(eng)
-    table_names = set(insp.get_table_names())
-    with eng.begin() as conn:
-        for name, table, columns in _ADDED_INDEXES:
-            if table not in table_names:
-                continue  # create_all built it fresh, indexes included
-            conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({columns})"))
+    tables = set(inspect(target).get_table_names())
+    if tables and "alembic_version" not in tables:
+        command.stamp(cfg, _BASELINE_REVISION)
+    command.upgrade(cfg, "head")
 
 
 def get_db() -> Iterator[Session]:

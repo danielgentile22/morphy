@@ -40,12 +40,14 @@ puller = [
 # Lead-triage write-layer (ADR-055). DB-agnostic via SQLAlchemy: SQLite by
 # default, Postgres via DATABASE_URL=postgresql+psycopg://... PyJWT is the
 # small vetted lib for the HS256 session tokens (password hashing is stdlib
-# PBKDF2 — no extra dep). This group is exactly what the Docker image
-# installs (uv export --only-group backend), so keep it slim.
+# PBKDF2 — no extra dep). Alembic lives here (not dev) because the app runs
+# upgrade-to-head at boot (PRD #134). This group is exactly what the Docker
+# image installs (uv export --only-group backend), so keep it slim.
 backend = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "sqlalchemy>=2.0",
+    "alembic>=1.13",
     "PyJWT>=2.8",
     "psycopg[binary]>=3.1",
 ]

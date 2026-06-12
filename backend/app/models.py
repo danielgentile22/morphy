@@ -134,9 +134,7 @@ class AntennaOverride(Base):
       Lead/owner-cluster to hang them on, so they live here.
 
     PK ``(tenant_id, asr)`` — one row per antenna per team, created lazily on
-    first edit. An antenna with no row is simply unedited (not archived). A
-    brand-new table, so ``create_all`` builds it on any DB — no additive
-    migration entry needed.
+    first edit. An antenna with no row is simply unedited (not archived).
     """
 
     __tablename__ = "antenna_override"
@@ -171,9 +169,6 @@ class Credential(Base):
     order). Living in the app DB means Litestream's continuous replication
     now covers credentials — the backup gap the interim users.txt copy
     papered over.
-
-    A brand-new table, so ``create_all`` builds it on any DB — no additive
-    migration entry needed.
     """
 
     __tablename__ = "credential"
@@ -212,7 +207,7 @@ class Task(Base):
 
     The thin tracer ships title / description / status / creator / timestamps;
     links (owner/tower), assignee, due date, priority, labels, and source
-    follow in #110. Schema changes ride the additive ``init_db`` migration.
+    follow in #110.
     """
 
     __tablename__ = "task"
@@ -269,9 +264,6 @@ class UserSetting(Base):
     ``value`` is ``Text`` (not ``String(255)``) because some keys hold opaque
     client-owned JSON blobs (a saved filter snapshot, a home-view) the backend
     persists + serves without inspecting.
-
-    A brand-new table, so ``create_all`` builds it on any DB — no additive
-    migration entry needed.
     """
 
     __tablename__ = "user_setting"

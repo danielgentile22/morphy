@@ -362,7 +362,7 @@ backup).
 | A **non-secret env var** (`fly.toml [env]`) | edit `fly.toml`, then `./deploy.sh code` (it's deploy config) |
 | **Restart** the machine | `fly apps restart morphy-consulting` |
 | **Logs / status / shell** | `fly logs` · `fly status` · `fly ssh console` (all `--app morphy-consulting`) |
-| **Roll back** a bad deploy | `git checkout <good-sha>` → `./deploy.sh code` (the `init_db` migration is additive, so older code stays compatible) |
+| **Roll back** a bad deploy | `git checkout <good-sha>` → `./deploy.sh code` — fine while the schema hasn't moved past the old code's Alembic head; if the bad deploy ran a migration the old code can't read, write a `downgrade`-driven fix forward instead of rolling back blindly |
 
 **Conventions that must hold (don't violate these):**
 
@@ -381,7 +381,12 @@ backup).
   `forward_auth` gate (`deploy.sh smoke` asserts unauth → 401/403).
 - **`/data/*` is PII** — keep it cache-bypassed at Cloudflare (orange-cloud + the
   `/data/*` cache rule); it must never sit at the edge.
-- **Schema changes** ride the additive `init_db` migration until Alembic lands.
+- **Schema changes** ship as Alembic revisions (PRD #134; see
+  `backend/README.md` "Migrations"). The app runs upgrade-to-head at boot —
+  safe *because of* the one-machine/one-writer invariant above. If that
+  invariant ever falls (multi-machine, multi-writer Postgres), move the
+  upgrade out of boot and into a release step that runs once before new code
+  starts.
 
 ### Local / CI commands
 

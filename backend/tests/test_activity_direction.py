@@ -10,11 +10,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.orm import Session
-from sqlalchemy.pool import StaticPool
-
-from backend.app.db import init_db
 from backend.app.lead_store import LeadStore
 
 CID = "abc123def456"
@@ -74,40 +69,6 @@ def test_replies_are_tenant_scoped(store_factory: Callable[[int], LeadStore]) ->
     assert store_factory(2).list_replies(CID) == []  # another tenant sees nothing
 
 
-# ── additive migration: direction back-fills an existing contact_attempt ──────
-_LEGACY_ATTEMPT_DDL = """
-CREATE TABLE contact_attempt (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tenant_id INTEGER NOT NULL,
-    display_cluster_id VARCHAR(64) NOT NULL,
-    occurred_on DATE NOT NULL,
-    channel VARCHAR(32) NOT NULL,
-    outcome VARCHAR(64) NOT NULL DEFAULT '',
-    note TEXT NOT NULL DEFAULT '',
-    created_at DATETIME
-)
-"""
-
-
-def test_migration_backfills_direction_on_existing_attempts() -> None:
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
-    )
-    with eng.begin() as conn:
-        conn.execute(text(_LEGACY_ATTEMPT_DDL))
-        conn.execute(
-            text(
-                "INSERT INTO contact_attempt (tenant_id, display_cluster_id, occurred_on, channel) "
-                "VALUES (1, 'old1', '2026-01-01', 'phone')"
-            )
-        )
-    assert "direction" not in {c["name"] for c in inspect(eng).get_columns("contact_attempt")}
-
-    init_db(eng)  # create_all is a no-op for the existing table; migration adds the column
-
-    cols = {c["name"] for c in inspect(eng).get_columns("contact_attempt")}
-    assert "direction" in cols
-    # The pre-existing row defaults to outbound (not a reply).
-    rows = LeadStore(Session(bind=eng, future=True), 1).list_attempts("old1")
-    assert len(rows) == 1
-    assert rows[0].direction == "outbound"
+# The pre-#106 "direction back-fills an existing contact_attempt" migration
+# scenario moved to test_migration.py (prod-shaped adoption) when the additive
+# init_db path was retired for Alembic (PRD #134).
