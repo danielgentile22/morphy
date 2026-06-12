@@ -315,14 +315,16 @@ FLY_APP="$APP" APP_URL="https://<domain>" ./deploy.sh smoke   # SPA 200, unauth 
 
 The live app is one Docker image (SPA + FastAPI + Caddy + Litestream + rclone) on
 one Fly machine. **Updating it** means rebuilding that image or refreshing the
-data on its volume. All commands assume `FLY_APP=morphy-consulting`.
+data on its volume. `deploy.sh` defaults to the production values
+(`FLY_APP=morphy-consulting`, `R2_REMOTE=r2:morphy-prod/composite`) — override
+them only to target a different environment.
 
 **Update the code — the common case (any frontend or backend change):**
 
 ```bash
 git checkout main && git pull                       # deploy from a clean, current tree
-FLY_APP=morphy-consulting ./deploy.sh code          # remote build → roll the machine
-FLY_APP=morphy-consulting ./deploy.sh smoke         # SPA 200 · unauth /data 401 · /api/health 200
+./deploy.sh code                                    # remote build → roll the machine
+./deploy.sh smoke                                   # SPA 200 · unauth /data 401 · /api/health 200
 ```
 
 `fly deploy` ships the **working tree**, not `git HEAD` — so deploy from a clean
@@ -336,8 +338,8 @@ after (Cloudflare won't cache the SPA shell, but your browser may hold old JS).
 **Update the map data (after a recompose):**
 
 ```bash
-FLY_APP=morphy-consulting R2_REMOTE=r2:morphy-prod/composite ./deploy.sh data          # dry-run (default)
-FLY_APP=morphy-consulting R2_REMOTE=r2:morphy-prod/composite ./deploy.sh data --apply  # laptop→R2→volume
+./deploy.sh data                                    # dry-run (default)
+./deploy.sh data --apply                            # laptop→R2→volume
 fly apps restart morphy-consulting                  # REQUIRED — reload the owners index (see gotchas)
 ```
 

@@ -19,18 +19,20 @@
 # `code` refuses to deploy a dirty working tree (fly builds the tree, not HEAD);
 # set ALLOW_DIRTY=1 to override for a local experiment.
 #
-# Config via env (with defaults):
-#   FLY_APP        Fly app name              (pilot-app)
+# Config via env (defaults are the live production values — a bare
+# `./deploy.sh code` ships to prod; override FLY_APP/R2_REMOTE only for a
+# different environment):
+#   FLY_APP        Fly app name              (morphy-consulting)
 #   COMPOSITE_SRC  laptop composite dir      (data/processed/composite)
-#   R2_REMOTE      rclone R2 path            (r2:pilot-composite/composite)
+#   R2_REMOTE      rclone R2 path            (r2:morphy-prod/composite)
 #   VOLUME_DEST    composite path on volume  (/data/processed/composite)
 #   APP_URL        base URL for smoke        (https://$FLY_APP.fly.dev)
 #   PYTHON         local python              (python3)
 set -euo pipefail
 
-FLY_APP="${FLY_APP:-pilot-app}"
+FLY_APP="${FLY_APP:-morphy-consulting}"
 COMPOSITE_SRC="${COMPOSITE_SRC:-data/processed/composite}"
-R2_REMOTE="${R2_REMOTE:-r2:pilot-composite/composite}"
+R2_REMOTE="${R2_REMOTE:-r2:morphy-prod/composite}"
 VOLUME_DEST="${VOLUME_DEST:-/data/processed/composite}"
 APP_URL="${APP_URL:-https://${FLY_APP}.fly.dev}"
 PYTHON="${PYTHON:-python3}"
