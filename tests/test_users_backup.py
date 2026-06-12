@@ -33,7 +33,7 @@ def _run_once(env_overrides: dict[str, str]) -> subprocess.CompletedProcess:
     env = {
         k: v
         for k, v in os.environ.items()
-        if k not in ("USERS_FILE", "USERS_BACKUP_DEST", "LITESTREAM_BUCKET")
+        if k not in ("USERS_FILE", "USERS_BACKUP_DEST") and not k.startswith("LITESTREAM_")
     }
     env.update(env_overrides)
     return subprocess.run(
