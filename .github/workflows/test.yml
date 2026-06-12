@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Check if tests directory exists
         id: check_tests
@@ -36,7 +36,7 @@ jobs:
         if: steps.check_tests.outputs.has_tests == 'false'
         run: echo "No tests/ directory yet — Section 6 of the production-readiness plan will populate this."
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         if: steps.check_tests.outputs.has_tests == 'true'
         with:
           python-version: "3.11"
