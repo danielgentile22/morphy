@@ -31,6 +31,7 @@ internals.
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 
@@ -747,3 +748,253 @@ def test_owner_lookup_no_shards(owner_edge_fixture):
     assert list(ducked.columns) == ["owner_cluster_size", "owner_cluster_value_total"]
     assert ducked.index.name == "owner_cluster_id"
     assert len(ducked) == 0
+
+
+# ═══ Stage 4: slim parquet (parcels_attr) + facets ═════════════════════════
+#
+# Equivalence definition (fixed before the migration):
+#
+# 1. **parcels_attr.parquet** — same column names in the same order
+#    (attr_columns over the FIRST source file's schema; a column missing
+#    from a later shard reads as NULL, a column present only in a later
+#    shard is excluded — both like the legacy promoting concat); same row
+#    count; identical cell values (NaN ≡ None). Rows sorted by
+#    interestingness_score desc with ties in source order (pyarrow's
+#    stable sort ≡ ORDER BY score DESC NULLS LAST, filename, row number);
+#    with no sort column, source order preserved. Row groups ≤
+#    ROW_GROUP_SIZE and zstd compression in both writers (the DuckDB-WASM
+#    range-query contract); byte layout is NOT contractual. A column that
+#    is entirely null in the source (arrow `null` type — e.g. MT's
+#    situs_state, surfaced by the real-data check) has no real stored
+#    type: the new engine writes it as VARCHAR (the semantically right
+#    type), so its pandas round-trip dtype differs from legacy's
+#    object-from-null — values (all null) compared, dtype exempt.
+# 2. **facets.json** — schema_version / state_fips / total exact; numeric
+#    min/max exact (NULL → null). Categorical lists hold the same
+#    (value, count) pairs compared under canonical (count desc, value asc)
+#    order — the legacy order among equal counts was value_counts
+#    encounter-order (non-contractual); the new engine emits the canonical
+#    order. When MAX_CATEGORICAL_VALUES truncates at a count tie, which
+#    tied values survive is engine-dependent (documented tolerance).
+# 3. **Atomicity** — temp-file + replace in both engines.
+
+
+def _legacy_build_facets_outputs(state_dir, out_dir):
+    """Frozen legacy facets engine (facets.py @ b0602ab, verbatim
+    semantics): per-shard projected read + promoting concat + pyarrow
+    sort + small-row-group write; pyarrow value_counts facets. Writes
+    parcels_attr.parquet under out_dir; returns the facets dict
+    (without the state_fips key the caller adds)."""
+    import pyarrow as pa
+    import pyarrow.compute as pc
+    import pyarrow.parquet as pq
+    from preprocess.facets import CATEGORICAL_FACETS as CAT
+    from preprocess.facets import MAX_CATEGORICAL_VALUES as MAXC
+    from preprocess.facets import NUMERIC_FACETS as NUM
+    from preprocess.facets import ROW_GROUP_SIZE, SORT_COLUMN, attr_columns
+
+    single = state_dir / "parcels.parquet"
+    if single.exists():
+        source, is_sharded = single, False
+    else:
+        source, is_sharded = state_dir / "parcels", True
+
+    if is_sharded:
+        first_shard = next(iter(sorted(source.glob("*.parquet"))))
+        schema_names = pq.ParquetFile(first_shard).schema_arrow.names
+    else:
+        schema_names = pq.ParquetFile(source).schema_arrow.names
+    keep = attr_columns(schema_names)
+
+    if not is_sharded:
+        table = pq.read_table(source, columns=keep)
+    else:
+        tables = []
+        for shard in sorted(source.glob("*.parquet")):
+            pf = pq.ParquetFile(shard)
+            present = [c for c in keep if c in pf.schema_arrow.names]
+            tables.append(pq.read_table(shard, columns=present))
+        table = pa.concat_tables(tables, promote_options="default")
+    if SORT_COLUMN in table.column_names:
+        table = table.sort_by([(SORT_COLUMN, "descending")])
+
+    pq.write_table(
+        table, out_dir / "parcels_attr.parquet", row_group_size=ROW_GROUP_SIZE, compression="zstd"
+    )
+
+    categorical = {}
+    for col in CAT:
+        if col not in table.column_names:
+            continue
+        counts = pc.value_counts(table.column(col))
+        pairs = []
+        for i in range(len(counts)):
+            value = counts.field("values")[i].as_py()
+            if value is None or value == "":
+                continue
+            pairs.append({"value": value, "count": counts.field("counts")[i].as_py()})
+        pairs.sort(key=lambda p: p["count"], reverse=True)
+        categorical[col] = pairs[:MAXC]
+    numeric = {}
+    for col in NUM:
+        if col not in table.column_names:
+            continue
+        mm = pc.min_max(table.column(col)).as_py()
+        numeric[col] = {"min": mm["min"], "max": mm["max"]}
+    from preprocess.facets import FACETS_SCHEMA_VERSION
+
+    return {
+        "schema_version": FACETS_SCHEMA_VERSION,
+        "total": table.num_rows,
+        "categorical": categorical,
+        "numeric": numeric,
+    }
+
+
+def _canon_facets(facets: dict) -> dict:
+    out = json.loads(json.dumps(facets))  # deep copy, JSON-normalized scalars
+    for col, pairs in out.get("categorical", {}).items():
+        out["categorical"][col] = sorted(pairs, key=lambda p: (-p["count"], str(p["value"])))
+    return out
+
+
+def _assert_facets_outputs_equivalent(state_dir, legacy_dir, produced_facets: dict) -> None:
+    """Build the frozen legacy outputs into legacy_dir, then compare both
+    artifacts against what the DuckDB engine wrote under state_dir."""
+    legacy_facets = _legacy_build_facets_outputs(state_dir, legacy_dir)
+
+    new_attr = pd.read_parquet(state_dir / "parcels_attr.parquet")
+    old_attr = pd.read_parquet(legacy_dir / "parcels_attr.parquet")
+    assert list(new_attr.columns) == list(old_attr.columns)
+    # All-null source columns: values compared, dtype exempt (criterion 1).
+    all_null = [c for c in old_attr.columns if old_attr[c].isna().all()]
+    for c in all_null:
+        assert new_attr[c].isna().all() and len(new_attr[c]) == len(old_attr[c])
+    strict = [c for c in old_attr.columns if c not in all_null]
+    pd.testing.assert_frame_equal(new_attr[strict], old_attr[strict])
+
+    import pyarrow.parquet as pq
+
+    meta = pq.ParquetFile(state_dir / "parcels_attr.parquet").metadata
+    from preprocess.facets import ROW_GROUP_SIZE
+
+    assert all(meta.row_group(i).num_rows <= ROW_GROUP_SIZE for i in range(meta.num_row_groups))
+    assert meta.row_group(0).column(0).compression == "ZSTD"
+
+    produced = {k: v for k, v in produced_facets.items() if k != "state_fips"}
+    assert _canon_facets(produced) == _canon_facets(legacy_facets)
+
+
+def test_facets_equivalence_via_compose(fixture_dirs, registered_normalizers, tmp_path):
+    """Full compose then the DuckDB build_facets vs the frozen legacy
+    engine over the same composite shards."""
+    from preprocess.compose import ComposeConfig, compose
+    from preprocess.facets import build_facets
+
+    compose(ComposeConfig(state=STATE))
+    comp_root = fixture_dirs["composite"]
+    build_facets("05", composite_root=comp_root)
+
+    state_dir = comp_root / "05"
+    legacy_dir = tmp_path / "legacy"
+    legacy_dir.mkdir()
+
+    produced = json.loads((state_dir / "facets.json").read_text())
+    _assert_facets_outputs_equivalent(state_dir, legacy_dir, produced)
+    # Not vacuous: 8 fixture parcels, sorted by score, county facet present.
+    assert produced["total"] == 8
+    assert {p["value"] for p in produced["categorical"]["county_fips"]} == {
+        "05001",
+        "05003",
+        "05005",
+        "05007",
+    }
+
+
+def test_facets_equivalence_synthetic_edges(tmp_path, monkeypatch):
+    """Sharded state with schema variance, score ties across shards,
+    blank/None categorical values, and a None numeric value."""
+    from preprocess.facets import build_facets
+
+    state_dir = tmp_path / "comp" / "42"
+    shards = state_dir / "parcels"
+    shards.mkdir(parents=True)
+
+    s1 = pd.DataFrame(
+        {
+            "parcel_id_full": ["A1", "A2", "A3"],
+            "owner_kind": ["llc", "", None],
+            "land_use_desc": ["Vacant", "Vacant", "Farm"],
+            "county_fips": ["42001", "42001", "42003"],
+            "assessed_value": [10.0, None, 30.0],
+            "interestingness_score": [0.5, 0.5, 0.9],  # tie inside the shard
+            "owner_cluster_size": [1, 2, 3],
+            # All-null in every shard → arrow `null` type in the source; the
+            # real-data MT check caught the dtype drift this causes (engines
+            # must both round-trip it to pandas object).
+            "situs_state": [None, None, None],
+            "geometry": [b"x", b"y", b"z"],
+            "_internal": ["d", "d", "d"],
+        }
+    )
+    s2 = pd.DataFrame(
+        {
+            # land_use_desc missing entirely → NULLs in the slim parquet;
+            # only_in_b present only here → excluded from the slim parquet.
+            "parcel_id_full": ["B1", "B2"],
+            "owner_kind": ["trust", "llc"],
+            "county_fips": ["42003", "42005"],
+            "assessed_value": [40.0, 50.0],
+            "interestingness_score": [0.5, 1.2],  # 0.5 ties across shards
+            "owner_cluster_size": [4, 5],
+            "situs_state": [None, None],
+            "geometry": [b"x", b"y"],
+            "only_in_b": ["zzz", "zzz"],
+        }
+    )
+    s1.to_parquet(shards / "s1.parquet", index=False)
+    s2.to_parquet(shards / "s2.parquet", index=False)
+
+    build_facets("42", composite_root=tmp_path / "comp")
+    legacy_dir = tmp_path / "legacy"
+    legacy_dir.mkdir()
+    produced = json.loads((state_dir / "facets.json").read_text())
+    _assert_facets_outputs_equivalent(state_dir, legacy_dir, produced)
+
+    attr = pd.read_parquet(state_dir / "parcels_attr.parquet")
+    assert "geometry" not in attr.columns and "_internal" not in attr.columns
+    assert "only_in_b" not in attr.columns
+    assert list(attr["parcel_id_full"]) == ["B2", "A3", "A1", "A2", "B1"]  # ties in file order
+    assert attr["land_use_desc"].isna().tolist() == [True, False, False, False, True]
+    # Blank/None owner_kind dropped from the facet; counts correct.
+    kinds = {p["value"]: p["count"] for p in produced["categorical"]["owner_kind"]}
+    assert kinds == {"llc": 2, "trust": 1}
+    assert produced["numeric"]["assessed_value"] == {"min": 10.0, "max": 50.0}
+
+
+def test_facets_equivalence_single_file_layout(tmp_path):
+    """The legacy single-file parcels.parquet layout still builds and
+    matches the frozen engine."""
+    from preprocess.facets import build_facets
+
+    state_dir = tmp_path / "comp" / "43"
+    state_dir.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "parcel_id_full": ["C1", "C2"],
+            "owner_kind": ["llc", "individual"],
+            "county_fips": ["43001", "43001"],
+            "assessed_value": [5.0, 15.0],
+            "interestingness_score": [0.2, 0.7],
+            "owner_cluster_size": [1, 1],
+            "geometry": [b"x", b"y"],
+        }
+    ).to_parquet(state_dir / "parcels.parquet", index=False)
+
+    build_facets("43", composite_root=tmp_path / "comp")
+    legacy_dir = tmp_path / "legacy"
+    legacy_dir.mkdir()
+    produced = json.loads((state_dir / "facets.json").read_text())
+    _assert_facets_outputs_equivalent(state_dir, legacy_dir, produced)
+    attr = pd.read_parquet(state_dir / "parcels_attr.parquet")
+    assert list(attr["parcel_id_full"]) == ["C2", "C1"]
