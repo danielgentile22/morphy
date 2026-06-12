@@ -9,6 +9,7 @@
     "build": "svelte-check --tsconfig ./tsconfig.json && vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "generate:api": "openapi-typescript ../backend/openapi.json -o src/lib/api-types.ts",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:e2e": "playwright test",
@@ -21,6 +22,7 @@
     "@types/node": "^25.9.1",
     "@vitest/coverage-v8": "^4.1.7",
     "jsdom": "^29.1.1",
+    "openapi-typescript": "7.13.0",
     "svelte": "^5.55.9",
     "svelte-check": "^4.4.8",
     "typescript": "^6.0.3",
@@ -31,5 +33,10 @@
     "@duckdb/duckdb-wasm": "^1.33.1-dev45.0",
     "maplibre-gl": "^5.24.0",
     "pmtiles": "^4.4.1"
+  },
+  "overrides": {
+    "openapi-typescript": {
+      "typescript": "$typescript"
+    }
   }
 }

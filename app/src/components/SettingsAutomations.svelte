@@ -5,11 +5,10 @@
   // /api/settings — not the per-user store.
   import { onMount } from 'svelte';
   import { request } from '../lib/leads-api';
+  import type { components } from '../lib/api-types';
 
-  interface Settings {
-    auto_followup_enabled: boolean;
-    auto_followup_window_days: number;
-  }
+  // Generated from the backend's SettingsResponse (PRD #133).
+  type Settings = components['schemas']['SettingsResponse'];
   let settings = $state<Settings | null>(null);
   let status = $state<'idle' | 'saved' | 'error'>('idle');
 

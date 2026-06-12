@@ -6,23 +6,17 @@
   import { request, ApiError } from '../lib/leads-api';
   import { tasks } from '../lib/tasks-store.svelte';
   import { auth } from '../lib/auth-store.svelte';
+  import type { components } from '../lib/api-types';
 
   // Suppressed (heading={false}) when embedded in the single scrolling
   // Dashboard, which supplies one uniform section heading (PRD #125); the
   // filter bar stays. Default true keeps the standalone render self-titled.
   let { heading = true }: { heading?: boolean } = $props();
 
-  interface Stats {
-    funnel: Record<string, number>;
-    conversion: Record<string, number>;
-    reply_rate: number;
-    win_rate: number;
-    volume_by_channel: Record<string, number>;
-    activity_total: number;
-    active_days: number;
-    by_state: Record<string, Record<string, number>>;
-    by_member: Record<string, number>;
-  }
+  // Generated from the backend's StatsResponse (PRD #133). `Required<…>`:
+  // the by_state/by_member breakdowns default server-side but are always
+  // serialized in the response.
+  type Stats = Required<components['schemas']['StatsResponse']>;
 
   let stats = $state<Stats | null>(null);
   let loading = $state(true);

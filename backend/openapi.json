@@ -1,0 +1,3632 @@
+{
+  "components": {
+    "schemas": {
+      "ActivityEventOut": {
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "cluster_id": {
+            "title": "Cluster Id",
+            "type": "string"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "logged_by_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logged By User Id"
+          },
+          "member_name": {
+            "default": "",
+            "title": "Member Name",
+            "type": "string"
+          },
+          "owner_name": {
+            "default": "",
+            "title": "Owner Name",
+            "type": "string"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "date",
+          "kind",
+          "channel",
+          "cluster_id"
+        ],
+        "title": "ActivityEventOut",
+        "type": "object"
+      },
+      "ActivityResponse": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityEventOut"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "last_contact_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Contact On"
+          },
+          "last_reply_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Reply On"
+          }
+        },
+        "required": [
+          "count",
+          "events"
+        ],
+        "title": "ActivityResponse",
+        "type": "object"
+      },
+      "AntennaState": {
+        "description": "The team's editable layer over one antenna (by ASR). All fields default\nso an antenna with no override row serializes as the empty/unedited state.",
+        "properties": {
+          "address": {
+            "default": "",
+            "title": "Address",
+            "type": "string"
+          },
+          "archived": {
+            "default": false,
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "asr": {
+            "title": "Asr",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "title": "Notes",
+            "type": "string"
+          },
+          "owner_email": {
+            "default": "",
+            "title": "Owner Email",
+            "type": "string"
+          },
+          "owner_name": {
+            "default": "",
+            "title": "Owner Name",
+            "type": "string"
+          },
+          "owner_phone": {
+            "default": "",
+            "title": "Owner Phone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asr"
+        ],
+        "title": "AntennaState",
+        "type": "object"
+      },
+      "AntennaUpdate": {
+        "description": "Partial update \u2014 omit a field to leave it unchanged.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "archived": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "owner_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Email"
+          },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          },
+          "owner_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Phone"
+          }
+        },
+        "title": "AntennaUpdate",
+        "type": "object"
+      },
+      "ArchivedAsrsResponse": {
+        "description": "The ASRs the tenant has archived \u2014 the map + list drop these by default.",
+        "properties": {
+          "asrs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Asrs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "asrs"
+        ],
+        "title": "ArchivedAsrsResponse",
+        "type": "object"
+      },
+      "AttentionItemOut": {
+        "properties": {
+          "cluster_id": {
+            "default": "",
+            "title": "Cluster Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "owner_name": {
+            "default": "",
+            "title": "Owner Name",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "when": {
+            "title": "When",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "when"
+        ],
+        "title": "AttentionItemOut",
+        "type": "object"
+      },
+      "AttentionResponse": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AttentionItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "items"
+        ],
+        "title": "AttentionResponse",
+        "type": "object"
+      },
+      "CandidatesResponse": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerSummary"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "candidates"
+        ],
+        "title": "CandidatesResponse",
+        "type": "object"
+      },
+      "CarrierOut": {
+        "description": "A ULS spectrum licensee identified on a tower (Slice A / #28). The\nconfidence tag (verified/likely/possible) describes how the ULS license\nwas tied to the tower in #24 \u2014 drives the badge the UI renders.",
+        "properties": {
+          "callsign": {
+            "default": "",
+            "title": "Callsign",
+            "type": "string"
+          },
+          "carrier_name": {
+            "default": "",
+            "title": "Carrier Name",
+            "type": "string"
+          },
+          "confidence_tag": {
+            "default": "",
+            "title": "Confidence Tag",
+            "type": "string"
+          },
+          "license_expiry": {
+            "default": "",
+            "title": "License Expiry",
+            "type": "string"
+          }
+        },
+        "title": "CarrierOut",
+        "type": "object"
+      },
+      "ContactAttemptIn": {
+        "description": "A manually-logged activity event (date \u00b7 channel \u00b7 outcome).\n\n``direction='inbound'`` logs a *reply* (the \"Log reply\" action, #106);\nthe default ``'outbound'`` is a touch we made.",
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "direction": {
+            "default": "outbound",
+            "title": "Direction",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "occurred_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred On"
+          },
+          "outcome": {
+            "default": "",
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "title": "ContactAttemptIn",
+        "type": "object"
+      },
+      "ContactAttemptOut": {
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "direction": {
+            "default": "outbound",
+            "title": "Direction",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "occurred_on": {
+            "title": "Occurred On",
+            "type": "string"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "occurred_on",
+          "channel",
+          "outcome",
+          "note"
+        ],
+        "title": "ContactAttemptOut",
+        "type": "object"
+      },
+      "CountsResponse": {
+        "description": "Live nav counts for the two list surfaces.",
+        "properties": {
+          "candidates": {
+            "title": "Candidates",
+            "type": "integer"
+          },
+          "my_leads": {
+            "title": "My Leads",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "candidates",
+          "my_leads"
+        ],
+        "title": "CountsResponse",
+        "type": "object"
+      },
+      "DismissBody": {
+        "properties": {
+          "cluster_id": {
+            "title": "Cluster Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cluster_id"
+        ],
+        "title": "DismissBody",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Holding": {
+        "description": "One parcel in a Lead's cross-state footprint.",
+        "properties": {
+          "acreage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acreage"
+          },
+          "assessed_value": {
+            "default": 0.0,
+            "title": "Assessed Value",
+            "type": "number"
+          },
+          "bbox": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbox"
+          },
+          "county_fips": {
+            "default": "",
+            "title": "County Fips",
+            "type": "string"
+          },
+          "land_use": {
+            "default": "",
+            "title": "Land Use",
+            "type": "string"
+          },
+          "parcel_id": {
+            "title": "Parcel Id",
+            "type": "string"
+          },
+          "point": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Point"
+          },
+          "solar_count": {
+            "default": 0,
+            "title": "Solar Count",
+            "type": "integer"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "structures": {
+            "items": {
+              "$ref": "#/components/schemas/Structure"
+            },
+            "title": "Structures",
+            "type": "array"
+          },
+          "tower_count": {
+            "default": 0,
+            "title": "Tower Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "parcel_id",
+          "state"
+        ],
+        "title": "Holding",
+        "type": "object"
+      },
+      "LeadDetail": {
+        "properties": {
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/ContactAttemptOut"
+            },
+            "title": "Attempts",
+            "type": "array"
+          },
+          "best_channel": {
+            "default": "",
+            "title": "Best Channel",
+            "type": "string"
+          },
+          "contact_email": {
+            "default": "",
+            "title": "Contact Email",
+            "type": "string"
+          },
+          "contact_name": {
+            "default": "",
+            "title": "Contact Name",
+            "type": "string"
+          },
+          "contact_phone": {
+            "default": "",
+            "title": "Contact Phone",
+            "type": "string"
+          },
+          "holdings": {
+            "items": {
+              "$ref": "#/components/schemas/Holding"
+            },
+            "title": "Holdings",
+            "type": "array"
+          },
+          "mailing_address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MailingAddress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "merged_members": {
+            "items": {
+              "$ref": "#/components/schemas/MergedMember"
+            },
+            "title": "Merged Members",
+            "type": "array"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/OwnerSummary"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tallest_tower_height_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tallest Tower Height M"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "owner",
+          "status",
+          "notes",
+          "updated_at",
+          "attempts"
+        ],
+        "title": "LeadDetail",
+        "type": "object"
+      },
+      "LeadUpdate": {
+        "description": "Partial update \u2014 omit a field to leave it unchanged.",
+        "properties": {
+          "best_channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Channel"
+          },
+          "contact_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Email"
+          },
+          "contact_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Name"
+          },
+          "contact_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Phone"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "LeadUpdate",
+        "type": "object"
+      },
+      "LoginBody": {
+        "properties": {
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginBody",
+        "type": "object"
+      },
+      "MailingAddress": {
+        "properties": {
+          "addr": {
+            "default": "",
+            "title": "Addr",
+            "type": "string"
+          },
+          "city": {
+            "default": "",
+            "title": "City",
+            "type": "string"
+          },
+          "state": {
+            "default": "",
+            "title": "State",
+            "type": "string"
+          },
+          "zip": {
+            "default": "",
+            "title": "Zip",
+            "type": "string"
+          }
+        },
+        "title": "MailingAddress",
+        "type": "object"
+      },
+      "MeResponse": {
+        "properties": {
+          "display_name": {
+            "default": "",
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "email"
+        ],
+        "title": "MeResponse",
+        "type": "object"
+      },
+      "MeUpdate": {
+        "description": "Self-service identity edit (PRD #121). Only the display name is editable;\nemail/team are administered via the credentials file.",
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          }
+        },
+        "title": "MeUpdate",
+        "type": "object"
+      },
+      "MergedMember": {
+        "description": "A raw owner-cluster folded into this Lead by a manual merge (Slice 7 /\n#53). The Lead page lists these so the user can split one back out.",
+        "properties": {
+          "display_cluster_id": {
+            "title": "Display Cluster Id",
+            "type": "string"
+          },
+          "owner_name": {
+            "title": "Owner Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_cluster_id",
+          "owner_name"
+        ],
+        "title": "MergedMember",
+        "type": "object"
+      },
+      "MyLeadsResponse": {
+        "description": "The My-Leads worklist (Slice 5 / #51) \u2014 owners advanced off New, each\ncarrying its status so the client buckets it into a kanban lane.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "leads": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerSummary"
+            },
+            "title": "Leads",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "leads"
+        ],
+        "title": "MyLeadsResponse",
+        "type": "object"
+      },
+      "OverrideBody": {
+        "description": "The other owner-cluster in a manual merge/split (Slice 7 / #53). The\nLead being acted on is the path ``display_cluster_id`` (the survivor on\nmerge); ``source_cluster_id`` is the cluster folded in / split back out.",
+        "properties": {
+          "source_cluster_id": {
+            "title": "Source Cluster Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_cluster_id"
+        ],
+        "title": "OverrideBody",
+        "type": "object"
+      },
+      "OwnerSummary": {
+        "properties": {
+          "active_tower_count": {
+            "default": 0,
+            "title": "Active Tower Count",
+            "type": "integer"
+          },
+          "counties": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Counties",
+            "type": "array"
+          },
+          "cross_state": {
+            "title": "Cross State",
+            "type": "boolean"
+          },
+          "display_cluster_id": {
+            "title": "Display Cluster Id",
+            "type": "string"
+          },
+          "distress_tier": {
+            "title": "Distress Tier",
+            "type": "string"
+          },
+          "in_oz": {
+            "title": "In Oz",
+            "type": "boolean"
+          },
+          "in_qct": {
+            "title": "In Qct",
+            "type": "boolean"
+          },
+          "max_parcel_score": {
+            "title": "Max Parcel Score",
+            "type": "number"
+          },
+          "n_states": {
+            "title": "N States",
+            "type": "integer"
+          },
+          "owner_kind": {
+            "title": "Owner Kind",
+            "type": "string"
+          },
+          "owner_name": {
+            "title": "Owner Name",
+            "type": "string"
+          },
+          "parcel_count": {
+            "title": "Parcel Count",
+            "type": "integer"
+          },
+          "persistent_poverty": {
+            "title": "Persistent Poverty",
+            "type": "boolean"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "solar_count": {
+            "title": "Solar Count",
+            "type": "integer"
+          },
+          "states": {
+            "items": {
+              "type": "string"
+            },
+            "title": "States",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "structure_count": {
+            "default": 0,
+            "title": "Structure Count",
+            "type": "integer"
+          },
+          "structure_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Structure Types",
+            "type": "array"
+          },
+          "tallest_tower_height_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tallest Tower Height M"
+          },
+          "total_assessed_value": {
+            "title": "Total Assessed Value",
+            "type": "number"
+          },
+          "tower_count": {
+            "title": "Tower Count",
+            "type": "integer"
+          },
+          "trigger_asr": {
+            "default": "",
+            "title": "Trigger Asr",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_cluster_id",
+          "owner_name",
+          "owner_kind",
+          "states",
+          "n_states",
+          "cross_state",
+          "parcel_count",
+          "tower_count",
+          "solar_count",
+          "total_assessed_value",
+          "max_parcel_score",
+          "score",
+          "distress_tier",
+          "in_oz",
+          "in_qct",
+          "persistent_poverty",
+          "status"
+        ],
+        "title": "OwnerSummary",
+        "type": "object"
+      },
+      "PasswordChange": {
+        "description": "Self-service password change (PRD #121).",
+        "properties": {
+          "current_password": {
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "PasswordChange",
+        "type": "object"
+      },
+      "PursueBody": {
+        "description": "Pursue an owner from Explore (#109). ``trigger_asr`` is the antenna that\nsparked it \u2014 recorded as the Lead's trigger.",
+        "properties": {
+          "trigger_asr": {
+            "default": "",
+            "title": "Trigger Asr",
+            "type": "string"
+          }
+        },
+        "title": "PursueBody",
+        "type": "object"
+      },
+      "ScoringPresetIn": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "is_default": {
+            "default": false,
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "config"
+        ],
+        "title": "ScoringPresetIn",
+        "type": "object"
+      },
+      "ScoringPresetOut": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "config",
+          "is_default"
+        ],
+        "title": "ScoringPresetOut",
+        "type": "object"
+      },
+      "ScoringPresetsResponse": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/ScoringPresetOut"
+            },
+            "title": "Presets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "presets"
+        ],
+        "title": "ScoringPresetsResponse",
+        "type": "object"
+      },
+      "SettingsResponse": {
+        "properties": {
+          "auto_followup_enabled": {
+            "title": "Auto Followup Enabled",
+            "type": "boolean"
+          },
+          "auto_followup_window_days": {
+            "title": "Auto Followup Window Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "auto_followup_enabled",
+          "auto_followup_window_days"
+        ],
+        "title": "SettingsResponse",
+        "type": "object"
+      },
+      "SettingsUpdate": {
+        "properties": {
+          "auto_followup_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Followup Enabled"
+          },
+          "auto_followup_window_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Followup Window Days"
+          }
+        },
+        "title": "SettingsUpdate",
+        "type": "object"
+      },
+      "StatsResponse": {
+        "properties": {
+          "active_days": {
+            "title": "Active Days",
+            "type": "integer"
+          },
+          "activity_total": {
+            "title": "Activity Total",
+            "type": "integer"
+          },
+          "by_member": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Member",
+            "type": "object"
+          },
+          "by_state": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "title": "By State",
+            "type": "object"
+          },
+          "conversion": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Conversion",
+            "type": "object"
+          },
+          "funnel": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Funnel",
+            "type": "object"
+          },
+          "reply_rate": {
+            "title": "Reply Rate",
+            "type": "number"
+          },
+          "volume_by_channel": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Volume By Channel",
+            "type": "object"
+          },
+          "win_rate": {
+            "title": "Win Rate",
+            "type": "number"
+          }
+        },
+        "required": [
+          "funnel",
+          "conversion",
+          "reply_rate",
+          "win_rate",
+          "volume_by_channel",
+          "activity_total",
+          "active_days"
+        ],
+        "title": "StatsResponse",
+        "type": "object"
+      },
+      "Structure": {
+        "description": "A tower or solar facility hosted on a holding. Tower fields\n(asr/height/lat/lon) are absent on solar entries and vice-versa.",
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "asr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asr"
+          },
+          "carriers": {
+            "items": {
+              "$ref": "#/components/schemas/CarrierOut"
+            },
+            "title": "Carriers",
+            "type": "array"
+          },
+          "height_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height M"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "structure_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structure Kind"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "Structure",
+        "type": "object"
+      },
+      "TaskCreate": {
+        "description": "Create a task. Links (owner/tower), assignee, due, priority, labels all\noptional (#110).",
+        "properties": {
+          "assignee_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee User Id"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "lead_cluster_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Cluster Id"
+          },
+          "priority": {
+            "default": "none",
+            "title": "Priority",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tower_asr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tower Asr"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "TaskCreate",
+        "type": "object"
+      },
+      "TaskOut": {
+        "properties": {
+          "assignee_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee User Id"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "lead_cluster_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Cluster Id"
+          },
+          "priority": {
+            "default": "none",
+            "title": "Priority",
+            "type": "string"
+          },
+          "source": {
+            "default": "manual",
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tower_asr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tower Asr"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TaskOut",
+        "type": "object"
+      },
+      "TaskUpdate": {
+        "description": "Partial update \u2014 omit a field to leave it unchanged. A nullable field\nsent as ``null`` clears it (the route reads ``model_fields_set``).",
+        "properties": {
+          "assignee_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee User Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "labels": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labels"
+          },
+          "lead_cluster_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Cluster Id"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "tower_asr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tower Asr"
+          }
+        },
+        "title": "TaskUpdate",
+        "type": "object"
+      },
+      "TasksResponse": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/TaskOut"
+            },
+            "title": "Tasks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "tasks"
+        ],
+        "title": "TasksResponse",
+        "type": "object"
+      },
+      "TokenResponse": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "expires_in"
+        ],
+        "title": "TokenResponse",
+        "type": "object"
+      },
+      "UserOut": {
+        "description": "A tenant teammate for the assignment UI (#110). ``name`` is the display\nname, falling back to the email.",
+        "properties": {
+          "display_name": {
+            "default": "",
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email"
+        ],
+        "title": "UserOut",
+        "type": "object"
+      },
+      "UserSettingsResponse": {
+        "description": "The resolved per-user preferences (PRD #121), defaults filled in. The\n``home_view`` / ``filter_default`` fields are opaque JSON strings the client\nowns \u2014 the backend persists + serves them without inspecting.",
+        "properties": {
+          "basemap": {
+            "title": "Basemap",
+            "type": "string"
+          },
+          "colorblind": {
+            "title": "Colorblind",
+            "type": "boolean"
+          },
+          "filter_default": {
+            "title": "Filter Default",
+            "type": "string"
+          },
+          "filter_default_apply": {
+            "title": "Filter Default Apply",
+            "type": "boolean"
+          },
+          "home_view": {
+            "title": "Home View",
+            "type": "string"
+          },
+          "theme": {
+            "title": "Theme",
+            "type": "string"
+          },
+          "view_mode": {
+            "title": "View Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "theme",
+          "colorblind",
+          "basemap",
+          "view_mode",
+          "home_view",
+          "filter_default",
+          "filter_default_apply"
+        ],
+        "title": "UserSettingsResponse",
+        "type": "object"
+      },
+      "UserSettingsUpdate": {
+        "description": "Upsert one or more per-user preference keys (PRD #121). Omit a field to\nleave it unchanged (the route reads ``model_fields_set``).",
+        "properties": {
+          "basemap": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basemap"
+          },
+          "colorblind": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Colorblind"
+          },
+          "filter_default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filter Default"
+          },
+          "filter_default_apply": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filter Default Apply"
+          },
+          "home_view": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home View"
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme"
+          },
+          "view_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View Mode"
+          }
+        },
+        "title": "UserSettingsUpdate",
+        "type": "object"
+      },
+      "UsersResponse": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/UserOut"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "users"
+        ],
+        "title": "UsersResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "Ground-Lease Lead Triage",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/activity": {
+      "get": {
+        "description": "The shared activity read model (#112, D9): the tenant's time-ordered\nactivity, narrowed by lead / member / channel / date range. History renders\nit chronologically; Calendar buckets it by date. Includes the recent-\nactivity digest (last contact + last reply).",
+        "operationId": "activity_api_activity_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lead",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lead"
+            }
+          },
+          {
+            "in": "query",
+            "name": "member",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Member"
+            }
+          },
+          {
+            "in": "query",
+            "name": "channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Channel"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Activity"
+      }
+    },
+    "/api/antennas/archived": {
+      "get": {
+        "description": "The ASRs this tenant has archived \u2014 the Explore map + list drop these\nunless the user toggles \"show archived\". Declared before the ``/{asr}``\nroute so the literal path wins the match.",
+        "operationId": "list_archived_antennas_api_antennas_archived_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchivedAsrsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Archived Antennas"
+      }
+    },
+    "/api/antennas/{asr}": {
+      "get": {
+        "description": "The team's manual layer over one antenna (address / archived / manual\nowner details). Empty when never edited.",
+        "operationId": "get_antenna_api_antennas__asr__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asr",
+            "required": true,
+            "schema": {
+              "title": "Asr",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AntennaState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Antenna"
+      },
+      "put": {
+        "description": "Set the archived flag and/or any subset of the editable fields for an\nantenna. Only fields actually sent are touched (``model_fields_set``), so\narchiving doesn't clear an address and vice-versa.",
+        "operationId": "update_antenna_api_antennas__asr__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asr",
+            "required": true,
+            "schema": {
+              "title": "Asr",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AntennaUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AntennaState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Antenna"
+      }
+    },
+    "/api/attention": {
+      "get": {
+        "description": "Unhandled inbound replies + overdue tasks (mine or unassigned) \u2014 the\nDashboard attention feed + nav badge (#111, D10).",
+        "operationId": "attention_api_attention_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttentionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Attention"
+      }
+    },
+    "/api/attention/dismiss": {
+      "post": {
+        "description": "Dismiss a Lead's unhandled reply by appending a newer activity row (the\n\"newer activity clears it\" rule subsumes dismissal \u2014 D10). Attributed to the\ndismissing user so it carries a teammate dimension in activity/stats.",
+        "operationId": "dismiss_attention_api_attention_dismiss_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Dismiss Attention Api Attention Dismiss Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Dismiss Attention"
+      }
+    },
+    "/api/auth/check": {
+      "get": {
+        "description": "Forward-auth seam for the edge (PRD #130): Caddy asks this before\nserving any byte under ``/data/processed/*``. Validates the session\n(cookie first, bearer fallback) and re-checks the username against the\ncredential table \u2014 per-request authority extends to the data plane, so a\nremoved user loses file access on their next fetch. 204 on success, 401\notherwise. One indexed SELECT \u2014 no tenant/user resolution, since the\nedge only needs yes/no.",
+        "operationId": "auth_check_api_auth_check_get",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Auth Check"
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "description": "Username/password sign-in: a session JWT on success, a specific 401 otherwise.\n\nThe JWT is set in an httpOnly/Secure/SameSite=Lax cookie (PRD #130 \u2014 the\nSPA's transport; page scripts can never read it) and still returned in the\nbody for non-browser clients (tests, curl). Same identity-only token (#88)\neither way: tenant/team are re-resolved from the credentials file on every\nrequest.\n\nA brute-force throttle (#77) keyed by ``(ip, username)`` short-circuits with\n429 once failures pass the limit within the window \u2014 even a correct password\nis refused while blocked. The block self-clears as the window rolls forward\n(no hard lockout), and a successful login resets the key.",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login"
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "description": "Sign out: clear the session cookie (PRD #130). After this the browser\ncan no longer fetch the API *or* the gated /data files \u2014 actual sign-out,\nnot just dropped client state. No auth required: clearing an absent or\ninvalid cookie is harmless and must never fail.",
+        "operationId": "logout_api_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout"
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "operationId": "me_api_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Me"
+      }
+    },
+    "/api/candidates": {
+      "get": {
+        "operationId": "candidates_api_candidates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidatesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Candidates"
+      }
+    },
+    "/api/counts": {
+      "get": {
+        "operationId": "counts_api_counts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CountsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Counts"
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Api Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/leads/{display_cluster_id}": {
+      "get": {
+        "operationId": "get_lead_api_leads__display_cluster_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "display_cluster_id",
+            "required": true,
+            "schema": {
+              "title": "Display Cluster Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Lead"
+      },
+      "put": {
+        "operationId": "update_lead_api_leads__display_cluster_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "display_cluster_id",
+            "required": true,
+            "schema": {
+              "title": "Display Cluster Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeadUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Lead"
+      }
+    },
+    "/api/leads/{display_cluster_id}/attempts": {
+      "post": {
+        "description": "Append a manual activity event (date \u00b7 channel \u00b7 outcome) to the log.\n\n``direction='inbound'`` records a *reply* (the \"Log reply\" flow, #106);\nthe default ``'outbound'`` is a touch we made. Status-transition rows are\nauto-logged on ``PUT`` instead; this is the co-founder explicitly recording\nan outreach event or a reply.",
+        "operationId": "log_attempt_api_leads__display_cluster_id__attempts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "display_cluster_id",
+            "required": true,
+            "schema": {
+              "title": "Display Cluster Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactAttemptIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Log Attempt"
+      }
+    },
+    "/api/leads/{display_cluster_id}/merge": {
+      "post": {
+        "description": "Merge ``source_cluster_id`` into this Lead (the path id is the survivor).\n\nBoth clusters must exist in the owners index. Afterward the source resolves\nto this Lead everywhere (map, Candidates, kanban, Lead page). Overrides live\nin Postgres keyed on raw cluster ids, so they survive an index recompute.",
+        "operationId": "merge_cluster_api_leads__display_cluster_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "display_cluster_id",
+            "required": true,
+            "schema": {
+              "title": "Display Cluster Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Merge Cluster"
+      }
+    },
+    "/api/leads/{display_cluster_id}/pursue": {
+      "post": {
+        "description": "Pursue an owner from Explore (#109, ADR-067): advance New \u2192 Researching\nand record the triggering antenna (a ``channel='flag'`` activity row). The\nwhole owner becomes a Lead (one human, one call); the trigger preserves the\ndiscovery context. Idempotent \u2014 pursuing a worked owner just adds a trigger.",
+        "operationId": "pursue_owner_api_leads__display_cluster_id__pursue_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "display_cluster_id",
+            "required": true,
+            "schema": {
+              "title": "Display Cluster Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PursueBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pursue Owner"
+      }
+    },
+    "/api/leads/{display_cluster_id}/split": {
+      "post": {
+        "description": "Split ``source_cluster_id`` back out of this Lead \u2014 it returns to its own\nraw cluster as an independent Lead. Reverses a prior merge (no lead state\nwas ever moved, so the source's own status/notes/attempts are intact).",
+        "operationId": "split_cluster_api_leads__display_cluster_id__split_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "display_cluster_id",
+            "required": true,
+            "schema": {
+              "title": "Display Cluster Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Split Cluster"
+      }
+    },
+    "/api/me": {
+      "put": {
+        "description": "Edit the signed-in user's display name (PRD #121). A blank name is\nallowed \u2014 it falls back to the email at every render site.",
+        "operationId": "update_me_api_me_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Me"
+      }
+    },
+    "/api/me/password": {
+      "post": {
+        "description": "Self-service password change (PRD #121). Routes through the *one*\nsanctioned runtime writer (``users.change_password`` \u2192 the store's\npassword writer); wrong current password \u2192 401 (nothing written),\nsuccess is live on the next login attempt.",
+        "operationId": "change_my_password_api_me_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Change My Password"
+      }
+    },
+    "/api/me/settings": {
+      "get": {
+        "operationId": "get_my_settings_api_me_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get My Settings"
+      },
+      "put": {
+        "description": "Upsert one or more preference keys (PRD #121). ``home_view`` /\n``filter_default`` are opaque client-owned blobs persisted verbatim \u2014 the\nbackend never inspects them (same posture as ``ScoringPreset.config``).",
+        "operationId": "update_my_settings_api_me_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update My Settings"
+      }
+    },
+    "/api/my-leads": {
+      "get": {
+        "operationId": "my_leads_api_my_leads_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 2000,
+              "maximum": 20000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyLeadsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "My Leads"
+      }
+    },
+    "/api/scoring-presets": {
+      "get": {
+        "operationId": "list_scoring_presets_api_scoring_presets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoringPresetsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Scoring Presets"
+      },
+      "post": {
+        "operationId": "create_scoring_preset_api_scoring_presets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScoringPresetIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoringPresetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Scoring Preset"
+      }
+    },
+    "/api/scoring-presets/{preset_id}": {
+      "delete": {
+        "operationId": "delete_scoring_preset_api_scoring_presets__preset_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "preset_id",
+            "required": true,
+            "schema": {
+              "title": "Preset Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Scoring Preset"
+      }
+    },
+    "/api/scoring-presets/{preset_id}/default": {
+      "post": {
+        "operationId": "set_default_scoring_preset_api_scoring_presets__preset_id__default_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "preset_id",
+            "required": true,
+            "schema": {
+              "title": "Preset Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoringPresetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Default Scoring Preset"
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "operationId": "get_tenant_settings_api_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Tenant Settings"
+      },
+      "put": {
+        "operationId": "update_tenant_settings_api_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Tenant Settings"
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "description": "Outreach analytics derived from leads + activity (#113, D11): funnel,\nconversion, reply/win rate, volume by channel; date-range filter; member\n+ state breakdowns. No new write data.",
+        "operationId": "stats_api_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "member",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Member"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stats"
+      }
+    },
+    "/api/tasks": {
+      "get": {
+        "description": "List the tenant's tasks, narrowed by any subset of fields (#110).",
+        "operationId": "list_tasks_api_tasks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priority",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assignee",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assignee"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unassigned",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unassigned",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lead",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lead"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tower",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tower"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "label",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Label"
+            }
+          },
+          {
+            "in": "query",
+            "name": "due_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Due Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TasksResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Tasks"
+      },
+      "post": {
+        "operationId": "create_task_api_tasks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Task"
+      }
+    },
+    "/api/tasks/{task_id}": {
+      "delete": {
+        "operationId": "delete_task_api_tasks__task_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Task"
+      },
+      "get": {
+        "operationId": "get_task_api_tasks__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Task"
+      },
+      "put": {
+        "operationId": "update_task_api_tasks__task_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Task"
+      }
+    },
+    "/api/users": {
+      "get": {
+        "description": "The tenant's teammates for task assignment (#110).",
+        "operationId": "list_users_api_users_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsersResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Users"
+      }
+    }
+  }
+}

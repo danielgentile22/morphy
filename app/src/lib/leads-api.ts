@@ -7,38 +7,22 @@
 import type { LeadStatus } from './lead-status';
 import type { FilterableOwner } from './filter-model';
 import type { Carrier } from './carrier';
+import type { components } from './api-types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api';
 
-export interface OwnerSummary {
-  display_cluster_id: string;
-  owner_name: string;
-  owner_kind: string;
-  states: string[];
-  n_states: number;
-  cross_state: boolean;
-  parcel_count: number;
-  tower_count: number;
-  solar_count: number;
-  total_assessed_value: number;
-  max_parcel_score: number;
-  score: number;
-  distress_tier: string;
-  in_oz: boolean;
-  in_qct: boolean;
-  persistent_poverty: boolean;
+// Request/response shapes come from the generated OpenAPI types module
+// (api-types.ts, PRD #133) — regenerate with `npm run generate:api` after a
+// backend model change; CI fails on drift. The aliases below only NARROW the
+// generated shapes with client-side semantics the schema can't express (the
+// status ladder, tuple coordinates) or restore the presence of fields the
+// schema marks optional-with-default but the server always serializes
+// (`Required<…>`). Field presence/absence otherwise flows from the schema.
+type Schemas = components['schemas'];
+
+export type OwnerSummary = Omit<Schemas['OwnerSummary'], 'status'> & {
   status: LeadStatus;
-  // Owner-level filter rollups (Slice 6 / #52) — let the shared FilterModel
-  // narrow the Candidates list with the same predicate the map uses. Optional
-  // so an older backend/index still parses (the filters they back no-op then).
-  counties?: string[];
-  structure_count?: number;
-  structure_types?: string[];
-  active_tower_count?: number;
-  tallest_tower_height_m?: number | null;
-  // The antenna that sparked pursuit (#109, ADR-067/D2) — '' until pursued.
-  trigger_asr?: string;
-}
+};
 
 /** Adapt an OwnerSummary to the shape the shared FilterModel predicate reads,
  *  filling the v3 rollups (which an older backend may omit) from what's
@@ -68,141 +52,86 @@ export function ownerSummaryToFilterable(o: OwnerSummary): FilterableOwner {
 
 export type ActivityDirection = 'outbound' | 'inbound';
 
-export interface ContactAttempt {
-  id: number;
-  occurred_on: string;
-  channel: string;
-  outcome: string;
-  note: string;
-  // outbound touch | inbound reply (#106, ADR-066). Optional so a row from an
-  // older backend (pre-direction) still parses — treat a missing value as
-  // outbound (the only kind before replies existed).
-  direction?: ActivityDirection;
-}
+// outbound touch | inbound reply (#106, ADR-066) — narrowed from the
+// schema's plain string.
+export type ContactAttempt = Omit<Schemas['ContactAttemptOut'], 'direction'> & {
+  direction: ActivityDirection;
+};
 
-export interface Structure {
+// `carriers` keeps the frontend Carrier shape (carrier.ts — the typed home
+// both surfaces + tests share); a generated CarrierOut is assignable to it.
+// Empty/absent is the common case (most ASR towers match no ULS license).
+export type Structure = Omit<Schemas['Structure'], 'type' | 'carriers'> & {
   type: 'tower' | 'solar';
-  asr?: string | null;
-  id?: string | null;
-  height_m?: number | null;
-  lat?: number | null;
-  lon?: number | null;
-  active?: boolean | null;
-  structure_kind?: string | null;
-  owner?: string | null;
-  // ULS spectrum licensee(s) on this tower (Slice A / #28). Absent on solar
-  // entries, and on a pre-carriers index (older backend) — treat as []. Empty
-  // is the common case (most ASR towers carry no matched ULS per-site license).
   carriers?: Carrier[] | null;
-  // Per-tower interestingness score (UI overhaul P1 / #105) — the tower's
-  // underlying parcel's score. Absent on solar entries and on a pre-v5 index.
-  score?: number | null;
-}
+};
 
-export interface Holding {
-  parcel_id: string;
-  state: string;
-  county_fips: string;
-  land_use: string;
-  assessed_value: number;
-  acreage: number | null;
-  tower_count: number;
-  solar_count: number;
+export type Holding = Omit<Required<Schemas['Holding']>, 'bbox' | 'point' | 'structures'> & {
   // [minlng, minlat, maxlng, maxlat] and [lng, lat], EPSG:4326.
   bbox: [number, number, number, number] | null;
   point: [number, number] | null;
   structures: Structure[];
-}
+};
 
-export interface MailingAddress {
-  addr: string;
-  city: string;
-  state: string;
-  zip: string;
-}
+export type MailingAddress = Schemas['MailingAddress'];
 
-/** Fields the co-founder edits on a Lead (kept in lockstep with the
- *  backend `LeadUpdate` contact fields). */
-export interface ContactFields {
-  contact_name: string;
-  contact_phone: string;
-  contact_email: string;
-  best_channel: string;
-}
+/** Fields the co-founder edits on a Lead (the backend `LeadUpdate` contact
+ *  fields, picked from the generated detail shape). */
+export type ContactFields = Pick<
+  Schemas['LeadDetail'],
+  'contact_name' | 'contact_phone' | 'contact_email' | 'best_channel'
+>;
 
 /** A raw owner-cluster merged into this Lead (Slice 7 / #53). */
-export interface MergedMember {
-  display_cluster_id: string;
-  owner_name: string;
-}
+export type MergedMember = Schemas['MergedMember'];
 
-export interface LeadDetail extends ContactFields {
+export type LeadDetail = Omit<
+  Required<Schemas['LeadDetail']>,
+  'owner' | 'status' | 'attempts' | 'holdings'
+> & {
   owner: OwnerSummary;
   status: LeadStatus;
-  notes: string;
-  updated_at: string | null;
   attempts: ContactAttempt[];
-  mailing_address: MailingAddress | null;
-  tallest_tower_height_m: number | null;
   holdings: Holding[];
-  // Owner-clusters merged into this Lead via a manual override; empty when none.
-  merged_members: MergedMember[];
-}
+};
 
 /** The body POSTed to log a manual activity event. ``direction='inbound'``
  *  logs a reply; omitted (or 'outbound') logs a touch (#106). */
-export interface AttemptPayload {
-  channel: string;
-  outcome: string;
-  note: string;
-  occurred_on: string | null;
+export type AttemptPayload = Omit<Schemas['ContactAttemptIn'], 'direction'> & {
   direction?: ActivityDirection;
-}
+};
 
-export interface CandidatesResponse {
-  count: number;
+/** A partial Lead update — status and/or notes and/or contact fields. */
+export type LeadPatch = Omit<Schemas['LeadUpdate'], 'status'> & {
+  status?: LeadStatus | null;
+};
+
+export type CandidatesResponse = Omit<Schemas['CandidatesResponse'], 'candidates'> & {
   candidates: OwnerSummary[];
-}
+};
 
 /** The My-Leads worklist — owners advanced off New (Slice 5 / #51). */
-export interface MyLeadsResponse {
-  count: number;
+export type MyLeadsResponse = Omit<Schemas['MyLeadsResponse'], 'leads'> & {
   leads: OwnerSummary[];
-}
+};
 
 /** Live nav counts for the two list surfaces. */
-export interface CountsResponse {
-  candidates: number;
-  my_leads: number;
-}
+export type CountsResponse = Schemas['CountsResponse'];
 
-export interface TokenResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-}
+export type TokenResponse = Schemas['TokenResponse'];
 
-export interface MeResponse {
-  tenant_id: number;
-  email: string;
-  // The signed-in user's team name (#86). Optional so an older backend
-  // (pre-teams) still parses; the nav just omits the team then.
-  team?: string;
-  // The friendly name set in Settings (PRD #121); '' falls back to the email.
-  display_name?: string;
-}
+export type MeResponse = Schemas['MeResponse'];
 
 /** Per-user preferences (PRD #121). `home_view` / `filter_default` are opaque
  *  JSON strings this client owns; the backend stores + serves them verbatim. */
-export interface UserSettings {
+export type UserSettings = Omit<
+  Schemas['UserSettingsResponse'],
+  'theme' | 'basemap' | 'view_mode'
+> & {
   theme: 'light' | 'dark' | 'system';
-  colorblind: boolean;
   basemap: 'light' | 'voyager' | 'dark';
   view_mode: 'home' | 'last';
-  home_view: string;
-  filter_default: string;
-  filter_default_apply: boolean;
-}
+};
 
 /** Error carrying the HTTP status so callers can branch (e.g. 409 illegal). */
 export class ApiError extends Error {
@@ -263,10 +192,7 @@ export function fetchLead(displayClusterId: string): Promise<LeadDetail> {
   return request<LeadDetail>(`/leads/${encodeURIComponent(displayClusterId)}`);
 }
 
-export function updateLead(
-  displayClusterId: string,
-  patch: { status?: LeadStatus; notes?: string } & Partial<ContactFields>,
-): Promise<LeadDetail> {
+export function updateLead(displayClusterId: string, patch: LeadPatch): Promise<LeadDetail> {
   return request<LeadDetail>(`/leads/${encodeURIComponent(displayClusterId)}`, {
     method: 'PUT',
     body: JSON.stringify(patch),
@@ -319,19 +245,11 @@ export function splitCluster(
 // ── per-antenna manual state (UI overhaul round 2) ───────────────────────────
 /** The team's editable layer over one antenna (by ASR) — an address, an
  *  archived flag, and manual owner details for a tower whose landowner we
- *  couldn't auto-resolve. Mirrors the backend `AntennaState`. */
-export interface AntennaState {
-  asr: string;
-  archived: boolean;
-  address: string;
-  owner_name: string;
-  owner_phone: string;
-  owner_email: string;
-  notes: string;
-}
+ *  couldn't auto-resolve. */
+export type AntennaState = Schemas['AntennaState'];
 
 /** A partial antenna update — omit a field to leave it unchanged. */
-export type AntennaUpdate = Partial<Omit<AntennaState, 'asr'>>;
+export type AntennaUpdate = Schemas['AntennaUpdate'];
 
 export function fetchAntenna(asr: string): Promise<AntennaState> {
   return request<AntennaState>(`/antennas/${encodeURIComponent(asr)}`);

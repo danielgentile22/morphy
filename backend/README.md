@@ -133,6 +133,28 @@ credential row anymore, is rejected with **401**. Non-GET routes additionally
 pass an Origin/Referer CSRF check (cookie transport's backstop; non-browser
 clients without those headers pass).
 
+## Generated API contract (PRD #133)
+
+The OpenAPI schema FastAPI derives from the routes + Pydantic models is the
+**single source of truth for frontend API types**. Two committed, generated
+artifacts hang off it:
+
+- `backend/openapi.json` — `python -m scripts.export_openapi` (run from the
+  repo root) imports the app object and dumps `app.openapi()` with sorted
+  keys. No server boot, no DB, byte-stable across runs.
+- `app/src/lib/api-types.ts` — `npm run generate:api` (in `app/`) runs
+  `openapi-typescript` over that schema. Types only — the hand-written client
+  functions in `leads-api.ts` / `tasks-api.ts` keep their bodies and derive
+  their request/response types from `components['schemas']`.
+
+**After any response/request model change, regenerate both and commit them**
+— the `api-types` CI workflow re-runs both generators and fails on
+`git diff`, and `backend/tests/test_openapi_export.py` fails locally on a
+stale schema. This converts the "undeclared response-model field is silently
+dropped" gotcha into a compile error: a field that isn't declared never
+reaches the schema, so the frontend type doesn't have it and svelte-check
+breaks at the use site.
+
 ## User management (the `credential` table + CLI, #87 / ADR-069)
 
 Credentials live in the app database — the **`credential`** table (normalized

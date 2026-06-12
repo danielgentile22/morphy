@@ -26,6 +26,13 @@ data production (that's `scripts/preprocess/`).
   `CarrierList.svelte` on both tower surfaces. An empty carrier list is the common
   case (~6–17% coverage) — render the empty state, don't treat it as an error.
 - Filter logic lives in `filter-model.ts` only; don't fork per-surface filtering.
+- **`src/lib/api-types.ts` is generated — never hand-edit it** (PRD #133). It is
+  produced from `backend/openapi.json` by `npm run generate:api`; the client
+  modules (`leads-api.ts`, `tasks-api.ts`, Stats/SettingsAutomations) derive their
+  API types from its `components['schemas']`, narrowing only where the schema
+  can't express client semantics (status ladders, tuple coordinates). Backend
+  model changed? Regenerate both artifacts (see `backend/AGENTS.md`) — the
+  `api-types` CI workflow fails on drift.
 
 ## Patterns
 - New filter field: add to the `FILTER_FIELDS` registry — both the SQL projection

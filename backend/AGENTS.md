@@ -55,10 +55,19 @@ the schema, or the owners-index read path.
   silently dropped by `response_model`).
 - Schema changes ride the additive `init_db` migration (`db._migrate_added_columns`)
   until Alembic.
+- **The OpenAPI schema is the frontend's type contract (PRD #133).** After any
+  request/response model change, regenerate + commit both generated artifacts:
+  `uv run python -m scripts.export_openapi` (→ `backend/openapi.json`) and
+  `cd app && npm run generate:api` (→ `app/src/lib/api-types.ts`). The
+  `api-types` CI workflow fails on drift; `tests/test_openapi_export.py` fails
+  locally on a stale schema. Declare every response field on the model —
+  undeclared = dropped from responses *and* missing from the generated types.
 
 ## CI gate
-`ruff check .` + `ruff format --check .` is the real gate — run both before
-declaring backend work done (pytest CI job is a placeholder).
+`ruff check .` + `ruff format --check .`, the full pytest suite, and the
+`api-types` drift gate (regenerated schema + types must match the committed
+artifacts) all run per PR — run the matching checks before declaring backend
+work done.
 
 ## Related context
 - The index it reads: [`../scripts/preprocess/AGENTS.md`](../scripts/preprocess/AGENTS.md)

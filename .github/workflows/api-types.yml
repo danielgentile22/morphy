@@ -1,0 +1,68 @@
+name: api-types
+
+# Drift gate for the generated API contract (PRD #133): re-export the
+# OpenAPI schema from the FastAPI app (no server boot) and regenerate the
+# TypeScript types module from it, then fail if either differs from what
+# is committed. A backend response-model change that lands without
+# regenerating both artifacts turns this red instead of surfacing at
+# runtime as a mysteriously-missing field. Fix locally with:
+#
+#   uv run python -m scripts.export_openapi
+#   cd app && npm run generate:api
+#
+# and commit backend/openapi.json + app/src/lib/api-types.ts.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Run only the most-recent commit on a branch; cancel older runs in flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    name: schema + types drift gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      # uv pins the interpreter from .python-version (3.11) and installs the
+      # exact versions in uv.lock; the action caches ~/.cache/uv keyed on the
+      # lockfile (PRD #132). Exact tag: setup-uv publishes no floating major.
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+
+      # Only the backend group — the export imports the FastAPI app, nothing
+      # else. The script resolves via the repo-root cwd (python -m), so the
+      # editable project install isn't needed here.
+      - name: Sync backend deps (locked)
+        run: uv sync --locked --only-group backend
+
+      - name: Export OpenAPI schema
+        run: uv run --no-sync python -m scripts.export_openapi
+
+      - uses: actions/setup-node@v6
+        with:
+          # Node 22 matches the frontend workflow + Dockerfile build stage.
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci
+        working-directory: app
+
+      - name: Generate TypeScript types
+        run: npm run generate:api
+        working-directory: app
+
+      - name: Fail on drift
+        run: |
+          git diff --exit-code -- backend/openapi.json app/src/lib/api-types.ts \
+            || { echo '::error::Generated API artifacts are stale. Run: uv run python -m scripts.export_openapi && (cd app && npm run generate:api), then commit both files.'; exit 1; }
