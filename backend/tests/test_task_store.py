@@ -33,8 +33,9 @@ def test_create_and_list_newest_first(engine: Engine) -> None:
 
 def test_get_returns_the_task_for_its_tenant(engine: Engine) -> None:
     t = _store(engine, 1).create(title="x")
-    assert _store(engine, 1).get(t.id) is not None
-    assert _store(engine, 1).get(t.id).title == "x"
+    fetched = _store(engine, 1).get(t.id)
+    assert fetched is not None
+    assert fetched.title == "x"
 
 
 def test_completing_a_task_stamps_completed_at(engine: Engine) -> None:
@@ -50,6 +51,7 @@ def test_reopening_a_done_task_clears_completed_at(engine: Engine) -> None:
     t = store.create(title="x", status="done")
     assert t.completed_at is not None
     reopened = _store(engine, 1).update(t.id, status="open")
+    assert reopened is not None
     assert reopened.status == "open"
     assert reopened.completed_at is None
 
@@ -57,12 +59,14 @@ def test_reopening_a_done_task_clears_completed_at(engine: Engine) -> None:
 def test_update_title_and_description(engine: Engine) -> None:
     t = _store(engine, 1).create(title="old", description="d1")
     updated = _store(engine, 1).update(t.id, title="new", description="d2")
+    assert updated is not None
     assert (updated.title, updated.description) == ("new", "d2")
 
 
 def test_partial_update_leaves_other_fields_untouched(engine: Engine) -> None:
     t = _store(engine, 1).create(title="keep", description="keep-desc")
     updated = _store(engine, 1).update(t.id, status="in_progress")
+    assert updated is not None
     assert (updated.title, updated.description, updated.status) == (
         "keep",
         "keep-desc",
@@ -95,12 +99,16 @@ def test_tasks_are_tenant_scoped(engine: Engine) -> None:
     assert _store(engine, 2).update(t.id, status="done") is None
     assert _store(engine, 2).delete(t.id) is False
     # …and tenant 1's task is untouched.
-    assert _store(engine, 1).get(t.id).status == "open"
+    kept = _store(engine, 1).get(t.id)
+    assert kept is not None
+    assert kept.status == "open"
 
 
 def test_created_by_is_recorded(engine: Engine) -> None:
     t = _store(engine, 1).create(title="mine", created_by_user_id=42)
-    assert _store(engine, 1).get(t.id).created_by_user_id == 42
+    created = _store(engine, 1).get(t.id)
+    assert created is not None
+    assert created.created_by_user_id == 42
 
 
 # ── links / assignee / labels / priority (#110) ──────────────────────────────
@@ -119,6 +127,7 @@ def test_create_with_links_and_assignee(engine: Engine) -> None:
         due_date=date(2026, 9, 1),
     )
     got = _store(engine, 1).get(t.id)
+    assert got is not None
     assert got.lead_cluster_id == "cid1"
     assert got.tower_asr == "000046"
     assert got.assignee_user_id == 7
@@ -142,13 +151,17 @@ def test_update_clears_a_link_with_explicit_none(engine: Engine) -> None:
     t = _store(engine, 1).create(title="x", lead_cluster_id="cid1")
     # Sentinel: passing None clears; omitting leaves unchanged.
     _store(engine, 1).update(t.id, lead_cluster_id=None)
-    assert _store(engine, 1).get(t.id).lead_cluster_id is None
+    cleared = _store(engine, 1).get(t.id)
+    assert cleared is not None
+    assert cleared.lead_cluster_id is None
 
 
 def test_update_omitting_a_link_leaves_it(engine: Engine) -> None:
     t = _store(engine, 1).create(title="x", lead_cluster_id="cid1")
     _store(engine, 1).update(t.id, title="renamed")  # link not mentioned
-    assert _store(engine, 1).get(t.id).lead_cluster_id == "cid1"
+    kept_link = _store(engine, 1).get(t.id)
+    assert kept_link is not None
+    assert kept_link.lead_cluster_id == "cid1"
 
 
 # ── list_filtered (#110) ──────────────────────────────────────────────────────

@@ -8,6 +8,8 @@ the Explore map + list exclude by default.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -20,7 +22,7 @@ ASR = "1287345"
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client() -> Iterator[TestClient]:
     with api(SAMPLE) as (c, _eng, _sender):
         c.headers.update(auth_header(login(c)))
         yield c

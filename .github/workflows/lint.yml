@@ -34,3 +34,33 @@ jobs:
 
       - name: Format check
         run: uv run --no-sync ruff format --check .
+
+  # Static type-check the backend only (PRD #136). A sibling of the ruff
+  # check — same workflow, runs in parallel. Scope, exclusions, and rationale
+  # live in [tool.pyright] in pyproject.toml. Kept a separate job because it
+  # needs more installed than ruff: pyright resolves imports against the venv,
+  # so the backend's real deps must be present.
+  pyright:
+    name: pyright (backend type-check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+
+      # dev = pyright itself (version-pinned in uv.lock — the PyPI wrapper
+      # version pins the bundled checker, so local == CI); backend = the deps
+      # pyright must resolve (fastapi/sqlalchemy/pydantic/alembic/PyJWT). The
+      # pipeline/puller groups are deliberately omitted — the backend imports
+      # neither, and they only slow the install.
+      - name: Install type-check deps (locked)
+        run: uv sync --locked --only-group dev --only-group backend
+
+      # No path arg: pyright reads include = ["backend"] from pyproject.toml,
+      # so this checks exactly the configured scope — identical to the local
+      # one-liner `uv run pyright`.
+      - name: Type-check backend
+        run: uv run --no-sync pyright

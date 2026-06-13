@@ -22,7 +22,9 @@ member lead-state at serve time under the surviving target — see its docstring
 
 from __future__ import annotations
 
-from sqlalchemy import delete, select
+from typing import cast
+
+from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.orm import Session
 
 from .models import OwnerClusterOverride
@@ -129,7 +131,9 @@ class OwnerMergeService:
         )
         self.session.commit()
         self._invalidate()
-        return bool(result.rowcount)
+        # A DELETE returns a CursorResult at runtime; SQLAlchemy types execute()
+        # as the base Result, which has no .rowcount.
+        return bool(cast(CursorResult, result).rowcount)
 
     def _invalidate(self) -> None:
         self._map = None

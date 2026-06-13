@@ -71,10 +71,15 @@ the schema, or the owners-index read path.
   undeclared = dropped from responses *and* missing from the generated types.
 
 ## CI gate
-`ruff check .` + `ruff format --check .`, the full pytest suite, and the
-`api-types` drift gate (regenerated schema + types must match the committed
-artifacts) all run per PR — run the matching checks before declaring backend
-work done.
+`ruff check .` + `ruff format --check .`, **`uv run pyright`** (basic-mode type
+check, scoped to `backend/` only — PRD #136, config in `[tool.pyright]`), the
+full pytest suite, and the `api-types` drift gate (regenerated schema + types
+must match the committed artifacts) all run per PR — run the matching checks
+before declaring backend work done. The pyright gate lands at **zero**
+diagnostics: fix type errors at the source; reach for a targeted, commented
+`# pyright: ignore[...]` only when a diagnostic is genuinely unfixable (e.g. a
+third-party stub gap), never a global rule relaxation. scripts/pipeline/puller
+are deliberately out of scope — do not widen `include`.
 
 ## Related context
 - The index it reads: [`../scripts/preprocess/AGENTS.md`](../scripts/preprocess/AGENTS.md)

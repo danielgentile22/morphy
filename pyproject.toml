@@ -58,13 +58,16 @@ backend = [
 # Dev-only. testcontainers backs the Postgres isolation test and was
 # previously bundled into backend/requirements.txt (and thus the prod
 # image); it is test tooling, so it lives here now. pmtiles verifies
-# parcels.pmtiles output in tests/test_tiles.py.
+# parcels.pmtiles output in tests/test_tiles.py. pyright type-checks the
+# backend in CI (PRD #136); the PyPI wrapper version pins the bundled
+# checker, so uv.lock pins it and local == CI.
 dev = [
     "ruff>=0.6",
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "pmtiles>=3.7",
     "testcontainers[postgres]>=4.0",
+    "pyright>=1.1.390",
 ]
 
 [tool.uv]
@@ -90,6 +93,32 @@ only-include = [
     "scripts/diagnose.py",
 ]
 sources = ["scripts"]
+
+[tool.pyright]
+# Type-check the BACKEND ONLY (PRD #136). The backend guards the only
+# irreplaceable data in the system (lead state, contact history, tenant
+# isolation), is already type-annotated, and is small enough to check at zero
+# diagnostics — so it gets the compile-time defense the frontend already has.
+#
+# scripts/, the preprocess pipeline, and app_puller/ are DELIBERATELY excluded:
+# pandas/geopandas/shapely-heavy code drowns a type checker in noise that makes
+# the gate ignorable, and the pipeline's test suite carries that weight instead.
+# That boundary is the decision — do NOT "helpfully" widen `include` to scripts/
+# or app_puller/. A per-module strict ratchet inside backend/ is allowed later.
+#
+# Pinned via the dev group in uv.lock so local == CI; venv below points pyright
+# at the same locked deps. Run locally with: uv run pyright
+# (no path arg — it reads `include` below, checking exactly what CI checks).
+include = ["backend"]
+# `backend` on the path so `app.*` resolves the way the deployed container
+# imports it (uvicorn runs `app.main:app` from /srv/backend) — without this,
+# pyright resolves bare `app` to the repo-root Svelte `app/` namespace dir.
+# Tests' `backend.app.*` imports resolve via the repo root as usual.
+extraPaths = ["backend"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
 
 [tool.ruff]
 line-length = 100

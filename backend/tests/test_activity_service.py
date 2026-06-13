@@ -23,7 +23,9 @@ def _svc(engine: Engine, tenant: int = 1) -> ActivityService:
     return ActivityService(
         _leads(engine, tenant),
         owner_name_of=lambda cid: f"Owner {cid}",
-        member_name_of=lambda uid: {1: "Daniel", 2: "Michael"}.get(uid, ""),
+        member_name_of=lambda uid: (
+            {1: "Daniel", 2: "Michael"}.get(uid, "") if uid is not None else ""
+        ),
     )
 
 

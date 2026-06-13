@@ -56,6 +56,7 @@ def test_partial_update_leaves_other_fields_untouched(
     _store(new_session).upsert(ASR, fields={"address": "1 First St"})
     _store(new_session).upsert(ASR, fields={"owner_name": "Second Owner"})
     row = _store(new_session).get(ASR)
+    assert row is not None
     assert (row.address, row.owner_name) == ("1 First St", "Second Owner")
 
 
@@ -63,6 +64,7 @@ def test_archiving_does_not_clear_fields(new_session: Callable[[], Session]) -> 
     _store(new_session).upsert(ASR, fields={"address": "kept"})
     _store(new_session).upsert(ASR, archived=True)  # archived=... only
     row = _store(new_session).get(ASR)
+    assert row is not None
     assert row.archived is True
     assert row.address == "kept"
 

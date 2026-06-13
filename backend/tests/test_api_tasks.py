@@ -3,6 +3,8 @@ complete, and 404/422 + auth behavior."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -13,7 +15,7 @@ EMPTY_INDEX = {"schema_version": 5, "count": 0, "owners": []}
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client() -> Iterator[TestClient]:
     with api(EMPTY_INDEX) as (c, _eng, _sender):
         c.headers.update(auth_header(login(c)))
         yield c

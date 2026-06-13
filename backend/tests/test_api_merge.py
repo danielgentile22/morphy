@@ -4,6 +4,8 @@ stack (TestClient + a real session JWT), proving coalesce is honored end-to-end.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -47,7 +49,7 @@ SAMPLE = {
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client() -> Iterator[TestClient]:
     with api(SAMPLE) as (c, _eng, _sender):
         c.headers.update(auth_header(login(c)))
         yield c

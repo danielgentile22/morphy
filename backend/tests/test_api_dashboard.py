@@ -16,6 +16,7 @@ Two gaps the pure-service tests don't cover:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import date, timedelta
 
 import pytest
@@ -77,7 +78,7 @@ SAMPLE = {
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client() -> Iterator[TestClient]:
     with api(SAMPLE) as (c, _eng, _sender):
         c.headers.update(auth_header(login(c)))
         yield c

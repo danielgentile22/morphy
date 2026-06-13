@@ -5,7 +5,7 @@ activity row (no schema change), surfaced as ``OwnerSummary.trigger_asr``."""
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -25,6 +25,7 @@ def test_pursue_advances_new_to_researching(store_factory: Callable[[int], LeadS
     lead = store_factory(1).pursue(CID, trigger_asr="1287345")
     assert lead.status == "researching"
     reloaded = store_factory(1).get_lead(CID)
+    assert reloaded is not None
     assert reloaded.status == "researching"
 
 
@@ -43,12 +44,16 @@ def test_pursue_keeps_latest_trigger(store_factory: Callable[[int], LeadStore]) 
     store.pursue(CID, trigger_asr="222")  # already off New → just another trigger
     assert store_factory(1).latest_flags().get(CID) == "222"
     # second pursue did not illegally re-advance status
-    assert store_factory(1).get_lead(CID).status == "researching"
+    reloaded = store_factory(1).get_lead(CID)
+    assert reloaded is not None
+    assert reloaded.status == "researching"
 
 
 def test_pursue_without_trigger_still_advances(store_factory: Callable[[int], LeadStore]) -> None:
     store_factory(1).pursue(CID)
-    assert store_factory(1).get_lead(CID).status == "researching"
+    reloaded = store_factory(1).get_lead(CID)
+    assert reloaded is not None
+    assert reloaded.status == "researching"
     assert store_factory(1).latest_flags() == {}
 
 
@@ -106,12 +111,13 @@ def test_lead_view_surfaces_the_trigger(
     svc = OwnersIndexService(path)
     store_factory(1).pursue(CID, trigger_asr="1287345")
     view = svc.lead_view(store_factory(1), CID)
+    assert view is not None
     assert view["owner"]["trigger_asr"] == "1287345"
 
 
 # ── API level ─────────────────────────────────────────────────────────────────
 @pytest.fixture
-def client() -> TestClient:
+def client() -> Iterator[TestClient]:
     with api(_SAMPLE) as (c, _eng, _sender):
         c.headers.update(auth_header(login(c)))
         yield c

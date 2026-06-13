@@ -9,6 +9,8 @@ and that an illegal transition is rejected.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -63,7 +65,7 @@ SAMPLE = {
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client() -> Iterator[TestClient]:
     # A fresh in-memory DB per test, authenticated with a real JWT so the
     # tracer runs exactly as the SPA does (the Bearer header is attached to
     # every request via the client's default headers).

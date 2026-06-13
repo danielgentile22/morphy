@@ -83,6 +83,7 @@ from `data/processed/composite/`. See [app/ARCHITECTURE.md](app/ARCHITECTURE.md)
 ```bash
 pytest                                      # preprocess pipeline (incl. the app-asset scripts)
 ruff check . && ruff format --check .
+uv run pyright                              # type-check the backend (basic mode, backend/ only — PRD #136)
 cd app && npm run check && npm run test:unit && npm run test:e2e
 ```
 

@@ -24,6 +24,7 @@ For a co-founder-facing product, automated tests serve four purposes:
 | **Coverage** | **pytest-cov** | Bundled; report on `scripts/preprocess/` ≥ 70 % |
 | **Schema validation** | **jsonschema** | Validates `catalog.json`, `summary.json`, `preprocess_manifest.json` against committed JSON Schemas |
 | **Lint / format** | **ruff** | Single tool for both lint and format check; fast; opinionated |
+| **Type check (backend only)** | **pyright** | Basic mode, scoped to `backend/` ([tool.pyright]); the pipeline is deliberately excluded — pandas typing is noise (PRD #136) |
 | **CI** | **GitHub Actions** | Lint + tests run on every push (Section 6.3) |
 | **Frontend tests** | **Vitest** (unit) + **Playwright** (E2E) | Live in `app/tests/`; run with `npm run test:unit` / `test:e2e` (ADR-043) |
 
@@ -160,7 +161,7 @@ Pre-commit:
 
 ```bash
 # Recommended pre-commit hook (Section 6.3)
-ruff check . && ruff format --check . && pytest -q
+ruff check . && ruff format --check . && uv run pyright && pytest -q
 ```
 
 CI:

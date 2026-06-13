@@ -56,6 +56,7 @@ def test_same_cluster_id_is_independent_per_tenant(
 
     a = store_factory(TENANT_A).get_lead(CID)
     b_lead = store_factory(TENANT_B).get_lead(CID)
+    assert a is not None and b_lead is not None
     assert (a.status, a.notes) == ("researching", "A")
     assert (b_lead.status, b_lead.notes) == ("uninterested", "B")
 
@@ -70,7 +71,9 @@ def test_tenant_b_write_does_not_leak_into_tenant_a(
     b.upsert(CID, status="contacted")  # B advances past A
 
     # A's lead is untouched by B's write.
-    assert store_factory(TENANT_A).get_lead(CID).status == "researching"
+    a_lead = store_factory(TENANT_A).get_lead(CID)
+    assert a_lead is not None
+    assert a_lead.status == "researching"
 
 
 @pytest.mark.tenant_isolation
@@ -85,8 +88,11 @@ def test_contact_edits_are_tenant_scoped(
     assert b.get_lead(CID) is None  # B has no lead for this cluster at all
 
     b.upsert(CID, contact={"contact_name": "B's contact"})
-    assert store_factory(TENANT_A).get_lead(CID).contact_name == "A's contact"
-    assert store_factory(TENANT_B).get_lead(CID).contact_name == "B's contact"
+    a_lead = store_factory(TENANT_A).get_lead(CID)
+    b_lead = store_factory(TENANT_B).get_lead(CID)
+    assert a_lead is not None and b_lead is not None
+    assert a_lead.contact_name == "A's contact"
+    assert b_lead.contact_name == "B's contact"
 
 
 @pytest.mark.tenant_isolation

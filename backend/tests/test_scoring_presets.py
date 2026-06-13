@@ -3,6 +3,8 @@ default; store-level + API-level."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
@@ -60,7 +62,7 @@ def test_presets_shared_within_a_tenant(engine: Engine) -> None:
 
 # ── API level ─────────────────────────────────────────────────────────────────
 @pytest.fixture
-def client() -> TestClient:
+def client() -> Iterator[TestClient]:
     with api(EMPTY_INDEX) as (c, _eng, _sender):
         c.headers.update(auth_header(login(c)))
         yield c

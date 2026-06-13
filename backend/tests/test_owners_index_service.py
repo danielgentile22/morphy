@@ -115,6 +115,7 @@ def test_lead_view_defaults_lead_state_when_no_lead_yet(
     service: OwnersIndexService, store_factory: Callable[[int], LeadStore]
 ) -> None:
     view = service.lead_view(store_factory(1), CID)
+    assert view is not None
     assert view["status"] == "new"
     assert view["notes"] == ""
     assert view["contact_name"] == ""
@@ -131,6 +132,7 @@ def test_lead_view_joins_editable_contact_state(
         contact={"contact_name": "Jane Roe", "best_channel": "phone"},
     )
     view = service.lead_view(store_factory(1), CID)
+    assert view is not None
     assert view["status"] == "researching"
     assert view["notes"] == "cross-state portfolio"
     assert view["contact_name"] == "Jane Roe"
@@ -146,6 +148,7 @@ def test_lead_view_holdings_are_per_tenant_independent(
     # tenant 2 sees the same holdings but its own (default) lead state.
     store_factory(1).upsert(CID, notes="tenant-1 only")
     view_b = service.lead_view(store_factory(2), CID)
+    assert view_b is not None
     assert len(view_b["holdings"]) == 2  # holdings visible to both
     assert view_b["notes"] == ""  # but tenant 1's note is not
 
@@ -197,6 +200,7 @@ def test_pre_v2_index_without_holdings_degrades_safely(
     path = tmp_path / "legacy.json"
     path.write_text(json.dumps(legacy))
     view = OwnersIndexService(path).lead_view(store_factory(1), CID)
+    assert view is not None
     assert view["holdings"] == []
     assert view["mailing_address"] is None
     assert view["tallest_tower_height_m"] is None

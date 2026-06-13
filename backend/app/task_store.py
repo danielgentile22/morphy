@@ -9,12 +9,26 @@ date, priority, labels, filtering, and free-text search land in #110.
 
 from __future__ import annotations
 
+import enum
 from datetime import UTC, date, datetime
+from typing import cast
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import CursorResult, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from .models import Task
+
+
+class _Sentinel(enum.Enum):
+    """Single-member sentinel for ``TaskStore.update``: distinguishes "omit
+    this field" (leave it unchanged) from passing ``None`` (clear a nullable
+    link/assignee/due field). A one-member Enum is the type-checker-narrowable
+    sentinel idiom — ``x is not _UNSET`` narrows ``x`` to its real type."""
+
+    UNSET = enum.auto()
+
+
+_UNSET = _Sentinel.UNSET
 
 # A Task's lifecycle status. No ladder — any status may move to any other
 # (you can reopen a done task); reaching ``done`` stamps ``completed_at``.
@@ -108,7 +122,9 @@ class TaskStore:
             )
         )
         self.session.commit()
-        return int(result.rowcount or 0)
+        # A DELETE returns a CursorResult at runtime; SQLAlchemy types execute()
+        # as the base Result, which has no .rowcount.
+        return int(cast(CursorResult, result).rowcount or 0)
 
     # ── writes ───────────────────────────────────────────────────────────────
     def create(
@@ -150,9 +166,6 @@ class TaskStore:
         self.session.refresh(task)
         return task
 
-    # Sentinel: distinguish "leave unchanged" (default) from "clear to null".
-    _UNSET = object()
-
     def update(
         self,
         task_id: int,
@@ -161,10 +174,13 @@ class TaskStore:
         description: str | None = None,
         status: str | None = None,
         priority: str | None = None,
-        due_date=_UNSET,
-        assignee_user_id=_UNSET,
-        lead_cluster_id=_UNSET,
-        tower_asr=_UNSET,
+        # Module-level _UNSET sentinel: "leave unchanged" (default) vs. passing
+        # None ("clear to null"). The _Sentinel union lets pyright narrow each
+        # to its real type after the `is not _UNSET` guard below.
+        due_date: date | None | _Sentinel = _UNSET,
+        assignee_user_id: int | None | _Sentinel = _UNSET,
+        lead_cluster_id: str | None | _Sentinel = _UNSET,
+        tower_asr: str | None | _Sentinel = _UNSET,
         labels: str | list[str] | None = None,
     ) -> Task | None:
         """Patch a task (tenant-scoped). Setting status to ``done`` stamps
@@ -193,13 +209,13 @@ class TaskStore:
             task.description = description
         if labels is not None:
             task.labels = normalize_labels(labels)
-        if due_date is not self._UNSET:
+        if due_date is not _UNSET:
             task.due_date = due_date
-        if assignee_user_id is not self._UNSET:
+        if assignee_user_id is not _UNSET:
             task.assignee_user_id = assignee_user_id
-        if lead_cluster_id is not self._UNSET:
+        if lead_cluster_id is not _UNSET:
             task.lead_cluster_id = lead_cluster_id or None
-        if tower_asr is not self._UNSET:
+        if tower_asr is not _UNSET:
             task.tower_asr = tower_asr or None
         self.session.commit()
         self.session.refresh(task)

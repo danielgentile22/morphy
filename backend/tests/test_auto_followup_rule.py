@@ -80,6 +80,7 @@ def test_disabled_rule_schedules_nothing(engine: Engine) -> None:
 def test_window_setting_is_honored(engine: Engine) -> None:
     SettingsStore(Session(bind=engine, future=True), 1).set(AUTO_FOLLOWUP_WINDOW_DAYS, "30")
     t = _rule(engine).maybe_schedule(CID, anchor=ANCHOR, status="contacted")
+    assert t is not None
     assert t.due_date == ANCHOR + timedelta(days=30)
 
 

@@ -63,10 +63,12 @@ from .login_throttle import LoginThrottle
 from .owner_merge_service import MergeError, OwnerMergeService
 from .owners_index_service import OwnersIndexService
 from .schemas import (
+    ActivityEventOut,
     ActivityResponse,
     AntennaState,
     AntennaUpdate,
     ArchivedAsrsResponse,
+    AttentionItemOut,
     AttentionResponse,
     CandidatesResponse,
     ContactAttemptIn,
@@ -798,14 +800,14 @@ def attention(
     return AttentionResponse(
         count=len(items),
         items=[
-            {
-                "kind": i.kind,
-                "title": i.title,
-                "when": i.when,
-                "cluster_id": i.cluster_id,
-                "owner_name": i.owner_name,
-                "task_id": i.task_id,
-            }
+            AttentionItemOut(
+                kind=i.kind,
+                title=i.title,
+                when=i.when,
+                cluster_id=i.cluster_id,
+                owner_name=i.owner_name,
+                task_id=i.task_id,
+            )
             for i in items
         ],
     )
@@ -1001,17 +1003,17 @@ def activity(
     return ActivityResponse(
         count=len(events),
         events=[
-            {
-                "id": e.id,
-                "date": e.date,
-                "kind": e.kind,
-                "channel": e.channel,
-                "cluster_id": e.cluster_id,
-                "owner_name": e.owner_name,
-                "logged_by_user_id": e.logged_by_user_id,
-                "member_name": e.member_name,
-                "summary": e.summary,
-            }
+            ActivityEventOut(
+                id=e.id,
+                date=e.date,
+                kind=e.kind,
+                channel=e.channel,
+                cluster_id=e.cluster_id,
+                owner_name=e.owner_name,
+                logged_by_user_id=e.logged_by_user_id,
+                member_name=e.member_name,
+                summary=e.summary,
+            )
             for e in events
         ],
         last_contact_on=digest["last_contact_on"],

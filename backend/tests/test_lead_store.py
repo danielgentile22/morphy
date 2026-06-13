@@ -55,7 +55,9 @@ def test_walking_the_full_legal_ladder(store_factory: Callable[[int], LeadStore]
     store = store_factory(1)
     for status in ["researching", "contacted", "interested", "in_business"]:
         store.upsert(CID, status=status)
-    assert store_factory(1).get_lead(CID).status == "in_business"
+    final = store_factory(1).get_lead(CID)
+    assert final is not None
+    assert final.status == "in_business"
     # one auto-logged row per transition
     assert len(store_factory(1).list_attempts(CID)) == 4
 
@@ -89,7 +91,9 @@ def test_uninterested_can_be_reopened(store_factory: Callable[[int], LeadStore])
     # a lost/parked lead reopens to any status — here back to contacted — so a
     # mis-classification is never stranded.
     store.upsert(CID, status="contacted")
-    assert store_factory(1).get_lead(CID).status == "contacted"
+    reopened = store_factory(1).get_lead(CID)
+    assert reopened is not None
+    assert reopened.status == "contacted"
     # the reopen auto-logs a status-change row like any other transition.
     rows = store_factory(1).list_attempts(CID)
     assert any(a.outcome == "uninterested→contacted" for a in rows)
@@ -124,6 +128,7 @@ def test_partial_contact_update_leaves_other_fields_untouched(
     store_factory(1).upsert(CID, contact={"contact_name": "First Last"})
     store_factory(1).upsert(CID, contact={"contact_phone": "555-0101"})
     lead = store_factory(1).get_lead(CID)
+    assert lead is not None
     assert (lead.contact_name, lead.contact_phone) == ("First Last", "555-0101")
 
 

@@ -78,7 +78,9 @@ def _head_revision() -> str:
 
     cfg = Config(str(_ALEMBIC_INI))
     cfg.set_main_option("prepend_sys_path", "")
-    return ScriptDirectory.from_config(cfg).get_current_head()
+    head = ScriptDirectory.from_config(cfg).get_current_head()
+    assert head is not None
+    return head
 
 
 def _stamped_revision(eng: Engine) -> str:
@@ -121,9 +123,12 @@ def test_pre_alembic_db_is_stamped_and_upgraded_with_rows_intact(
     assert _stamped_revision(eng) == _head_revision()
     store = LeadStore(Session(bind=eng, future=True), tenant_id=1)
     old = store.get_lead("old1")
+    assert old is not None
     assert (old.status, old.contact_name) == ("researching", "")
     store.upsert("old1", contact={"contact_name": "Jane Roe"})
-    assert LeadStore(Session(bind=eng, future=True), 1).get_lead("old1").contact_name == "Jane Roe"
+    reloaded = LeadStore(Session(bind=eng, future=True), 1).get_lead("old1")
+    assert reloaded is not None
+    assert reloaded.contact_name == "Jane Roe"
 
     t = TaskStore(Session(bind=eng, future=True), 1).list()[0]
     assert (t.title, t.priority, t.source, t.labels) == ("legacy task", "none", "manual", "")
@@ -202,9 +207,13 @@ def test_prod_shaped_tables_adopt_cleanly(migration_engine: Engine) -> None:
 
     assert _stamped_revision(eng) == _head_revision()
     store = LeadStore(Session(bind=eng, future=True), tenant_id=1)
-    assert store.get_lead("old1").contact_name == ""
+    old = store.get_lead("old1")
+    assert old is not None
+    assert old.contact_name == ""
     store.upsert("old1", contact={"contact_name": "Jane Roe"})
-    assert LeadStore(Session(bind=eng, future=True), 1).get_lead("old1").contact_name == "Jane Roe"
+    reloaded = LeadStore(Session(bind=eng, future=True), 1).get_lead("old1")
+    assert reloaded is not None
+    assert reloaded.contact_name == "Jane Roe"
     # The pre-#106 attempt reads as outbound (the ALTER's DEFAULT back-fill).
     attempts = LeadStore(Session(bind=eng, future=True), 1).list_attempts("old1")
     assert [a.direction for a in attempts] == ["outbound"]
