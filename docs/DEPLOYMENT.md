@@ -3,7 +3,7 @@
 **Last updated:** 2026-06-04
 **Status:** **Live in production** at [morphyconsulting.com](https://morphyconsulting.com) (Fly app `morphy-consulting`, region `iad`) since 2026-06-04 — the hosted-private backend shipped per [ADR-055](./adr/0055-hosted-private-backend.md) as narrowed by [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md) (#96 built, #16 closed). Local dev still runs all four surfaces on a laptop (§1). **To update the running app, see §8 → "Day-2 operations".**
 
-This doc describes how to stand up the project — what to install, how to run each subsystem, how to ship outputs to a partner, and what Slice 4 adds when the backend lands.
+This doc describes how to stand up the project — what to install, how to run each subsystem, how to ship outputs to a partner, and how the live backend is deployed + operated (§8).
 
 ---
 

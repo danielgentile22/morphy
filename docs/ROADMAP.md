@@ -1,6 +1,6 @@
 # ROADMAP — Past, Present, Future
 
-**Last updated:** 2026-05-30 (lead-centric triage redesign shipped — PRD #46 / ADR-061, Slices #47–#53)
+**Last updated:** 2026-06-13 (UI overhaul + Settings + #130–#138 hardening shipped; deployed to production)
 **Pairs with:** [SCOPE.md](./SCOPE.md), [STATUS.md](./STATUS.md), [GOALS.md](./GOALS.md), [DECISIONS.md](./DECISIONS.md) + new ADRs under `docs/adr/`.
 
 This document traces the project arc: what's been built, what's being built now, what's planned next. Updated at the start of every new slice / phase and after every material strategic conversation.
@@ -16,7 +16,7 @@ A single `preprocess.py` script that ingested FCC ASR + NC OneMap parcels for Gr
 - ✅ Proved tower → parcel → distress linkage was technically achievable.
 - ✅ Produced a working map demo for Graham County.
 - ❌ Hard-coded to one county; not generalizable.
-- 📁 Archive: `docs/archive/preprocess_v1.py.txt`.
+- 📁 The v1 one-shot script + its v3 plan were retired; recover from git history if ever needed (`git log --all -- docs/archive/`).
 
 ### v1 — Data puller
 
@@ -53,7 +53,17 @@ Slice plan (untimed, goal-driven):
 4. **D + E** — Lease doc upload + LLM extraction + triage state / write layer / CSV exports (backend stands up here per [ADR-055](./adr/0055-hosted-private-backend.md)). **Reordered 2026-05-30:** the write-layer + lead-centric triage UI redesign were pulled forward ahead of A and C and **shipped** ([ADR-061](./adr/0061-lead-centric-triage-redesign.md), PRD #46, Slices #47–#53); the remaining D+E work is lease-doc upload + LLM extraction.
 5. **B** — Vendor (tower-co) inference
 
-> **Update 2026-05-30 — redesign shipped.** The lead-centric triage redesign is complete (PRD #46 / [ADR-061](./adr/0061-lead-centric-triage-redesign.md), Slices #47–#53): cross-state Lead identity, auth + tenant-from-JWT (magic-link at the time; since replaced by username/password login — [ADR-062](./adr/0062-username-password-replaces-magic-link.md), PRD #75), structures-first map, full Lead page, My-Leads kanban, top-bar filters + owner/ASR search, and manual owner merge/split. This stood the ADR-055/056 backend up and pulled D+E's write-layer ahead of A and C. **Slice A (carriers) has since landed** — data layer merged (#11/#12/#22/#24), carrier-list UI merged (#28 / PR #71); coverage is ~6–17% of ASR towers (high-precision / low-recall), so the original "≥70%" gate is overtaken by measured reality ([GOALS §3](./GOALS.md)). **Next:** the rest of D+E (lease-doc upload + LLM extraction), **Slice C** (tunable scoring UI; solar→parcel done), and **Slice B** (vendor inference). The 4-week outcome-bar clock starts after Slice B.
+> **Update 2026-06-13 — most of Phase 1 shipped; product live in production.** On
+> top of the lead-centric redesign (PRD #46 / [ADR-061](./adr/0061-lead-centric-triage-redesign.md),
+> Slices #47–#53) came the UI overhaul — three-section IA + Tasks + tower-grained
+> Explore (PRD #103/#119/#121, ADR-065/066/067), per-user Settings (PRD #121,
+> ADR-068), and the #130–#138 hardening pass. **Slice A (carriers) landed**
+> (#11/#12/#22/#24 + UI #28; ~6–17% coverage, so the original "≥70%" gate is
+> overtaken by measured reality — [GOALS §3](./GOALS.md)), and **Slice C's tunable
+> scoring UI shipped** (#105/#114/#115). **Next:** the rest of **D+E** — lease-doc
+> upload + LLM extraction (not yet started) — then **Slice B** (vendor inference).
+> The 4-week outcome-bar clock starts after Slice B. See [STATUS.md](./STATUS.md)
+> for the live state.
 
 Per-slice gates in [GOALS.md §3](./GOALS.md). Outcome bar: co-founder uses the product as his primary daily triage tool for 4 consecutive weeks.
 
@@ -81,6 +91,20 @@ See [ADR-054](./adr/0054-asset-universe-phase-1-2.md).
 - **Paid Steel-in-the-Air tier** — granular per-tower comp data, augmenting the free county-averages bootstrap (ADR-057 reframes ADR-010).
 - **Paid skip-trace for contact enrichment** — Whitepages Pro / Cole Information / IDI for owner phone + email beyond the SoS officer-disclosure baseline. Stays explicitly within ADR-057's narrowed posture.
 - **Comparables maturation** — as uploaded leases accumulate (ADR-059 extraction loop), the private comp DB starts dominating the public-data bootstrap; "outliers in X-mile radius" becomes a real feature.
+
+### Scaling watch-triggers (not work, just the lines to watch)
+
+The single-machine deploy (ADR-064) has two known cliffs to watch for — neither is a
+problem at Phase-1 scale, but each has a clear trigger and a pre-planned move:
+
+- **Owners index served as in-memory JSON.** Python's JSON object overhead is ~3–5×
+  file size on a 1 GB VM that also runs Caddy + Litestream. When `owners_index.json`
+  approaches ~100 MB (≈ current states × 3), move the read path to SQLite or
+  server-side DuckDB over the parquet — `OwnersIndexService` already isolates the swap.
+- **SQLite, one writer.** The day a second machine, a background-writer process, or
+  >~10 concurrent writers appears, switch to Postgres — the code is already DB-agnostic,
+  `psycopg` ships, and testcontainers tests exist. Postgres RLS (engine-enforced tenant
+  isolation) is the principled follow-on if tenants beyond the founding team appear.
 
 ### Stretch — mortgage / financial distress signal
 

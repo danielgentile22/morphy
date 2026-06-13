@@ -4,7 +4,7 @@
 **Date:** 2026-06-06
 **Extends:** ADR-061 (Lead = cross-state owner), ADR-056
 **Pairs with:** ADR-065, ADR-058 (amended)
-**Plan:** [docs/UI_OVERHAUL.md](../UI_OVERHAUL.md) (decisions D1, D2, D3)
+**Plan:** the UI-overhaul plan (decisions D1, D2, D3) — shipped; the plan doc was retired, recover from git history if needed.
 
 ## Context
 

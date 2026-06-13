@@ -4,21 +4,17 @@ Orientation for Claude Code sessions working in this repo. Read this
 first; then dip into the relevant doc under [docs/](docs/) when you
 need depth.
 
-**Current state:** see [docs/STATUS.md](docs/STATUS.md) for what works today
-and the live slice plan. Auth (PRD #75 + #83), the lead-centric redesign
-(PRD #46), and Slice A (carrier identification) have all shipped; the rest of
-**D+E** — lease-doc upload + LLM extraction — is the next build. A dated
-milestone log lives at the bottom of this file. (Last doc sweep: 2026-06-02.)
+**Current state:** [docs/STATUS.md](docs/STATUS.md) is the live status — what
+works today, the slice plan, and the milestone trail. The product is deployed in
+production; Slices F and A have shipped (and most of C); the rest of **D+E**
+(lease-doc upload + LLM extraction) is the next unbuilt slice. (Last doc sweep:
+2026-06-13.)
 
-> **🔀 2026-05-25 phase shift:** The project pivoted from "v1 pitch
-> demo" to **Phase 1 of a co-founder-facing product** — see
-> [ADR-053](docs/adr/0053-product-phase-shift.md). Phase 1 is
-> freestanding towers across AR + MT + FL + WV (NC deferred to a Phase-1
-> stretch candidate; WV elevated to a committed anchor 2026-05-29,
-> [ADR-060](docs/adr/0060-wv-committed-anchor.md)); Phase 2 is rooftops
-> ([ADR-054](docs/adr/0054-asset-universe-phase-1-2.md)). Several legacy
-> ADRs were superseded, narrowed, or partially reversed — see
-> [docs/DECISIONS.md](docs/DECISIONS.md) for the full index.
+> **🔀 Phase shift (2026-05-25):** this went from "v1 pitch demo" to **Phase 1 of
+> a co-founder-facing product** — freestanding towers across AR + MT + FL + WV,
+> rooftops in Phase 2. Full narrative + the superseded/narrowed ADRs live in
+> [docs/SCOPE.md](docs/SCOPE.md) + [ADR-053](docs/adr/0053-product-phase-shift.md);
+> decision index in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ---
 
@@ -109,11 +105,10 @@ pilot/
 ├── docs/                     All deep-dive documentation
 │   ├── adr/                  Architecture Decision Records (all ADRs)
 │   ├── agents/               Skill-system configuration
-│   ├── research/             Data-source legal/license research
-│   └── archive/              Historical (preprocess v1, original v3 plan)
+│   └── research/             Data-source legal/license research
 ├── app/                      Svelte 5 + MapLibre map app (see app/ARCHITECTURE.md)
-├── app_puller/               PySide6 desktop puller
-├── backend/                  FastAPI + SQLAlchemy lead-triage write-layer (tenant-scoped Lead state; SQLite dev / Postgres). Username/password auth over the **`credential` table in the app DB** (managed via `python -m app.users`; PRD #130 / ADR-069 amending ADR-063's storage) — identity-only HS256 JWTs in an **httpOnly `pilot_session` cookie** (bearer still accepted; Origin/Referer CSRF middleware on non-GET), **the credential table re-authorizes every request** (removal/re-teaming applies on the next click) including the edge-gated `/data/processed/*` (`/api/auth/check` behind Caddy `forward_auth`), **teams are tenants** with registration-order inheritance (PRD #83 / #84–#88, ADR-062 + ADR-063), fail-closed `AUTH_DEV_MODE` (startup: real secret + ≥1 credential row); full Lead page — holdings + contact + attempts (#49); My-Leads kanban reads — /api/my-leads + /api/counts (#51); owners index serves the v3 filter rollups the shared top-bar FilterModel reads (#52); manual owner merge/split overrides — OwnerMergeService + owner_cluster_override, coalesce applied in the read path (#53); carriers on each tower structure — owners index schema v4, Structure model declares `carriers` (#28). S3 lease-doc storage + Claude API still planned. See backend/README.md
+├── app_puller/               PySide6 desktop puller (frozen — bug-fix-only, PRD #138)
+├── backend/                  FastAPI + SQLAlchemy lead-triage write-layer — tenant-scoped Lead state + Tasks, username/password auth, owners-index read path. Deployed in production. Auth + schema mechanics canonical in backend/README.md; invariants in §8.
 ├── scripts/
 │   ├── fetch/                Headless puller library
 │   ├── preprocess/           Normalizer/Join/View framework + Composer
@@ -137,7 +132,7 @@ its children.
 | Subsystem | Node | Owns | Most-violated invariant |
 |---|---|---|---|
 | Map app (frontend) | [`app/AGENTS.md`](app/AGENTS.md) | Svelte 5 + MapLibre read-layer triage UI | Schema-completeness contract; structures-first map |
-| Write-layer backend | [`backend/AGENTS.md`](backend/AGENTS.md) | FastAPI Lead status/notes/attempts | `tenant_id` everywhere; `users.txt` per-request authority; identity-only JWT |
+| Write-layer backend | [`backend/AGENTS.md`](backend/AGENTS.md) | FastAPI Lead status/notes/attempts + Tasks | `tenant_id` everywhere; `credential`-table per-request authority; identity-only JWT |
 | Headless puller | [`scripts/fetch/AGENTS.md`](scripts/fetch/AGENTS.md) | `DataSource` fetchers + manifest | No Qt imports; never add scraping to a MANUAL_ONLY source |
 | Preprocess pipeline | [`scripts/preprocess/AGENTS.md`](scripts/preprocess/AGENTS.md) | Normalizer→Join→View→Compose ETL | EPSG:4326 output; no normalize-time filtering; owners-index schema versioning |
 | Desktop puller | [`app_puller/AGENTS.md`](app_puller/AGENTS.md) | PySide6 UI over the headless puller | Qt lives only here; **frozen — bug-fix-only** (PRD #138) |
@@ -160,14 +155,9 @@ Global invariants (apply across all subsystems) live in §8 below.
 
 Phase 1 slice plan (untimed, goal-driven): **F → A → C → D+E → B**. After Slice B, the **4-week outcome-bar clock** starts (cofounder uses the product as his primary daily triage tool for 4 consecutive weeks).
 
-> **Status:** the lead-centric redesign (PRD #46) pulled the ADR-055/056
-> write-layer ahead of A and C and is complete; **Slice A (carriers)** has
-> landed. Remaining Phase-1 work: the rest of **D+E** (lease-doc upload + LLM
-> extraction), **Slice C** (tunable scoring UI; solar→parcel done), and
-> **Slice B** (vendor inference). Per-PR history + current blockers live in
-> [docs/STATUS.md](docs/STATUS.md) and the milestone log at the bottom of this file.
-
-Per-slice "shipped" gates in [docs/GOALS.md §3](docs/GOALS.md). Current slice + blockers in [docs/STATUS.md](docs/STATUS.md) — always check it before starting a new task.
+[docs/STATUS.md](docs/STATUS.md) owns what's shipped, what's next, and the
+milestone trail — **always read it before starting a task.** Per-slice "shipped"
+gates are in [docs/GOALS.md §3](docs/GOALS.md).
 
 ---
 
@@ -251,7 +241,7 @@ confirming the publisher's terms have changed.**
 
 ## 7. Pilot geography reference
 
-State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). Phase 1 committed anchor states: `05` (AR), `12` (FL), `30` (MT), `54` (WV — added + elevated to a committed anchor 2026-05-29, [ADR-060](docs/adr/0060-wv-committed-anchor.md); `wv_parcels`, WVGISTC statewide layer SB 588; see [docs/STATUS.md §4.4](docs/STATUS.md)). Deferred / Phase-1 stretch: `37` (NC) — raw deleted 2026-05-20, re-fetch + normalize + compose deferred (NC OneMap re-fetch intermittently 504s); still in the picture, just not a committed anchor. Dropped entirely (no owner data): `18` (IN — ADR-017), `49` (UT — ADR-049). Live anchor set + per-state status in [docs/SCOPE.md §2](docs/SCOPE.md) / [docs/STATUS.md](docs/STATUS.md).
+State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). FIPS codes: committed anchors `05` (AR), `12` (FL), `30` (MT), `54` (WV); deferred stretch `37` (NC); dropped `18` (IN), `49` (UT). The why-these set + per-state status are owned by [docs/SCOPE.md §2](docs/SCOPE.md) (anchors) and [docs/STATUS.md](docs/STATUS.md) (live per-state state).
 
 ---
 
@@ -271,7 +261,14 @@ State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). Ph
   add status / validity columns; let Joins and Views filter.
 - **Use `safe_merge`** when a Join adds columns that a Normalizer
   initializes as placeholders ([ADR-020](docs/adr/0020-safe-merge-helper.md)).
-- **Backend — `tenant_id` everywhere** ([ADR-055](docs/adr/0055-hosted-private-backend.md)). Every table has it; every route filters by it. SQLAlchemy ORM, SQLite dev / Postgres via `DATABASE_URL`. **Auth guard-rails** (PRD #75 + #83 + #130, ADR-062 + ADR-063 + ADR-069 — mechanics in `backend/README.md`): credentials live in the **`credential` table** (the deliberate no-`tenant_id` exception alongside `tenant` — a credential *determines* the tenant); the tenant is **resolved from it on every request** (`current_tenant_id` → `resolve_principal`), the JWT is **identity-only** and rides in the **httpOnly `pilot_session` cookie** (bearer still accepted; Origin/Referer CSRF middleware on non-GET), **teams are tenants** (registration order — the first registered team owns tenant 1 + the pre-teams lead board; `import-file` preserves a legacy file's order), and the edge gates `/data/processed/*` through `GET /api/auth/check` (Caddy `forward_auth` — the PII data plane is never served unauthenticated; `deploy.sh smoke` asserts it). Do **not** reintroduce the `tenant_id=1` stub, `APP_USERS`/`APP_USERS_FILE`, localStorage tokens, or tenant/team claims in the JWT; never hand-edit hashes, commit a `users.txt` or the DB (the commit-guard test enforces both), or relax the fail-closed `AUTH_DEV_MODE` posture (startup check: real secret + ≥1 credential row); manage credentials only via `python -m app.users`. **Schema changes ship as Alembic revisions** (PRD #134): edit `models.py`, autogenerate (`uv run alembic -c backend/alembic.ini revision --autogenerate -m "..." --rev-id 000N`), review the draft (it never sees data backfills); `init_db` upgrades to head at boot (safe on the single-writer deploy; pre-Alembic DBs stamp at the `0001` baseline) — never reintroduce additive back-fill helpers in `db.py`. **Owners index** (`scripts/preprocess/owners_index.py`, served read-only by `OwnersIndexService`) is at **schema v4** — when you extend it: bump `OWNERS_INDEX_SCHEMA_VERSION`, give new fields safe defaults (a stale index must still serve), and **declare any new `Structure`/`OwnerSummary` field on the backend model** (an undeclared field is silently dropped by `response_model`). **Manual owner merge/split** resolves in **one place** — `display_cluster_id = coalesce(override_target, raw_cluster_id)` in `OwnersIndexService.effective`; never fork resolution per surface, never bake an override into the parquet (raw cluster ids stay untouched, so overrides survive a recompute). See `backend/README.md`.
+- **Frozen desktop puller** (PRD #138): `app_puller/` is bug-fix-only — no new features; route them to the Textual-TUI successor (see [`app_puller/AGENTS.md`](app_puller/AGENTS.md)).
+
+**Backend invariants** (do not relax — full mechanics in [`backend/README.md`](backend/README.md), do-not-relax list in [`backend/AGENTS.md`](backend/AGENTS.md)):
+
+- **`tenant_id` on every table; every route filters by it** ([ADR-055](docs/adr/0055-hosted-private-backend.md)); SQLAlchemy ORM, SQLite dev / Postgres via `DATABASE_URL`. The `credential`/`tenant` tables are the deliberate exceptions (a credential *determines* the tenant).
+- **Auth posture is load-bearing** (ADR-062/063/069): credentials live in the **`credential` table** (managed only via `python -m app.users`) and **re-authorize every request** — API routes *and* the edge-gated `/data/processed/*`; the JWT is **identity-only** in the **httpOnly `pilot_session` cookie**; **teams are tenants**; `AUTH_DEV_MODE` fails closed. Never reintroduce `APP_USERS`/`users.txt`, localStorage tokens, tenant/team claims in the JWT, or the `tenant_id=1` stub; never commit the DB or hand-edit hashes.
+- **Schema changes ship as Alembic revisions** (PRD #134) — never additive back-fill helpers in `db.py`. The **OpenAPI schema is the frontend's type contract** (PRD #133) — regenerate + commit both artifacts after any model change.
+- **Owner merge/split + the owners index each resolve in one place**: `display_cluster_id = coalesce(override_target, raw_cluster_id)` (never forked per surface, never baked into the parquet); the owners index is schema-versioned with safe defaults + backend-model declaration (contract in [`scripts/preprocess/AGENTS.md`](scripts/preprocess/AGENTS.md)).
 
 ---
 
@@ -330,25 +327,6 @@ Single-context: [CONTEXT.md](CONTEXT.md) at the repo root. All ADRs under
 See [docs/agents/domain.md](docs/agents/domain.md).
 
 ---
-
-## Milestone log
-
-Volatile changelog kept at the **bottom** so the structural sections above
-form a stable, cacheable prefix. [docs/STATUS.md](docs/STATUS.md) is the
-authoritative live status; this is a quick orientation trail.
-
-- **2026-06-13 — desktop Qt puller frozen (policy-only; PRD #138).** The PySide6 puller is now **bug-fix-only** — keep-the-lights-on fixes allowed, **no new features**. Puller feature requests route to the named **Textual TUI successor** scope (a thin, CI-testable UI over the *unchanged* headless `scripts/fetch`/`scripts/preprocess` libraries, manual-walkthrough preserved) in PRD #138, or get deferred. The successor builds on **trigger** — any of: a puller feature the team needs, the PySide6 pin breaking on a platform in use, or the dependency blocking other work — and at retirement the Qt app + PySide6 pin are deleted together. Documentation-only change: policy recorded in `app_puller/AGENTS.md` (intent node) + the §2 orientation table here; no code touched. Full successor spec lives in the PRD.
-- **2026-06-12 — DuckDB is the preprocess heavy-lift engine** (PRD #135, PRs #153–#157; five stages, each output-equivalent and independently shipped). `scripts/preprocess/duck.py` is the ONE module that manages connections (spatial extension rides the locked `duckdb-extension-spatial` wheel — no runtime download). Migrated: infra→parcel pre-pass (one spatial join, all layers), county_summary (one GROUP BY over composite shards), owner-cluster pre-pass (sha1-in-SQL over stored norms ≡ hashlib; blank-norm fallback rows still route through `cluster.py` — the key recipe keeps its single home), slim-parquet+facets (out-of-core COPY sort + SQL facets), owners-index Lead-universe scan (predicate pushdown; resolver stays pandas). Deleted: the streaming sjoin loop, `_valid_parcel_mask`, `_CountySummary`, `iter_state_parcel_shards_columns`, `_read_parcels_table`/`_compute_facets` — `iter_state_parcel_shards` (the chunk loop) is the only remaining pandas shard reader. Per-stage equivalence is pinned by `tests/test_duckdb_equivalence.py` (frozen legacy implementations vs the live engine) and every stage was validated against real state data before merge (the checks caught two unstable-sort artifacts + an arrow-null-type dtype drift — defined tolerances documented in the harness). Geometry repair/reprojection stays in geopandas at normalize time; EPSG:4326 + all schema versions untouched.
-- **2026-06-12 — Alembic adopted: versioned migrations replace the additive `init_db` path** (PRD #134, PR #151). Baseline revision `0001` autogenerated from the current models; `init_db` now runs upgrade-to-head at boot — a pre-Alembic DB (tables, no `alembic_version`) is stamped at the baseline its schema already matches, a fresh DB runs the chain, so prod adopts in place on the next deploy. `_migrate_added_columns`/`_ensure_added_indexes` deleted after the rewritten `test_migration.py` proved parity (migrated schema ≡ `create_all` — columns/PKs/indexes/uniques), rows-intact adoption (including prod-shaped ALTER-era DDL), and idempotence on SQLite + the testcontainers-Postgres opt-in; behavior-test fixtures keep fast `create_all`. Convention: model edit → `uv run alembic -c backend/alembic.ini revision --autogenerate -m "..." --rev-id 000N` → review the draft (autogenerate never sees data backfills). Boot-time migration is safe on the single-writer deploy; multi-machine would move it to a release step (documented in DEPLOYMENT.md).
-- **2026-06-12 — generated API types: OpenAPI schema → TypeScript, drift gated in CI** (PRD #133, PR #150). The backend's OpenAPI document is now the single source of truth for frontend API types: `python -m scripts.export_openapi` dumps `app.openapi()` deterministically (sorted keys, no server boot) to a committed `backend/openapi.json`, and `npm run generate:api` (openapi-typescript, new frontend devDependency) turns it into a committed `app/src/lib/api-types.ts`. The hand-written clients (`leads-api.ts`, `tasks-api.ts`, Stats, SettingsAutomations) keep their bodies but derive request/response types from `components['schemas']`, narrowing only client semantics (status ladders, tuple coords, `Required<…>` for always-serialized defaults). A fourth CI workflow (`api-types`) regenerates both artifacts and fails on `git diff`; `backend/tests/test_openapi_export.py` asserts serverless byte-stable export + a current committed schema + Lead-page contract completeness. Undeclared response-model fields are now a compile error at the frontend use site, not a runtime surprise.
-- **2026-06-12 — uv toolchain + real packaging; sys.path hacks retired** (PRD #132, PR #149). One Python toolchain: the root `pyproject.toml` gained a `[project]` table with dependency groups (`pipeline`/`puller`/`backend`/`dev`), `uv.lock` is committed, and `uv sync` is the canonical environment command (creates `.venv` on the pinned Python 3.11, installs `fetch`/`preprocess` + the `scripts/` top-level modules editable). Every `sys.path.insert` is deleted (root `conftest.py` removed outright) and `tests/test_no_sys_path_hacks.py` guards against their return. Both Python CI workflows run `uv sync --locked` with the uv cache; the Docker image installs the backend group exported from the same lock (testcontainers moved to `dev`, so it left the prod image). All `requirements*.txt` retired.
-- **2026-06-12 — frontend gated in CI** (PRD #131, PR #146). `.github/workflows/frontend.yml` joins the ruff/pytest gates on every PR/push to `main`: Node 22 (matching the Dockerfile frontend stage), cached `npm ci`, then svelte-check → vitest → `npx vite build` as separate steps. Rehearsed at rollout: an intentional type error and an intentional unit-test failure each turned the gate red in the right step, then reverted. Playwright e2e deliberately stays out of the PR gate (needs real multi-GB anchor-state composites; documented in the workflow header) — local/nightly concern (#92).
-- **2026-06-12 — closed the unauthenticated data plane; credentials → DB; cookie sessions** (PRD #130, ADR-069). The verified exposure (unauthenticated range request to the prod owners index returned 206 with owner PII) is closed: Caddy `forward_auth` gates `/data/processed/*` via `GET /api/auth/check` (per-request authority now covers the data plane); the session JWT moved from localStorage to an httpOnly `pilot_session` cookie (+ logout endpoint + Origin/Referer CSRF middleware); credentials moved from `users.txt` into the Litestream-replicated `credential` table (CLI repointed, `import-file` one-shot migration self-ran at the cutover boot; file support then retired). `deploy.sh smoke` asserts unauth data → 401/403. PRs #139/#140/#142/#143/#144/#145.
-- **2026-06-07 — Settings page: per-user preferences + relocated Automations** (PRD #121, ADR-068). First per-user persisted layer: new `UserSetting` table `(tenant_id, user_id, key)` + `UserSettingsStore` behind `GET/PUT /api/me/settings`; `PUT /api/me` (display name); self-service `POST /api/me/password` (verify-then-`set_password`, the one sanctioned runtime caller of the credentials writer). Frontend: `#/settings` route + user-menu dropdown; dark theme + colorblind mode (Wong-safe `--s-*` remap + non-color status glyph) via a pure `appearance.ts`, flash-free boot; basemap + default-map-view (`basemap.ts`); personal filter defaults (deep links win); Automations relocated from the Tasks digest (still tenant-level). Pure modules TDD'd; components/wiring left to e2e per the stale-suite posture (#92).
-- **2026-06-02 — auth: file credentials + teams-as-tenants + per-request authority** (PRD #83, ADR-063). `backend/users.txt` (`username:hash:team`, managed by `python -m app.users`, #87) replaced `APP_USERS` as the only credential source (#84 / PR #89); a full-screen sign-in gate renders before any map/data (#85 / PR #90); teams register as tenants in file order (#86 / PR #91); the file re-authorizes every request, JWT identity-only (#88 / PR #94).
-- **2026-05-31 — auth front door → username/password** (PRD #75, ADR-062). Replaced magic-link with `POST /api/auth/login` → HS256 JWT (#76 / PR #79), added throttle + credential-keyed fail-closed boot (#77 / PR #81), removed the magic-link machinery (#78).
-- **2026-05-30 — lead-centric triage redesign complete** (PRD #46, ADR-061). Tracer (#47) → auth (#48) → full Lead page + owners index schema v2 (#49) → structures-first map (#50) → My-Leads kanban (#51) → top-bar filters + owner/ASR search, schema v3 (#52) → manual owner merge/split (#53).
-- **2026-05-30 — Slice A (carrier identification) landed.** FCC ULS↔ASR carrier layer merged (#12 normalize → #11 join calibration → #22 licensee→brand rollup → #24 `carriers` on every tower) + carrier-list UI, owners-index schema v4 (#28 / PR #71). Coverage ~6–17% of ASR towers (high-precision / low-recall) — an empty carrier list is the common case.
 
 <!-- code-review-graph MCP tools -->
 ## MCP Tools: code-review-graph

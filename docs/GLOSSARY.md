@@ -20,7 +20,7 @@ For the canonical product-language slice (Vendor / Carrier / Registrant / Freest
 
 ## B
 
-- **Backend** — the Slice 4 FastAPI service that stands up alongside the static map app. Holds lead state, lease document references, activity log, scoring profiles. Postgres + S3-compatible object store + username/password auth ([ADR-062](./adr/0062-username-password-replaces-magic-link.md)) + Claude API for lease extraction. See [ADR-055](./adr/0055-hosted-private-backend.md).
+- **Backend** — the FastAPI + SQLAlchemy service alongside the static map app, **live in production**. Holds lead + task state, contact attempts, activity log, scoring presets/settings, owner merge/split overrides; username/password auth ([ADR-062](./adr/0062-username-password-replaces-magic-link.md)/[063](./adr/0063-file-credentials-teams-per-request-authority.md)/[069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md)). SQLite-on-volume in prod (Litestream→R2; [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md)). Lease-doc storage (R2) + Claude API extraction are planned (D+E). See [ADR-055](./adr/0055-hosted-private-backend.md) / [backend/README.md](../backend/README.md).
 - **BLM / BIA** — Bureau of Land Management / Bureau of Indian Affairs. Federal landholders whose parcels may not appear in county-level tax rolls.
 
 ## C
@@ -154,7 +154,7 @@ For the canonical product-language slice (Vendor / Carrier / Registrant / Freest
 - **UCC-1** — Uniform Commercial Code financing statement; secured parties file these. Surfaced in the Slice 4 lead-detail panel as third-party-ownership clues for parcel-attached assets.
 - **ULS** — Universal Licensing System (FCC). Six bulk data bands + meta. **Cellular (Part 22) + PCS (Part 24) + AWS / 700 MHz (Part 27) are in Phase 1 Slice A** for carrier identification ([ADR-053](./adr/0053-product-phase-shift.md) partially reverses ADR-013). Microwave, Ownership, Transfers, Leasing remain deferred.
 - **USDA ERS** — USDA Economic Research Service. Publishes persistent-poverty + county typology data.
-- **Username/password login** — the backend's sign-in front door: credentials in the git-ignored `backend/users.txt` file (`username:<pbkdf2-hash>:team` per line, managed via `python -m app.users`), exchanged at `POST /api/auth/login` for an identity-only HS256 session JWT; the file re-authorizes every request ([ADR-062](./adr/0062-username-password-replaces-magic-link.md) / [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md), PRDs #75 / #83). Replaced magic-link auth.
+- **Username/password login** — the backend's sign-in front door: credentials in the app DB's `credential` table (PBKDF2 hashes, managed via `python -m app.users`), exchanged at `POST /api/auth/login` for an identity-only HS256 session JWT set in an httpOnly cookie; the credential table re-authorizes every request ([ADR-062](./adr/0062-username-password-replaces-magic-link.md) / [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md) / [ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md), PRDs #75 / #83 / #130). Replaced magic-link auth. Mechanics: [backend/README.md](../backend/README.md).
 - **USPVDB** — US Photovoltaic Database. USGS / Berkeley dataset of utility-scale solar facility polygons.
 - **usaddress** — pure-Python US-only address parser. Fallback if libpostal install is painful in Slice 4. Narrower coverage, no native dependencies.
 

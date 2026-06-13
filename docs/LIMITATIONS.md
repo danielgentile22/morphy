@@ -437,13 +437,13 @@ How to mitigate:
 
 ---
 
-## ⚠ Data pipeline is batch-only; backend stands up in Slice 4
+## ⚠ Data pipeline is batch-only
 
-**Added 2026-05-19. Updated 2026-05-25.**
+**Added 2026-05-19. Updated 2026-06-13.**
 
 The data pipeline is batch-only. Re-running `python scripts/preprocess.py` overwrites all outputs for any state it touches. There is no streaming ingest, no cron-driven refresh.
 
-**Slice 4 stands up a hosted-private backend** ([ADR-055](./adr/0055-hosted-private-backend.md)) — username/password auth ([ADR-062](./adr/0062-username-password-replaces-magic-link.md)), multi-user-ready (2-5 users Phase 1), single-tenant from Day 1 but tenant-shaped schema. Lead state, lease docs, activity log live there. The static-site model is preserved for read-only analytical layers (parquet, PMTiles, GeoJSON).
+**The hosted-private backend is live** ([ADR-055](./adr/0055-hosted-private-backend.md)) — username/password auth ([ADR-062](./adr/0062-username-password-replaces-magic-link.md)/[063](./adr/0063-file-credentials-teams-per-request-authority.md)/[069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md)), teams-as-tenants on a tenant-shaped schema (2–5 users Phase 1). Lead + task state and the activity log live there (lease docs are the next unbuilt slice). The static-site model is preserved for read-only analytical layers (parquet, PMTiles, GeoJSON), now edge-gated behind auth.
 
 Implication:
 - The data pipeline still requires the dev to run the puller manually (Phase 1).

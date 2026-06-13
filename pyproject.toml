@@ -127,7 +127,6 @@ extend-exclude = [
     ".venv",
     "build",
     "dist",
-    "docs/archive",
     "data",
 ]
 

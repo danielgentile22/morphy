@@ -6,10 +6,10 @@
 >
 > For the **current technical state** see:
 >
-> - [docs/SCOPE.md](docs/SCOPE.md) — Phase 1 product cut (AR + MT + FL + NC; freestanding towers; co-founder-facing internal product)
+> - [docs/SCOPE.md](docs/SCOPE.md) — Phase 1 product cut (committed anchors AR + MT + FL + WV; NC deferred to a stretch; freestanding towers; co-founder-facing internal product)
 > - [docs/STATUS.md](docs/STATUS.md) — what works today
 > - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the system fits together (replaces the Sections 5 + 6 description below)
-> - [docs/adr/0053-product-phase-shift.md](docs/adr/0053-product-phase-shift.md) — the 2026-05-25 reframe from "pitch demo" to "fleshed-out co-founder product" (ADRs 053–059 in [docs/adr/](docs/adr/) lock the resulting decisions)
+> - [docs/adr/0053-product-phase-shift.md](docs/adr/0053-product-phase-shift.md) — the 2026-05-25 reframe from "pitch demo" to "fleshed-out co-founder product" (ADRs 053+ in [docs/adr/](docs/adr/), indexed by [docs/DECISIONS.md](docs/DECISIONS.md), lock the resulting decisions)
 >
 > The v1 Graham-County one-shot referenced in Sections 5 + 6 has been superseded by the v3 framework and the 2026-05-25 product pivot. The business case (Sections 1–4, 7–10) remains authoritative.
 

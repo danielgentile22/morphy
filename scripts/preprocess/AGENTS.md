@@ -25,9 +25,16 @@ CLAUDE.md §5.7 (adding a normalizer), §8 (code conventions).
 - **No new normalize-time filtering** — full-fidelity raw preservation. Keep all rows;
   add status/validity columns; let Joins and Views filter.
 - **Use `safe_merge`** (ADR-020) when a Join adds columns a Normalizer placeholdered.
-- **Owners index is schema v4**: bump `OWNERS_INDEX_SCHEMA_VERSION` on change, give new
-  fields safe defaults (a stale index must still serve downstream). Mirror any field the
-  backend serves onto its `Structure`/`OwnerSummary` model — see [`../../backend/AGENTS.md`](../../backend/AGENTS.md).
+- **Owners index is schema-versioned (currently v5)** — `owners_index.py` owns the
+  contract. **Extending it:** bump `OWNERS_INDEX_SCHEMA_VERSION`, give new fields safe
+  defaults (a stale index must still serve downstream), and mirror any field the backend
+  serves onto its `Structure`/`OwnerSummary` model (an undeclared field is silently
+  dropped by `response_model` — see [`../../backend/AGENTS.md`](../../backend/AGENTS.md)).
+  Version history: **v2** per-owner `holdings` + `mailing_address` +
+  `tallest_tower_height_m`; **v3** filter rollups (`counties`, `active_tower_count`,
+  `structure_count`, `structure_types`) + the slim `owners_filter.json` companion;
+  **v4** `carriers` on each tower structure; **v5** per-tower `score` (interestingness
+  projected onto each structure, ADR-067).
 - **Never bake owner merge/split overrides into the parquet.** Raw cluster ids stay
   untouched; overrides are a backend read-time concern.
 - Clustering stays conservative: a false merge is a wrong-person call.

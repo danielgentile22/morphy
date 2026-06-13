@@ -1,6 +1,6 @@
 # DECISIONS — Architecture Decision Records (index)
 
-**Last updated:** 2026-06-06 (ADR-065/066/067 — UI overhaul: three-section IA + Dashboard digest-hub, inbound-event reply seam, tower-grained Explore; ADR-058 amended for tower-grain scoring presets)
+**Last updated:** 2026-06-13 (doc sweep — PRD #161). Latest decisions: ADR-069 (credentials in DB + cookie sessions + edge-gated data plane, PRD #130); ADR-064 now shipped & deployed (#16 closed); ADR-019 marked superseded by ADR-047.
 
 Index of every locked-in design choice in the repo. Per-ADR content lives under [`docs/adr/`](./adr/). New ADRs go straight there ([CLAUDE.md §9](../CLAUDE.md)).
 

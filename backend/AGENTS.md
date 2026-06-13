@@ -49,10 +49,11 @@ the schema, or the owners-index read path.
   coalesce(override_target, raw_cluster_id)` in `OwnersIndexService.effective`.
   Never fork resolution per surface; never bake an override into the parquet
   (raw cluster ids stay untouched so overrides survive a recompute).
-- **Owners index is schema v4.** Extending it: bump `OWNERS_INDEX_SCHEMA_VERSION`,
-  give new fields safe defaults (a stale index must still serve), and declare any
-  new `Structure`/`OwnerSummary` field on the backend model (undeclared fields are
-  silently dropped by `response_model`).
+- **Owners index is schema-versioned (currently v5).** Declare any new
+  `Structure`/`OwnerSummary` field on the backend model — undeclared fields are
+  silently dropped by `response_model`. The producer-side versioning contract
+  (bump + safe defaults + version history) lives in
+  [`../scripts/preprocess/AGENTS.md`](../scripts/preprocess/AGENTS.md).
 - **Schema changes ship as Alembic revisions (PRD #134).** Edit `app/models.py`,
   then `uv run alembic -c backend/alembic.ini revision --autogenerate -m "..."
   --rev-id 000N` and *review the output* — autogenerate cannot see data

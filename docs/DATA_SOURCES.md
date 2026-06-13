@@ -185,6 +185,26 @@ Each zip unpacks into pipe-delimited `.dat` files keyed by record type:
   licensees have authorization at a site) and ASR for the actual tower
   coordinates. This is documented FCC guidance.
 
+### ULS↔ASR matching (`asr_number` coverage + tolerance calibration, #11/#24)
+The carrier join (`scripts/preprocess/joins/uls_to_asr.py`) leans on two
+measured facts about the `LO` records:
+
+- **`asr_number` coverage is bimodal, not uniform** — ~**59% of Cellular**
+  (Part 22 site-based, so most rows name the registered ASR tower) and **0% of
+  PCS/AWS/700** (Part 24/27 market/geographic-area licenses describe a licensed
+  *area*, not a registered structure). So the exact cross-reference is a
+  Cellular feature; every PCS/AWS/700 match comes from the spatial fallback.
+- **The "blank ULS coordinates" caveat does not hold for these site-based
+  bands** — lat/lon is populated ~100%. The problem is *drift*, not blankness:
+  the true co-located ULS↔ASR distance is p95 ≈ 44 m (anchor) / 64 m (national),
+  ≤100 m on 97–98% of genuine pairs, ≤500 m on 99.6–99.9%. That calibrates the
+  confidence tiers — exact `asr_number` → `verified`, nearest ASR ≤100 m →
+  `likely`, ≤500 m → `possible`, beyond → refused (the far tail is data-entry
+  garbage). Do not loosen the 100/500 m thresholds.
+
+Regenerate the full coverage + drift analysis on demand (reads normalized
+parquet, no recompute): `python scripts/audits/uls_asr_number_coverage.py`.
+
 ---
 
 ## 8. FAA Digital Obstacle File (DOF)

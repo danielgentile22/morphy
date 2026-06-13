@@ -14,9 +14,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 
-# docs/archive holds historical code verbatim; this file names the pattern
-# in its own source.
-EXCLUDED_PREFIXES = ("docs/archive/",)
+# This file names the pattern in its own source, so it excludes itself.
 SELF = "tests/test_no_sys_path_hacks.py"
 
 PATTERN = re.compile(r"sys\s*\.\s*path\s*\.\s*(insert|append)")
@@ -36,7 +34,6 @@ def test_no_sys_path_manipulation_in_tracked_python() -> None:
         rel
         for rel in files
         if rel != SELF
-        and not rel.startswith(EXCLUDED_PREFIXES)
         and PATTERN.search((REPO / rel).read_text(encoding="utf-8", errors="replace"))
     ]
     assert not offenders, (

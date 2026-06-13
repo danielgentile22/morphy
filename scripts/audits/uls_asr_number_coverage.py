@@ -21,8 +21,9 @@ Run:
     source .venv/bin/activate
     python scripts/audits/uls_asr_number_coverage.py
 
-Prints markdown-ready tables; the numbers are transcribed into
-docs/audits/uls_asr_number_coverage.md.
+Prints markdown-ready tables on demand. The durable methodology note (bimodal
+asr_number coverage + the drift-calibrated confidence tiers) lives in the FCC-ULS
+caveats of docs/DATA_SOURCES.md §2-7; re-run this script for the full numbers.
 """
 
 from __future__ import annotations

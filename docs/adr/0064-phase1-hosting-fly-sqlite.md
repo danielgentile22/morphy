@@ -1,6 +1,6 @@
 # ADR-064: Phase-1 hosting — Fly.io single machine, SQLite-on-volume, Cloudflare front
 
-**Status:** Accepted — **not yet implemented** (deploy artifacts unbuilt; tracked by issue #16).
+**Status:** Accepted — **shipped & deployed** (#16 closed; the app is live in production on this stack — Fly machine, SQLite-on-volume + Litestream→R2, Cloudflare front; `deploy.sh smoke` gates the unauth data plane).
 **Narrows:** [ADR-055](0055-hosted-private-backend.md) — the *platform* ("small VM, Fly/Render/Hetzner class, pick later"), the *database* (managed Postgres → SQLite-on-volume), and the *object store* (always-on S3 service → R2 for backups + later lease PDFs). The hosted-private backend, tenant-shaped schema, JWT sessions, and HTTPS/PII-custody requirements of ADR-055 all stand.
 **Pairs with:** [ADR-057](0057-budget-posture-reframed.md) (right-sized budget), [ADR-063](0063-file-credentials-teams-per-request-authority.md) (file credentials / per-request authority), [ADR-040](0040-parcel-owner-pii.md) (parcel-owner PII).
 **Date:** 2026-06-03

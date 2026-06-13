@@ -65,7 +65,7 @@ Public-record information that is **not** sensitive in isolation: parcel APN, ge
 | Auth | Username/password against the `credential` table in the app DB (PBKDF2 hashes, managed via `python -m app.users`); identity-only HS256 session JWTs in an httpOnly `pilot_session` cookie; **the credential table is authoritative on every request** — removal / re-teaming applies on the next click, and the edge gates `/data/processed/*` through the same check ([ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md) as amended by [ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md)) |
 | Multi-tenancy | `tenant_id` column on every table; every route filters by it; isolation tests gate PRs |
 | Lease-PDF storage | S3-compatible bucket; **encrypted at rest** (SSE-S3 or KMS); private bucket; signed download URLs only |
-| Database | Managed Postgres; TLS in transit; backups daily; encryption at rest |
+| Database | SQLite-on-volume in prod, replicated to R2 via Litestream ([ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md)); DB-agnostic ORM (Postgres-ready). TLS in transit; continuous backup |
 | API transport | HTTPS only (HSTS); HTTP redirects to HTTPS |
 | LLM calls | Anthropic API only; no provider-side training opt-in; minimum data sent (we send the lease PDF + an extraction schema, not lead state) |
 | Audit log | `activity` table records who did what when, including extraction runs |

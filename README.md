@@ -2,7 +2,7 @@
 
 **Cell-tower ground-lease renegotiation analytics.** Joins tower locations to parcel records to economic-distress overlays, then layers carrier identification + lease document storage + LLM-based extraction + triage workflow into a co-founder-facing product. **Phase 1** covers four committed anchor states (AR + MT + FL + WV) with freestanding towers (NC deferred to a Phase-1 stretch candidate); **Phase 2** adds rooftop installations + operational scale.
 
-> 🔀 **2026-05-25 phase shift:** previously a "v1 pitch-quality demo," this is now Phase 1 of a fleshed-out internal product the business co-founder uses daily for triage — see [docs/adr/0053-product-phase-shift.md](docs/adr/0053-product-phase-shift.md) for the reframe and ADRs 053–059 in [docs/adr/](docs/adr/) for the locked decisions.
+> 🔀 **2026-05-25 phase shift:** previously a "v1 pitch-quality demo," this is now Phase 1 of a fleshed-out internal product the business co-founder uses daily for triage — see [docs/adr/0053-product-phase-shift.md](docs/adr/0053-product-phase-shift.md) for the reframe and ADRs 053+ in [docs/adr/](docs/adr/) (indexed by [docs/DECISIONS.md](docs/DECISIONS.md)) for the locked decisions.
 
 > Read [docs/SCOPE.md](docs/SCOPE.md) first for what's being built right now. Read [PROJECT_BRIEF.md](PROJECT_BRIEF.md) for the business case.
 
@@ -14,8 +14,8 @@
 |---|---|---|
 | **Data Puller** | `app_puller/` | PySide6 desktop UI; fetches raw data into `data/raw/<source_id>/current/`. |
 | **Preprocess pipeline** | `scripts/preprocess/` | Registry-driven Normalizer + Join + View framework; per-state Composer. |
-| **Map app** | `app/` | Svelte 5 + MapLibre analytical SPA — PMTiles parcels + DuckDB-WASM filtering + tunable scoring (Slice 3). See [app/ARCHITECTURE.md](app/ARCHITECTURE.md). |
-| **Backend** | `backend/` | FastAPI + SQLAlchemy lead-triage write-layer — tenant-scoped lead state, contact attempts, owner merge/split overrides; username/password auth ([ADR-062](docs/adr/0062-username-password-replaces-magic-link.md)). S3 lease-doc storage + Claude API extraction still planned. Per [ADR-055](docs/adr/0055-hosted-private-backend.md). See [backend/README.md](backend/README.md). |
+| **Map app** | `app/` | Svelte 5 + MapLibre analytical SPA — three-section IA (Dashboard · Explore · Leads), PMTiles parcels + DuckDB-WASM filtering + tunable scoring. See [app/ARCHITECTURE.md](app/ARCHITECTURE.md). |
+| **Backend** | `backend/` | FastAPI + SQLAlchemy lead-triage write-layer — tenant-scoped lead + task state, contact attempts, owner merge/split overrides; username/password auth ([ADR-062](docs/adr/0062-username-password-replaces-magic-link.md)/[063](docs/adr/0063-file-credentials-teams-per-request-authority.md)/[069](docs/adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md)). Deployed in production. S3 lease-doc storage + Claude API extraction still planned. Per [ADR-055](docs/adr/0055-hosted-private-backend.md). See [backend/README.md](backend/README.md). |
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the full system diagram + data flow.
 
@@ -154,11 +154,10 @@ pilot/
 │   ├── raw/<source>/current/
 │   └── processed/{normalized,composite}/
 ├── docs/                     All deep-dive documentation
-│   ├── adr/                  Architecture Decision Records (ADR-053+; legacy in docs/DECISIONS.md)
-│   ├── archive/              Historical docs (preprocess v1, etc.)
-│   ├── pitch-assets/         Screenshots / GIFs
+│   ├── adr/                  Architecture Decision Records (all ADRs; indexed by docs/DECISIONS.md)
+│   ├── agents/               Skill-system configuration
 │   └── research/             Data-source legal/license research
-└── tests/                    (preprocess tests; backend tests will live under backend/tests/ once the backend is built)
+└── tests/                    Preprocess + app-asset tests (backend tests live under backend/tests/)
 ```
 
 ---
@@ -169,11 +168,11 @@ This is a **Phase 1 internal product** for a 2-person team (dev + business co-fo
 
 **Phase 1 slice plan** (untimed, goal-driven):
 
-1. **F** — Committed anchors (AR + MT + FL + WV) composed; FL recomposed 2026-05-29 (county-score gap closed; chunked compose ADR-051); WV added + committed as the 4th anchor 2026-05-29 (ADR-060, PR #44). NC re-fetch + compose **deferred** to a Phase-1 stretch (NC OneMap 504s) — not gating. — **✅ committed anchors composed**
-2. **A** — FCC ULS carrier identification (Cellular + PCS + AWS / 700 MHz) — **next up**
-3. **C** — Asset enrichment (billboards + solar on parcel) + tunable scoring UI
-4. **D + E** — Lease doc upload + LLM extraction + triage state / write layer / CSV exports (**backend stands up here**)
-5. **B** — Vendor (tower-co) inference
+1. **F** — Committed anchors (AR + MT + FL + WV) composed — **✅ shipped**
+2. **A** — FCC ULS carrier identification (Cellular + PCS + AWS / 700 MHz) — **✅ shipped** (~6–17% coverage)
+3. **C** — Asset enrichment (billboards + solar on parcel) + tunable scoring UI — **✅ scoring UI shipped** (billboards await anchor raw data)
+4. **D + E** — Lease doc upload + LLM extraction + triage state / write layer / CSV exports — backend + triage **shipped**; **lease upload + LLM extraction is the next unbuilt work**
+5. **B** — Vendor (tower-co) inference — not started
 
 Per-slice "shipped" gates in [docs/GOALS.md §3](docs/GOALS.md). Overall outcome bar: co-founder uses the product as his primary daily triage tool for 4 consecutive weeks.
 

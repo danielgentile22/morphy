@@ -38,9 +38,10 @@ Scoring becomes **tunable and transparent** in the map app (Slice 3):
 
 ## Amendment (2026-06-06) — UI overhaul
 
-The UI overhaul ([docs/UI_OVERHAUL.md](../UI_OVERHAUL.md), decision D4) extends this
-ADR; the core (tunable, transparent, client-side over DuckDB-WASM, named saved
-configs, today's weights as the default) stands. Three refinements:
+The UI overhaul (plan decision D4 — shipped; the plan doc was retired, in git
+history) extends this ADR; the core (tunable, transparent, client-side over
+DuckDB-WASM, named saved configs, today's weights as the default) stands. Three
+refinements:
 
 - **Tower-grain.** Scoring was specified per **parcel**. Explore (ADR-067) ranks
   **towers**, so the same tunable framework now also produces a **per-tower** score

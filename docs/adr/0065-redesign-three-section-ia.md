@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-06-06
 **Pairs with:** ADR-061 (lead-centric redesign), ADR-066, ADR-067
-**Plan:** [docs/UI_OVERHAUL.md](../UI_OVERHAUL.md) (decisions D1, D5, D9, D10, D13)
+**Plan:** the UI-overhaul plan (decisions D1, D5, D9, D10, D13) — shipped; the plan doc was retired, recover from git history if needed.
 
 ## Context
 

@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-06-06
 **Pairs with:** ADR-065, ADR-061
-**Plan:** [docs/UI_OVERHAUL.md](../UI_OVERHAUL.md) (decisions D6, D12)
+**Plan:** the UI-overhaul plan (decisions D6, D12) — shipped; the plan doc was retired, recover from git history if needed.
 
 ## Context
 

@@ -14,7 +14,8 @@ the structure (American Tower, Crown Castle …), which comes from FCC ASR and
 is Slice B. Do not conflate them.
 
 ----------------------------------------------------------------------------
-MATCHING — the #11-calibrated hybrid strategy (docs/audits/uls_asr_number_coverage.md)
+MATCHING — the #11-calibrated hybrid strategy (FCC-ULS caveats in docs/DATA_SOURCES.md §2-7;
+regenerate the full calibration with ``python scripts/audits/uls_asr_number_coverage.py``)
 ----------------------------------------------------------------------------
 Each ULS ``location`` row is attached to exactly one tower, by the first of
 two paths that fires:
