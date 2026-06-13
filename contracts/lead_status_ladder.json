@@ -1,0 +1,84 @@
+{
+  "$comment": [
+    "Cross-language contract: the Lead status ladder (PRD #137 / ADR-061).",
+    "This fixture is the single source of truth for the status state machine.",
+    "It is asserted by BOTH implementations' test suites against the same cases:",
+    "  - backend/tests/test_contract_lead_status.py  -> backend/app/lead_status.py",
+    "  - app/tests/unit/contract-lead-status.test.ts  -> app/src/lib/lead-status.ts",
+    "Change a rule here and exactly one of the two suites goes red on the side",
+    "that drifted. Editing this file IS editing the contract — review accordingly.",
+    "",
+    "Semantics encoded (today's behavior, do not change without a separate PRD):",
+    "  - Same-status (identity) saves are always allowed (note-only save).",
+    "  - 'in_business' is the one true terminal (won): no outgoing transitions.",
+    "  - 'uninterested' is closed-but-reopenable: it may move to ANY status.",
+    "  - allowed == true  => validate_transition / validateTransition does NOT throw.",
+    "  - allowed == false => it throws (unknown OR illegal).",
+    "  - An unknown status as `to` or `from` is never allowed."
+  ],
+  "statuses": [
+    "new",
+    "researching",
+    "contacted",
+    "interested",
+    "in_business",
+    "uninterested"
+  ],
+  "initial_status": "new",
+  "terminal_statuses": ["in_business", "uninterested"],
+  "allowed_transitions": {
+    "new": ["researching"],
+    "researching": ["contacted", "uninterested"],
+    "contacted": ["interested", "uninterested"],
+    "interested": ["in_business", "uninterested"],
+    "in_business": [],
+    "uninterested": ["new", "researching", "contacted", "interested", "in_business"]
+  },
+  "transition_cases": [
+    { "from": "new", "to": "new", "allowed": true, "note": "identity save is idempotent" },
+    { "from": "new", "to": "researching", "allowed": true, "note": "first rung forward" },
+    { "from": "new", "to": "contacted", "allowed": false, "note": "rung-skipping" },
+    { "from": "new", "to": "interested", "allowed": false },
+    { "from": "new", "to": "in_business", "allowed": false },
+    { "from": "new", "to": "uninterested", "allowed": false, "note": "cannot give up before any work" },
+
+    { "from": "researching", "to": "new", "allowed": false, "note": "no backward step on the ladder" },
+    { "from": "researching", "to": "researching", "allowed": true },
+    { "from": "researching", "to": "contacted", "allowed": true },
+    { "from": "researching", "to": "interested", "allowed": false, "note": "rung-skipping" },
+    { "from": "researching", "to": "in_business", "allowed": false },
+    { "from": "researching", "to": "uninterested", "allowed": true, "note": "give-up branch" },
+
+    { "from": "contacted", "to": "new", "allowed": false },
+    { "from": "contacted", "to": "researching", "allowed": false },
+    { "from": "contacted", "to": "contacted", "allowed": true },
+    { "from": "contacted", "to": "interested", "allowed": true },
+    { "from": "contacted", "to": "in_business", "allowed": false, "note": "rung-skipping" },
+    { "from": "contacted", "to": "uninterested", "allowed": true, "note": "give-up branch" },
+
+    { "from": "interested", "to": "new", "allowed": false },
+    { "from": "interested", "to": "researching", "allowed": false },
+    { "from": "interested", "to": "contacted", "allowed": false },
+    { "from": "interested", "to": "interested", "allowed": true },
+    { "from": "interested", "to": "in_business", "allowed": true, "note": "won" },
+    { "from": "interested", "to": "uninterested", "allowed": true, "note": "give-up branch" },
+
+    { "from": "in_business", "to": "new", "allowed": false },
+    { "from": "in_business", "to": "researching", "allowed": false },
+    { "from": "in_business", "to": "contacted", "allowed": false },
+    { "from": "in_business", "to": "interested", "allowed": false },
+    { "from": "in_business", "to": "in_business", "allowed": true, "note": "identity save on the terminal is still allowed" },
+    { "from": "in_business", "to": "uninterested", "allowed": false, "note": "in_business is the one true terminal — no way out" },
+
+    { "from": "uninterested", "to": "new", "allowed": true, "note": "reopenable to ANY status" },
+    { "from": "uninterested", "to": "researching", "allowed": true },
+    { "from": "uninterested", "to": "contacted", "allowed": true },
+    { "from": "uninterested", "to": "interested", "allowed": true },
+    { "from": "uninterested", "to": "in_business", "allowed": true, "note": "reopen straight to won" },
+    { "from": "uninterested", "to": "uninterested", "allowed": true, "note": "identity save" },
+
+    { "from": "new", "to": "archived", "allowed": false, "note": "unknown target status" },
+    { "from": "archived", "to": "new", "allowed": false, "note": "unknown source status" },
+    { "from": "archived", "to": "archived", "allowed": false, "note": "unknown source and target" }
+  ]
+}

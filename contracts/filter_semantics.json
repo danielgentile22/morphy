@@ -1,0 +1,665 @@
+{
+  "$comment": [
+    "Cross-language contract: owner filter semantics (PRD #137 / ADR-061).",
+    "The shared FILTER_FIELDS registry (app/src/lib/filter-model.ts) projects every",
+    "filter two ways from one definition: a DuckDB SQL WHERE body (composeOwnerWhere)",
+    "and a JS runtime predicate (matchesOwner). This fixture pins both against the",
+    "same synthetic owners so the two projections can never silently disagree.",
+    "",
+    "Consumed by:",
+    "  - app/tests/unit/contract-filter-semantics.test.ts (vitest): asserts",
+    "      composeOwnerWhere(filter) === case.where  (the generated SQL is current)",
+    "      and matchesOwner over `owners` === case.expected_ids  (the JS predicate).",
+    "  - tests/test_contract_filter_semantics.py (pytest): builds a DuckDB table from",
+    "      `owners` (typed by `owner_columns`), executes case.where, and asserts the",
+    "      selected ids === case.expected_ids  (the SQL, run in a real engine).",
+    "",
+    "`where` is the EXACT string composeOwnerWhere emits today; vitest asserts it",
+    "byte-for-byte, so a generator change forces a fixture edit (and the Python side",
+    "then runs the new SQL). `expected_ids` is the language-neutral ground truth both",
+    "engines must reproduce. An empty `where` ('') means no constraint (all rows).",
+    "",
+    "These encode TODAY'S behavior (verified: SQL and predicate agree on every case).",
+    "Adding a filter field or case extends this file; do not change semantics here.",
+    "Scope note: the parcel registry (app/src/lib/filters.ts) is SQL-only (no JS",
+    "predicate), so it is not part of this two-engine parity fixture."
+  ],
+  "owner_columns": {
+    "id": "VARCHAR",
+    "states": "VARCHAR[]",
+    "counties": "VARCHAR[]",
+    "owner_kind": "VARCHAR",
+    "distress_tier": "VARCHAR",
+    "in_oz": "BOOLEAN",
+    "in_qct": "BOOLEAN",
+    "persistent_poverty": "BOOLEAN",
+    "score": "DOUBLE",
+    "parcel_count": "BIGINT",
+    "total_assessed_value": "DOUBLE",
+    "tower_count": "BIGINT",
+    "solar_count": "BIGINT",
+    "structure_count": "BIGINT",
+    "structure_types": "VARCHAR[]",
+    "active_tower_count": "BIGINT",
+    "tallest_tower_height_m": "DOUBLE"
+  },
+  "owners": [
+    {
+      "id": "o01",
+      "states": [
+        "AR"
+      ],
+      "counties": [
+        "05119"
+      ],
+      "owner_kind": "llc",
+      "distress_tier": "distressed",
+      "in_oz": true,
+      "in_qct": true,
+      "persistent_poverty": true,
+      "score": 0.8,
+      "parcel_count": 4,
+      "total_assessed_value": 25000,
+      "tower_count": 2,
+      "solar_count": 1,
+      "structure_count": 3,
+      "structure_types": [
+        "tower",
+        "solar"
+      ],
+      "active_tower_count": 2,
+      "tallest_tower_height_m": 120
+    },
+    {
+      "id": "o02",
+      "states": [
+        "MT"
+      ],
+      "counties": [
+        "30001"
+      ],
+      "owner_kind": "individual",
+      "distress_tier": "at-risk",
+      "in_oz": false,
+      "in_qct": false,
+      "persistent_poverty": false,
+      "score": 0.5,
+      "parcel_count": 1,
+      "total_assessed_value": 1000,
+      "tower_count": 1,
+      "solar_count": 0,
+      "structure_count": 1,
+      "structure_types": [
+        "tower"
+      ],
+      "active_tower_count": 1,
+      "tallest_tower_height_m": 60
+    },
+    {
+      "id": "o03",
+      "states": [
+        "FL"
+      ],
+      "counties": [
+        "12099"
+      ],
+      "owner_kind": "trust",
+      "distress_tier": "stable",
+      "in_oz": true,
+      "in_qct": false,
+      "persistent_poverty": false,
+      "score": 0.3,
+      "parcel_count": 2,
+      "total_assessed_value": 50000,
+      "tower_count": 0,
+      "solar_count": 2,
+      "structure_count": 2,
+      "structure_types": [
+        "solar"
+      ],
+      "active_tower_count": 0,
+      "tallest_tower_height_m": null
+    },
+    {
+      "id": "o04",
+      "states": [
+        "WV"
+      ],
+      "counties": [
+        "54001"
+      ],
+      "owner_kind": "gov",
+      "distress_tier": "distressed",
+      "in_oz": false,
+      "in_qct": true,
+      "persistent_poverty": true,
+      "score": 0.95,
+      "parcel_count": 10,
+      "total_assessed_value": 100000,
+      "tower_count": 3,
+      "solar_count": 0,
+      "structure_count": 3,
+      "structure_types": [
+        "tower"
+      ],
+      "active_tower_count": 0,
+      "tallest_tower_height_m": 200
+    },
+    {
+      "id": "o05",
+      "states": [
+        "AR",
+        "MT"
+      ],
+      "counties": [
+        "05119",
+        "30001"
+      ],
+      "owner_kind": "llc",
+      "distress_tier": "at-risk",
+      "in_oz": false,
+      "in_qct": false,
+      "persistent_poverty": false,
+      "score": 0.49,
+      "parcel_count": 3,
+      "total_assessed_value": 999,
+      "tower_count": 1,
+      "solar_count": 1,
+      "structure_count": 2,
+      "structure_types": [
+        "tower",
+        "solar"
+      ],
+      "active_tower_count": 1,
+      "tallest_tower_height_m": 45
+    },
+    {
+      "id": "o06",
+      "states": [
+        "FL",
+        "WV"
+      ],
+      "counties": [
+        "12099",
+        "54001"
+      ],
+      "owner_kind": "individual",
+      "distress_tier": "stable",
+      "in_oz": true,
+      "in_qct": true,
+      "persistent_poverty": false,
+      "score": 0.7,
+      "parcel_count": 5,
+      "total_assessed_value": 50001,
+      "tower_count": 2,
+      "solar_count": 0,
+      "structure_count": 2,
+      "structure_types": [
+        "tower"
+      ],
+      "active_tower_count": 2,
+      "tallest_tower_height_m": 60
+    },
+    {
+      "id": "o07",
+      "states": [],
+      "counties": [],
+      "owner_kind": "trust",
+      "distress_tier": "distressed",
+      "in_oz": false,
+      "in_qct": false,
+      "persistent_poverty": true,
+      "score": 0.6,
+      "parcel_count": 1,
+      "total_assessed_value": 0,
+      "tower_count": 0,
+      "solar_count": 0,
+      "structure_count": 0,
+      "structure_types": [],
+      "active_tower_count": 0,
+      "tallest_tower_height_m": null
+    },
+    {
+      "id": "o08",
+      "states": [
+        "AR"
+      ],
+      "counties": [
+        "05143"
+      ],
+      "owner_kind": "llc",
+      "distress_tier": "distressed",
+      "in_oz": true,
+      "in_qct": false,
+      "persistent_poverty": false,
+      "score": 0.85,
+      "parcel_count": 8,
+      "total_assessed_value": 30000,
+      "tower_count": 4,
+      "solar_count": 0,
+      "structure_count": 4,
+      "structure_types": [
+        "tower"
+      ],
+      "active_tower_count": 0,
+      "tallest_tower_height_m": 59
+    },
+    {
+      "id": "o09",
+      "states": [
+        "MT"
+      ],
+      "counties": [
+        "30013"
+      ],
+      "owner_kind": "individual",
+      "distress_tier": "at-risk",
+      "in_oz": false,
+      "in_qct": true,
+      "persistent_poverty": false,
+      "score": 0.55,
+      "parcel_count": 2,
+      "total_assessed_value": 12000,
+      "tower_count": 1,
+      "solar_count": 0,
+      "structure_count": 1,
+      "structure_types": [
+        "tower"
+      ],
+      "active_tower_count": 1,
+      "tallest_tower_height_m": 61
+    },
+    {
+      "id": "o10",
+      "states": [
+        "FL"
+      ],
+      "counties": [
+        "12001"
+      ],
+      "owner_kind": "trust",
+      "distress_tier": "stable",
+      "in_oz": false,
+      "in_qct": false,
+      "persistent_poverty": false,
+      "score": 0.1,
+      "parcel_count": 1,
+      "total_assessed_value": 75000,
+      "tower_count": 0,
+      "solar_count": 1,
+      "structure_count": 1,
+      "structure_types": [
+        "solar"
+      ],
+      "active_tower_count": 0,
+      "tallest_tower_height_m": null
+    },
+    {
+      "id": "o11",
+      "states": [
+        "AR",
+        "FL"
+      ],
+      "counties": [
+        "05119",
+        "12099"
+      ],
+      "owner_kind": "llc",
+      "distress_tier": "distressed",
+      "in_oz": true,
+      "in_qct": true,
+      "persistent_poverty": true,
+      "score": 1,
+      "parcel_count": 6,
+      "total_assessed_value": 1000,
+      "tower_count": 5,
+      "solar_count": 2,
+      "structure_count": 7,
+      "structure_types": [
+        "tower",
+        "solar"
+      ],
+      "active_tower_count": 3,
+      "tallest_tower_height_m": 150
+    },
+    {
+      "id": "o12",
+      "states": [
+        "WV"
+      ],
+      "counties": [
+        "54077"
+      ],
+      "owner_kind": "gov",
+      "distress_tier": "stable",
+      "in_oz": false,
+      "in_qct": false,
+      "persistent_poverty": false,
+      "score": 0,
+      "parcel_count": 1,
+      "total_assessed_value": 50000,
+      "tower_count": 0,
+      "solar_count": 0,
+      "structure_count": 0,
+      "structure_types": [],
+      "active_tower_count": 0,
+      "tallest_tower_height_m": null
+    }
+  ],
+  "cases": [
+    {
+      "name": "empty model matches every owner",
+      "filter": {},
+      "where": "",
+      "expected_ids": [
+        "o01",
+        "o02",
+        "o03",
+        "o04",
+        "o05",
+        "o06",
+        "o07",
+        "o08",
+        "o09",
+        "o10",
+        "o11",
+        "o12"
+      ]
+    },
+    {
+      "name": "single state (list overlap)",
+      "filter": {
+        "states": [
+          "AR"
+        ]
+      },
+      "where": "list_has_any(states, ['AR'])",
+      "expected_ids": [
+        "o01",
+        "o05",
+        "o08",
+        "o11"
+      ]
+    },
+    {
+      "name": "multi state is OR (list overlap)",
+      "filter": {
+        "states": [
+          "MT",
+          "FL"
+        ]
+      },
+      "where": "list_has_any(states, ['MT', 'FL'])",
+      "expected_ids": [
+        "o02",
+        "o03",
+        "o05",
+        "o06",
+        "o09",
+        "o10",
+        "o11"
+      ]
+    },
+    {
+      "name": "distress tier IN",
+      "filter": {
+        "distressTiers": [
+          "distressed"
+        ]
+      },
+      "where": "distress_tier IN ('distressed')",
+      "expected_ids": [
+        "o01",
+        "o04",
+        "o07",
+        "o08",
+        "o11"
+      ]
+    },
+    {
+      "name": "owner kind IN (multi)",
+      "filter": {
+        "ownerKinds": [
+          "llc",
+          "trust"
+        ]
+      },
+      "where": "owner_kind IN ('llc', 'trust')",
+      "expected_ids": [
+        "o01",
+        "o03",
+        "o05",
+        "o07",
+        "o08",
+        "o10",
+        "o11"
+      ]
+    },
+    {
+      "name": "county overlap (OR)",
+      "filter": {
+        "countyFips": [
+          "05119"
+        ]
+      },
+      "where": "list_has_any(counties, ['05119'])",
+      "expected_ids": [
+        "o01",
+        "o05",
+        "o11"
+      ]
+    },
+    {
+      "name": "structure type overlap \u2014 solar",
+      "filter": {
+        "structureTypes": [
+          "solar"
+        ]
+      },
+      "where": "list_has_any(structure_types, ['solar'])",
+      "expected_ids": [
+        "o01",
+        "o03",
+        "o05",
+        "o10",
+        "o11"
+      ]
+    },
+    {
+      "name": "structure type overlap \u2014 tower or solar",
+      "filter": {
+        "structureTypes": [
+          "tower",
+          "solar"
+        ]
+      },
+      "where": "list_has_any(structure_types, ['tower', 'solar'])",
+      "expected_ids": [
+        "o01",
+        "o02",
+        "o03",
+        "o04",
+        "o05",
+        "o06",
+        "o08",
+        "o09",
+        "o10",
+        "o11"
+      ]
+    },
+    {
+      "name": "in_oz boolean",
+      "filter": {
+        "inOz": true
+      },
+      "where": "in_oz",
+      "expected_ids": [
+        "o01",
+        "o03",
+        "o06",
+        "o08",
+        "o11"
+      ]
+    },
+    {
+      "name": "in_qct boolean",
+      "filter": {
+        "inQct": true
+      },
+      "where": "in_qct",
+      "expected_ids": [
+        "o01",
+        "o04",
+        "o06",
+        "o09",
+        "o11"
+      ]
+    },
+    {
+      "name": "persistent poverty boolean",
+      "filter": {
+        "persistentPoverty": true
+      },
+      "where": "persistent_poverty",
+      "expected_ids": [
+        "o01",
+        "o04",
+        "o07",
+        "o11"
+      ]
+    },
+    {
+      "name": "active towers only",
+      "filter": {
+        "activeOnly": true
+      },
+      "where": "active_tower_count > 0",
+      "expected_ids": [
+        "o01",
+        "o02",
+        "o05",
+        "o06",
+        "o09",
+        "o11"
+      ]
+    },
+    {
+      "name": "score minimum at the 0.5 boundary (inclusive)",
+      "filter": {
+        "scoreMin": 0.5
+      },
+      "where": "score >= 0.5",
+      "expected_ids": [
+        "o01",
+        "o02",
+        "o04",
+        "o06",
+        "o07",
+        "o08",
+        "o09",
+        "o11"
+      ]
+    },
+    {
+      "name": "portfolio (parcel_count) minimum",
+      "filter": {
+        "portfolioMin": 3
+      },
+      "where": "parcel_count >= 3",
+      "expected_ids": [
+        "o01",
+        "o04",
+        "o05",
+        "o06",
+        "o08",
+        "o11"
+      ]
+    },
+    {
+      "name": "height minimum with null heights excluded",
+      "filter": {
+        "heightMin": 60
+      },
+      "where": "tallest_tower_height_m >= 60",
+      "expected_ids": [
+        "o01",
+        "o02",
+        "o04",
+        "o06",
+        "o09",
+        "o11"
+      ]
+    },
+    {
+      "name": "structure count minimum",
+      "filter": {
+        "structureCountMin": 2
+      },
+      "where": "structure_count >= 2",
+      "expected_ids": [
+        "o01",
+        "o03",
+        "o04",
+        "o05",
+        "o06",
+        "o08",
+        "o11"
+      ]
+    },
+    {
+      "name": "assessed value BETWEEN (inclusive both bounds)",
+      "filter": {
+        "assessedValue": [
+          1000,
+          50000
+        ]
+      },
+      "where": "total_assessed_value BETWEEN 1000 AND 50000",
+      "expected_ids": [
+        "o01",
+        "o02",
+        "o03",
+        "o08",
+        "o09",
+        "o11",
+        "o12"
+      ]
+    },
+    {
+      "name": "compound AND across many fields",
+      "filter": {
+        "states": [
+          "AR",
+          "MT"
+        ],
+        "distressTiers": [
+          "distressed"
+        ],
+        "ownerKinds": [
+          "llc"
+        ],
+        "scoreMin": 0.7,
+        "assessedValue": [
+          1000,
+          50000
+        ]
+      },
+      "where": "list_has_any(states, ['AR', 'MT']) AND distress_tier IN ('distressed') AND owner_kind IN ('llc') AND score >= 0.7 AND total_assessed_value BETWEEN 1000 AND 50000",
+      "expected_ids": [
+        "o01",
+        "o08",
+        "o11"
+      ]
+    },
+    {
+      "name": "string-literal escaping (matches nobody)",
+      "filter": {
+        "ownerKinds": [
+          "O'BRIEN"
+        ]
+      },
+      "where": "owner_kind IN ('O''BRIEN')",
+      "expected_ids": []
+    }
+  ]
+}
