@@ -28,6 +28,7 @@
   import { userSettings } from '../lib/user-settings-store.svelte';
   import { basemapStyle, basemapTiles, resolveInitialView } from '../lib/basemap';
   import { readLastView, writeLastView } from '../lib/map-view-cache';
+  import { parcelLayerAppearance } from '../lib/parcel-layers';
 
   maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
@@ -72,19 +73,11 @@
   // attributes; click + selection enumerate every state's fill layer.
   const parcelStatesAdded = new Set<string>();
   let parcelFillIds: string[] = [];
-  /** The plain zoom fade, brightened for the selected parcel (the feature-state
-   *  branch is the interpolation's output stop — `zoom` must stay the top-level
-   *  interpolate input, so it can't wrap a `case`). Filtering never fades
-   *  parcels (#119): they are stable context while the filter narrows towers. */
-  const PARCELS_OPACITY: ExpressionSpecification = [
-    'interpolate',
-    ['linear'],
-    ['zoom'],
-    8,
-    0,
-    10,
-    ['case', ['boolean', ['feature-state', 'selected'], false], 0.85, 0.55],
-  ];
+  /** Parcel zoom/opacity is one tunable source of truth (PRD #163 / #165):
+   *  parcels render only at/above `Z_ON` and appear together rather than fading
+   *  in by size. The minzoom + fill/line-opacity expressions live in the pure,
+   *  unit-tested `parcel-layers` helper. */
+  const PARCEL_APPEARANCE = parcelLayerAppearance();
 
   function parcelSrcId(state: string): string {
     return `src:parcels:${state}`;
@@ -278,10 +271,10 @@
           type: 'fill',
           source: src,
           'source-layer': 'parcels',
-          minzoom: 6,
+          minzoom: PARCEL_APPEARANCE.minzoom,
           paint: {
             'fill-color': tierColorMatch('distress_tier'),
-            'fill-opacity': PARCELS_OPACITY,
+            'fill-opacity': PARCEL_APPEARANCE.fillOpacity,
           },
         },
         beforeId,
@@ -292,7 +285,7 @@
           type: 'line',
           source: src,
           'source-layer': 'parcels',
-          minzoom: 6,
+          minzoom: PARCEL_APPEARANCE.minzoom,
           paint: {
           'line-color': [
             'case',
@@ -315,7 +308,7 @@
             1.8,
             0.25,
           ] as ExpressionSpecification,
-          'line-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0, 11, 0.85],
+          'line-opacity': PARCEL_APPEARANCE.lineOpacity,
           },
         },
         beforeId,
