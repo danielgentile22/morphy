@@ -13,7 +13,7 @@
 import type { FeatureCollection, Point } from 'geojson';
 import type { CompositeIndex } from './catalog';
 import { loadIndex, pmtilesUrl, probeResource } from './data';
-import { loadTowerPoints, type TowerProps } from './towers';
+import { loadNationalTowers, type TowerProps } from './towers';
 import { loadSolarPoints, solarTotal, type SolarProps } from './solar';
 import { errMsg, parcelSources as computeParcelSources, unionBounds } from './stores-helpers';
 import type { ParcelSource } from './stores-helpers';
@@ -188,7 +188,7 @@ export class AppStore {
     // is ready (first dots about to render). Passive — marks only.
     markTowersStart();
     try {
-      this.towerPoints = await loadTowerPoints(fipsList);
+      this.towerPoints = await loadNationalTowers(fipsList);
       this.towersStatus = 'ready';
       markTowersDone(this.towerPoints.features.length);
     } catch (e) {

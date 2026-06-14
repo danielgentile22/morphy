@@ -215,6 +215,7 @@ def main() -> int:
             f"Facets + slim parquet: {len(result['facets_ok'])} built"
             f"{', ' + str(len(result['facets_failed'])) + ' failed' if result['facets_failed'] else ''}."
         )
+        print(f"Combined towers: {result['towers_count']} → {result['towers_path']}.")
         return 0
 
     if args.owners_index:

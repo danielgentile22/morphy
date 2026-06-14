@@ -51,6 +51,11 @@ export interface TowerRow {
   active: boolean | null;
   lat: number;
   lon: number;
+  /** Owner's Lead key (`display_cluster_id`), baked by the combined
+   *  `towers.json` builder so the client need not re-hash 80k owner names
+   *  on the tower load (#166). Absent on the per-state DuckDB path (and a
+   *  stale file) — `rowsToFeatureCollection` then recomputes it. */
+  cid?: string;
 }
 
 /** A source state's `towers.parquet` URL, keyed by FIPS for a stable

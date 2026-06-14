@@ -23,6 +23,11 @@ const COMPOSITE_ROOT = '/data/processed/composite';
 export function indexUrl(): string {
   return `${COMPOSITE_ROOT}/index.json`;
 }
+/** The precomputed combined tower file — one national `towers.json` the map
+ *  fetches directly instead of booting DuckDB-WASM on the tower path (#166). */
+export function nationalTowersUrl(): string {
+  return `${COMPOSITE_ROOT}/towers.json`;
+}
 export function catalogUrl(fips: string): string {
   return `${COMPOSITE_ROOT}/${fips}/catalog.json`;
 }
@@ -71,7 +76,7 @@ export async function probeResource(url: string): Promise<ResourceProbe> {
   }
 }
 
-async function fetchJson(url: string): Promise<unknown> {
+export async function fetchJson(url: string): Promise<unknown> {
   let res: Response;
   try {
     res = await fetch(url);

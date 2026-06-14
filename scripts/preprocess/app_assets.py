@@ -219,6 +219,12 @@ def run_app_assets(progress_callback=None) -> dict:
 
     fc = run_facets()
 
+    # Combined tower file — one composite/towers.json the map fetches
+    # directly, so the tower layer no longer boots DuckDB-WASM (PRD #163).
+    from .national_towers import run_national_towers
+
+    nt = run_national_towers()
+
     return {
         "index_path": str(index_path),
         "states": n_states,
@@ -226,4 +232,6 @@ def run_app_assets(progress_callback=None) -> dict:
         "county_boundaries_failed": cb["failed"],
         "facets_ok": fc["ok"],
         "facets_failed": fc["failed"],
+        "towers_path": nt["path"],
+        "towers_count": nt["count"],
     }

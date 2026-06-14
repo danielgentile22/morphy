@@ -12,7 +12,7 @@
 
 import type { Feature, FeatureCollection, Point } from 'geojson';
 import { duckDb, type TowerRow, type TowerSource } from './duckdb';
-import { compositeAssetUrl, probeResource } from './data';
+import { compositeAssetUrl, fetchJson, nationalTowersUrl, probeResource } from './data';
 import { ownerNameToClusterId } from './owner-cluster';
 
 /** Per-state `towers.parquet` (the structures-first map's tower source). */
@@ -86,7 +86,10 @@ export function rowsToFeatureCollection(rows: TowerRow[]): FeatureCollection<Poi
       properties: {
         asr: String(r.asr ?? ''),
         owner,
-        cid: ownerNameToClusterId(owner),
+        // Prefer the builder-baked Lead key (#166); recompute only when it's
+        // absent (per-state DuckDB path / a stale towers.json). Same recipe,
+        // so the two agree — pinned by the owner-cluster parity test.
+        cid: typeof r.cid === 'string' ? r.cid : ownerNameToClusterId(owner),
         height_m: r.height_m ?? null,
         state: String(r.state ?? ''),
         active: r.active === true,
@@ -129,6 +132,10 @@ export function filterTowers(
  * Load tower points for the given anchor states into one FeatureCollection.
  * Probes each `towers.parquet` first and queries only the present ones, so a
  * state missing the file degrades to "fewer towers" instead of an empty map.
+ *
+ * This is the DuckDB-WASM path — kept as the fallback for `loadNationalTowers`
+ * (a deploy before the combined file is regenerated). Booting the engine here
+ * is the ~1.0 s cost the precomputed `towers.json` removes (PRD #163).
  */
 export async function loadTowerPoints(
   fipsList: string[],
@@ -142,4 +149,54 @@ export async function loadTowerPoints(
   const sources = probes.filter((s): s is TowerSource => s !== null);
   const rows = await duckDb.loadTowerPoints(sources);
   return rowsToFeatureCollection(rows);
+}
+
+/** Map the rows of a parsed `composite/towers.json` to slim `TowerRow`s.
+ *  Tolerant of missing keys so a stale file (an older schema) still loads —
+ *  `rowsToFeatureCollection` then applies the very defaults the per-state path
+ *  uses. The builder bakes `cid` (the owner Lead key); it is passed through
+ *  when present and recomputed when absent. Throws only when the envelope has
+ *  no `towers[]` array, so the loader can fall back. Pure — unit-tested. */
+export function parseNationalTowers(json: unknown): TowerRow[] {
+  const towers = (json as { towers?: unknown } | null)?.towers;
+  if (!Array.isArray(towers)) throw new Error('towers.json — missing towers[] array');
+  return towers.map((t): TowerRow => {
+    const r = (t ?? {}) as Record<string, unknown>;
+    return {
+      asr: String(r.asr ?? ''),
+      owner: typeof r.owner === 'string' ? r.owner : null,
+      height_m: typeof r.height_m === 'number' ? r.height_m : null,
+      state: String(r.state ?? ''),
+      active: typeof r.active === 'boolean' ? r.active : null,
+      lat: typeof r.lat === 'number' ? r.lat : Number.NaN,
+      lon: typeof r.lon === 'number' ? r.lon : Number.NaN,
+      ...(typeof r.cid === 'string' ? { cid: r.cid } : {}),
+    };
+  });
+}
+
+/**
+ * Load the national tower layer from the precomputed `composite/towers.json`,
+ * mapping its rows through the same pure `rowsToFeatureCollection` the
+ * per-state path uses (so clustering, hover, filter joins and Lead resolution
+ * are byte-for-byte unchanged).
+ *
+ * Probes the combined file first; if it is absent/unreachable (a deploy before
+ * the data was regenerated) — or present but malformed — falls back to the
+ * per-state DuckDB `loadTowerPoints` union. The map degrades to "towers via
+ * DuckDB", never to "no towers". This is the tower-load seam: DuckDB-WASM is
+ * not touched unless the fallback fires.
+ */
+export async function loadNationalTowers(
+  fipsList: string[],
+): Promise<FeatureCollection<Point, TowerProps>> {
+  const url = nationalTowersUrl();
+  if ((await probeResource(url)) === 'present') {
+    try {
+      return rowsToFeatureCollection(parseNationalTowers(await fetchJson(url)));
+    } catch {
+      // Present but unparseable → fall through to the per-state union.
+    }
+  }
+  return loadTowerPoints(fipsList);
 }
