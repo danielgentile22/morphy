@@ -1,0 +1,73 @@
+{
+  "_comment": "Recorded map-app perf baseline (PRD #163). The contract #169 diffs the post-PRD re-measure against. Numbers are the 2026-06-13 measured baseline from PRD #163's 'Baseline & target metrics' table. RELATIVE local-dev numbers (npm run dev + scripts/serve.py + uvicorn, dev/dev, #/explore cold reload, Apple silicon, no throttle, no gzip, unminified dev bundle) — NOT prod absolutes. Reproduce with scripts/perf/ (see README.md). No PII / no prod data.",
+  "measured_on": "2026-06-13",
+  "methodology": {
+    "stack": "npm run dev (5173) + python scripts/serve.py 8765 + AUTH_DEV_MODE=1 uvicorn backend.app.main:app (8000)",
+    "auth": "signed in as the dev credential (dev/dev)",
+    "route": "#/explore cold reload",
+    "harness": "Chrome via the chrome-devtools MCP",
+    "conditions": "Apple silicon, no network throttle, no gzip (dev), unminified dev bundle",
+    "excluded": "dev-bundle LCP / DOMContentLoaded (unminified, not representative)",
+    "note": "relative numbers for like-for-like comparison, not prod absolutes"
+  },
+  "categories": {
+    "A": {
+      "name": "Time-to-first-tower, Explore cold",
+      "baseline": "~1003 ms",
+      "baseline_ms": 1003,
+      "breakdown": "375 ms DuckDB init + 628 ms probe+union+marshal of 80,814 features",
+      "target": "<= 400 ms",
+      "improvement_target": ">= 60% faster"
+    },
+    "B": {
+      "name": "DuckDB-WASM init on the tower critical path",
+      "baseline": "375 ms (blocks first tower)",
+      "baseline_ms": 375,
+      "target": "0 ms (deferred to first parcel click)",
+      "improvement_target": "100% removed"
+    },
+    "C": {
+      "name": "Tower-path data fetches (auth-gated in prod)",
+      "baseline": "8 (4x towers.parquet GET + 4x HEAD probe)",
+      "baseline_count": 8,
+      "breakdown": { "parquet_get": 4, "head_probe": 4 },
+      "target": "1 (single towers.json GET; +1 probe)",
+      "improvement_target": "~75-88% fewer"
+    },
+    "D": {
+      "name": "Parcel rendering uniformity",
+      "baseline": "size-graduated across ~z8-z13",
+      "target": "all in-view parcels present together at Z_on",
+      "improvement_target": "binary pass (100% present at Z_on)"
+    },
+    "E": {
+      "name": "parcels.pmtiles total on disk (4 states)",
+      "baseline": "1,679 MB",
+      "baseline_mib": 1679,
+      "per_state_mib": { "AR": 314, "FL": 789, "MT": 306, "WV": 270 },
+      "target": "reduced by dropping z6-(Z_on-1)",
+      "improvement_target": "measure & report; >= 5%"
+    },
+    "F": {
+      "name": "Perceived wait arriving at Explore from Dashboard",
+      "baseline": "full load starts on click (tower 628 ms + owners_filter 397 ms)",
+      "baseline_tower_ms": 628,
+      "baseline_owners_filter_transfer_ms": 397,
+      "target": "data pre-warmed (in-flight/complete at click)",
+      "improvement_target": "~0 ms added wait in the common path"
+    }
+  },
+  "supporting_facts": {
+    "owners_filter_json": {
+      "size_mb": 10.4,
+      "owners": 16237,
+      "transfer_ms": 397,
+      "parse_ms": 22,
+      "note": "transfer-bound, not parse-bound; prod Caddy already gzips it (~2 MB). The worker-parse idea (PR4) was dropped after this measurement."
+    },
+    "tower_feature_count": 80814,
+    "parcel_tiles_initial_view": 8,
+    "total_cold_transfer_mb": 12.2,
+    "transfer_conditions": "all local-dev, uncompressed, unthrottled"
+  }
+}

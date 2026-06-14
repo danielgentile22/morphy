@@ -18,6 +18,7 @@ import { loadSolarPoints, solarTotal, type SolarProps } from './solar';
 import { errMsg, parcelSources as computeParcelSources, unionBounds } from './stores-helpers';
 import type { ParcelSource } from './stores-helpers';
 import type { EntityKind, Props } from './schema';
+import { markTowersStart, markTowersDone } from './perf';
 
 /** A pair of corners for MapLibre `fitBounds` — `[[w, s], [e, n]]`. */
 export type BoundsCorners = [[number, number], [number, number]];
@@ -182,9 +183,14 @@ export class AppStore {
     if (fipsList.length === 0) return;
     this.towersStatus = 'loading';
     this.towersError = null;
+    // Bracket the tower critical path for the perf-probe (PRD #163 / #164):
+    // probe + DuckDB init + union + marshal, ending when the FeatureCollection
+    // is ready (first dots about to render). Passive — marks only.
+    markTowersStart();
     try {
       this.towerPoints = await loadTowerPoints(fipsList);
       this.towersStatus = 'ready';
+      markTowersDone(this.towerPoints.features.length);
     } catch (e) {
       this.towersError = errMsg(e);
       this.towersStatus = 'error';

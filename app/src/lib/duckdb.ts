@@ -27,6 +27,14 @@ import {
 
 const REGISTERED_FILE = 'parcels_attr.parquet';
 
+/** The locally-bundled WASM/worker bundle spec — shared by the live engine's
+ *  `doInit()` and the perf-probe's throwaway cold-init so both measure the
+ *  same instantiation work. */
+const DUCKDB_BUNDLES = {
+  mvp: { mainModule: wasmMvp, mainWorker: workerMvp },
+  eh: { mainModule: wasmEh, mainWorker: workerEh },
+};
+
 export interface OwnerSearchHit {
   owner_name: string;
   owner_cluster_id: string;
@@ -79,10 +87,7 @@ class DuckDbEngine {
   }
 
   private async doInit(): Promise<void> {
-    const bundle = await duckdb.selectBundle({
-      mvp: { mainModule: wasmMvp, mainWorker: workerMvp },
-      eh: { mainModule: wasmEh, mainWorker: workerEh },
-    });
+    const bundle = await duckdb.selectBundle(DUCKDB_BUNDLES);
     const worker = new Worker(bundle.mainWorker!);
     const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.ERROR);
     this.db = new duckdb.AsyncDuckDB(logger, worker);
@@ -207,8 +212,43 @@ class DuckDbEngine {
 
 export const duckDb = new DuckDbEngine();
 
+/**
+ * Perf-probe (PRD #163 / #164): time a DuckDB-WASM cold init in *isolation*.
+ *
+ * Spins up a brand-new, throwaway engine — independent of the shared singleton's
+ * lifecycle — so the "DuckDB on the tower critical path" number is measured
+ * clean even after the app has already inited DuckDB elsewhere. Mirrors
+ * `doInit()` (selectBundle → Worker → instantiate → connect) and times the whole
+ * sequence, then fully tears the throwaway engine down. Returns elapsed ms.
+ *
+ * For a truly *cold* number, run this on a fresh page load on a route that has
+ * not yet touched DuckDB (e.g. the Dashboard) with the HTTP cache disabled —
+ * see `scripts/perf/README.md`.
+ */
+export async function probeColdInit(): Promise<number> {
+  const t0 = performance.now();
+  const bundle = await duckdb.selectBundle(DUCKDB_BUNDLES);
+  const worker = new Worker(bundle.mainWorker!);
+  const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.ERROR), worker);
+  await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+  const conn = await db.connect();
+  const ms = performance.now() - t0;
+  await conn.close();
+  await db.terminate();
+  worker.terminate();
+  return ms;
+}
+
 // Test handle — lets E2E exercise the query engine directly. Harmless in
 // a local single-user app.
 if (typeof window !== 'undefined') {
   (window as unknown as { __duckDb?: DuckDbEngine }).__duckDb = duckDb;
+}
+
+// Dev-only perf-probe handle (PRD #164): exposes the isolated cold-init so the
+// browser probe in `scripts/perf/` can time it via the bundled WASM assets.
+// Gated to dev so it never ships in the production bundle (the probe is
+// local-stack only).
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
+  (window as unknown as { __probeColdInit?: typeof probeColdInit }).__probeColdInit = probeColdInit;
 }
