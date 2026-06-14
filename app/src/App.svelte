@@ -19,6 +19,7 @@
   import { shouldApplyFilterDefault, deserializeFilterModel } from './lib/filter-model';
   import { auth } from './lib/auth-store.svelte';
   import { userSettings } from './lib/user-settings-store.svelte';
+  import { prefetchMapData } from './lib/boot-prefetch';
   import { readUrlState } from './lib/url';
   import {
     parseRoute,
@@ -116,6 +117,23 @@
       // The set of archived antennas the map + list exclude (round 2).
       void archivedAntennas.hydrate();
       void bootUserSettings();
+    }
+  });
+
+  // Warm the heavy Explore map (towers + parcel-tile probes) and the owners
+  // filter index DURING the Dashboard, so opening Explore is instant (#168 /
+  // PRD #163 M3). Idle-gated so the Dashboard-critical fetches above (counts,
+  // attention, settings) win the network first; idempotent via the stores' own
+  // latches (`mapBooted` / `ownersStatus`), so the Explore-route `bootMap()`
+  // trigger and `FilterPanel.onMount` load become no-ops — no new state machine,
+  // no double-load. Fire-and-forget: a failed/aborted warm never touches
+  // Dashboard state, and a session that never opens the map just leaves the
+  // warmed data unused. Fires once per verified session.
+  let mapPrefetched = false;
+  $effect(() => {
+    if (auth.verified && !mapPrefetched) {
+      mapPrefetched = true;
+      prefetchMapData();
     }
   });
 
