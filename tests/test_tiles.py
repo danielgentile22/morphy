@@ -94,12 +94,14 @@ def test_build_state_tiles_produces_valid_pmtiles(tmp_path: Path) -> None:
     # The atomic-write temp file is cleaned up.
     assert not (tmp_path / "99" / ".parcels.tmp.pmtiles").exists()
 
-    # The header reflects the tippecanoe flags: zoom 6–14, MVT, one
-    # vector layer named "parcels".
+    # The header reflects the tippecanoe flags: single-zoom z14 (min == max
+    # == the appearance zoom Z_on; the z6–13 tiles are no longer generated
+    # since the frontend gates parcel rendering at Z_on — PRD #163 / #167),
+    # MVT, one vector layer named "parcels".
     with out.open("rb") as f:
         reader = Reader(MmapSource(f))
         header = reader.header()
-        assert header["min_zoom"] == 6
+        assert header["min_zoom"] == 14
         assert header["max_zoom"] == 14
         assert str(header["tile_type"]).endswith("MVT")
         layers = [layer["id"] for layer in reader.metadata().get("vector_layers", [])]

@@ -52,7 +52,15 @@ TILE_ATTRIBUTES: tuple[str, ...] = (
 
 GEOMETRY_COLUMN = "geometry"
 BATCH_SIZE = 50_000
-MIN_ZOOM = 6
+# Tile min-zoom (`-Z`) — the appearance zoom Z_on. The frontend renders parcels
+# only at/above this zoom (`Z_ON` in app/src/lib/parcel-layers.ts), so the
+# z6–(Z_on−1) tiles were never requested; not generating them shrinks every
+# parcels.pmtiles and speeds the build (PRD #163 / #167). This MUST equal the
+# frontend `Z_ON` (14) — the two are pinned together and must never drift.
+# With MAX_ZOOM also 14, tiles are single-zoom (z14-only), which is intended:
+# z14 is where the densest FL metro tiles stop dropping parcels (empirical sweep
+# in #165), so the full set is present the instant parcels appear.
+MIN_ZOOM = 14
 MAX_ZOOM = 14
 
 
