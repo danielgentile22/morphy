@@ -56,6 +56,39 @@
 		respond 404
 	}
 
+	# The data-audit browser (internal QA docs) lives at /audit/, gated by the
+	# SAME session as /data/processed/* — the audit exposes internal data
+	# semantics, so it is never public. Both blocks ask the backend's
+	# forward-auth seam before serving a byte; on a non-2xx the 401 is returned.
+	#
+	# The artifacts it live-fetches (index.json + the dossier .md) are baked into
+	# the image at /srv/audit-data and served at /audit/data/*. A re-run that
+	# rewrites docs/research/data-audit/ ships on the next `deploy.sh code`.
+	# Listed before the SPA block so it wins for the /audit/data/* prefix.
+	handle_path /audit/data/* {
+		forward_auth {$BACKEND_UPSTREAM:127.0.0.1:8000} {
+			uri /api/auth/check
+		}
+		root * {$AUDIT_DATA_ROOT:/srv/audit-data}
+		# Internal data semantics — keep out of every cache, like /data/processed.
+		header Cache-Control "private, no-store"
+		file_server
+	}
+
+	# The audit SPA bundle (base-pathed at /audit/). handle_path strips /audit so
+	# the on-disk root is the bundle; try_files gives the hash-router its history
+	# fallback. Content-hashed /assets/* (post-strip) are cached immutable.
+	handle_path /audit/* {
+		forward_auth {$BACKEND_UPSTREAM:127.0.0.1:8000} {
+			uri /api/auth/check
+		}
+		root * {$AUDIT_SITE_ROOT:/srv/audit-dist}
+		@audit_assets path /assets/*
+		header @audit_assets Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} /index.html
+		file_server
+	}
+
 	# Everything else is the SPA: serve static assets, fall back to index.html
 	# so client-side routes (deep links / refreshes) resolve.
 	handle {

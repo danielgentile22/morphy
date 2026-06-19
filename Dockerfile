@@ -12,6 +12,18 @@ COPY app/ ./
 RUN npm run build
 # -> /app/dist
 
+# ── Stage 1b: build the data-audit browser bundle (audit-site/dist) ────────
+# Standalone Svelte app base-pathed at /audit/; served behind the session gate
+# (see Caddyfile). Its serve-audit-data plugin only runs in dev/preview, so the
+# build needs only audit-site/ — the audit artifacts are baked in separately.
+FROM node:22-slim AS audit-frontend
+WORKDIR /audit
+COPY audit-site/package.json audit-site/package-lock.json ./
+RUN npm ci
+COPY audit-site/ ./
+RUN npm run build
+# -> /audit/dist
+
 # ── Stage 2: runtime ───────────────────────────────────────────────────────
 FROM python:3.11-slim AS runtime
 
@@ -48,6 +60,10 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.11.21,source=/uv,target=/usr/local/bin/u
 COPY backend/ /srv/backend/
 COPY scripts/sync_composite.py /srv/scripts/sync_composite.py
 COPY --from=frontend /app/dist /srv/dist
+# The audit browser bundle + a snapshot of the audit artifacts it live-fetches.
+# A re-run that rewrites docs/research/data-audit/ ships on the next deploy.
+COPY --from=audit-frontend /audit/dist /srv/audit-dist
+COPY docs/research/data-audit /srv/audit-data
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY litestream.yml /etc/litestream.yml
 COPY supervisord.conf /etc/supervisord.conf
@@ -57,6 +73,8 @@ COPY supervisord.conf /etc/supervisord.conf
 # /data/processed/X. Auth/DB/Litestream env + secrets come from fly.toml + Fly
 # secrets, not here.
 ENV SITE_ROOT=/srv/dist \
+    AUDIT_SITE_ROOT=/srv/audit-dist \
+    AUDIT_DATA_ROOT=/srv/audit-data \
     DATA_WEB_ROOT=/ \
     BACKEND_UPSTREAM=127.0.0.1:8000 \
     CADDY_PORT=8080 \
