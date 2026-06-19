@@ -73,8 +73,16 @@
     display: flex;
     align-items: center;
     gap: 2px;
-    flex-wrap: wrap;
+    /* One row that scrolls horizontally when it overflows (mobile) instead of
+       wrapping into the fixed-height bar — keeps Overview/Signals reachable. */
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
     overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .links::-webkit-scrollbar {
+    display: none;
   }
   .link {
     padding: 6px 11px;
@@ -83,6 +91,7 @@
     font-weight: 500;
     font-size: 13.5px;
     white-space: nowrap;
+    flex-shrink: 0;
   }
   .link:hover {
     background: var(--panel-2);
