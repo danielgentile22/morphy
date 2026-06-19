@@ -84,10 +84,19 @@
   box-sizing: border-box;
 }
 
+html {
+  /* The audit site is a long-scrolling document (not a fixed-viewport app shell
+     like the map app), so the root is the natural scroller. `overscroll-behavior`
+     stops mobile pull-to-refresh — without it, scrolling up at the top of any
+     page reloads the whole site instead of scrolling. */
+  overscroll-behavior-y: contain;
+  -webkit-text-size-adjust: 100%;
+}
+
 html,
 body {
   margin: 0;
-  height: 100%;
+  min-height: 100%;
   font-family: var(--font);
   color: var(--text);
   background: var(--bg);
@@ -96,8 +105,10 @@ body {
   line-height: 1.5;
 }
 
+/* Fill at least the viewport so short pages still paint a full screen; the
+   document grows past it and scrolls normally (no height:100% scroll trap). */
 #app {
-  min-height: 100%;
+  min-height: 100vh;
 }
 
 h1,
