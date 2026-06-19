@@ -15,12 +15,20 @@ data
 app/dist
 app/test-results
 app/playwright-report
+audit-site/dist
+audit-site/.shots
 
 # Never bake credentials or backend tests into the image.
 backend/users.txt
 backend/tests
 
-# Docs / dev-only trees.
-docs
+# Docs / dev-only trees — except the data-audit artifacts, which the audit
+# browser image bakes in (served at /audit/data/*, behind the session gate).
+# The four-line dance keeps `docs/` walkable so the negation can reach the
+# nested subtree (a flat `docs` exclude can't be re-included).
+docs/*
+!docs/research
+docs/research/*
+!docs/research/data-audit
 app_puller
 tests

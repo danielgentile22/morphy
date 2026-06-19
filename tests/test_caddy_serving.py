@@ -43,6 +43,8 @@ pytestmark = pytest.mark.skipif(_CADDY is None, reason="caddy binary not install
 _DB_MARKER = b"SQLITE-SECRET-DB-CONTENTS"
 _USERS_MARKER = b"alice:$hash$:acme\n"
 _SPA_MARKER = b"<!doctype html><title>pilot-spa</title>"
+_AUDIT_SPA_MARKER = b"<!doctype html><title>audit-spa</title>"
+_AUDIT_DATA_MARKER = b'{"audit":"index-json-contents"}'
 _TILE_BYTES = bytes(range(256)) * 8  # 2048 deterministic bytes
 
 # The session the stub backend accepts (the real token semantics live in the
@@ -105,6 +107,17 @@ def caddy_base(tmp_path_factory: pytest.TempPathFactory):
     (site / "assets").mkdir()
     (site / "assets" / "index-abc123.js").write_bytes(b"console.log('app')")
 
+    # Audit browser bundle + its baked artifacts (served behind the gate at
+    # /audit/* and /audit/data/*).
+    audit_site = tmp / "audit-dist"
+    audit_site.mkdir()
+    (audit_site / "index.html").write_bytes(_AUDIT_SPA_MARKER)
+    (audit_site / "assets").mkdir()
+    (audit_site / "assets" / "index-aud987.js").write_bytes(b"console.log('audit')")
+    audit_data = tmp / "audit-data"
+    audit_data.mkdir()
+    (audit_data / "index.json").write_bytes(_AUDIT_DATA_MARKER)
+
     # Fixture "volume": served composite under processed/, plus the DB and
     # users.txt at the volume root (outside the web-served subtree).
     volume = tmp / "volume"
@@ -124,6 +137,8 @@ def caddy_base(tmp_path_factory: pytest.TempPathFactory):
         **os.environ,
         "CADDY_PORT": str(caddy_port),
         "SITE_ROOT": str(site),
+        "AUDIT_SITE_ROOT": str(audit_site),
+        "AUDIT_DATA_ROOT": str(audit_data),
         # Root for /data/processed/* maps the URL prefix onto the fixture volume:
         # /data/processed/X -> {DATA_WEB_ROOT}/data/processed/X. We symlink the
         # volume in as "data" so the 1:1 mapping holds against the fixture.
@@ -278,3 +293,48 @@ def test_users_file_is_never_web_served(caddy_base: str) -> None:
 def test_hsts_header_is_set(caddy_base: str) -> None:
     _status, hdrs, _ = _get(caddy_base, "/api/health")
     assert "max-age=" in hdrs.get("strict-transport-security", "")
+
+
+# ── the data-audit browser, behind the same session gate ─────────────────────
+def test_audit_spa_requires_auth(caddy_base: str) -> None:
+    # The audit exposes internal data semantics — it is never public.
+    status, _hdrs, body = _get(caddy_base, "/audit/")
+    assert status == 401
+    assert _AUDIT_SPA_MARKER not in body
+
+
+def test_audit_spa_served_when_authenticated(caddy_base: str) -> None:
+    status, _hdrs, body = _get(caddy_base, "/audit/", _COOKIE)
+    assert status == 200
+    assert body == _AUDIT_SPA_MARKER
+
+
+def test_audit_deep_route_falls_back_to_audit_spa(caddy_base: str) -> None:
+    # The hash router's history fallback: any /audit/* path resolves to the
+    # audit bundle's index.html (not the main SPA's).
+    status, _hdrs, body = _get(caddy_base, "/audit/some/client/route", _COOKIE)
+    assert status == 200
+    assert body == _AUDIT_SPA_MARKER
+
+
+def test_audit_assets_get_immutable_cache(caddy_base: str) -> None:
+    status, hdrs, _body = _get(caddy_base, "/audit/assets/index-aud987.js", _COOKIE)
+    assert status == 200
+    cc = hdrs.get("cache-control", "")
+    assert "immutable" in cc and "max-age=31536000" in cc
+
+
+def test_audit_data_requires_auth(caddy_base: str) -> None:
+    # index.json carries the audit's findings (internal) — gate it like the
+    # composite, zero bytes to an unauthenticated caller.
+    status, _hdrs, body = _get(caddy_base, "/audit/data/index.json")
+    assert status == 401
+    assert _AUDIT_DATA_MARKER not in body
+
+
+def test_audit_data_served_when_authenticated(caddy_base: str) -> None:
+    status, hdrs, body = _get(caddy_base, "/audit/data/index.json", _COOKIE)
+    assert status == 200
+    assert body == _AUDIT_DATA_MARKER
+    # Internal data semantics — never cached anywhere.
+    assert hdrs.get("cache-control") == "private, no-store"

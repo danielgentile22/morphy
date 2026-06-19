@@ -1,0 +1,316 @@
+/* Design tokens + base styles for the data-audit browser. Shares the map app's
+   Wong colorblind-safe accent family so the two feel like one product, but the
+   surface is its own: a dense, neutral inspection tool where colour is reserved
+   for the confidence/risk encoding (the chips), never decoration. Component
+   styles are scoped in their .svelte files; this file holds tokens, the chip
+   tones, shared utilities, and the .prose rules for rendered dossier markdown. */
+
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --panel-2: #f0f2f5;
+  --border: #e2e5ea;
+  --border-strong: #c8ccd4;
+  --text: #1b1f24;
+  --text-2: #41474f;
+  --muted: #6b7280;
+  --accent: #0072b2; /* Wong CB-safe blue */
+  --accent-soft: #dcebf4;
+  --accent-bg: #e8f1f9;
+
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --radius: 7px;
+  --radius-sm: 5px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 14px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 6px 28px rgba(0, 0, 0, 0.16);
+  --nav-h: 52px;
+
+  /* Chip tones — soft tinted bg + readable fg + hairline border, per tone. */
+  --good-fg: #0b6e44;
+  --good-bg: #e3f3ea;
+  --good-bd: #b6dcc6;
+  --ok-fg: #1262a0;
+  --ok-bg: #e4eff8;
+  --ok-bd: #bcd8ec;
+  --warn-fg: #8a5a00;
+  --warn-bg: #fbeed6;
+  --warn-bd: #ecd3a3;
+  --bad-fg: #a23c06;
+  --bad-bg: #fce3d6;
+  --bad-bd: #f1c2a5;
+  --muted-fg: #5b626c;
+  --muted-bg: #eceef1;
+  --muted-bd: #d7dbe1;
+  --cat-fg: #3f4855;
+  --cat-bg: #eef1f5;
+  --cat-bd: #d4dae2;
+}
+
+[data-theme='dark'] {
+  --bg: #121519;
+  --panel: #1a1e24;
+  --panel-2: #222730;
+  --border: #2c323b;
+  --border-strong: #424a55;
+  --text: #e8eaee;
+  --text-2: #b8bec8;
+  --muted: #8a929d;
+  --accent: #4ea3da;
+  --accent-soft: #1d3a4d;
+  --accent-bg: #15293a;
+
+  --good-fg: #6fd3a3;
+  --good-bg: #16352a;
+  --good-bd: #265842;
+  --ok-fg: #74b8e6;
+  --ok-bg: #142c3f;
+  --ok-bd: #265172;
+  --warn-fg: #e6b864;
+  --warn-bg: #382e16;
+  --warn-bd: #5e4c22;
+  --bad-fg: #ef9468;
+  --bad-bg: #3a2418;
+  --bad-bd: #63402a;
+  --muted-fg: #9aa1ac;
+  --muted-bg: #262b33;
+  --muted-bd: #3a414b;
+  --cat-fg: #aeb6c2;
+  --cat-bg: #242a33;
+  --cat-bd: #39414c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#app {
+  min-height: 100%;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+code,
+.mono {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* ── Layout shells ─────────────────────────────────────────────────────────── */
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 28px 80px;
+}
+.page--wide {
+  max-width: 1480px;
+}
+.page-head {
+  margin-bottom: 20px;
+}
+.page-head h1 {
+  font-size: 22px;
+}
+.page-head .sub {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* ── Chips (the tag encoding) ──────────────────────────────────────────────── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 100px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+  border: 1px solid var(--cat-bd);
+  background: var(--cat-bg);
+  color: var(--cat-fg);
+}
+.chip--good {
+  background: var(--good-bg);
+  color: var(--good-fg);
+  border-color: var(--good-bd);
+}
+.chip--ok {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+  border-color: var(--ok-bd);
+}
+.chip--warn {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  border-color: var(--warn-bd);
+}
+.chip--bad {
+  background: var(--bad-bg);
+  color: var(--bad-fg);
+  border-color: var(--bad-bd);
+}
+.chip--muted {
+  background: var(--muted-bg);
+  color: var(--muted-fg);
+  border-color: var(--muted-bd);
+}
+.chip--cat {
+  background: var(--cat-bg);
+  color: var(--cat-fg);
+  border-color: var(--cat-bd);
+}
+.chip--sm {
+  font-size: 10.5px;
+  padding: 0 6px;
+}
+
+/* ── Rendered markdown (dossiers + boards) ─────────────────────────────────── */
+.prose {
+  color: var(--text-2);
+  line-height: 1.62;
+  overflow-wrap: anywhere;
+}
+.prose h1 {
+  font-size: 22px;
+  margin: 4px 0 14px;
+  color: var(--text);
+}
+.prose h2 {
+  font-size: 17px;
+  margin: 30px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  scroll-margin-top: calc(var(--nav-h) + 16px);
+}
+.prose h3 {
+  font-size: 14.5px;
+  margin: 22px 0 8px;
+  color: var(--text);
+  scroll-margin-top: calc(var(--nav-h) + 16px);
+}
+.prose h4 {
+  font-size: 13px;
+  margin: 16px 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.prose p {
+  margin: 10px 0;
+}
+.prose ul,
+.prose ol {
+  margin: 10px 0;
+  padding-left: 22px;
+}
+.prose li {
+  margin: 4px 0;
+}
+.prose code {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5px 4px;
+  font-size: 0.86em;
+  color: var(--text);
+}
+.prose pre {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+.prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+.prose blockquote {
+  margin: 12px 0;
+  padding: 4px 14px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--muted);
+}
+.prose table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 14px 0;
+  font-size: 13px;
+  display: block;
+  overflow-x: auto;
+}
+.prose th,
+.prose td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.prose th {
+  background: var(--panel-2);
+  font-weight: 600;
+  color: var(--text);
+}
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 24px 0;
+}
+.prose img {
+  max-width: 100%;
+}
+
+/* Focus ring for keyboard users on interactive rows/links. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}

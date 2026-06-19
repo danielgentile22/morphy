@@ -28,6 +28,9 @@ primary_region = "iad"
   # Caddy wiring (same names the integration test sets). Volume at /data, so
   # DATA_WEB_ROOT="/" maps /data/processed/X -> /data/processed/X on disk.
   SITE_ROOT = "/srv/dist"
+  # The data-audit browser (behind the same session gate; see Caddyfile).
+  AUDIT_SITE_ROOT = "/srv/audit-dist"
+  AUDIT_DATA_ROOT = "/srv/audit-data"
   DATA_WEB_ROOT = "/"
   BACKEND_UPSTREAM = "127.0.0.1:8000"
   CADDY_PORT = "8080"
