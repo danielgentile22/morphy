@@ -5,12 +5,19 @@
  * the file verbatim (the "never hardcode / auto-populate" contract).
  */
 
-import { fetchIndex, type AuditIndex, type Card, type Signal } from './audit-data';
+import { fetchIndex, fetchFreshness, type AuditIndex, type Card, type Signal } from './audit-data';
+import type { FreshnessDoc } from './freshness';
 
 class AuditStore {
   index = $state<AuditIndex | null>(null);
   loading = $state(true);
   error = $state<string | null>(null);
+
+  // The deploy-time freshness snapshot — `null` until loaded, and stays `null`
+  // when the artifact is absent (not yet generated). Loaded alongside the index
+  // so both the Overview callout and the "What needs updating" tab read it; its
+  // absence never blocks the index load (see fetchFreshness).
+  freshness = $state<FreshnessDoc | null>(null);
 
   cards = $derived<Card[]>(this.index?.cards ?? []);
   signals = $derived<Signal[]>(this.index?.signals ?? []);
@@ -33,7 +40,11 @@ class AuditStore {
     this.loading = true;
     this.error = null;
     try {
-      this.index = await fetchIndex();
+      // fetchFreshness never rejects (absent artifact → null), so only an
+      // index.json failure surfaces as the app-level error state.
+      const [index, freshness] = await Promise.all([fetchIndex(), fetchFreshness()]);
+      this.index = index;
+      this.freshness = freshness;
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {

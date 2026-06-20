@@ -3,6 +3,7 @@
   import { hrefs } from '../lib/router.svelte';
   import { buildCatalog, catalogStats, freshnessFlags } from '../lib/catalog';
   import { trustBadge } from '../lib/catalog-language';
+  import { freshnessRows, freshnessSummary } from '../lib/freshness';
 
   const index = $derived(store.index);
 
@@ -11,6 +12,16 @@
   const model = $derived(index ? buildCatalog(index) : null);
   const stats = $derived(index && model ? catalogStats(index, model) : null);
   const flags = $derived(model ? freshnessFlags(model) : null);
+
+  // Live "needs refreshing" from the deploy-time freshness snapshot, recomputed
+  // against today (M9). Present ⇒ the real last-pulled view drives the callout;
+  // absent (artifact not yet generated) ⇒ we fall back to the freshness-risk
+  // proxy below, so the callout still renders before the first freshness deploy.
+  const live = $derived(
+    store.freshness
+      ? freshnessSummary(freshnessRows(store.freshness, new Date()))
+      : null,
+  );
 
   // groupId → its def, so a stale point can name + deep-link to its group.
   const groupDef = $derived(
@@ -90,47 +101,93 @@
       {/each}
     </section>
 
-    <!-- "Needs refreshing" callout — Phase 1 proxy off the freshness-risk tags. -->
-    <section
-      class="callout"
-      class:callout--alert={flags.stale.length > 0}
-      class:callout--ok={flags.stale.length === 0 && flags.canLag === 0}
-      aria-label="What needs refreshing"
-    >
-      {#if flags.stale.length > 0}
-        <h2>⚠ Needs refreshing</h2>
-        <p class="callout-sub">
-          {flags.stale.length}
-          {flags.stale.length === 1 ? 'data point looks' : 'data points look'} likely stale.
-        </p>
-        <ul class="stale-list">
-          {#each flags.stale as point (point.baseId)}
-            <li>
-              <a href={hrefs.catalog(point.groupId)}>
-                <span class="stale-name">{point.meaning ?? point.baseId}</span>
-                <span class="stale-grp">{groupDef.get(point.groupId)?.title ?? point.groupId}</span>
-              </a>
-            </li>
-          {/each}
-        </ul>
-        {#if flags.canLag > 0}
-          <p class="callout-soft">
-            {flags.canLag} more can lag and should be refreshed periodically.
+    <!-- "Needs refreshing" callout — live from the freshness snapshot when it's
+         been generated, else the Phase-1 freshness-risk proxy as a fallback. -->
+    {#if live}
+      <section
+        class="callout"
+        class:callout--alert={live.stale.length > 0}
+        class:callout--ok={live.stale.length === 0 && live.dueSoon.length === 0}
+        aria-label="What needs refreshing"
+      >
+        {#if live.stale.length > 0}
+          <h2>⚠ Needs refreshing</h2>
+          <p class="callout-sub">
+            {live.stale.length}
+            {live.stale.length === 1 ? 'source is' : 'sources are'} overdue for a refresh.
           </p>
+          <ul class="stale-list">
+            {#each live.stale as { source } (source.id)}
+              <li>
+                <a href={hrefs.card(source.id)}>
+                  <span class="stale-name">{source.title}</span>
+                  <span class="stale-grp">overdue</span>
+                </a>
+              </li>
+            {/each}
+          </ul>
+          {#if live.dueSoon.length > 0}
+            <p class="callout-soft">
+              {live.dueSoon.length} more {live.dueSoon.length === 1 ? 'is' : 'are'} due soon.
+            </p>
+          {/if}
+        {:else if live.dueSoon.length > 0}
+          <h2>Nothing overdue</h2>
+          <p class="callout-sub">
+            {live.dueSoon.length}
+            {live.dueSoon.length === 1 ? 'source is' : 'sources are'} due soon — none is overdue yet.
+          </p>
+        {:else}
+          <h2>Everything's current</h2>
+          <p class="callout-sub">Every source is within its refresh window.</p>
         {/if}
-      {:else if flags.canLag > 0}
-        <h2>Nothing flagged as stale</h2>
-        <p class="callout-sub">
-          {flags.canLag} data points can lag and should be refreshed periodically — none is overdue.
+        <p class="phase-note">
+          Last pulled as of last update; the due / overdue countdown advances daily.
+          <a href={hrefs.freshness}>See what needs updating →</a>
         </p>
-      {:else}
-        <h2>Everything's current</h2>
-        <p class="callout-sub">No data point is flagged for refresh.</p>
-      {/if}
-      <p class="phase-note">
-        Based on each source's freshness risk. A live last-pulled view is coming.
-      </p>
-    </section>
+      </section>
+    {:else}
+      <section
+        class="callout"
+        class:callout--alert={flags.stale.length > 0}
+        class:callout--ok={flags.stale.length === 0 && flags.canLag === 0}
+        aria-label="What needs refreshing"
+      >
+        {#if flags.stale.length > 0}
+          <h2>⚠ Needs refreshing</h2>
+          <p class="callout-sub">
+            {flags.stale.length}
+            {flags.stale.length === 1 ? 'data point looks' : 'data points look'} likely stale.
+          </p>
+          <ul class="stale-list">
+            {#each flags.stale as point (point.baseId)}
+              <li>
+                <a href={hrefs.catalog(point.groupId)}>
+                  <span class="stale-name">{point.meaning ?? point.baseId}</span>
+                  <span class="stale-grp">{groupDef.get(point.groupId)?.title ?? point.groupId}</span>
+                </a>
+              </li>
+            {/each}
+          </ul>
+          {#if flags.canLag > 0}
+            <p class="callout-soft">
+              {flags.canLag} more can lag and should be refreshed periodically.
+            </p>
+          {/if}
+        {:else if flags.canLag > 0}
+          <h2>Nothing flagged as stale</h2>
+          <p class="callout-sub">
+            {flags.canLag} data points can lag and should be refreshed periodically — none is overdue.
+          </p>
+        {:else}
+          <h2>Everything's current</h2>
+          <p class="callout-sub">No data point is flagged for refresh.</p>
+        {/if}
+        <p class="phase-note">
+          Based on each source's freshness risk. A live last-pulled view is coming.
+        </p>
+      </section>
+    {/if}
   {/if}
 </div>
 

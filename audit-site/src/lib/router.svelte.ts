@@ -27,7 +27,7 @@ export function parseHash(hash: string): Route {
       // `#/catalog/<group>` deep-links to a group anchor (Overview cards use it).
       return { name: 'catalog', anchor: parts[1] ?? null };
     case 'freshness':
-      // "What needs updating" — placeholder until the live freshness slice (#185).
+      // "What needs updating" — the live freshness view (freshness.json + M9 model).
       return { name: 'freshness' };
     case 'signals':
       return parts[1] ? { name: 'signal', id: parts[1] } : { name: 'signals', query };
