@@ -45,8 +45,11 @@ puller = [
 # default, Postgres via DATABASE_URL=postgresql+psycopg://... PyJWT is the
 # small vetted lib for the HS256 session tokens (password hashing is stdlib
 # PBKDF2 — no extra dep). Alembic lives here (not dev) because the app runs
-# upgrade-to-head at boot (PRD #134). This group is exactly what the Docker
-# image installs (uv export --only-group backend), so keep it slim.
+# upgrade-to-head at boot (PRD #134). anthropic powers the "Ask Claude" SSE
+# helper in the data catalog (PRD #187 / #188); it self-disables with a clean
+# 503 when ANTHROPIC_API_KEY is unset, so the rest of the catalog is unaffected.
+# This group is exactly what the Docker image installs
+# (uv export --only-group backend), so keep it slim.
 backend = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
@@ -54,6 +57,7 @@ backend = [
     "alembic>=1.13",
     "PyJWT>=2.8",
     "psycopg[binary]>=3.1",
+    "anthropic>=0.40",
 ]
 # Dev-only. testcontainers backs the Postgres isolation test and was
 # previously bundled into backend/requirements.txt (and thus the prod

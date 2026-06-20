@@ -28,18 +28,22 @@ unauthenticated requests are rejected with 401.
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Iterator
+import logging
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from datetime import date
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from .activity_service import ActivityService
 from .antenna_store import AntennaStore
+from .ask_assembler import AskSignal, build_prompt
+from .ask_client import AnthropicNotConfigured, AnthropicStreamer, AnthropicStreamError
+from .ask_log_store import AskLogStore
 from .attention_service import DISMISS_CHANNEL, AttentionService
 from .auth import (
     SESSION_COOKIE,
@@ -68,6 +72,7 @@ from .schemas import (
     AntennaState,
     AntennaUpdate,
     ArchivedAsrsResponse,
+    AskRequest,
     AttentionItemOut,
     AttentionResponse,
     CandidatesResponse,
@@ -176,6 +181,43 @@ _login_throttle = LoginThrottle(
 
 def get_login_throttle() -> LoginThrottle:
     return _login_throttle
+
+
+_log = logging.getLogger(__name__)
+
+
+# Light per-user request throttle for the "Ask Claude" route (PRD #188), reusing
+# the login throttle's sliding-window machinery (prior art): each request is
+# "recorded", and once a user passes the limit inside the window they get 429
+# until it rolls forward. Keyed by username, so one user can't run up the bill.
+_ask_throttle = LoginThrottle(
+    max_failures=settings.ask_rate_limit_max,
+    window_seconds=settings.ask_rate_limit_window_seconds,
+)
+
+
+def get_ask_throttle() -> LoginThrottle:
+    return _ask_throttle
+
+
+def get_ask_streamer() -> AnthropicStreamer:
+    """The Anthropic streaming seam, built from settings. Tests override this
+    with a fake so they never touch the network or need a key."""
+    return AnthropicStreamer(
+        api_key=settings.anthropic_api_key,
+        model=settings.ask_model,
+        max_tokens=settings.ask_max_tokens,
+    )
+
+
+def get_ask_log(
+    tenant_id: int = Depends(current_tenant_id),
+    db: Session = Depends(get_db),
+) -> AskLogStore:
+    """The tenant-scoped Q&A log store (#190). The session lives until the
+    streaming response finishes (FastAPI closes ``yield``-dependencies after the
+    body is fully sent), so the route can persist *after* the stream completes."""
+    return AskLogStore(db, tenant_id)
 
 
 def get_store(
@@ -425,6 +467,136 @@ def change_my_password(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if outcome is ChangePasswordOutcome.WRONG_CURRENT:
         raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+
+# ── "Ask Claude" catalog helper (PRD #187 / #188) ────────────────────────────
+def _sse(event: str, data: dict) -> bytes:
+    """Encode one Server-Sent Event frame. The payload is JSON so a delta that
+    contains newlines survives the line-oriented SSE wire format intact."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
+
+
+def _ask_event_stream(
+    streamer: AnthropicStreamer,
+    system: str,
+    messages: list[dict],
+    *,
+    on_complete: Callable[[str], None] | None = None,
+) -> Iterator[bytes]:
+    """The SSE body: ``delta`` frames as text arrives, a terminal ``done``, or a
+    single ``error`` frame if the SDK fails mid-stream. A streaming failure
+    can't change the already-sent 200, so it degrades to a clean error event
+    the client can show — never a 500 stack.
+
+    On a clean finish the assembled answer is handed to ``on_complete`` for
+    persistence (#190) — *after* the ``done`` frame is flushed, so the reader
+    has the full answer before any write happens, and a persistence failure
+    can never corrupt what they already saw."""
+    parts: list[str] = []
+    try:
+        for delta in streamer.stream(system=system, messages=messages):
+            parts.append(delta)
+            yield _sse("delta", {"text": delta})
+        yield _sse("done", {})
+    except AnthropicStreamError:
+        yield _sse("error", {"message": "Ask Claude is temporarily unavailable."})
+        return
+    # Reached only on a clean finish (an error returns above): persist the turn.
+    if on_complete is not None:
+        on_complete("".join(parts))
+
+
+@app.post("/api/audit/ask", response_class=StreamingResponse)
+def audit_ask(
+    body: AskRequest,
+    principal: Principal = Depends(current_principal),
+    streamer: AnthropicStreamer = Depends(get_ask_streamer),
+    throttle: LoginThrottle = Depends(get_ask_throttle),
+    log: AskLogStore = Depends(get_ask_log),
+) -> StreamingResponse:
+    """Stream a grounded answer to a catalog reader's question (PRD #187 / #188 /
+    #189).
+
+    The body carries the question plus optional page grounding — the route, the
+    highlighted selection, a bounded slice of visible page text, the on-screen
+    signal records, and the prior thread (#189) — which the assembler folds into
+    the prompt so answers reflect the actual on-screen ratings.
+
+    Authorizes via the same session seam as the rest of the app
+    (``current_principal`` — the ``pilot_session`` cookie, bearer as fallback),
+    so an unauthenticated request is 401. A light per-user throttle short-circuits
+    with 429 once a user passes the request limit inside the window. With no
+    ``ANTHROPIC_API_KEY`` the route self-disables with a clean 503 *before* it
+    commits to a stream, leaving the rest of the catalog working. Otherwise it
+    returns Server-Sent Events — the backend's first streaming endpoint — that
+    Caddy's ``reverse_proxy`` passes through unbuffered.
+
+    On a clean finish the completed Q&A is persisted with its context snapshot
+    (#190), tenant-scoped, best-effort — a write failure is logged and swallowed
+    so it can never break the answer the reader already saw.
+    """
+    key = ("ask", principal.email)
+    if throttle.is_blocked(key):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many questions; give it a moment.",
+            headers={"Retry-After": str(int(throttle.retry_after(key)) + 1)},
+        )
+    throttle.record_failure(key)  # count this request toward the window
+    try:
+        streamer.ensure_ready()
+    except AnthropicNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Ask Claude is not configured.") from exc
+
+    # Map the request's page grounding (#189) onto the assembler's pure inputs.
+    # The assembler owns the functional caps (page-text truncation, signal
+    # limit, thread clamp); here we just translate model → dataclass/dicts.
+    prompt = build_prompt(
+        body.question,
+        route=body.route,
+        selection=body.selection,
+        visible_text=body.visible_text,
+        signals=[
+            AskSignal(
+                id=s.id,
+                confidence=s.confidence,
+                upstream_origin=s.upstream_origin,
+                freshness_risk=s.freshness_risk,
+                derivation_risk=s.derivation_risk,
+                verifiability=s.verifiability,
+                verdict=s.verdict,
+            )
+            for s in body.signals
+        ],
+        thread=[{"role": t.role, "content": t.content} for t in body.thread],
+    )
+
+    def _persist(answer: str) -> None:
+        """Store the completed Q&A + context snapshot (#190). Best-effort: any
+        failure is logged and swallowed — the answer is already on screen."""
+        try:
+            usage = streamer.usage
+            log.record(
+                username=principal.email,
+                user_id=principal.user_id,
+                question=body.question,
+                answer=answer,
+                route=body.route,
+                selection=body.selection,
+                signal_ids=[s.id for s in body.signals],
+                model=streamer.model,
+                input_tokens=usage.input_tokens if usage else None,
+                output_tokens=usage.output_tokens if usage else None,
+            )
+        except Exception:  # noqa: BLE001 — persistence never breaks the stream
+            _log.exception("Ask Claude: failed to persist Q&A")
+
+    return StreamingResponse(
+        _ask_event_stream(streamer, prompt.system, prompt.messages, on_complete=_persist),
+        media_type="text/event-stream",
+        # Keep the stream live end-to-end: no client/proxy buffering, no caching.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/api/candidates", response_model=CandidatesResponse)

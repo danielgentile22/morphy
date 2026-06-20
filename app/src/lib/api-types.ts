@@ -119,6 +119,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/audit/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Audit Ask
+         * @description Stream a grounded answer to a catalog reader's question (PRD #187 / #188 /
+         *     #189).
+         *
+         *     The body carries the question plus optional page grounding — the route, the
+         *     highlighted selection, a bounded slice of visible page text, the on-screen
+         *     signal records, and the prior thread (#189) — which the assembler folds into
+         *     the prompt so answers reflect the actual on-screen ratings.
+         *
+         *     Authorizes via the same session seam as the rest of the app
+         *     (``current_principal`` — the ``pilot_session`` cookie, bearer as fallback),
+         *     so an unauthenticated request is 401. A light per-user throttle short-circuits
+         *     with 429 once a user passes the request limit inside the window. With no
+         *     ``ANTHROPIC_API_KEY`` the route self-disables with a clean 503 *before* it
+         *     commits to a stream, leaving the rest of the catalog working. Otherwise it
+         *     returns Server-Sent Events — the backend's first streaming endpoint — that
+         *     Caddy's ``reverse_proxy`` passes through unbuffered.
+         *
+         *     On a clean finish the completed Q&A is persisted with its context snapshot
+         *     (#190), tenant-scoped, best-effort — a write failure is logged and swallowed
+         *     so it can never break the answer the reader already saw.
+         */
+        post: operations["audit_ask_api_audit_ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/check": {
         parameters: {
             query?: never;
@@ -724,6 +763,103 @@ export interface components {
         ArchivedAsrsResponse: {
             /** Asrs */
             asrs: string[];
+        };
+        /**
+         * AskRequest
+         * @description The body of POST /api/audit/ask.
+         *
+         *     Slice 1 (#188) was question-only; slice 2 (#189) adds page grounding — the
+         *     current route, the highlighted selection, a bounded slice of the visible page
+         *     text, the on-screen signal records, and the prior thread. Everything except
+         *     ``question`` is optional, so a bare ``{"question": "..."}`` still works.
+         *
+         *     The bounds here are deliberately *generous* outer guards — they reject an
+         *     abusive payload (422) but are not the functional caps. The real caps
+         *     (page-text truncation, signal limit, thread clamp) live in the assembler so
+         *     they're enforced and unit-tested in exactly one place.
+         */
+        AskRequest: {
+            /** Question */
+            question: string;
+            /**
+             * Route
+             * @default
+             */
+            route: string;
+            /** Selection */
+            selection?: string | null;
+            /** Signals */
+            signals?: components["schemas"]["AskSignal"][];
+            /** Thread */
+            thread?: components["schemas"]["AskTurn"][];
+            /**
+             * Visible Text
+             * @default
+             */
+            visible_text: string;
+        };
+        /**
+         * AskSignal
+         * @description One on-screen audit signal the question may be about (#189): the five
+         *     controlled-vocab tags plus the verdict, flattened from the catalog's Signal.
+         *
+         *     Every field defaults to "" so a partial or legacy record still validates —
+         *     grounding is best-effort context, never a reason to 422 a question.
+         */
+        AskSignal: {
+            /**
+             * Confidence
+             * @default
+             */
+            confidence: string;
+            /**
+             * Derivation Risk
+             * @default
+             */
+            derivation_risk: string;
+            /**
+             * Freshness Risk
+             * @default
+             */
+            freshness_risk: string;
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /**
+             * Upstream Origin
+             * @default
+             */
+            upstream_origin: string;
+            /**
+             * Verdict
+             * @default
+             */
+            verdict: string;
+            /**
+             * Verifiability
+             * @default
+             */
+            verifiability: string;
+        };
+        /**
+         * AskTurn
+         * @description One prior conversation turn, echoed back so the stateless backend can keep
+         *     context across follow-ups (#189). ``role`` is the speaker, ``content`` the
+         *     raw text of that turn.
+         */
+        AskTurn: {
+            /**
+             * Content
+             * @default
+             */
+            content: string;
+            /**
+             * Role
+             * @default user
+             */
+            role: string;
         };
         /** AttentionItemOut */
         AttentionItemOut: {
@@ -1601,6 +1737,37 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_ask_api_audit_ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
