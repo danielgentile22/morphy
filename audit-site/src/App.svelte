@@ -5,6 +5,7 @@
   import { themeStore } from './lib/theme.svelte';
   import NavBar from './components/NavBar.svelte';
   import Overview from './components/Overview.svelte';
+  import CatalogView from './components/CatalogView.svelte';
   import SignalsBrowser from './components/SignalsBrowser.svelte';
   import SignalDetail from './components/SignalDetail.svelte';
   import CardsBrowser from './components/CardsBrowser.svelte';
@@ -45,6 +46,8 @@
     </div>
   {:else if route.name === 'overview'}
     <Overview />
+  {:else if route.name === 'catalog'}
+    <CatalogView anchor={route.anchor} />
   {:else if route.name === 'signals'}
     <SignalsBrowser query={route.query} />
   {:else if route.name === 'signal'}

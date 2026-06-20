@@ -10,6 +10,7 @@
 
 export type Route =
   | { name: 'overview' }
+  | { name: 'catalog'; anchor: string | null }
   | { name: 'signals'; query: string }
   | { name: 'signal'; id: string }
   | { name: 'cards' }
@@ -21,6 +22,9 @@ export function parseHash(hash: string): Route {
   const [path, query = ''] = raw.split('?');
   const parts = path.split('/').filter(Boolean).map(decodeURIComponent);
   switch (parts[0]) {
+    case 'catalog':
+      // `#/catalog/<group>` deep-links to a group anchor (Overview cards use it).
+      return { name: 'catalog', anchor: parts[1] ?? null };
     case 'signals':
       return parts[1] ? { name: 'signal', id: parts[1] } : { name: 'signals', query };
     case 'cards':
@@ -34,6 +38,8 @@ export function parseHash(hash: string): Route {
 
 export const hrefs = {
   overview: '#/',
+  catalog: (anchor?: string | null) =>
+    `#/catalog${anchor ? `/${encodeURIComponent(anchor)}` : ''}`,
   signals: (query = '') => (query ? `#/signals?${query}` : '#/signals'),
   signal: (id: string) => `#/signals/${encodeURIComponent(id)}`,
   cards: '#/cards',

@@ -14,6 +14,7 @@
 
   const items = $derived<NavItem[]>([
     { label: 'Overview', href: hrefs.overview, active: route.name === 'overview' },
+    { label: 'Catalog', href: hrefs.catalog(), active: route.name === 'catalog' },
     { label: 'Signals', href: hrefs.signals(), active: route.name === 'signals' || route.name === 'signal' },
     { label: 'Cards', href: hrefs.cards, active: route.name === 'cards' || route.name === 'card' },
     { label: 'Verification', href: hrefs.doc('verification-log.md'), active: docActive(route, 'verification-log.md') },

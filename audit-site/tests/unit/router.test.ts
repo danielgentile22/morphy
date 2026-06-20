@@ -7,6 +7,10 @@ describe('parseHash', () => {
     expect(parseHash('#/')).toEqual({ name: 'overview' });
     expect(parseHash('#/garbage')).toEqual({ name: 'overview' });
   });
+  it('parses the catalog list and a group anchor', () => {
+    expect(parseHash('#/catalog')).toEqual({ name: 'catalog', anchor: null });
+    expect(parseHash('#/catalog/landowner')).toEqual({ name: 'catalog', anchor: 'landowner' });
+  });
   it('parses the signals list and its query', () => {
     expect(parseHash('#/signals')).toEqual({ name: 'signals', query: '' });
     expect(parseHash('#/signals?conf=low&state=12')).toEqual({ name: 'signals', query: 'conf=low&state=12' });
@@ -37,5 +41,8 @@ describe('hrefs', () => {
     expect(hrefs.doc('fcc-asr.md', 'tower_height')).toBe('#/doc/fcc-asr.md/tower_height');
     expect(hrefs.signals('conf=low')).toBe('#/signals?conf=low');
     expect(hrefs.signals()).toBe('#/signals');
+    expect(hrefs.catalog()).toBe('#/catalog');
+    expect(hrefs.catalog('landowner')).toBe('#/catalog/landowner');
+    expect(parseHash(hrefs.catalog('landowner'))).toEqual({ name: 'catalog', anchor: 'landowner' });
   });
 });
