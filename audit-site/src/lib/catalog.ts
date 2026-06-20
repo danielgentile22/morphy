@@ -117,6 +117,49 @@ export function dossierTarget(point: DataPoint): { file: string; anchor: string 
   return { file, anchor: anchor || point.baseId };
 }
 
+/** The headline scope of the catalog, for the Overview's count strip. */
+export interface CatalogStats {
+  /** Logical data points — the collapsed rows across every group. */
+  dataPoints: number;
+  /** Distinct source datasets behind the catalog. Counted from the *raw* signal
+   *  set (before per-state collapse) so all four parcel-state dossiers count, not
+   *  just whichever state is a collapsed point's weakest representative. Reads
+   *  live from `index.json` (the auto-populate contract) — a re-run that adds a
+   *  dossier bumps this with no code change. */
+  sources: number;
+  /** The pilot's states — the fixed AR/FL/MT/WV grid (see {@link STRIP_FIPS}). */
+  states: number;
+}
+
+/** Project the count strip's three numbers. Pure; `dataPoints` from the built
+ *  model, `sources` from the raw signal list (distinct dossier files). */
+export function catalogStats(index: AuditIndex, model: CatalogModel): CatalogStats {
+  const dataPoints = model.groups.reduce((n, g) => n + g.points.length, 0);
+  const sources = new Set(index.signals.map((s) => s.dossier.split('#')[0])).size;
+  return { dataPoints, sources, states: STRIP_FIPS.length };
+}
+
+/** Phase-1 "needs refreshing" signal, derived from each point's freshness-risk
+ *  tag (the proxy until the live `freshness.json` view lands — PRD M4 / #185).
+ *  A point's representative tags are its *weakest* state's, so a field that is
+ *  stale in even one state surfaces here. */
+export interface FreshnessFlags {
+  /** Points reading "likely stale — refresh needed" (freshness_risk = high),
+   *  base-id-sorted for a stable list. */
+  stale: DataPoint[];
+  /** How many points "can lag" (freshness_risk = medium) — the softer bucket. */
+  canLag: number;
+}
+
+export function freshnessFlags(model: CatalogModel): FreshnessFlags {
+  const all = model.groups.flatMap((g) => g.points);
+  const stale = all
+    .filter((p) => p.tags.freshness_risk === 'high')
+    .sort((a, b) => a.baseId.localeCompare(b.baseId));
+  const canLag = all.filter((p) => p.tags.freshness_risk === 'medium').length;
+  return { stale, canLag };
+}
+
 export function buildCatalog(
   index: AuditIndex,
   config: CatalogConfig = defaultCatalogConfig,

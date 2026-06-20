@@ -1,15 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import type { AuditIndex, Signal } from '../../src/lib/audit-data';
+import type { AuditIndex, Signal, SignalTags } from '../../src/lib/audit-data';
 import type { CatalogConfig } from '../../src/lib/catalog-config';
 import {
   buildCatalog,
+  catalogStats,
   dossierTarget,
+  freshnessFlags,
   stateStrip,
   type CatalogModel,
   type DataPoint,
 } from '../../src/lib/catalog';
 
-function sig(id: string, confidence: string, extra: Partial<Signal> = {}): Signal {
+function sig(
+  id: string,
+  confidence: string,
+  extra: Partial<Omit<Signal, 'tags'>> & { tags?: Partial<SignalTags> } = {},
+): Signal {
   return {
     id,
     card: extra.card ?? 'T-XX',
@@ -225,6 +231,56 @@ describe('dossierTarget — "Why this rating" deep-link', () => {
   it('falls back to the base id when the dossier ref carries no anchor', () => {
     const point = pointOf([sig('alpha', 'high', { dossier: 'doc.md' })], 'alpha');
     expect(dossierTarget(point)).toEqual({ file: 'doc.md', anchor: 'alpha' });
+  });
+});
+
+describe('catalogStats — count strip', () => {
+  it('counts logical points, distinct source dossiers, and the 4 states', () => {
+    const signals = [
+      // one per-state field across four parcel-state dossiers → 1 logical point,
+      // but 4 distinct sources (the collapse must NOT lose three of them).
+      sig('owner_name@05', 'high', { dossier: 'parcels-AR.md#owner_name' }),
+      sig('owner_name@12', 'high', { dossier: 'parcels-FL.md#owner_name' }),
+      sig('owner_name@30', 'high', { dossier: 'parcels-MT.md#owner_name' }),
+      sig('owner_name@54', 'low', { dossier: 'parcels-WV.md#owner_name' }),
+      // a national field in a fifth dossier → 1 more logical point, 1 more source.
+      sig('alpha', 'high', { dossier: 'fcc-asr.md#alpha' }),
+    ];
+    const model = buildCatalog(idx(signals), STUB);
+    expect(catalogStats(idx(signals), model)).toEqual({
+      dataPoints: 2, // owner_name (collapsed) + alpha
+      sources: 5, // four parcel-state dossiers + fcc-asr — counted before collapse
+      states: 4,
+    });
+  });
+});
+
+describe('freshnessFlags — Phase-1 needs-refreshing proxy', () => {
+  it('flags points whose representative (weakest-state) freshness risk is high', () => {
+    const signals = [
+      // owner_name's weakest state (@54, low trust) carries high freshness risk →
+      // the collapsed point reads "likely stale" even though 3 states are low-risk.
+      sig('owner_name@05', 'high', { tags: { freshness_risk: 'low' } }),
+      sig('owner_name@54', 'low', { tags: { freshness_risk: 'high' } }),
+      sig('alpha', 'high', { tags: { freshness_risk: 'high' } }),
+      sig('beta', 'medium', { tags: { freshness_risk: 'medium' } }),
+      sig('gamma', 'high', { tags: { freshness_risk: 'medium' } }),
+      sig('delta', 'high', { tags: { freshness_risk: 'low' } }),
+    ];
+    const { stale, canLag } = freshnessFlags(buildCatalog(idx(signals), STUB));
+    // base-id-sorted, and per-state collapse resolves to the weakest state's tag.
+    expect(stale.map((p) => p.baseId)).toEqual(['alpha', 'owner_name']);
+    expect(canLag).toBe(2); // beta + gamma (medium); delta (low) excluded
+  });
+
+  it('returns nothing when every point is low/unknown freshness risk', () => {
+    const signals = [
+      sig('alpha', 'high', { tags: { freshness_risk: 'low' } }),
+      sig('beta', 'medium', { tags: { freshness_risk: 'unknown' } }),
+    ];
+    const { stale, canLag } = freshnessFlags(buildCatalog(idx(signals), STUB));
+    expect(stale).toEqual([]);
+    expect(canLag).toBe(0);
   });
 });
 
