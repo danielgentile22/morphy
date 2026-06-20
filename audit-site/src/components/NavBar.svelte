@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { router, hrefs, type Route } from '../lib/router.svelte';
+  import { router, hrefs } from '../lib/router.svelte';
   import { themeStore } from '../lib/theme.svelte';
 
   const route = $derived(router.route);
@@ -10,23 +10,20 @@
     active: boolean;
   }
 
-  const docActive = (r: Route, file: string) => r.name === 'doc' && r.file === file;
-
+  // Primary nav reframed around what the co-founder uses (PRD #178 / #184): the
+  // catalog is the front door; the technical audit surfaces (Signals, Cards,
+  // Verification, Reconciliation, Methodology) move to the Full-audit footer.
   const items = $derived<NavItem[]>([
     { label: 'Overview', href: hrefs.overview, active: route.name === 'overview' },
-    { label: 'Catalog', href: hrefs.catalog(), active: route.name === 'catalog' },
-    { label: 'Signals', href: hrefs.signals(), active: route.name === 'signals' || route.name === 'signal' },
-    { label: 'Cards', href: hrefs.cards, active: route.name === 'cards' || route.name === 'card' },
-    { label: 'Verification', href: hrefs.doc('verification-log.md'), active: docActive(route, 'verification-log.md') },
-    { label: 'Reconciliation', href: hrefs.doc('INDEX.md'), active: docActive(route, 'INDEX.md') },
-    { label: 'Methodology', href: hrefs.doc('PLAN.md'), active: docActive(route, 'PLAN.md') },
+    { label: 'Data Catalog', href: hrefs.catalog(), active: route.name === 'catalog' },
+    { label: 'What needs updating', href: hrefs.freshness, active: route.name === 'freshness' },
   ]);
 </script>
 
 <header class="nav">
   <a class="brand" href={hrefs.overview}>
     <span class="brand-mark" aria-hidden="true">◆</span>
-    <span class="brand-text">Data Audit</span>
+    <span class="brand-text">Data Catalog</span>
   </a>
   <nav class="links" aria-label="Sections">
     {#each items as it (it.label)}

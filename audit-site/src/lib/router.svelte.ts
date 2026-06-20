@@ -11,6 +11,7 @@
 export type Route =
   | { name: 'overview' }
   | { name: 'catalog'; anchor: string | null }
+  | { name: 'freshness' }
   | { name: 'signals'; query: string }
   | { name: 'signal'; id: string }
   | { name: 'cards' }
@@ -25,6 +26,9 @@ export function parseHash(hash: string): Route {
     case 'catalog':
       // `#/catalog/<group>` deep-links to a group anchor (Overview cards use it).
       return { name: 'catalog', anchor: parts[1] ?? null };
+    case 'freshness':
+      // "What needs updating" — placeholder until the live freshness slice (#185).
+      return { name: 'freshness' };
     case 'signals':
       return parts[1] ? { name: 'signal', id: parts[1] } : { name: 'signals', query };
     case 'cards':
@@ -40,6 +44,7 @@ export const hrefs = {
   overview: '#/',
   catalog: (anchor?: string | null) =>
     `#/catalog${anchor ? `/${encodeURIComponent(anchor)}` : ''}`,
+  freshness: '#/freshness',
   signals: (query = '') => (query ? `#/signals?${query}` : '#/signals'),
   signal: (id: string) => `#/signals/${encodeURIComponent(id)}`,
   cards: '#/cards',

@@ -4,8 +4,10 @@
   import { router } from './lib/router.svelte';
   import { themeStore } from './lib/theme.svelte';
   import NavBar from './components/NavBar.svelte';
+  import Footer from './components/Footer.svelte';
   import Overview from './components/Overview.svelte';
   import CatalogView from './components/CatalogView.svelte';
+  import FreshnessView from './components/FreshnessView.svelte';
   import SignalsBrowser from './components/SignalsBrowser.svelte';
   import SignalDetail from './components/SignalDetail.svelte';
   import CardsBrowser from './components/CardsBrowser.svelte';
@@ -48,6 +50,8 @@
     <Overview />
   {:else if route.name === 'catalog'}
     <CatalogView anchor={route.anchor} />
+  {:else if route.name === 'freshness'}
+    <FreshnessView />
   {:else if route.name === 'signals'}
     <SignalsBrowser query={route.query} />
   {:else if route.name === 'signal'}
@@ -60,6 +64,8 @@
     <DocView file={route.file} anchor={route.anchor} />
   {/if}
 </main>
+
+<Footer />
 
 <style>
   .state {
