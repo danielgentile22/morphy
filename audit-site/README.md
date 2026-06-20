@@ -36,6 +36,16 @@ npm run preview      # serve the built bundle → http://localhost:4273/audit/
 - **`index.json` is the single source of truth.** `src/lib/audit-data.ts`
   fetches it once at boot; `vocab` drives every filter/legend; nothing is
   hardcoded. Dossier `.md` files are fetched on demand.
+- **`freshness.json` is the feed for the "What needs updating" view.** A
+  deploy-time Python exporter (`scripts/export_freshness.py`, PRD #178 M8)
+  snapshots the live puller manifest into `freshness.json` alongside
+  `index.json`, fetched the same way at `/audit/data/freshness.json`. It is
+  **git-ignored** — generated from `data/manifest.json` at deploy and baked into
+  the image, so it always reflects the live puller, never a stale commit. Its
+  shape (per-source `last_pulled` / `cadence_days` / `next_check` / `status`,
+  plus `kind: "derived"` for rebuilt-not-fetched data) is the contract the client
+  freshness model reads — **canonically documented in that exporter's module
+  docstring**. A missing `freshness.json` degrades to "not yet generated".
 - **Signal → dossier deep-links.** A signal's `dossier` field
   (`fcc-asr.md#tower_coords`) points at an anchor that is the **signal id in the
   backticks** of the `## Signal: \`id\`` heading — *not* GitHub's slug of the
