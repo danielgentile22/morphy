@@ -146,6 +146,10 @@ export interface paths {
          *     commits to a stream, leaving the rest of the catalog working. Otherwise it
          *     returns Server-Sent Events — the backend's first streaming endpoint — that
          *     Caddy's ``reverse_proxy`` passes through unbuffered.
+         *
+         *     On a clean finish the completed Q&A is persisted with its context snapshot
+         *     (#190), tenant-scoped, best-effort — a write failure is logged and swallowed
+         *     so it can never break the answer the reader already saw.
          */
         post: operations["audit_ask_api_audit_ask_post"];
         delete?: never;

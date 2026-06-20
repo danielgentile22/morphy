@@ -292,6 +292,49 @@ class ScoringPreset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class AskLog(Base):
+    """One stored "Ask Claude" Q&A with its context snapshot (PRD #187 /
+    slice 3 / #190). Tenant-scoped.
+
+    Every completed question+answer in the data catalog is written here so a
+    recurring question becomes a to-do list of explanations to fold back into
+    the catalog later. **Storage only** in this slice — no read endpoint, no
+    review UI. The snapshot captures *what was on screen* when the question was
+    asked (``route`` + ``selection`` + the on-screen ``signal_ids``) plus the
+    ``model`` used and token ``usage``, so a future "promote good answers"
+    review can mine it without re-deriving context.
+
+    ``username`` is the asker (the JWT subject); ``user_id`` the resolved
+    tenant user (nullable — kept for symmetry with the rest of the schema).
+    """
+
+    __tablename__ = "ask_log"
+
+    # Newest-first reads (a future review UI) served by an index range scan
+    # rather than a filesort, mirroring ``task`` (PERF-023).
+    __table_args__ = (Index("ix_ask_log_tenant_created", "tenant_id", "created_at", "id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    # The asker — the JWT subject (= the credential username).
+    username: Mapped[str] = mapped_column(String(320), nullable=False)
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # The context snapshot: which catalog view, the highlighted selection (if
+    # any), and the on-screen signal ids (comma-separated, '' when none).
+    route: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    selection: Mapped[str | None] = mapped_column(Text, nullable=True)
+    signal_ids: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # The model used + token usage, for cost review (nullable — usage is
+    # best-effort; a stream that ends before the SDK surfaces a final message
+    # leaves it null).
+    model: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class User(Base):
     """A person who can sign in, bound to exactly one tenant (= team).
 

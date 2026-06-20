@@ -11,16 +11,27 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
+
 from backend.app import main
-from backend.app.ask_client import AnthropicNotConfigured, AnthropicStreamError
+from backend.app.ask_client import AnthropicNotConfigured, AnthropicStreamError, AskUsage
+from backend.app.ask_log_store import AskLogStore
 
 from ._helpers import api, auth_header, login
 
 SAMPLE = {"schema_version": 1, "count": 0, "owners": []}
 
 
+def _logs(eng: Engine, tenant_id: int = 1) -> list:
+    """The persisted Q&A rows for a tenant (dev → tenant 1), read straight from
+    the test engine — the slice-3 (#190) storage assertion."""
+    return AskLogStore(Session(bind=eng, future=True), tenant_id).list()
+
+
 class _FakeStreamer:
-    """Duck-types AnthropicStreamer for the route: ``ensure_ready`` + ``stream``."""
+    """Duck-types AnthropicStreamer for the route: ``ensure_ready`` + ``stream``,
+    plus ``model`` + ``usage`` (read by the persistence path, #190)."""
 
     def __init__(
         self,
@@ -28,10 +39,13 @@ class _FakeStreamer:
         deltas: list[str] | None = None,
         configured: bool = True,
         raise_mid: bool = False,
+        usage: AskUsage | None = None,
     ) -> None:
         self._deltas = deltas or []
         self._configured = configured
         self._raise_mid = raise_mid
+        self.model = "fake-model"
+        self.usage = usage
         self.calls: list[dict] = []  # records each stream() invocation's prompt
 
     def ensure_ready(self) -> None:
@@ -141,6 +155,70 @@ def test_grounded_payload_is_folded_into_the_prompt() -> None:
         assert "confidence=high" in grounded
         assert "owner_name" in grounded  # the selection
         assert grounded.rstrip().endswith("Question: why is this high confidence?")
+
+
+def test_completed_qa_is_persisted_with_its_context_snapshot() -> None:
+    # Slice 3 (#190): a completed stream writes one tenant-scoped row capturing
+    # the answer + the context that was on screen + model + usage.
+    with api(SAMPLE) as (client, eng, _sender):
+        _use_streamer(_FakeStreamer(deltas=["The ", "answer."], usage=AskUsage(100, 20)))
+        token = login(client)
+        body = {
+            "question": "why is this high confidence?",
+            "route": "Signal: owner_name@12",
+            "selection": "owner_name",
+            "visible_text": "some visible page text",
+            "signals": [
+                {"id": "owner_name@12", "confidence": "high"},
+                {"id": "foo@05", "confidence": "low"},
+            ],
+            "thread": [],
+        }
+        r = client.post("/api/audit/ask", json=body, headers=auth_header(token))
+        assert r.status_code == 200
+        assert "event: done" in r.text  # the stream finished cleanly
+
+        rows = _logs(eng)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.question == "why is this high confidence?"
+        assert row.answer == "The answer."  # the streamed deltas, reassembled
+        assert row.route == "Signal: owner_name@12"
+        assert row.selection == "owner_name"
+        assert row.signal_ids == "owner_name@12,foo@05"  # the on-screen ids
+        assert row.model == "fake-model"
+        assert (row.input_tokens, row.output_tokens) == (100, 20)
+        assert row.username == "dev"  # the asker (the JWT subject)
+
+
+def test_a_failed_stream_persists_nothing() -> None:
+    # A mid-stream SDK failure is not a completed Q&A — nothing is stored.
+    with api(SAMPLE) as (client, eng, _sender):
+        _use_streamer(_FakeStreamer(deltas=["partial"], raise_mid=True))
+        token = login(client)
+        r = client.post("/api/audit/ask", json={"question": "hi"}, headers=auth_header(token))
+        assert r.status_code == 200
+        assert "event: error" in r.text
+        assert _logs(eng) == []
+
+
+def test_persisted_qa_is_tenant_scoped() -> None:
+    # Two teams ask; each team's stored Q&A is invisible to the other (#190).
+    with api(SAMPLE) as (client, eng, _sender):
+        _use_streamer(_FakeStreamer(deltas=["a"]))
+        from ._helpers import temp_credential
+
+        dev = login(client)  # dev → tenant 1
+        client.post("/api/audit/ask", json={"question": "team-1 q"}, headers=auth_header(dev))
+        with temp_credential(eng, "u2", "pw2", team="otherteam"):
+            other = login(client, "u2", "pw2")  # otherteam → tenant 2
+            client.post(
+                "/api/audit/ask", json={"question": "team-2 q"}, headers=auth_header(other)
+            )
+
+        # Tenant 1 (devteam) sees only its own; tenant 2 only its own.
+        assert [r.question for r in _logs(eng, 1)] == ["team-1 q"]
+        assert [r.question for r in _logs(eng, 2)] == ["team-2 q"]
 
 
 def test_per_user_rate_limit_rejects_excess_requests() -> None:

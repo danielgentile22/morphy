@@ -21,7 +21,30 @@ a key.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any
+
+
+@dataclass(frozen=True)
+class AskUsage:
+    """Token usage for one completed stream — captured best-effort for cost
+    review (#190). ``None`` on the streamer when the SDK never surfaced a final
+    message (mid-stream failure, or a fake without usage)."""
+
+    input_tokens: int
+    output_tokens: int
+
+
+def _extract_usage(stream: Any) -> AskUsage | None:
+    """Pull token usage from a finished SDK stream, defensively. Returns
+    ``None`` for any stream that doesn't expose a final message with usage (a
+    test fake, an SDK version without it) — usage is a nice-to-have, never a
+    reason to break the answer the user already saw."""
+    try:
+        usage = stream.get_final_message().usage
+        return AskUsage(int(usage.input_tokens), int(usage.output_tokens))
+    except Exception:  # noqa: BLE001 — usage is best-effort; never raise from here
+        return None
 
 
 class AnthropicNotConfigured(RuntimeError):
@@ -54,6 +77,15 @@ class AnthropicStreamer:
         self._model = model
         self._max_tokens = max_tokens
         self._client = client
+        # Populated after a stream finishes (best-effort) so the route can log
+        # token usage with the persisted Q&A (#190). A fresh streamer is built
+        # per request, so this per-instance field carries no cross-request state.
+        self.usage: AskUsage | None = None
+
+    @property
+    def model(self) -> str:
+        """The model this streamer answers with — persisted with each Q&A."""
+        return self._model
 
     def ensure_ready(self) -> None:
         """Raise ``AnthropicNotConfigured`` if the helper can't run (no key and
@@ -78,6 +110,9 @@ class AnthropicStreamer:
                 messages=messages,
             ) as stream:
                 yield from stream.text_stream
+                # The text_stream is drained; the final message (with usage) is
+                # now available. Captured here, inside the `with`, before exit.
+                self.usage = _extract_usage(stream)
         except AnthropicNotConfigured:
             raise
         except Exception as exc:  # noqa: BLE001 — map *any* SDK/network error to our type

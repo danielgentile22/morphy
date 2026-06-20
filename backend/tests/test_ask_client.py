@@ -14,14 +14,28 @@ from backend.app.ask_client import (
     AnthropicNotConfigured,
     AnthropicStreamer,
     AnthropicStreamError,
+    AskUsage,
 )
 
 
-class _FakeStream:
-    """Stands in for the SDK's streaming context manager."""
+class _Usage:
+    def __init__(self, input_tokens: int, output_tokens: int) -> None:
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
 
-    def __init__(self, deltas: list[str]) -> None:
+
+class _FinalMessage:
+    def __init__(self, usage: _Usage) -> None:
+        self.usage = usage
+
+
+class _FakeStream:
+    """Stands in for the SDK's streaming context manager. Optionally exposes a
+    final message with usage (mirrors the real SDK's ``get_final_message``)."""
+
+    def __init__(self, deltas: list[str], usage: _Usage | None = None) -> None:
         self._deltas = deltas
+        self._usage = usage
 
     def __enter__(self) -> _FakeStream:
         return self
@@ -33,23 +47,41 @@ class _FakeStream:
     def text_stream(self):
         yield from self._deltas
 
+    def get_final_message(self) -> _FinalMessage:
+        if self._usage is None:
+            raise AttributeError("no final message")  # a stream without usage
+        return _FinalMessage(self._usage)
+
 
 class _FakeMessages:
-    def __init__(self, *, deltas: list[str] | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        deltas: list[str] | None = None,
+        error: Exception | None = None,
+        usage: _Usage | None = None,
+    ) -> None:
         self._deltas = deltas or []
         self._error = error
+        self._usage = usage
         self.calls: list[dict] = []
 
     def stream(self, **kwargs):
         self.calls.append(kwargs)
         if self._error is not None:
             raise self._error
-        return _FakeStream(self._deltas)
+        return _FakeStream(self._deltas, self._usage)
 
 
 class _FakeClient:
-    def __init__(self, *, deltas: list[str] | None = None, error: Exception | None = None) -> None:
-        self.messages = _FakeMessages(deltas=deltas, error=error)
+    def __init__(
+        self,
+        *,
+        deltas: list[str] | None = None,
+        error: Exception | None = None,
+        usage: _Usage | None = None,
+    ) -> None:
+        self.messages = _FakeMessages(deltas=deltas, error=error, usage=usage)
 
 
 def _streamer(**kw) -> AnthropicStreamer:
@@ -82,3 +114,22 @@ def test_sdk_error_is_mapped_not_a_raw_500() -> None:
     streamer = _streamer(client=client)
     with pytest.raises(AnthropicStreamError):
         list(streamer.stream(system="s", messages=[{"role": "user", "content": "hi"}]))
+
+
+def test_usage_is_captured_after_a_completed_stream() -> None:
+    # The route persists token usage with the Q&A (#190); the streamer pulls it
+    # from the final message once the text_stream is drained.
+    client = _FakeClient(deltas=["Hi"], usage=_Usage(123, 45))
+    streamer = _streamer(client=client)
+    assert streamer.usage is None  # nothing captured before streaming
+    list(streamer.stream(system="s", messages=[{"role": "user", "content": "hi"}]))
+    assert streamer.usage == AskUsage(input_tokens=123, output_tokens=45)
+
+
+def test_usage_is_none_when_the_stream_exposes_no_final_message() -> None:
+    # Best-effort: a stream without usage (older SDK, a fake) leaves it None
+    # rather than breaking the answer.
+    client = _FakeClient(deltas=["Hi"])  # no usage
+    streamer = _streamer(client=client)
+    list(streamer.stream(system="s", messages=[{"role": "user", "content": "hi"}]))
+    assert streamer.usage is None
