@@ -32,12 +32,14 @@ class _FakeStreamer:
         self._deltas = deltas or []
         self._configured = configured
         self._raise_mid = raise_mid
+        self.calls: list[dict] = []  # records each stream() invocation's prompt
 
     def ensure_ready(self) -> None:
         if not self._configured:
             raise AnthropicNotConfigured("no key")
 
     def stream(self, *, system: str, messages: list[dict]) -> Iterator[str]:
+        self.calls.append({"system": system, "messages": messages})
         yield from self._deltas
         if self._raise_mid:
             raise AnthropicStreamError("upstream boom")
@@ -98,6 +100,47 @@ def test_empty_question_is_rejected_by_validation() -> None:
         token = login(client)
         r = client.post("/api/audit/ask", json={"question": ""}, headers=auth_header(token))
         assert r.status_code == 422
+
+
+def test_grounded_payload_is_folded_into_the_prompt() -> None:
+    # The route maps the request's page grounding (#189) onto the assembler:
+    # prior thread → leading turns, selection/signals/page → the current turn.
+    with api(SAMPLE) as (client, _eng, _sender):
+        streamer = _FakeStreamer(deltas=["ok"])
+        _use_streamer(streamer)
+        token = login(client)
+        body = {
+            "question": "why is this high confidence?",
+            "route": "Signal: owner_name@12",
+            "selection": "owner_name",
+            "visible_text": "some visible page text",
+            "signals": [
+                {
+                    "id": "owner_name@12",
+                    "confidence": "high",
+                    "upstream_origin": "official_filing",
+                    "freshness_risk": "low",
+                    "derivation_risk": "low",
+                    "verifiability": "high",
+                    "verdict": "Authoritative.",
+                }
+            ],
+            "thread": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+            ],
+        }
+        r = client.post("/api/audit/ask", json=body, headers=auth_header(token))
+        assert r.status_code == 200
+        assert len(streamer.calls) == 1
+        messages = streamer.calls[0]["messages"]
+        # Two prior turns, then the grounded current question.
+        assert [m["role"] for m in messages] == ["user", "assistant", "user"]
+        grounded = messages[-1]["content"]
+        assert "owner_name@12" in grounded
+        assert "confidence=high" in grounded
+        assert "owner_name" in grounded  # the selection
+        assert grounded.rstrip().endswith("Question: why is this high confidence?")
 
 
 def test_per_user_rate_limit_rejects_excess_requests() -> None:

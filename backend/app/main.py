@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session
 
 from .activity_service import ActivityService
 from .antenna_store import AntennaStore
-from .ask_assembler import build_prompt
+from .ask_assembler import AskSignal, build_prompt
 from .ask_client import AnthropicNotConfigured, AnthropicStreamer, AnthropicStreamError
 from .attention_service import DISMISS_CHANNEL, AttentionService
 from .auth import (
@@ -483,7 +483,13 @@ def audit_ask(
     streamer: AnthropicStreamer = Depends(get_ask_streamer),
     throttle: LoginThrottle = Depends(get_ask_throttle),
 ) -> StreamingResponse:
-    """Stream a grounded answer to a catalog reader's question (PRD #187 / #188).
+    """Stream a grounded answer to a catalog reader's question (PRD #187 / #188 /
+    #189).
+
+    The body carries the question plus optional page grounding — the route, the
+    highlighted selection, a bounded slice of visible page text, the on-screen
+    signal records, and the prior thread (#189) — which the assembler folds into
+    the prompt so answers reflect the actual on-screen ratings.
 
     Authorizes via the same session seam as the rest of the app
     (``current_principal`` — the ``pilot_session`` cookie, bearer as fallback),
@@ -507,7 +513,28 @@ def audit_ask(
     except AnthropicNotConfigured as exc:
         raise HTTPException(status_code=503, detail="Ask Claude is not configured.") from exc
 
-    prompt = build_prompt(body.question)
+    # Map the request's page grounding (#189) onto the assembler's pure inputs.
+    # The assembler owns the functional caps (page-text truncation, signal
+    # limit, thread clamp); here we just translate model → dataclass/dicts.
+    prompt = build_prompt(
+        body.question,
+        route=body.route,
+        selection=body.selection,
+        visible_text=body.visible_text,
+        signals=[
+            AskSignal(
+                id=s.id,
+                confidence=s.confidence,
+                upstream_origin=s.upstream_origin,
+                freshness_risk=s.freshness_risk,
+                derivation_risk=s.derivation_risk,
+                verifiability=s.verifiability,
+                verdict=s.verdict,
+            )
+            for s in body.signals
+        ],
+        thread=[{"role": t.role, "content": t.content} for t in body.thread],
+    )
     return StreamingResponse(
         _ask_event_stream(streamer, prompt.system, prompt.messages),
         media_type="text/event-stream",

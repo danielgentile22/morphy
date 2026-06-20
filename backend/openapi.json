@@ -238,12 +238,52 @@
         "type": "object"
       },
       "AskRequest": {
-        "description": "The body of POST /api/audit/ask. Slice 1 is question-only (#188); the\nselection/page/signal grounding from the parent PRD layers on here later.\n\n``min_length`` rejects an empty question; ``max_length`` bounds a single\nrequest so the typed input can't be used to push a huge prompt.",
+        "description": "The body of POST /api/audit/ask.\n\nSlice 1 (#188) was question-only; slice 2 (#189) adds page grounding \u2014 the\ncurrent route, the highlighted selection, a bounded slice of the visible page\ntext, the on-screen signal records, and the prior thread. Everything except\n``question`` is optional, so a bare ``{\"question\": \"...\"}`` still works.\n\nThe bounds here are deliberately *generous* outer guards \u2014 they reject an\nabusive payload (422) but are not the functional caps. The real caps\n(page-text truncation, signal limit, thread clamp) live in the assembler so\nthey're enforced and unit-tested in exactly one place.",
         "properties": {
           "question": {
             "maxLength": 4000,
             "minLength": 1,
             "title": "Question",
+            "type": "string"
+          },
+          "route": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Route",
+            "type": "string"
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "maxLength": 8000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selection"
+          },
+          "signals": {
+            "items": {
+              "$ref": "#/components/schemas/AskSignal"
+            },
+            "maxItems": 200,
+            "title": "Signals",
+            "type": "array"
+          },
+          "thread": {
+            "items": {
+              "$ref": "#/components/schemas/AskTurn"
+            },
+            "maxItems": 40,
+            "title": "Thread",
+            "type": "array"
+          },
+          "visible_text": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Visible Text",
             "type": "string"
           }
         },
@@ -251,6 +291,65 @@
           "question"
         ],
         "title": "AskRequest",
+        "type": "object"
+      },
+      "AskSignal": {
+        "description": "One on-screen audit signal the question may be about (#189): the five\ncontrolled-vocab tags plus the verdict, flattened from the catalog's Signal.\n\nEvery field defaults to \"\" so a partial or legacy record still validates \u2014\ngrounding is best-effort context, never a reason to 422 a question.",
+        "properties": {
+          "confidence": {
+            "default": "",
+            "title": "Confidence",
+            "type": "string"
+          },
+          "derivation_risk": {
+            "default": "",
+            "title": "Derivation Risk",
+            "type": "string"
+          },
+          "freshness_risk": {
+            "default": "",
+            "title": "Freshness Risk",
+            "type": "string"
+          },
+          "id": {
+            "default": "",
+            "title": "Id",
+            "type": "string"
+          },
+          "upstream_origin": {
+            "default": "",
+            "title": "Upstream Origin",
+            "type": "string"
+          },
+          "verdict": {
+            "default": "",
+            "title": "Verdict",
+            "type": "string"
+          },
+          "verifiability": {
+            "default": "",
+            "title": "Verifiability",
+            "type": "string"
+          }
+        },
+        "title": "AskSignal",
+        "type": "object"
+      },
+      "AskTurn": {
+        "description": "One prior conversation turn, echoed back so the stateless backend can keep\ncontext across follow-ups (#189). ``role`` is the speaker, ``content`` the\nraw text of that turn.",
+        "properties": {
+          "content": {
+            "default": "",
+            "title": "Content",
+            "type": "string"
+          },
+          "role": {
+            "default": "user",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "title": "AskTurn",
         "type": "object"
       },
       "AttentionItemOut": {
@@ -2261,7 +2360,7 @@
     },
     "/api/audit/ask": {
       "post": {
-        "description": "Stream a grounded answer to a catalog reader's question (PRD #187 / #188).\n\nAuthorizes via the same session seam as the rest of the app\n(``current_principal`` \u2014 the ``pilot_session`` cookie, bearer as fallback),\nso an unauthenticated request is 401. A light per-user throttle short-circuits\nwith 429 once a user passes the request limit inside the window. With no\n``ANTHROPIC_API_KEY`` the route self-disables with a clean 503 *before* it\ncommits to a stream, leaving the rest of the catalog working. Otherwise it\nreturns Server-Sent Events \u2014 the backend's first streaming endpoint \u2014 that\nCaddy's ``reverse_proxy`` passes through unbuffered.",
+        "description": "Stream a grounded answer to a catalog reader's question (PRD #187 / #188 /\n#189).\n\nThe body carries the question plus optional page grounding \u2014 the route, the\nhighlighted selection, a bounded slice of visible page text, the on-screen\nsignal records, and the prior thread (#189) \u2014 which the assembler folds into\nthe prompt so answers reflect the actual on-screen ratings.\n\nAuthorizes via the same session seam as the rest of the app\n(``current_principal`` \u2014 the ``pilot_session`` cookie, bearer as fallback),\nso an unauthenticated request is 401. A light per-user throttle short-circuits\nwith 429 once a user passes the request limit inside the window. With no\n``ANTHROPIC_API_KEY`` the route self-disables with a clean 503 *before* it\ncommits to a stream, leaving the rest of the catalog working. Otherwise it\nreturns Server-Sent Events \u2014 the backend's first streaming endpoint \u2014 that\nCaddy's ``reverse_proxy`` passes through unbuffered.",
         "operationId": "audit_ask_api_audit_ask_post",
         "requestBody": {
           "content": {

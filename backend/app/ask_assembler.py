@@ -1,20 +1,32 @@
-"""The context/prompt assembler for "Ask Claude" (PRD #187 / #188).
+"""The context/prompt assembler for "Ask Claude" (PRD #187 / #188 / #189).
 
-A pure function: a request payload → the system prompt + the Anthropic
-``messages`` list. No I/O, no SDK, no settings — just text in, structured
-prompt out — so it is trivially unit-testable and the streaming seam
+A pure function: the request's question + page grounding → the system prompt +
+the Anthropic ``messages`` list. No I/O, no SDK, no settings — just data in,
+structured prompt out — so it is trivially unit-testable and the streaming seam
 (``ask_client``) stays a thin wrapper over an already-assembled prompt.
 
-This is the **minimal** form for slice 1 (the walking skeleton, #188): a
-baked-in domain system prompt describing the catalog, plus the user's
-question as the only message. The richer grounding the parent PRD describes
-(selection emphasis, on-screen signal records, page text, prior turns) layers
-onto this same seam in later slices without changing its shape.
+Slice 1 (#188) was the minimal form: a baked-in domain system prompt plus the
+user's question as the only message. Slice 2 (#189) folds the page grounding
+into the current turn — the route, the highlighted selection (emphasized), a
+truncated slice of the visible page text, and the on-screen signal records —
+and prepends the prior thread (clamped to the last K turns). A bare question
+with no grounding still produces exactly the slice-1 prompt.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+
+# ── functional caps (the assembler is the one place these are enforced) ──────
+# Truncate the visible page text to this many characters — the page text is
+# context, not the question, so a long page can't blow up the prompt.
+MAX_VISIBLE_TEXT_CHARS = 6000
+# Include at most this many on-screen signal records (the catalog/Signals views
+# can have hundreds on screen; the question is about a handful).
+MAX_SIGNALS = 40
+# Keep only the last K prior turns so a long follow-up thread stays bounded.
+MAX_THREAD_TURNS = 8
 
 # The baked-in domain system prompt. It teaches Claude what the catalog *is* so
 # answers are about *our* data — the AR/FL/MT/WV cell-tower-land project — and
@@ -56,9 +68,29 @@ source and the value (more derivation = more room for error).
 - verifiability: how readily the value can be independently checked.
 - verdict: the auditor's plain-language bottom line for that signal.
 
-When asked why a signal is rated the way it is, explain it in terms of these \
-tags. If you are not sure of a specific fact, say so plainly rather than \
-guessing. You explain only — you never take actions or change any data."""
+When the reader's message includes on-screen context — the page they are on, \
+text they highlighted, the visible page text, and structured signal records \
+(each carrying its five tags + verdict) — ground your answer in those actual \
+values. If they highlighted text, answer about that specific thing. Quote the \
+real rating from the signal records rather than guessing (e.g. "rated high \
+confidence because its upstream_origin is an official filing"). If a fact \
+isn't in the context and you are unsure, say so plainly rather than guessing. \
+You explain only — you never take actions or change any data."""
+
+
+@dataclass(frozen=True)
+class AskSignal:
+    """One on-screen audit signal's trust record (id + five tags + verdict).
+    A plain dataclass so the assembler stays free of pydantic/web concerns; the
+    route maps the request model onto it."""
+
+    id: str = ""
+    confidence: str = ""
+    upstream_origin: str = ""
+    freshness_risk: str = ""
+    derivation_risk: str = ""
+    verifiability: str = ""
+    verdict: str = ""
 
 
 @dataclass(frozen=True)
@@ -70,15 +102,116 @@ class AssembledPrompt:
     messages: list[dict[str, str]]
 
 
-def build_prompt(question: str) -> AssembledPrompt:
-    """Assemble the minimal prompt for a free-typed question (#188).
+def _truncate(text: str, limit: int) -> str:
+    """Clamp page text to ``limit`` chars, marking where it was cut so Claude
+    knows it's seeing only an excerpt."""
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + " …[truncated]"
 
-    System prompt = the baked-in domain context; messages = the user's
-    question as the single turn. Later slices extend ``messages`` with prior
-    turns and fold selection/page/signal grounding into the user content,
-    reusing this same seam.
-    """
-    return AssembledPrompt(
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": question}],
+
+def _format_signal(s: AskSignal) -> str:
+    """One signal as a single structured line: id + the five tags, then the
+    verdict. Missing fields render as ``?`` rather than vanishing, so the shape
+    is stable and Claude can tell "unknown" from "not provided"."""
+    line = (
+        f"- {s.id or '(unnamed)'}: confidence={s.confidence or '?'}, "
+        f"upstream_origin={s.upstream_origin or '?'}, "
+        f"freshness_risk={s.freshness_risk or '?'}, "
+        f"derivation_risk={s.derivation_risk or '?'}, "
+        f"verifiability={s.verifiability or '?'}"
     )
+    if s.verdict:
+        line += f' — verdict: "{s.verdict}"'
+    return line
+
+
+def _compose_user_message(
+    question: str,
+    *,
+    route: str,
+    selection: str | None,
+    visible_text: str,
+    signals: Sequence[AskSignal],
+) -> str:
+    """Fold the grounding into the current user turn. With no grounding at all
+    this returns the bare question verbatim (the slice-1 shape, preserved so a
+    free-typed question is never wrapped)."""
+    parts: list[str] = []
+
+    if route.strip():
+        parts.append(f"The reader is viewing this page of the catalog: {route.strip()}.")
+
+    sel = (selection or "").strip()
+    if sel:
+        # Emphasize the selection — it is the subject of the question.
+        parts.append(
+            "The reader highlighted this text and is asking about it — treat it "
+            f"as the subject of the question:\n>>> {sel} <<<"
+        )
+
+    capped = list(signals)[:MAX_SIGNALS]
+    if capped:
+        lines = [_format_signal(s) for s in capped]
+        dropped = len(signals) - len(capped)
+        if dropped > 0:
+            lines.append(f"… and {dropped} more on-screen signal(s) not shown.")
+        parts.append(
+            "On-screen data signals — ground any claim about a rating in these "
+            "actual values, do not invent ratings:\n" + "\n".join(lines)
+        )
+
+    page = _truncate(visible_text.strip(), MAX_VISIBLE_TEXT_CHARS)
+    if page:
+        parts.append("Visible text on the page (context, may be truncated):\n" + page)
+
+    if not parts:
+        # No grounding → the question stands alone, byte-for-byte (slice 1).
+        return question
+
+    parts.append(f"Question: {question}")
+    return "\n\n".join(parts)
+
+
+def build_prompt(
+    question: str,
+    *,
+    route: str = "",
+    selection: str | None = None,
+    visible_text: str = "",
+    signals: Sequence[AskSignal] = (),
+    thread: Sequence[Mapping[str, str]] = (),
+) -> AssembledPrompt:
+    """Assemble the prompt for one question, optionally grounded in the page.
+
+    The prior ``thread`` (clamped to the last :data:`MAX_THREAD_TURNS` turns) is
+    prepended as conversation history; the current question — with selection,
+    page text, and signal records folded in — is the final user turn. Each turn
+    carries only its raw text, so grounding is attached once (to the current
+    turn) rather than repeated through the history."""
+    messages: list[dict[str, str]] = []
+
+    for turn in list(thread)[-MAX_THREAD_TURNS:]:
+        role = turn.get("role", "user")
+        # Anthropic only accepts user/assistant roles; default anything else to
+        # user so a malformed history can't break the request.
+        messages.append(
+            {
+                "role": role if role in ("user", "assistant") else "user",
+                "content": str(turn.get("content", "")),
+            }
+        )
+
+    messages.append(
+        {
+            "role": "user",
+            "content": _compose_user_message(
+                question,
+                route=route,
+                selection=selection,
+                visible_text=visible_text,
+                signals=signals,
+            ),
+        }
+    )
+    return AssembledPrompt(system=SYSTEM_PROMPT, messages=messages)
