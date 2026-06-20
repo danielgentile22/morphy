@@ -15,6 +15,15 @@ export const STATE_NAMES: Record<string, string> = {
   '54': 'West Virginia',
 };
 
+/** Two-letter abbreviations, keyed by FIPS — the compact label for the per-state
+ *  trust strip (the `STATE_NAMES` keys, fips-ascending, read AR/FL/MT/WV). */
+export const STATE_ABBR: Record<string, string> = {
+  '05': 'AR',
+  '12': 'FL',
+  '30': 'MT',
+  '54': 'WV',
+};
+
 /** The FIPS for a per-state signal (`owner_name@12` → `12`), or null when the
  *  signal is national / cross-state (no `@NN` suffix). */
 export function stateOf(signalId: string): string | null {

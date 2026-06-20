@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { AuditIndex, Signal } from '../../src/lib/audit-data';
 import type { CatalogConfig } from '../../src/lib/catalog-config';
-import { buildCatalog, type CatalogModel } from '../../src/lib/catalog';
+import { buildCatalog, stateStrip, type CatalogModel, type DataPoint } from '../../src/lib/catalog';
 
 function sig(id: string, confidence: string, extra: Partial<Signal> = {}): Signal {
   return {
@@ -146,6 +146,47 @@ describe('buildCatalog — deterministic ordering', () => {
   it('orders points within a group weakest-trust-first (base-id tie-break)', () => {
     expect(group(model, 'g1').points.map((p) => p.baseId)).toEqual(['owner_name', 'beta', 'alpha']);
     expect(group(model, 'g2').points.map((p) => p.baseId)).toEqual(['zeta', 'delta', 'epsilon', 'gamma']);
+  });
+});
+
+describe('stateStrip — per-state trust strip', () => {
+  const model = buildCatalog(idx(SIGNALS), STUB);
+  const pointOf = (baseId: string): DataPoint =>
+    model.groups.flatMap((g) => g.points).find((p) => p.baseId === baseId)!;
+
+  it('projects the four per-state cells onto a fixed AR/FL/MT/WV grid', () => {
+    const strip = stateStrip(pointOf('owner_name'));
+    expect(strip.map((c) => c.fips)).toEqual(['05', '12', '30', '54']);
+    expect(strip.map((c) => c.abbr)).toEqual(['AR', 'FL', 'MT', 'WV']);
+    // Trust per cell comes straight from the underlying signal (auto-populate).
+    expect(strip.map((c) => c.cell?.confidence)).toEqual(['high', 'high', 'high', 'low']);
+  });
+
+  it('links each cell at the underlying per-state signal id', () => {
+    const strip = stateStrip(pointOf('owner_name'));
+    expect(strip.map((c) => c.cell?.signal.id)).toEqual([
+      'owner_name@05',
+      'owner_name@12',
+      'owner_name@30',
+      'owner_name@54',
+    ]);
+  });
+
+  it('returns no strip for a national (non-per-state) point', () => {
+    expect(stateStrip(pointOf('alpha'))).toEqual([]);
+  });
+
+  it('shows an honest empty cell when a state is missing the field', () => {
+    // Only three of the four states carry owner_name → WV (54) has no signal.
+    const partial = buildCatalog(
+      idx([sig('owner_name@05', 'high'), sig('owner_name@12', 'medium'), sig('owner_name@30', 'high')]),
+      STUB,
+    );
+    const point = partial.groups.flatMap((g) => g.points).find((p) => p.baseId === 'owner_name')!;
+    const strip = stateStrip(point);
+    expect(strip.map((c) => c.fips)).toEqual(['05', '12', '30', '54']); // still 4 columns
+    expect(strip[3].cell).toBeNull(); // WV is an honest gap, not dropped
+    expect(strip.slice(0, 3).every((c) => c.cell !== null)).toBe(true);
   });
 });
 

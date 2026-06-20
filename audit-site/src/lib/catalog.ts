@@ -21,7 +21,7 @@
  */
 
 import type { AuditIndex, Signal, SignalTags } from './audit-data';
-import { baseSignalId, stateOf, STATE_NAMES } from './signals';
+import { baseSignalId, stateOf, STATE_NAMES, STATE_ABBR } from './signals';
 import { defaultCatalogConfig, type CatalogConfig, type GroupDef } from './catalog-config';
 
 const TRUST_RANK: Record<string, number> = { low: 0, medium: 1, high: 2 };
@@ -74,6 +74,35 @@ export interface CatalogGroup {
 
 export interface CatalogModel {
   groups: CatalogGroup[];
+}
+
+/** The pilot's four states in display order (fips-ascending = AR/FL/MT/WV) — the
+ *  fixed columns of a per-state trust strip. */
+const STRIP_FIPS = ['05', '12', '30', '54'] as const;
+
+/** One column of a per-state trust strip: always one per AR/FL/MT/WV, in order.
+ *  `cell` is null when the field has no signal for that state, so the strip shows
+ *  an honest gap rather than silently collapsing to three columns. */
+export interface StripColumn {
+  fips: string;
+  abbr: string;
+  name: string;
+  cell: StateCell | null;
+}
+
+/** Project a data point's present per-state cells onto the fixed 4-column
+ *  AR/FL/MT/WV grid the trust strip renders. National (non-per-state) points
+ *  return `[]` → no strip. Pure; the per-state trust comes straight from each
+ *  cell's underlying signal (the auto-populate contract). */
+export function stateStrip(point: DataPoint): StripColumn[] {
+  if (!point.isPerState) return [];
+  const byFips = new Map(point.states.map((c) => [c.fips, c]));
+  return STRIP_FIPS.map((fips) => ({
+    fips,
+    abbr: STATE_ABBR[fips] ?? fips,
+    name: STATE_NAMES[fips] ?? fips,
+    cell: byFips.get(fips) ?? null,
+  }));
 }
 
 export function buildCatalog(
