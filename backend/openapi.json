@@ -237,6 +237,22 @@
         "title": "ArchivedAsrsResponse",
         "type": "object"
       },
+      "AskRequest": {
+        "description": "The body of POST /api/audit/ask. Slice 1 is question-only (#188); the\nselection/page/signal grounding from the parent PRD layers on here later.\n\n``min_length`` rejects an empty question; ``max_length`` bounds a single\nrequest so the typed input can't be used to push a huge prompt.",
+        "properties": {
+          "question": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "AskRequest",
+        "type": "object"
+      },
       "AttentionItemOut": {
         "properties": {
           "cluster_id": {
@@ -2241,6 +2257,43 @@
           }
         ],
         "summary": "Dismiss Attention"
+      }
+    },
+    "/api/audit/ask": {
+      "post": {
+        "description": "Stream a grounded answer to a catalog reader's question (PRD #187 / #188).\n\nAuthorizes via the same session seam as the rest of the app\n(``current_principal`` \u2014 the ``pilot_session`` cookie, bearer as fallback),\nso an unauthenticated request is 401. A light per-user throttle short-circuits\nwith 429 once a user passes the request limit inside the window. With no\n``ANTHROPIC_API_KEY`` the route self-disables with a clean 503 *before* it\ncommits to a stream, leaving the rest of the catalog working. Otherwise it\nreturns Server-Sent Events \u2014 the backend's first streaming endpoint \u2014 that\nCaddy's ``reverse_proxy`` passes through unbuffered.",
+        "operationId": "audit_ask_api_audit_ask_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Audit Ask"
       }
     },
     "/api/auth/check": {

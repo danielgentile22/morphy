@@ -224,7 +224,8 @@ Locked in [ADR-055](./adr/0055-hosted-private-backend.md) (supersedes ADR-006 �
 | `LITESTREAM_PATH` / `LITESTREAM_REGION` | Litestream | Replica prefix (`lead_state`) + region (`auto` for R2). |
 | `LITESTREAM_ACCESS_KEY_ID` / `LITESTREAM_SECRET_ACCESS_KEY` | Litestream + `rclone` | R2 keys (Fly secrets). |
 | `SITE_ROOT` / `DATA_WEB_ROOT` / `BACKEND_UPSTREAM` / `CADDY_PORT` | Caddy | Image defaults (`/srv/dist` · `/` · `127.0.0.1:8000` · `8080`); same names the edge-serving test sets. |
-| `ANTHROPIC_API_KEY` | Lease-extraction worker | Claude API (added at D+E). |
+| `ANTHROPIC_API_KEY` | "Ask Claude" catalog helper (PRD #187/#188); later the lease-extraction worker (D+E) | Claude API. **Optional** — unset, the `/api/audit/ask` route self-disables with a clean 503 and the rest of the catalog is unaffected; set it (Fly secret) to enable the helper. |
+| `ASK_MODEL` / `ASK_MAX_TOKENS` | "Ask Claude" route | Model (default `claude-sonnet-4-6`) + per-answer output cap (default `1024`) — env-tunable, no code change. Non-secret; `fly.toml [env]` if overriding. |
 
 Secrets (`AUTH_JWT_SECRET`, the `LITESTREAM_*` R2 keys + bucket/endpoint, `ANTHROPIC_API_KEY`) go in **Fly secrets**; non-secret env (`AUTH_DEV_MODE`, `DATABASE_URL`, `OWNERS_INDEX_PATH`, `LITESTREAM_DB_PATH`/`PATH`/`REGION`, the Caddy vars) in `fly.toml [env]`. Never in repo. **No `BACKEND_BASE_URL`** — the map app resolves its API base as `VITE_API_BASE ?? '/api'` (`app/src/lib/leads-api.ts`), so single-origin Caddy needs nothing set, and a later domain change needs no rebuild.
 

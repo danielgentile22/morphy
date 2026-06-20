@@ -436,3 +436,14 @@ class StatsResponse(BaseModel):
     active_days: int
     by_state: dict[str, dict[str, int]] = Field(default_factory=dict)
     by_member: dict[str, int] = Field(default_factory=dict)
+
+
+# ── "Ask Claude" catalog helper (PRD #187 / #188) ────────────────────────────
+class AskRequest(BaseModel):
+    """The body of POST /api/audit/ask. Slice 1 is question-only (#188); the
+    selection/page/signal grounding from the parent PRD layers on here later.
+
+    ``min_length`` rejects an empty question; ``max_length`` bounds a single
+    request so the typed input can't be used to push a huge prompt."""
+
+    question: str = Field(min_length=1, max_length=4000)

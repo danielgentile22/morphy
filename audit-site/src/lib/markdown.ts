@@ -83,6 +83,37 @@ export function renderMarkdown(markdown: string, file: string): string {
 }
 
 /**
+ * Render an "Ask Claude" answer to HTML (PRD #187 / #188).
+ *
+ * Unlike {@link renderMarkdown}, which renders our own trusted repo dossiers,
+ * this is *model output* — a less-trusted path. So as defense-in-depth (even
+ * behind the login), raw HTML in the markdown is dropped rather than passed
+ * through, and links are forced to safe `http(s)` targets opening in a new tab.
+ * `breaks: true` keeps single newlines as line breaks, which reads better for a
+ * chat answer.
+ */
+export function renderAnswer(markdown: string): string {
+  const md = new Marked({
+    gfm: true,
+    breaks: true,
+    renderer: {
+      // Strip any raw HTML the model emits — neutralises `<script>`/`<img
+      // onerror>` style injection without pulling in a sanitiser dependency.
+      html(): string {
+        return '';
+      },
+      link(token: Tokens.Link): string {
+        const inner = this.parser.parseInline(token.tokens ?? []);
+        const href = token.href ?? '';
+        const safe = /^https?:\/\//.test(href) ? href : '#';
+        return `<a href="${safe}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
+      },
+    },
+  });
+  return md.parse(markdown, { async: false }) as string;
+}
+
+/**
  * Pull one signal's `## Signal: …` block (heading through just before the next
  * `## ` heading) out of a dossier file, for the per-signal detail view. Returns
  * null when the file has no block for that id (then the detail view falls back

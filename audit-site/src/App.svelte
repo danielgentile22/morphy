@@ -13,6 +13,7 @@
   import CardsBrowser from './components/CardsBrowser.svelte';
   import CardDetail from './components/CardDetail.svelte';
   import DocView from './components/DocView.svelte';
+  import AskClaude from './components/AskClaude.svelte';
 
   themeStore.init();
   onMount(() => {
@@ -66,6 +67,10 @@
 </main>
 
 <Footer />
+
+<!-- Mounted globally (PRD #188): the corner button + panel are available on
+     every view, independent of which route or whether the audit data loaded. -->
+<AskClaude />
 
 <style>
   .state {

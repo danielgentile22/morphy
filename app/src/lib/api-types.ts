@@ -119,6 +119,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/audit/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Audit Ask
+         * @description Stream a grounded answer to a catalog reader's question (PRD #187 / #188).
+         *
+         *     Authorizes via the same session seam as the rest of the app
+         *     (``current_principal`` — the ``pilot_session`` cookie, bearer as fallback),
+         *     so an unauthenticated request is 401. A light per-user throttle short-circuits
+         *     with 429 once a user passes the request limit inside the window. With no
+         *     ``ANTHROPIC_API_KEY`` the route self-disables with a clean 503 *before* it
+         *     commits to a stream, leaving the rest of the catalog working. Otherwise it
+         *     returns Server-Sent Events — the backend's first streaming endpoint — that
+         *     Caddy's ``reverse_proxy`` passes through unbuffered.
+         */
+        post: operations["audit_ask_api_audit_ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/check": {
         parameters: {
             query?: never;
@@ -724,6 +753,18 @@ export interface components {
         ArchivedAsrsResponse: {
             /** Asrs */
             asrs: string[];
+        };
+        /**
+         * AskRequest
+         * @description The body of POST /api/audit/ask. Slice 1 is question-only (#188); the
+         *     selection/page/signal grounding from the parent PRD layers on here later.
+         *
+         *     ``min_length`` rejects an empty question; ``max_length`` bounds a single
+         *     request so the typed input can't be used to push a huge prompt.
+         */
+        AskRequest: {
+            /** Question */
+            question: string;
         };
         /** AttentionItemOut */
         AttentionItemOut: {
@@ -1601,6 +1642,37 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_ask_api_audit_ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

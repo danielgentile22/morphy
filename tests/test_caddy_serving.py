@@ -53,6 +53,11 @@ _SESSION_TOKEN = "edge-test-session"
 _COOKIE = {"Cookie": f"pilot_session={_SESSION_TOKEN}"}
 _BEARER = {"Authorization": f"Bearer {_SESSION_TOKEN}"}
 
+# Released by the SSE pass-through test once it has read the first event — the
+# stub blocks on it before writing the second, so reading frame 1 first *proves*
+# Caddy didn't buffer the whole response (the "Ask Claude" SSE route, PRD #188).
+_SSE_GATE = threading.Event()
+
 
 def _free_port() -> int:
     s = socket.socket()
@@ -71,6 +76,21 @@ class _StubBackend(BaseHTTPRequestHandler):
     """
 
     def do_GET(self) -> None:  # noqa: N802 — http.server API
+        if self.path.startswith("/api/sse-probe"):
+            # A two-frame event-stream with a barrier between the frames: write +
+            # flush frame 1, block until the test releases the gate, then write
+            # frame 2. If Caddy streamed it through, the test reads frame 1 before
+            # the gate is set; if it buffered, the read would hang.
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(b'event: delta\ndata: {"text": "one"}\n\n')
+            self.wfile.flush()
+            _SSE_GATE.wait(timeout=10)
+            self.wfile.write(b"event: done\ndata: {}\n\n")
+            self.wfile.flush()
+            return
         if self.path.startswith("/api/auth/check"):
             cookie = self.headers.get("Cookie", "")
             bearer = self.headers.get("Authorization", "")
@@ -338,3 +358,31 @@ def test_audit_data_served_when_authenticated(caddy_base: str) -> None:
     assert body == _AUDIT_DATA_MARKER
     # Internal data semantics — never cached anywhere.
     assert hdrs.get("cache-control") == "private, no-store"
+
+
+# ── SSE pass-through for the "Ask Claude" route (PRD #187 / #188) ─────────────
+def test_sse_passes_through_reverse_proxy_unbuffered(caddy_base: str) -> None:
+    # The "Ask Claude" route returns Server-Sent Events; the answer must stream
+    # token-by-token, so Caddy's reverse_proxy must forward it unbuffered. The
+    # stub blocks after the first frame until we release the gate — reading
+    # frame 1 *before* setting the gate proves Caddy didn't buffer the response.
+    _SSE_GATE.clear()
+    host, port = caddy_base.split(":")
+    conn = http.client.HTTPConnection(host, int(port), timeout=5)
+    try:
+        conn.request("GET", "/api/sse-probe")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        assert resp.headers.get("content-type", "").startswith("text/event-stream")
+
+        first = b""
+        while b"\n\n" not in first:
+            chunk = resp.read(1)  # times out (→ test failure) if Caddy buffered
+            assert chunk, "stream closed before the first frame arrived"
+            first += chunk
+        assert b"event: delta" in first  # frame 1 arrived while the stub is blocked
+    finally:
+        _SSE_GATE.set()  # release the stub so it (and the module's server) unblocks
+    rest = resp.read()
+    assert b"event: done" in rest
+    conn.close()
