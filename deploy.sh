@@ -68,9 +68,21 @@ require_clean_tree() {
   fi
 }
 
+# Snapshot the live puller manifest into the audit artifacts as freshness.json
+# (PRD #178 M8) right before the build. `data/` is git-ignored and absent from
+# the image build context, so this must run on the machine that has the manifest;
+# the output is git-ignored too (never committed), so it leaves the tree clean for
+# the check above while still landing in docs/research/data-audit/ to bake into
+# the image (Dockerfile copies that dir → /srv/audit-data → /audit/data/*).
+export_freshness() {
+  log "export freshness.json from data/manifest.json"
+  "${PYTHON}" "${REPO_ROOT}/scripts/export_freshness.py"
+}
+
 deploy_code() {
   need_fly
   require_clean_tree
+  export_freshness
   log "fly deploy --app ${FLY_APP}"
   fly deploy --app "${FLY_APP}"
 }

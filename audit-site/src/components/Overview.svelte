@@ -1,206 +1,201 @@
 <script lang="ts">
   import { store } from '../lib/audit-store.svelte';
   import { hrefs } from '../lib/router.svelte';
-  import { cardNotes, type Confidence } from '../lib/audit-data';
-  import { emptyFilters, filtersToQuery, type FacetKey } from '../lib/signals';
-  import { tagMeta } from '../lib/tags';
+  import { buildCatalog, catalogStats, freshnessFlags } from '../lib/catalog';
+  import { trustBadge } from '../lib/catalog-language';
+  import { freshnessRows, freshnessSummary } from '../lib/freshness';
 
   const index = $derived(store.index);
-  const cards = $derived(store.cards);
-  const signals = $derived(store.signals);
 
-  function countBy<T>(items: T[], key: (x: T) => string): Map<string, number> {
-    const m = new Map<string, number>();
-    for (const it of items) m.set(key(it), (m.get(key(it)) ?? 0) + 1);
-    return m;
-  }
+  // Built live from index.json (the auto-populate contract): a re-run reboots the
+  // app and every number here moves with it — nothing on this page is hardcoded.
+  const model = $derived(index ? buildCatalog(index) : null);
+  const stats = $derived(index && model ? catalogStats(index, model) : null);
+  const flags = $derived(model ? freshnessFlags(model) : null);
 
-  const confCounts = $derived(countBy(signals, (s) => s.tags.confidence));
-  const statusCounts = $derived(countBy(cards, (c) => c.status));
-  const priorityCounts = $derived(countBy(signals, (s) => s.priority ?? '—'));
-
-  const cardsDone = $derived(cards.filter((c) => c.status === 'done').length);
-
-  // A link to the Signals browser pre-filtered to one facet value.
-  function facetHref(key: FacetKey, value: string): string {
-    const f = emptyFilters();
-    f[key] = [value];
-    return hrefs.signals(filtersToQuery(f));
-  }
-
-  const CONF_ORDER: Confidence[] = ['high', 'medium', 'low'];
-  const confPct = (c: Confidence) => (signals.length ? ((confCounts.get(c) ?? 0) / signals.length) * 100 : 0);
-
-  // Watch-list: the axes that say "don't trust this for free".
-  const watch = $derived([
-    { label: 'low confidence', n: confCounts.get('low') ?? 0, href: facetHref('confidence', 'low') },
-    {
-      label: 'high derivation risk',
-      n: signals.filter((s) => s.tags.derivation_risk === 'high').length,
-      href: facetHref('derivation_risk', 'high'),
-    },
-    {
-      label: 'uncheckable',
-      n: signals.filter((s) => s.tags.verifiability === 'uncheckable').length,
-      href: facetHref('verifiability', 'uncheckable'),
-    },
-    {
-      label: 'high freshness risk',
-      n: signals.filter((s) => s.tags.freshness_risk === 'high').length,
-      href: facetHref('freshness_risk', 'high'),
-    },
-  ]);
-
-  // last_audited spread across cards.
-  const auditDates = $derived(
-    cards.map((c) => c.last_audited).filter((d): d is string => typeof d === 'string' && d.length > 0).sort(),
-  );
-  const dateRange = $derived(
-    auditDates.length
-      ? auditDates[0] === auditDates[auditDates.length - 1]
-        ? auditDates[0]
-        : `${auditDates[0]} → ${auditDates[auditDates.length - 1]}`
-      : '—',
+  // Live "needs refreshing" from the deploy-time freshness snapshot, recomputed
+  // against today (M9). Present ⇒ the real last-pulled view drives the callout;
+  // absent (artifact not yet generated) ⇒ we fall back to the freshness-risk
+  // proxy below, so the callout still renders before the first freshness deploy.
+  const live = $derived(
+    store.freshness
+      ? freshnessSummary(freshnessRows(store.freshness, new Date()))
+      : null,
   );
 
-  // The reconciliation/verification headline lives in the cards' own notes
-  // (T-90 reconcile, T-91 verify) — read them rather than restating numbers.
-  const reconCard = $derived(cards.find((c) => c.id === 'T-90'));
-  const verifyCard = $derived(cards.find((c) => c.id === 'T-91'));
+  // groupId → its def, so a stale point can name + deep-link to its group.
+  const groupDef = $derived(
+    new Map((model?.groups ?? []).map((g) => [g.def.id, g.def])),
+  );
 
-  let notesOpen = $state(false);
+  // Per-trust counts shown beneath a card's headline badge, strongest-first; any
+  // unrecognised trust value falls in after the known three (never dropped).
+  const TRUST_ORDER = ['high', 'medium', 'low'];
+  function orderedCounts(counts: Record<string, number>): Array<[string, number]> {
+    const known = TRUST_ORDER.filter((t) => counts[t]).map((t) => [t, counts[t]] as [string, number]);
+    const extra = Object.entries(counts).filter(([t]) => !TRUST_ORDER.includes(t));
+    return [...known, ...extra];
+  }
 </script>
 
 <div class="page">
   <div class="page-head">
-    <h1>Data Audit</h1>
+    <h1>Data inventory</h1>
     <p class="sub">
-      Provenance &amp; trust verdict for every data point the product surfaces — can you spend money on
-      it as-is, verify it per-instance first, or not at all?
+      Everything we surface about a deal — how much of it there is, where it comes from, and how
+      much to trust it. The one-screen view to open a meeting with.
     </p>
   </div>
 
-  {#if index}
-    <!-- Headline metrics -->
-    <section class="stats">
-      <a class="stat" href={hrefs.cards}>
-        <span class="stat-n">{cards.length}</span>
-        <span class="stat-l">cards</span>
-        <span class="stat-x">{cardsDone}/{cards.length} done</span>
+  {#if index && model && stats && flags}
+    <!-- Headline count strip: scope of the whole data inventory in one line. -->
+    <section class="strip" aria-label="Inventory scope">
+      <a class="stat" href={hrefs.catalog()}>
+        <span class="stat-n">{stats.dataPoints}</span>
+        <span class="stat-l">data points</span>
+        <span class="stat-x">distinct things we know</span>
       </a>
-      <a class="stat" href={hrefs.signals()}>
-        <span class="stat-n">{signals.length}</span>
-        <span class="stat-l">signals audited</span>
-        <span class="stat-x">across {priorityCounts.size} priorities</span>
+      <a class="stat" href={hrefs.catalog()}>
+        <span class="stat-n">{stats.sources}</span>
+        <span class="stat-l">sources</span>
+        <span class="stat-x">datasets behind them</span>
       </a>
       <div class="stat">
-        <span class="stat-n">{confCounts.get('high') ?? 0}</span>
-        <span class="stat-l">high-confidence</span>
-        <span class="stat-x">act on directly</span>
+        <span class="stat-n">{stats.states}</span>
+        <span class="stat-l">states</span>
+        <span class="stat-x">AR · FL · MT · WV</span>
       </div>
-      <a class="stat stat--warnlink" href={facetHref('confidence', 'low')}>
-        <span class="stat-n">{confCounts.get('low') ?? 0}</span>
-        <span class="stat-l">low-confidence</span>
-        <span class="stat-x">don't bet money</span>
-      </a>
     </section>
 
-    <div class="cols">
-      <!-- Confidence distribution -->
-      <section class="panel block">
-        <h2>Confidence distribution</h2>
-        <div class="bar" role="img" aria-label="Confidence distribution">
-          {#each CONF_ORDER as c (c)}
-            {#if (confCounts.get(c) ?? 0) > 0}
-              <a
-                class="seg seg--{tagMeta('confidence', c).tone}"
-                href={facetHref('confidence', c)}
-                style="width:{confPct(c)}%"
-                title="{confCounts.get(c)} {c} ({confPct(c).toFixed(0)}%)"
-              ></a>
-            {/if}
-          {/each}
-        </div>
-        <ul class="legend">
-          {#each CONF_ORDER as c (c)}
-            <li>
-              <a href={facetHref('confidence', c)}>
-                <span class="dot dot--{tagMeta('confidence', c).tone}"></span>
-                <strong>{confCounts.get(c) ?? 0}</strong>
-                {c}
-                <span class="muted">({confPct(c).toFixed(0)}%)</span>
-              </a>
-            </li>
-          {/each}
-        </ul>
-      </section>
+    <!-- Group cards: the inventory grouped by what it tells you about a deal. -->
+    <section class="cards" aria-label="Data groups">
+      {#each model.groups as group (group.def.id)}
+        {@const badge = trustBadge(group.headlineTrust)}
+        <a class="card" href={hrefs.catalog(group.def.id)}>
+          <header class="card-head">
+            <span class="emoji" aria-hidden="true">{group.def.emoji}</span>
+            <h2>{group.def.title}</h2>
+            <span class="count">{group.points.length}</span>
+          </header>
+          <div class="trust-line">
+            <span class="chip chip--{badge.tone}" title="Most-common trust in this group">
+              {badge.label} trust
+            </span>
+            <span class="breakdown">
+              {#each orderedCounts(group.counts) as [trust, n] (trust)}
+                {@const tb = trustBadge(trust)}
+                <span class="bd" title="{n} {trust}">
+                  <span class="bd-dot bd-dot--{tb.tone}"></span>{n}
+                </span>
+              {/each}
+            </span>
+          </div>
+          {#if group.biggestCaveat}
+            <p class="caveat" title="The group's lowest-confidence data point">
+              <span class="caveat-l">Biggest caveat</span>
+              {group.biggestCaveat}
+            </p>
+          {/if}
+          <span class="go">View in catalog →</span>
+        </a>
+      {/each}
+    </section>
 
-      <!-- Watch-list -->
-      <section class="panel block">
-        <h2>Watch-list</h2>
-        <p class="muted small">Signals flagged on a trust axis — start here.</p>
-        <ul class="watch">
-          {#each watch as w (w.label)}
-            <li>
-              <a href={w.href}>
-                <span class="watch-n">{w.n}</span>
-                <span class="watch-l">{w.label}</span>
-              </a>
-            </li>
-          {/each}
-        </ul>
-      </section>
-    </div>
-
-    <!-- Provenance / audit basis -->
-    <section class="panel block">
-      <h2>Audit basis</h2>
-      <dl class="basis">
-        <div><dt>Generated</dt><dd class="mono">{index.generated}</dd></div>
-        <div><dt>Basis commit</dt><dd class="mono">{index.audit_basis.commit ?? '—'}</dd></div>
-        <div><dt>Cards last audited</dt><dd class="mono">{dateRange}</dd></div>
-        <div><dt>Data snapshot</dt><dd class="mono snap">{index.audit_basis.data_snapshot ?? '—'}</dd></div>
-        <div>
-          <dt>Card status</dt>
-          <dd>
-            {#each [...statusCounts] as [status, n] (status)}
-              <span class="chip chip--{status === 'done' ? 'good' : 'warn'}">{n} {status.replace('_', ' ')}</span>
+    <!-- "Needs refreshing" callout — live from the freshness snapshot when it's
+         been generated, else the Phase-1 freshness-risk proxy as a fallback. -->
+    {#if live}
+      <section
+        class="callout"
+        class:callout--alert={live.stale.length > 0}
+        class:callout--ok={live.stale.length === 0 && live.dueSoon.length === 0}
+        aria-label="What needs refreshing"
+      >
+        {#if live.stale.length > 0}
+          <h2>⚠ Needs refreshing</h2>
+          <p class="callout-sub">
+            {live.stale.length}
+            {live.stale.length === 1 ? 'source is' : 'sources are'} overdue for a refresh.
+          </p>
+          <ul class="stale-list">
+            {#each live.stale as { source } (source.id)}
+              <li>
+                <a href={hrefs.card(source.id)}>
+                  <span class="stale-name">{source.title}</span>
+                  <span class="stale-grp">overdue</span>
+                </a>
+              </li>
             {/each}
-          </dd>
-        </div>
-      </dl>
-      <button class="notes-toggle" onclick={() => (notesOpen = !notesOpen)}>
-        {notesOpen ? '▾' : '▸'} Full reconciliation note
-      </button>
-      {#if notesOpen}
-        <p class="note">{index.note}</p>
-      {/if}
-    </section>
-
-    <!-- Reconciliation & verification entry points -->
-    <section class="cols">
-      {#if reconCard}
-        <a class="panel block recon" href={hrefs.doc(reconCard.output_file.split('+')[0])}>
-          <h2>Reconciliation</h2>
-          <p class="muted small">{cardNotes(reconCard)[0]?.text.slice(0, 220) ?? 'Forward + backward completeness check.'}…</p>
-          <span class="go">Open reconciliation →</span>
-        </a>
-      {/if}
-      {#if verifyCard}
-        <a class="panel block recon" href={hrefs.doc(verifyCard.output_file)}>
-          <h2>Adversarial verification</h2>
-          <p class="muted small">{cardNotes(verifyCard)[0]?.text.slice(0, 220) ?? 'Refutation pass over every P1 verdict.'}…</p>
-          <span class="go">Open verification log →</span>
-        </a>
-      {/if}
-    </section>
+          </ul>
+          {#if live.dueSoon.length > 0}
+            <p class="callout-soft">
+              {live.dueSoon.length} more {live.dueSoon.length === 1 ? 'is' : 'are'} due soon.
+            </p>
+          {/if}
+        {:else if live.dueSoon.length > 0}
+          <h2>Nothing overdue</h2>
+          <p class="callout-sub">
+            {live.dueSoon.length}
+            {live.dueSoon.length === 1 ? 'source is' : 'sources are'} due soon — none is overdue yet.
+          </p>
+        {:else}
+          <h2>Everything's current</h2>
+          <p class="callout-sub">Every source is within its refresh window.</p>
+        {/if}
+        <p class="phase-note">
+          Last pulled as of last update; the due / overdue countdown advances daily.
+          <a href={hrefs.freshness}>See what needs updating →</a>
+        </p>
+      </section>
+    {:else}
+      <section
+        class="callout"
+        class:callout--alert={flags.stale.length > 0}
+        class:callout--ok={flags.stale.length === 0 && flags.canLag === 0}
+        aria-label="What needs refreshing"
+      >
+        {#if flags.stale.length > 0}
+          <h2>⚠ Needs refreshing</h2>
+          <p class="callout-sub">
+            {flags.stale.length}
+            {flags.stale.length === 1 ? 'data point looks' : 'data points look'} likely stale.
+          </p>
+          <ul class="stale-list">
+            {#each flags.stale as point (point.baseId)}
+              <li>
+                <a href={hrefs.catalog(point.groupId)}>
+                  <span class="stale-name">{point.meaning ?? point.baseId}</span>
+                  <span class="stale-grp">{groupDef.get(point.groupId)?.title ?? point.groupId}</span>
+                </a>
+              </li>
+            {/each}
+          </ul>
+          {#if flags.canLag > 0}
+            <p class="callout-soft">
+              {flags.canLag} more can lag and should be refreshed periodically.
+            </p>
+          {/if}
+        {:else if flags.canLag > 0}
+          <h2>Nothing flagged as stale</h2>
+          <p class="callout-sub">
+            {flags.canLag} data points can lag and should be refreshed periodically — none is overdue.
+          </p>
+        {:else}
+          <h2>Everything's current</h2>
+          <p class="callout-sub">No data point is flagged for refresh.</p>
+        {/if}
+        <p class="phase-note">
+          Based on each source's freshness risk. A live last-pulled view is coming.
+        </p>
+      </section>
+    {/if}
   {/if}
 </div>
 
 <style>
-  .stats {
+  /* ── Count strip ──────────────────────────────────────────────────────────── */
+  .strip {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 14px;
     margin-bottom: 18px;
   }
@@ -208,7 +203,7 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: 16px 18px;
+    padding: 18px 20px;
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -220,10 +215,10 @@
     border-color: var(--border-strong);
   }
   .stat-n {
-    font-size: 30px;
+    font-size: 34px;
     font-weight: 700;
     letter-spacing: -0.03em;
-    line-height: 1.1;
+    line-height: 1.05;
   }
   .stat-l {
     font-weight: 600;
@@ -233,193 +228,189 @@
     font-size: 11.5px;
     color: var(--muted);
   }
-  .stat--warnlink .stat-n {
-    color: var(--bad-fg);
-  }
 
-  .cols {
+  /* ── Group cards ──────────────────────────────────────────────────────────── */
+  .cards {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 14px;
-    margin-bottom: 14px;
+    margin-bottom: 18px;
   }
-  .block {
-    padding: 16px 18px;
-  }
-  .block h2 {
-    font-size: 14px;
-    margin-bottom: 12px;
-  }
-  .small {
-    font-size: 12px;
-  }
-
-  .bar {
+  .card {
     display: flex;
-    height: 26px;
-    border-radius: 6px;
-    overflow: hidden;
+    flex-direction: column;
+    gap: 10px;
+    padding: 15px 16px;
+    background: var(--panel);
     border: 1px solid var(--border);
-  }
-  .seg {
-    display: block;
-    height: 100%;
-    transition: opacity 0.12s;
-  }
-  .seg:hover {
-    opacity: 0.82;
-  }
-  .seg--good {
-    background: var(--good-fg);
-  }
-  .seg--warn {
-    background: var(--warn-fg);
-  }
-  .seg--bad {
-    background: var(--bad-fg);
-  }
-  .legend {
-    list-style: none;
-    padding: 0;
-    margin: 12px 0 0;
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-  }
-  .legend a {
-    color: var(--text-2);
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-  }
-  .legend a:hover {
-    text-decoration: none;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
     color: var(--text);
   }
-  .dot {
-    width: 10px;
-    height: 10px;
+  .card:hover {
+    text-decoration: none;
+    border-color: var(--border-strong);
+  }
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .card-head .emoji {
+    font-size: 19px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .card-head h2 {
+    font-size: 15px;
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .count {
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-2);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    padding: 1px 9px;
+  }
+  .trust-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .breakdown {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .bd {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .bd-dot {
+    width: 8px;
+    height: 8px;
     border-radius: 3px;
     display: inline-block;
   }
-  .dot--good {
+  .bd-dot--good {
     background: var(--good-fg);
   }
-  .dot--warn {
+  .bd-dot--warn {
     background: var(--warn-fg);
   }
-  .dot--bad {
+  .bd-dot--bad {
     background: var(--bad-fg);
   }
-
-  .watch {
-    list-style: none;
-    padding: 0;
-    margin: 8px 0 0;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
+  .bd-dot--muted {
+    background: var(--muted-fg);
   }
-  .watch a {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--panel-2);
-    color: var(--text);
+  .caveat {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-2);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
-  .watch a:hover {
-    text-decoration: none;
-    border-color: var(--border-strong);
-  }
-  .watch-n {
-    font-size: 19px;
+  .caveat-l {
+    display: block;
+    font-size: 10.5px;
     font-weight: 700;
-    color: var(--bad-fg);
-  }
-  .watch-l {
-    font-size: 12.5px;
-    color: var(--text-2);
-  }
-
-  .basis {
-    margin: 0;
-    display: grid;
-    gap: 8px;
-  }
-  .basis > div {
-    display: grid;
-    grid-template-columns: 150px 1fr;
-    gap: 12px;
-    align-items: baseline;
-  }
-  .basis dt {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
     color: var(--muted);
-    font-size: 12px;
-    font-weight: 600;
+    margin-bottom: 1px;
   }
-  .basis dd {
-    margin: 0;
-    font-size: 12.5px;
-    color: var(--text-2);
-  }
-  .basis dd.snap {
-    line-height: 1.55;
-  }
-  .basis .chip {
-    margin-right: 6px;
-  }
-
-  .notes-toggle {
-    margin-top: 14px;
-    background: none;
-    border: none;
-    color: var(--accent);
-    font-weight: 600;
-    font-size: 12.5px;
-    padding: 0;
-  }
-  .note {
-    margin-top: 10px;
-    padding: 12px 14px;
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    font-size: 12.5px;
-    line-height: 1.6;
-    color: var(--text-2);
-    white-space: pre-wrap;
-  }
-
-  .recon {
-    color: var(--text);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .recon:hover {
-    text-decoration: none;
-    border-color: var(--border-strong);
-  }
-  .recon .go {
+  .go {
     margin-top: auto;
     color: var(--accent);
     font-weight: 600;
-    font-size: 13px;
+    font-size: 12.5px;
   }
 
-  @media (max-width: 760px) {
-    .stats {
-      grid-template-columns: repeat(2, 1fr);
-    }
-    .cols {
+  /* ── Needs-refreshing callout ─────────────────────────────────────────────── */
+  .callout {
+    padding: 16px 18px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: 18px;
+  }
+  .callout--alert {
+    border-left-color: var(--warn-fg);
+    background: color-mix(in srgb, var(--warn-bg) 40%, var(--panel));
+  }
+  .callout--ok {
+    border-left-color: var(--good-fg);
+  }
+  .callout h2 {
+    font-size: 14px;
+    margin: 0;
+  }
+  .callout-sub {
+    margin: 5px 0 0;
+    font-size: 13px;
+    color: var(--text-2);
+  }
+  .stale-list {
+    list-style: none;
+    padding: 0;
+    margin: 11px 0 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 8px;
+  }
+  .stale-list a {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 8px 11px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--panel-2);
+    color: var(--text);
+  }
+  .stale-list a:hover {
+    text-decoration: none;
+    border-color: var(--border-strong);
+  }
+  .stale-name {
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .stale-grp {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .callout-soft {
+    margin: 11px 0 0;
+    font-size: 12.5px;
+    color: var(--text-2);
+  }
+  .phase-note {
+    margin: 11px 0 0;
+    font-size: 11.5px;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  @media (max-width: 620px) {
+    .strip {
       grid-template-columns: 1fr;
-    }
-    .basis > div {
-      grid-template-columns: 1fr;
-      gap: 2px;
     }
   }
 </style>

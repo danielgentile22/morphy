@@ -73,6 +73,12 @@ backups/
 # (Section 3 adds ~/.config/pilot/puller_state.json — outside repo, ignored
 # anyway, but documented here)
 
+# ─── Data Catalog freshness snapshot (M8 exporter; PRD #178) ─────────
+# Generated at deploy time from data/manifest.json (which is git-ignored, so
+# this snapshot must be too) and baked into the audit image — never committed,
+# so the catalog's "What needs updating" view always reflects the live puller.
+docs/research/data-audit/freshness.json
+
 # ─── Throwaway UI verification artifacts (slice screenshots, MCP logs) ─
 screenshots/
 .playwright-mcp/

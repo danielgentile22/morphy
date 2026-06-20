@@ -7,6 +7,8 @@
  * (dev/preview) and the deployed Caddy `/audit/data/*` route (prod).
  */
 
+import type { FreshnessDoc } from './freshness';
+
 export type Confidence = 'high' | 'medium' | 'low';
 export type CardStatus = 'todo' | 'in_progress' | 'done' | 'stale' | 'needs_redo';
 
@@ -115,6 +117,21 @@ export async function fetchIndex(): Promise<AuditIndex> {
   const res = await fetch(`${DATA_BASE}index.json`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Failed to load index.json (HTTP ${res.status})`);
   return res.json() as Promise<AuditIndex>;
+}
+
+// `freshness.json` is a deploy-time snapshot (M8 exporter) and may be absent —
+// it's git-ignored and only baked in at deploy. Any failure (404 before it's
+// generated, or a parse error) degrades to `null` rather than throwing, so the
+// "What needs updating" tab shows its "not yet generated" state and the rest of
+// the app is unaffected. See lib/freshness.ts for the doc shape.
+export async function fetchFreshness(): Promise<FreshnessDoc | null> {
+  try {
+    const res = await fetch(`${DATA_BASE}freshness.json`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return (await res.json()) as FreshnessDoc;
+  } catch {
+    return null;
+  }
 }
 
 // In-session cache: a dossier is immutable within a page load. A re-run +
