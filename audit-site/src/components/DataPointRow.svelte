@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { type DataPoint, stateStrip } from '../lib/catalog';
+  import { type DataPoint, stateStrip, dossierTarget } from '../lib/catalog';
   import { trustBadge, whereFrom, howCurrent } from '../lib/catalog-language';
   import { hrefs } from '../lib/router.svelte';
+  import TagRow from './TagRow.svelte';
 
   let { point }: { point: DataPoint } = $props();
 
@@ -13,6 +14,9 @@
   // Per-state rows get a 4-cell AR/FL/MT/WV trust strip; national rows get `[]`
   // (no strip). Each cell's trust comes straight from index.json (auto-populate).
   const strip = $derived(stateStrip(point));
+
+  // Deep-link to the representative signal's dossier section for the expander.
+  const doc = $derived(dossierTarget(point));
 </script>
 
 <div class="row">
@@ -47,6 +51,18 @@
         {/each}
       </div>
     {/if}
+
+    <!-- Collapsed by default: the five-axis audit detail + full-dossier link are
+         one click away, never in the co-founder's face (PRD #178 story 7). -->
+    <details class="why">
+      <summary>Why this rating</summary>
+      <div class="why-body">
+        <TagRow tags={point.tags} sm />
+        <a class="dossier-link" href={hrefs.doc(doc.file, doc.anchor)}>
+          Full dossier section <span class="mono">{doc.file}</span> →
+        </a>
+      </div>
+    </details>
   </div>
 </div>
 
@@ -119,5 +135,50 @@
   }
   .cell--empty {
     opacity: 0.6;
+  }
+
+  .why {
+    margin-top: 9px;
+  }
+  .why > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    width: fit-content;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    transition: color 0.1s ease;
+  }
+  .why > summary::-webkit-details-marker {
+    display: none;
+  }
+  .why > summary::before {
+    content: '▸';
+    font-size: 9px;
+    transition: transform 0.12s ease;
+  }
+  .why[open] > summary::before {
+    transform: rotate(90deg);
+  }
+  .why > summary:hover {
+    color: var(--text-2);
+  }
+  .why-body {
+    margin-top: 9px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 9px;
+  }
+  .dossier-link {
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .dossier-link .mono {
+    font-size: 11.5px;
   }
 </style>

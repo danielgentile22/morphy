@@ -105,6 +105,18 @@ export function stateStrip(point: DataPoint): StripColumn[] {
   }));
 }
 
+/** The `#/doc/<file>/<anchor>` deep-link target for a point's "Why this rating"
+ *  expander. Splits the representative signal's `file.md#anchor` dossier ref the
+ *  same way SignalDetail does. The dossier `## Signal:` heading keys on the BASE
+ *  id (`owner_name`, never the `@NN`-suffixed signal id), so a missing anchor
+ *  falls back to `baseId` — correct for national and per-state alike. Because a
+ *  per-state point's representative is its *weakest* state, this resolves to that
+ *  state's per-state dossier section. Pure. */
+export function dossierTarget(point: DataPoint): { file: string; anchor: string } {
+  const [file, anchor] = point.dossier.split('#');
+  return { file, anchor: anchor || point.baseId };
+}
+
 export function buildCatalog(
   index: AuditIndex,
   config: CatalogConfig = defaultCatalogConfig,

@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { AuditIndex, Signal } from '../../src/lib/audit-data';
 import type { CatalogConfig } from '../../src/lib/catalog-config';
-import { buildCatalog, stateStrip, type CatalogModel, type DataPoint } from '../../src/lib/catalog';
+import {
+  buildCatalog,
+  dossierTarget,
+  stateStrip,
+  type CatalogModel,
+  type DataPoint,
+} from '../../src/lib/catalog';
 
 function sig(id: string, confidence: string, extra: Partial<Signal> = {}): Signal {
   return {
@@ -187,6 +193,38 @@ describe('stateStrip — per-state trust strip', () => {
     expect(strip.map((c) => c.fips)).toEqual(['05', '12', '30', '54']); // still 4 columns
     expect(strip[3].cell).toBeNull(); // WV is an honest gap, not dropped
     expect(strip.slice(0, 3).every((c) => c.cell !== null)).toBe(true);
+  });
+});
+
+describe('dossierTarget — "Why this rating" deep-link', () => {
+  const pointOf = (signals: Signal[], baseId: string): DataPoint =>
+    buildCatalog(idx(signals), STUB)
+      .groups.flatMap((g) => g.points)
+      .find((p) => p.baseId === baseId)!;
+
+  it('splits a national point’s `file.md#anchor` dossier ref', () => {
+    const point = pointOf([sig('tower_coords', 'high', { dossier: 'fcc-asr.md#tower_coords' })], 'tower_coords');
+    expect(dossierTarget(point)).toEqual({ file: 'fcc-asr.md', anchor: 'tower_coords' });
+  });
+
+  it('resolves a per-state field to its WEAKEST state’s dossier section', () => {
+    // @54 (WV) is the lowest-trust variant → the representative → its dossier.
+    const point = pointOf(
+      [
+        sig('owner_name@05', 'high', { dossier: 'parcels-AR.md#owner_name' }),
+        sig('owner_name@12', 'high', { dossier: 'parcels-FL.md#owner_name' }),
+        sig('owner_name@30', 'high', { dossier: 'parcels-MT.md#owner_name' }),
+        sig('owner_name@54', 'low', { dossier: 'parcels-WV.md#owner_name' }),
+      ],
+      'owner_name',
+    );
+    // Anchor keys the `## Signal: \`owner_name\`` heading on the BASE id, not @54.
+    expect(dossierTarget(point)).toEqual({ file: 'parcels-WV.md', anchor: 'owner_name' });
+  });
+
+  it('falls back to the base id when the dossier ref carries no anchor', () => {
+    const point = pointOf([sig('alpha', 'high', { dossier: 'doc.md' })], 'alpha');
+    expect(dossierTarget(point)).toEqual({ file: 'doc.md', anchor: 'alpha' });
   });
 });
 
