@@ -14,10 +14,14 @@
   import CardDetail from './components/CardDetail.svelte';
   import DocView from './components/DocView.svelte';
   import AskClaude from './components/AskClaude.svelte';
+  import { enableTextSelectionInLinks } from './lib/selectable-links';
 
   themeStore.init();
   onMount(() => {
     void store.load();
+    // Let text inside clickable cards be drag-selected (so "highlight → Ask
+    // Claude" works on the card-heavy catalog, not just on plain prose).
+    return enableTextSelectionInLinks();
   });
 
   const route = $derived(router.route);
