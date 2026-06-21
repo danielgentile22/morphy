@@ -65,9 +65,12 @@
       return;
     }
     // Don't offer to ask about Claude's own answer or the Ask Claude UI itself.
+    // Match the dialog by its OWN class (.ask-panel) — `.panel` is a generic
+    // content-card class the catalog reuses (e.g. a Data Catalog group), so
+    // excluding `.panel` would wrongly suppress the bubble across the catalog.
     const node = sel.anchorNode;
     const el = node instanceof Element ? node : (node?.parentElement ?? null);
-    if (el?.closest('.panel, .ask-bubble, .launcher')) {
+    if (el?.closest('.ask-panel, .ask-bubble, .launcher')) {
       bubble = null;
       return;
     }
@@ -128,7 +131,7 @@
 
 {#if askClaude.open}
   <div
-    class="panel"
+    class="ask-panel"
     role="dialog"
     aria-label="Ask Claude"
     aria-modal="false"
@@ -266,7 +269,7 @@
     font-size: 14.5px;
   }
 
-  .panel {
+  .ask-panel {
     position: fixed;
     right: 0;
     top: 0;
@@ -461,7 +464,7 @@
   }
 
   @media (max-width: 480px) {
-    .panel {
+    .ask-panel {
       width: 100vw;
     }
   }
