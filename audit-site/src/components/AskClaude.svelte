@@ -10,6 +10,11 @@
   // viewport coords + the selected text, or null when nothing is offered.
   let bubble = $state<{ x: number; y: number; text: string } | null>(null);
 
+  // Coarse pointer (phone/tablet): render the affordance as a fixed bar the OS's
+  // own selection menu can't cover, rather than a bubble floating at the
+  // selection (which the native Copy/Look-Up bar sits right on top of).
+  let coarse = $state(false);
+
   // Focus the input when the panel opens; keep the transcript pinned to the
   // newest text as it streams in.
   $effect(() => {
@@ -27,12 +32,22 @@
   // Selection-bubble wiring. `selectionchange` covers both desktop drag and
   // native mobile selection; a scroll (anywhere, capture phase) dismisses it.
   onMount(() => {
-    const onScroll = (): void => {
-      bubble = null;
+    const mq = matchMedia('(pointer: coarse)');
+    coarse = mq.matches;
+    const onPointerKind = (e: MediaQueryListEvent): void => {
+      coarse = e.matches;
     };
+    // The floating bubble goes stale when the page scrolls, so dismiss it — but
+    // only for a fine pointer. On touch the affordance is a fixed bar and the
+    // OS selection rides along with the content, so scrolling must not clear it.
+    const onScroll = (): void => {
+      if (!coarse) bubble = null;
+    };
+    mq.addEventListener('change', onPointerKind);
     document.addEventListener('selectionchange', updateBubble);
     window.addEventListener('scroll', onScroll, true);
     return () => {
+      mq.removeEventListener('change', onPointerKind);
       document.removeEventListener('selectionchange', updateBubble);
       window.removeEventListener('scroll', onScroll, true);
     };
@@ -82,17 +97,21 @@
   }
 </script>
 
-<!-- The inline selection bubble (#189) — floats at the highlighted text. mousedown
-     is prevented so clicking it doesn't collapse the selection or steal focus
-     before the click lands; native mobile selection + tap fire `click` directly. -->
+<!-- The inline selection affordance (#189): a bubble floating at the highlighted
+     text on desktop, or a fixed bottom bar on touch (where the OS's own
+     selection menu would cover a floating bubble). mousedown is prevented so a
+     desktop click doesn't collapse the selection before it lands; the selected
+     text is captured in `bubble.text`, so a touch tap still works even if it
+     collapses the selection. -->
 {#if bubble}
   <button
     class="ask-bubble"
-    style="left: {bubble.x}px; top: {bubble.y}px;"
+    class:is-bar={coarse}
+    style={coarse ? '' : `left: ${bubble.x}px; top: ${bubble.y}px;`}
     onmousedown={(e) => e.preventDefault()}
     onclick={askSelection}
   >
-    <span aria-hidden="true">✨</span> Ask Claude
+    <span aria-hidden="true">✨</span> Ask Claude{coarse ? ' about this' : ''}
   </button>
 {/if}
 
@@ -234,6 +253,17 @@
   }
   .ask-bubble:hover {
     filter: brightness(1.06);
+  }
+  /* Touch: a fixed, thumb-reachable bar instead of a bubble pinned to the
+     selection. The OS selection menu sits at the top of the selection; ours
+     sits at the bottom of the screen, so it's never hidden behind it. */
+  .ask-bubble.is-bar {
+    left: 50%;
+    top: auto;
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%);
+    padding: 12px 20px;
+    font-size: 14.5px;
   }
 
   .panel {

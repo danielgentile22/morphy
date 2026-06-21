@@ -129,6 +129,16 @@ a:hover {
   text-decoration: underline;
 }
 
+/* Let a long-press select the text inside a clickable content card on touch
+   devices (so "highlight → ✨ Ask Claude" works on the card-heavy catalog),
+   instead of popping the native link callout. Tapping still navigates. Scoped
+   to content links; nav/footer links keep their default long-press menu.
+   (Desktop's equivalent is the pointerdown→draggable=false path in
+   lib/selectable-links.ts.) */
+main a {
+  -webkit-touch-callout: none;
+}
+
 button {
   font-family: inherit;
   cursor: pointer;
