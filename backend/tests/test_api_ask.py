@@ -212,9 +212,7 @@ def test_persisted_qa_is_tenant_scoped() -> None:
         client.post("/api/audit/ask", json={"question": "team-1 q"}, headers=auth_header(dev))
         with temp_credential(eng, "u2", "pw2", team="otherteam"):
             other = login(client, "u2", "pw2")  # otherteam → tenant 2
-            client.post(
-                "/api/audit/ask", json={"question": "team-2 q"}, headers=auth_header(other)
-            )
+            client.post("/api/audit/ask", json={"question": "team-2 q"}, headers=auth_header(other))
 
         # Tenant 1 (devteam) sees only its own; tenant 2 only its own.
         assert [r.question for r in _logs(eng, 1)] == ["team-1 q"]

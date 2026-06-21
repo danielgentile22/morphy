@@ -40,9 +40,7 @@ def test_system_prompt_explains_the_trust_ratings() -> None:
 
 def test_question_is_the_single_user_message() -> None:
     prompt = build_prompt("What is an FCC ASR registration?")
-    assert prompt.messages == [
-        {"role": "user", "content": "What is an FCC ASR registration?"}
-    ]
+    assert prompt.messages == [{"role": "user", "content": "What is an FCC ASR registration?"}]
 
 
 def test_question_is_passed_through_verbatim() -> None:
