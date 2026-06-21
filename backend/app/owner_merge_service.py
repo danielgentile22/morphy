@@ -84,13 +84,6 @@ class OwnerMergeService:
                 members.add(source)
         return members
 
-    def list_overrides(self) -> list[OwnerClusterOverride]:
-        return list(
-            self.session.scalars(
-                select(OwnerClusterOverride).where(OwnerClusterOverride.tenant_id == self.tenant_id)
-            )
-        )
-
     # ── writes ───────────────────────────────────────────────────────────────
     def merge(self, *, source: str, target: str) -> None:
         """Merge ``source`` into ``target`` — afterward ``source`` resolves to

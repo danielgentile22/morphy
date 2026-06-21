@@ -99,7 +99,7 @@
   async function bootUserSettings(): Promise<void> {
     await userSettings.load();
     const s = userSettings.settings;
-    const urlHasFilters = readUrlState(location.search).filters !== null;
+    const urlHasFilters = readUrlState(location.search).hasFilters;
     if (s.filter_default && shouldApplyFilterDefault(urlHasFilters, s.filter_default_apply)) {
       filterModel.updateFilter(deserializeFilterModel(s.filter_default));
     }

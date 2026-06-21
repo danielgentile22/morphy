@@ -62,14 +62,6 @@ def can_transition(frm: str, to: str) -> bool:
     return to in ALLOWED_TRANSITIONS.get(frm, frozenset())
 
 
-def next_statuses(frm: str) -> list[str]:
-    """Statuses selectable from ``frm`` (itself + legal next), in ladder order."""
-    if not is_valid_status(frm):
-        return []
-    allowed = {frm} | set(ALLOWED_TRANSITIONS.get(frm, frozenset()))
-    return [s for s in STATUSES if s in allowed]
-
-
 def validate_transition(frm: str, to: str) -> None:
     """Raise ``InvalidTransition`` if ``frm → to`` is not allowed."""
     if not is_valid_status(to):

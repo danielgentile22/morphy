@@ -26,10 +26,8 @@ class LeadStore:
     def get_lead(self, display_cluster_id: str) -> Lead | None:
         return self.session.get(Lead, (self.tenant_id, display_cluster_id))
 
-    def list_leads(self, statuses: set[str] | None = None) -> list[Lead]:
+    def list_leads(self) -> list[Lead]:
         stmt = select(Lead).where(Lead.tenant_id == self.tenant_id)
-        if statuses is not None:
-            stmt = stmt.where(Lead.status.in_(statuses))
         return list(self.session.scalars(stmt))
 
     def status_map(self) -> dict[str, str]:

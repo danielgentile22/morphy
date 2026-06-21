@@ -11,7 +11,6 @@ when a normalized record is missing state_fips (rare — fallback).
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import dataclass
 
 
@@ -91,17 +90,5 @@ def get_state(fips: str) -> StateGeography:
     return STATES[fips]
 
 
-def get_state_by_abbr(abbr: str) -> StateGeography:
-    abbr_u = abbr.upper()
-    for s in STATES.values():
-        if s.abbr == abbr_u:
-            return s
-    raise KeyError(f"no state with abbreviation {abbr!r}")
-
-
 def all_states() -> list[StateGeography]:
     return list(STATES.values())
-
-
-def states_iter() -> Iterator[StateGeography]:
-    yield from STATES.values()

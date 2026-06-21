@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterable
 from pathlib import Path
 
 import geopandas as gpd
@@ -215,23 +214,6 @@ def _sanitize_col(name) -> str:
     if not s:
         return "_unnamed"
     return s.replace("/", "_").replace(".", "_")
-
-
-def read_geoparquet(path: Path, *, columns: Iterable[str] | None = None) -> gpd.GeoDataFrame:
-    """Read GeoParquet, optionally with column projection."""
-    if columns is not None:
-        cols = list(columns)
-        if "geometry" not in cols:
-            cols = cols + ["geometry"]
-        return gpd.read_parquet(path, columns=cols)
-    return gpd.read_parquet(path)
-
-
-def read_parquet(path: Path, *, columns: Iterable[str] | None = None) -> pd.DataFrame:
-    """Read plain Parquet, optionally with column projection."""
-    if columns is not None:
-        return pd.read_parquet(path, columns=list(columns))
-    return pd.read_parquet(path)
 
 
 def write_json(payload: dict, path: Path) -> int:

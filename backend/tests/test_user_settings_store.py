@@ -65,12 +65,10 @@ def test_opaque_blob_is_persisted_verbatim(engine: Engine) -> None:
     assert _store(engine).filter_default == blob
 
 
-def test_bool_and_int_coercion_falls_back_on_garbage(engine: Engine) -> None:
+def test_bool_coercion_falls_back_on_garbage(engine: Engine) -> None:
     s = _store(engine)
     s.set(COLORBLIND, "not-a-bool")
     assert _store(engine).get_bool(COLORBLIND) is False  # only "1" is true
-    s.set("some_int", "garbage")
-    assert _store(engine).get_int("some_int", fallback=7) == 7
 
 
 def test_settings_are_isolated_per_user_and_per_tenant(engine: Engine) -> None:

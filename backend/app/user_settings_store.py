@@ -63,12 +63,6 @@ class UserSettingsStore:
     def get_bool(self, key: str) -> bool:
         return self.get(key) == "1"
 
-    def get_int(self, key: str, fallback: int = 0) -> int:
-        try:
-            return int(self.get(key))
-        except (ValueError, TypeError):
-            return fallback
-
     def set(self, key: str, value: str) -> None:
         row = self.session.get(UserSetting, (self.tenant_id, self.user_id, key))
         if row is None:
