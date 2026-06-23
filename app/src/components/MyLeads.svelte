@@ -191,21 +191,25 @@
     color: var(--danger);
   }
 
-  /* Board: a row of lanes, horizontally scrollable, filling the surface. */
+  /* Board: a row of lanes that fill the surface width. Lanes size to their
+     content (top-aligned), so the board is only as tall as the fullest lane;
+     the whole board scrolls as one unit when that exceeds the surface — no
+     per-lane scrollbars. */
   .kanban {
     display: flex;
-    gap: 12px;
+    align-items: flex-start;
+    gap: 14px;
     flex: 1;
     min-height: 0;
-    overflow-x: auto;
+    overflow: auto;
     padding-bottom: 18px;
   }
   .lane {
-    width: 250px;
-    flex-shrink: 0;
+    flex: 1 1 0;
+    min-width: 240px;
+    max-width: 360px;
     display: flex;
     flex-direction: column;
-    max-height: 100%;
     background: var(--panel-2);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -248,9 +252,7 @@
     color: var(--text-2);
   }
   .lane-body {
-    flex: 1;
     min-height: 48px;
-    overflow-y: auto;
     padding: 8px;
   }
   .card {
