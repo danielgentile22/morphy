@@ -145,9 +145,9 @@
      truncates (full name on hover); the value flexes to fill the rest. */
   .evt {
     display: grid;
-    grid-template-columns: 86px 22px 16rem 7em 1fr auto;
+    grid-template-columns: 84px 18px minmax(0, 12rem) 5.5em minmax(0, 1fr) auto;
     align-items: baseline;
-    gap: 10px;
+    gap: 8px;
     padding: 7px 2px;
     border-bottom: 1px solid var(--border);
     font-size: 12.5px;
@@ -155,6 +155,7 @@
   .when {
     color: var(--muted);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .kind {
     text-align: center;

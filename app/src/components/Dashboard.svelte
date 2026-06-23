@@ -96,25 +96,30 @@
     {/if}
   </section>
 
-  <section id={SECTION_ID.tasks} class="view" data-section="tasks" aria-label="Tasks">
-    <h2 class="view-h">Tasks</h2>
-    <Tasks />
-  </section>
+  <!-- The four workspaces in a 2×2 grid (Tasks | Calendar / Stats | History)
+       instead of a long single-column scroll; collapses to one column when the
+       column is too narrow for two (auto-fit). -->
+  <div class="grid2">
+    <section id={SECTION_ID.tasks} class="view" data-section="tasks" aria-label="Tasks">
+      <h2 class="view-h">Tasks</h2>
+      <Tasks />
+    </section>
 
-  <section id={SECTION_ID.calendar} class="view" data-section="calendar" aria-label="Calendar">
-    <h2 class="view-h">Calendar</h2>
-    <Calendar heading={false} />
-  </section>
+    <section id={SECTION_ID.calendar} class="view" data-section="calendar" aria-label="Calendar">
+      <h2 class="view-h">Calendar</h2>
+      <Calendar heading={false} />
+    </section>
 
-  <section id={SECTION_ID.history} class="view" data-section="history" aria-label="History">
-    <h2 class="view-h">History</h2>
-    <History heading={false} />
-  </section>
+    <section id={SECTION_ID.stats} class="view" data-section="stats" aria-label="Stats">
+      <h2 class="view-h">Stats</h2>
+      <Stats heading={false} />
+    </section>
 
-  <section id={SECTION_ID.stats} class="view" data-section="stats" aria-label="Stats">
-    <h2 class="view-h">Stats</h2>
-    <Stats heading={false} />
-  </section>
+    <section id={SECTION_ID.history} class="view" data-section="history" aria-label="History">
+      <h2 class="view-h">History</h2>
+      <History heading={false} />
+    </section>
+  </div>
   </div>
 </div>
 
@@ -126,19 +131,30 @@
     overflow-y: auto;
     padding: 18px 22px 60px;
   }
-  /* Single width authority for the whole dashboard — the inlined sections
-     (Tasks/Calendar/History/Stats) drop their own caps and fill this, so every
-     section divider lines up with the content under it. */
+  /* Single width authority for the whole dashboard. Wide enough for the 2×2
+     grid below to give each quadrant room; the inlined sections fill their
+     cell. */
   .dash-inner {
-    max-width: 960px;
+    max-width: 1500px;
     margin: 0 auto;
   }
-  /* Each stacked view is a section with one uniform heading; a top rule and
-     spacing separate it from the one above as you scroll. */
-  .view {
-    padding-top: 22px;
+  /* The four workspaces as a 2-column grid under the Attention headline. Cells
+     align to the top (a short Tasks cell doesn't stretch to the tall Calendar)
+     and auto-fit drops to one column when two won't fit. */
+  .grid2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+    align-items: start;
+    gap: 26px 34px;
     margin-top: 22px;
+    padding-top: 22px;
     border-top: 1px solid var(--border);
+  }
+  .grid2 > .view {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+    min-width: 0; /* let the grid column shrink below the content's intrinsic width */
   }
   /* The headline Attention section sits flush at the very top — no rule above. */
   .view.attention {
