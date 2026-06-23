@@ -170,9 +170,7 @@
 </div>
 
 <style>
-  .stats {
-    max-width: 820px;
-  }
+  /* No width cap — fills the dashboard column (.dash-inner). */
   .head {
     display: flex;
     align-items: baseline;

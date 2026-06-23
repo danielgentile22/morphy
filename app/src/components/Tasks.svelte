@@ -216,9 +216,8 @@
 </div>
 
 <style>
-  .tasks {
-    max-width: 860px;
-  }
+  /* No width cap — fills the dashboard column (.dash-inner); Tasks is only ever
+     rendered there. */
   .auto-pointer {
     margin: 0 0 12px;
     padding: 8px 12px;

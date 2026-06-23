@@ -94,9 +94,7 @@
 </div>
 
 <style>
-  .history {
-    max-width: 900px;
-  }
+  /* No width cap — fills the dashboard column (.dash-inner). */
   .head {
     display: flex;
     align-items: baseline;

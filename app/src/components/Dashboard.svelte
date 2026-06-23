@@ -126,8 +126,11 @@
     overflow-y: auto;
     padding: 18px 22px 60px;
   }
+  /* Single width authority for the whole dashboard — the inlined sections
+     (Tasks/Calendar/History/Stats) drop their own caps and fill this, so every
+     section divider lines up with the content under it. */
   .dash-inner {
-    max-width: 1200px;
+    max-width: 960px;
     margin: 0 auto;
   }
   /* Each stacked view is a section with one uniform heading; a top rule and
