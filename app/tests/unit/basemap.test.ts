@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  basemapStyle,
-  resolveBasemapName,
-  resolveInitialView,
-  parseMapView,
-  type MapView,
-} from '../../src/lib/basemap';
+import { basemapStyle, resolveInitialView, parseMapView, type MapView } from '../../src/lib/basemap';
 
 /** The single raster tileset a style points at (the bit that varies). */
 function tilesetOf(style: ReturnType<typeof basemapStyle>): string {
@@ -13,32 +7,21 @@ function tilesetOf(style: ReturnType<typeof basemapStyle>): string {
   return src.tiles[0];
 }
 
-describe('basemapStyle — keyless Carto raster per (name, theme) (PRD #121)', () => {
-  it('maps each basemap choice to its Carto tileset on the light theme', () => {
-    expect(tilesetOf(basemapStyle('light', 'light'))).toContain('light_all'); // Positron
-    expect(tilesetOf(basemapStyle('voyager', 'light'))).toContain('voyager');
-    expect(tilesetOf(basemapStyle('dark', 'light'))).toContain('dark_all'); // Dark Matter
+describe('basemapStyle — keyless Carto raster per basemap choice (PRD #121)', () => {
+  it('maps each basemap choice to its Carto tileset (honoured literally)', () => {
+    // The chrome is dark-only Halo, so the pick is honoured as-is — no theme nudge.
+    expect(tilesetOf(basemapStyle('light'))).toContain('light_all'); // Positron
+    expect(tilesetOf(basemapStyle('voyager'))).toContain('voyager');
+    expect(tilesetOf(basemapStyle('dark'))).toContain('dark_all'); // Dark Matter
   });
 
   it('produces a valid single-layer raster style', () => {
-    const s = basemapStyle('light', 'light');
+    const s = basemapStyle('light');
     expect(s.version).toBe(8);
     expect(s.layers).toHaveLength(1);
     expect(s.layers[0]).toMatchObject({ type: 'raster', source: 'basemap' });
     // keyless: the CDN host carries no API key
     expect(tilesetOf(s)).toContain('basemaps.cartocdn.com');
-  });
-
-  it('nudges the default light basemap to a dark tileset under the dark theme', () => {
-    // a bright map glaring inside a dark UI is the thing we avoid (overridable)
-    expect(resolveBasemapName('light', 'dark')).toBe('dark');
-    expect(tilesetOf(basemapStyle('light', 'dark'))).toContain('dark_all');
-  });
-
-  it('honours an explicit non-default basemap even under the dark theme', () => {
-    expect(resolveBasemapName('voyager', 'dark')).toBe('voyager');
-    expect(resolveBasemapName('dark', 'dark')).toBe('dark');
-    expect(resolveBasemapName('light', 'light')).toBe('light');
   });
 });
 

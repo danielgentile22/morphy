@@ -37,13 +37,10 @@
   maplibregl.addProtocol('pmtiles', new Protocol().tile);
 
   // Keyless raster basemap — the user's choice (Positron / Voyager / Dark
-  // Matter), theme-aware (PRD #121). No API key, consistent with the no-backend
-  // constraint. The live map hot-swaps only the basemap source's tiles when the
-  // pref changes, so the app's tower/parcel/solar layers are never dropped.
-  const initialStyle: StyleSpecification = basemapStyle(
-    untrack(() => userSettings.basemap),
-    untrack(() => userSettings.effectiveTheme),
-  );
+  // Matter). No API key, consistent with the no-backend constraint. The live
+  // map hot-swaps only the basemap source's tiles when the pref changes, so the
+  // app's tower/parcel/solar layers are never dropped.
+  const initialStyle: StyleSpecification = basemapStyle(untrack(() => userSettings.basemap));
 
   const US_BOUNDS: [number, number, number, number] = [-125, 24, -66, 50];
   const TOWER_ICON = 'tower-marker';
@@ -190,11 +187,11 @@
     if (view) map.jumpTo({ center: [view.lng, view.lat], zoom: view.zoom });
   });
 
-  // Hot-swap just the basemap raster tiles when the basemap / theme pref
-  // changes — leaves every app layer (towers, parcels, solar) untouched, unlike
-  // a full setStyle.
+  // Hot-swap just the basemap raster tiles when the basemap pref changes —
+  // leaves every app layer (towers, parcels, solar) untouched, unlike a full
+  // setStyle.
   $effect(() => {
-    const tiles = basemapTiles(userSettings.basemap, userSettings.effectiveTheme);
+    const tiles = basemapTiles(userSettings.basemap);
     const src = map?.getSource('basemap');
     if (src && 'setTiles' in src) {
       (src as maplibregl.RasterTileSource).setTiles(tiles);

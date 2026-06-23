@@ -11,8 +11,10 @@
 
 :root {
   /* "Halo" facelift — the app's chrome tokens alias Halo's system tokens
-     (imported above). Halo is dark-only, so :root and [data-theme=dark] both
-     resolve to Halo; the light "Linen" palette is parked (design/tokens.css). */
+     (imported above). Halo is the single, dark-only chrome palette: the
+     light/dark theme control was retired, so these :root values apply
+     regardless of [data-theme]. Map basemap light/dark lives in Settings →
+     Basemap. The light "Linen" palette is parked (design/tokens.css). */
   --bg: var(--color-background);
   --panel: var(--color-surface);
   --panel-2: var(--color-elevated);
@@ -37,34 +39,6 @@
 
   /* Lead status → Halo signal tones. Six kept distinct in hue; green/red are
      the colorblind pair (.cb) + glyph cue, never meaning-on-hue-alone. */
-  --s-new: var(--color-text-muted);
-  --s-researching: var(--color-warning);
-  --s-contacted: var(--color-info);
-  --s-interested: var(--color-primary);
-  --s-in_business: var(--color-success);
-  --s-uninterested: var(--color-danger);
-}
-
-/* Dark theme (PRD #121). A full token override — the same variables the whole
-   app already paints through, re-valued for a dark surface. The bar is
-   "coherent and legible"; per-component contrast polish iterates post-merge. */
-[data-theme='dark'] {
-  /* Halo (dark-only) applies to the dark slot too — identical to :root — so the
-     light/dark toggle is a no-op while Halo is the active facelift. */
-  --bg: var(--color-background);
-  --panel: var(--color-surface);
-  --panel-2: var(--color-elevated);
-  --border: var(--color-border);
-  --border-strong: var(--color-border-strong);
-  --text: var(--color-text-primary);
-  --text-2: var(--color-text-secondary);
-  --muted: var(--color-text-muted);
-  --accent: var(--color-primary);
-  --accent-soft: var(--color-primary-soft);
-  --danger: var(--color-danger);
-  --shadow: var(--shadow-md);
-  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
-
   --s-new: var(--color-text-muted);
   --s-researching: var(--color-warning);
   --s-contacted: var(--color-info);

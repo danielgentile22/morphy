@@ -4,16 +4,10 @@
   // appearance ones apply live through the user-settings store.
   import { userSettings } from '../lib/user-settings-store.svelte';
   import { readLastView } from '../lib/map-view-cache';
-  import type { ThemePref } from '../lib/appearance';
   import type { BasemapName } from '../lib/basemap';
 
   const s = $derived(userSettings.settings);
 
-  const THEMES: { value: ThemePref; label: string }[] = [
-    { value: 'light', label: 'Light' },
-    { value: 'dark', label: 'Dark' },
-    { value: 'system', label: 'System' },
-  ];
   const BASEMAPS: { value: BasemapName; label: string }[] = [
     { value: 'light', label: 'Light (Positron)' },
     { value: 'voyager', label: 'Voyager' },
@@ -44,20 +38,7 @@
   {/if}
 
   <div class="set-group">
-    <h3>Theme</h3>
-    <div class="set-row">
-      <div class="set-seg" role="group" aria-label="Theme">
-        {#each THEMES as t (t.value)}
-          <button
-            class:on={s.theme === t.value}
-            data-testid={`theme-${t.value}`}
-            onclick={() => userSettings.save({ theme: t.value })}
-          >
-            {t.label}
-          </button>
-        {/each}
-      </div>
-    </div>
+    <h3>Status colors</h3>
     <label class="set-check">
       <input
         type="checkbox"
@@ -67,9 +48,7 @@
       />
       Colorblind-friendly status colors
     </label>
-    <p class="hint">
-      Theme and colorblind mode are independent. System follows your OS light/dark setting.
-    </p>
+    <p class="hint">Remaps the green/red lead-status pair to a colorblind-safe set with a glyph cue.</p>
   </div>
 
   <div class="set-group">
@@ -86,7 +65,7 @@
         {/each}
       </select>
     </div>
-    <p class="hint">On the dark theme, the light basemap is shown dark so it doesn't glare.</p>
+    <p class="hint">Dark Matter matches the app; pick Light (Positron) for daylight or field reading.</p>
   </div>
 
   <div class="set-group">

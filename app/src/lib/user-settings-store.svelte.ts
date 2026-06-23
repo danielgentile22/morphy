@@ -10,13 +10,7 @@
 
 import { fetchMySettings, saveMySettings, ApiError, type UserSettings } from './leads-api';
 import { auth } from './auth-store.svelte';
-import {
-  resolveAppearance,
-  applyAppearance,
-  type ThemePref,
-  type EffectiveTheme,
-  type Appearance,
-} from './appearance';
+import { resolveAppearance, applyAppearance, type ThemePref, type Appearance } from './appearance';
 import { parseMapView, type BasemapName, type MapView } from './basemap';
 
 const APPEARANCE_CACHE_KEY = 'settings.appearance';
@@ -24,7 +18,9 @@ const APPEARANCE_CACHE_KEY = 'settings.appearance';
 const DEFAULTS: UserSettings = {
   theme: 'system',
   colorblind: false,
-  basemap: 'light',
+  // Dark Matter by default so the out-of-box map matches the dark Halo chrome;
+  // the Light (Positron) basemap stays selectable for daylight/field reading.
+  basemap: 'dark',
   view_mode: 'last',
   home_view: '',
   filter_default: '',
@@ -87,10 +83,6 @@ class UserSettingsStore {
   }
   get basemap(): BasemapName {
     return this.settings.basemap;
-  }
-  /** The theme actually painted right now (resolving `system` against the OS). */
-  get effectiveTheme(): EffectiveTheme {
-    return resolveAppearance(this.settings.theme, this.systemDark, this.settings.colorblind).theme;
   }
   get appearance(): Appearance {
     return resolveAppearance(this.settings.theme, this.systemDark, this.settings.colorblind);
