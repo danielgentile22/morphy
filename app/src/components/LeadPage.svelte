@@ -378,7 +378,7 @@
             <select data-testid="attempt-outcome" bind:value={attemptForm.outcome} aria-label="Outcome">
               {#each OUTCOMES as o2 (o2)}<option value={o2}>{o2}</option>{/each}
             </select>
-            <button class="sbtn" data-testid="log-attempt" onclick={logAttempt} disabled={leads.saving}>
+            <button class="btn btn-secondary btn-sm" data-testid="log-attempt" onclick={logAttempt} disabled={leads.saving}>
               + log touch
             </button>
           </div>
@@ -396,7 +396,7 @@
             <select data-testid="reply-outcome" bind:value={replyForm.outcome} aria-label="Reply outcome">
               {#each REPLY_OUTCOMES as o2 (o2)}<option value={o2}>{o2}</option>{/each}
             </select>
-            <button class="sbtn reply-btn" data-testid="log-reply" onclick={logReply} disabled={leads.saving}>
+            <button class="btn btn-secondary btn-sm" data-testid="log-reply" onclick={logReply} disabled={leads.saving}>
               ↩ log reply
             </button>
           </div>
@@ -457,7 +457,7 @@
                 <li>
                   <span class="readonly">{mm.owner_name || mm.display_cluster_id}</span>
                   <button
-                    class="sbtn"
+                    class="btn btn-secondary btn-sm"
                     data-testid="split-{mm.display_cluster_id}"
                     onclick={() => splitOut(mm.display_cluster_id)}
                     disabled={leads.saving}
@@ -807,10 +807,6 @@
   }
   .attemptform.reply {
     margin-top: 8px;
-  }
-  .reply-btn {
-    border-color: var(--accent);
-    color: var(--accent);
   }
   .notes {
     width: 100%;

@@ -63,7 +63,7 @@
   <!-- Attention — the headline, full-width at the top (data behavior unchanged). -->
   <section class="view attention" data-testid="digest-attention" aria-label="Attention">
     <h2 class="view-h">
-      Attention{#if dashboard.count}<span class="abadge" data-testid="attention-count">{dashboard.count}</span>{/if}
+      Attention{#if dashboard.count}<span class="chip abadge" data-tone="info" data-testid="attention-count">{dashboard.count}</span>{/if}
     </h2>
     {#if dashboard.status === 'loading'}
       <p class="placeholder">Loading…</p>
@@ -78,7 +78,7 @@
               <a class="attn-link" href={leadHash(it.cluster_id)}>{it.title}</a>
               <span class="attn-when">{it.when}</span>
               <button
-                class="dismiss"
+                class="btn btn-secondary btn-sm dismiss"
                 data-testid="dismiss-{it.cluster_id}"
                 onclick={() => dashboard.dismiss(it.cluster_id)}
               >
@@ -145,13 +145,7 @@
     color: var(--muted);
   }
   .abadge {
-    display: inline-block;
     margin-left: 7px;
-    background: var(--accent);
-    color: #fff;
-    border-radius: 999px;
-    padding: 0 7px;
-    font-size: 11px;
     vertical-align: middle;
   }
   .attn-list {
@@ -188,12 +182,5 @@
   }
   .dismiss {
     margin-left: auto;
-    background: none;
-    border: 1px solid var(--border-strong);
-    border-radius: 999px;
-    padding: 2px 10px;
-    font-size: 11px;
-    color: var(--text-2);
-    cursor: pointer;
   }
 </style>

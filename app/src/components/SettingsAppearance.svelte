@@ -71,16 +71,18 @@
   <div class="set-group">
     <h3>Default map view</h3>
     <div class="set-row">
-      <div class="set-seg" role="group" aria-label="Default map view">
+      <div class="tabs" role="group" aria-label="Default map view">
         <button
-          class:on={s.view_mode === 'last'}
+          class="tab"
+          class:is-active={s.view_mode === 'last'}
           data-testid="view-last"
           onclick={() => userSettings.save({ view_mode: 'last' })}
         >
           Where I left off
         </button>
         <button
-          class:on={s.view_mode === 'home'}
+          class="tab"
+          class:is-active={s.view_mode === 'home'}
           data-testid="view-home"
           onclick={() => userSettings.save({ view_mode: 'home' })}
         >
@@ -89,11 +91,11 @@
       </div>
     </div>
     <div class="set-row">
-      <button class="set-btn secondary" data-testid="set-home" onclick={pinHome}>
+      <button class="btn btn-secondary btn-sm" data-testid="set-home" onclick={pinHome}>
         Set current map view as home
       </button>
       <button
-        class="set-btn secondary"
+        class="btn btn-secondary btn-sm"
         data-testid="clear-home"
         disabled={!s.home_view}
         onclick={clearHome}

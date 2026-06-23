@@ -226,25 +226,6 @@ a {
 .set-input {
   min-width: 220px;
 }
-.set-btn {
-  font: inherit;
-  font-size: 12.5px;
-  padding: 7px 14px;
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: #fff;
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-.set-btn.secondary {
-  background: var(--panel);
-  color: var(--text-2);
-  border-color: var(--border-strong);
-}
-.set-btn:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
 .set-status {
   font-size: 12px;
 }
@@ -264,27 +245,4 @@ a {
   gap: 8px;
   font-size: 13px;
   color: var(--text);
-}
-.set-seg {
-  display: inline-flex;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-.set-seg button {
-  font: inherit;
-  font-size: 12.5px;
-  padding: 6px 14px;
-  background: var(--panel);
-  border: none;
-  border-right: 1px solid var(--border);
-  color: var(--text-2);
-  cursor: pointer;
-}
-.set-seg button:last-child {
-  border-right: none;
-}
-.set-seg button.on {
-  background: var(--accent);
-  color: #fff;
 }

@@ -71,7 +71,7 @@
     {/if}
     <div class="set-row">
       <button
-        class="set-btn"
+        class="btn btn-primary btn-sm"
         data-testid="filter-default-save"
         disabled={!liveSummary.length}
         onclick={saveCurrent}
@@ -79,7 +79,7 @@
         Save current as my default
       </button>
       <button
-        class="set-btn secondary"
+        class="btn btn-secondary btn-sm"
         data-testid="filter-default-clear"
         disabled={!s.filter_default}
         onclick={clear}
