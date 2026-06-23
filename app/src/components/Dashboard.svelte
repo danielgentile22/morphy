@@ -60,6 +60,7 @@
 </script>
 
 <div class="dashboard" data-testid="dashboard" data-target={sub} bind:this={rootEl}>
+  <div class="dash-inner">
   <!-- Attention — the headline, full-width at the top (data behavior unchanged). -->
   <section class="view attention" data-testid="digest-attention" aria-label="Attention">
     <h2 class="view-h">
@@ -114,14 +115,20 @@
     <h2 class="view-h">Stats</h2>
     <Stats heading={false} />
   </section>
+  </div>
 </div>
 
 <style>
+  /* Full-width scroll container so the scrollbar sits at the viewport's right
+     edge; the content itself is centred + width-capped by .dash-inner. */
   .dashboard {
     height: 100%;
     overflow-y: auto;
     padding: 18px 22px 60px;
-    max-width: 1100px;
+  }
+  .dash-inner {
+    max-width: 1200px;
+    margin: 0 auto;
   }
   /* Each stacked view is a section with one uniform heading; a top rule and
      spacing separate it from the one above as you scroll. */

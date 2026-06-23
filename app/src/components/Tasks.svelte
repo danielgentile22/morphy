@@ -266,6 +266,7 @@
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     background: var(--panel);
+    color: var(--text);
   }
   .filterbar {
     display: flex;
@@ -288,6 +289,7 @@
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     background: var(--panel);
+    color: var(--text);
   }
   .filterbar .lbl {
     width: 90px;

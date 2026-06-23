@@ -15,6 +15,12 @@
      light/dark theme control was retired, so these :root values apply
      regardless of [data-theme]. Map basemap light/dark lives in Settings →
      Basemap. The light "Linen" palette is parked (design/tokens.css). */
+  /* Tell the browser the UI is dark so native controls (checkboxes, selects,
+     range sliders, date/number inputs, their dropdowns) render dark instead of
+     the default white — the single fix for stray-white form controls + the
+     dark-on-dark default text inside dark-backgrounded inputs. */
+  color-scheme: dark;
+
   --bg: var(--color-background);
   --panel: var(--color-surface);
   --panel-2: var(--color-elevated);
