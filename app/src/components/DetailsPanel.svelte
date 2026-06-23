@@ -2,6 +2,7 @@
   import { app } from '../lib/stores.svelte';
   import { entitySchema, infrastructureItems, scoreComponents, carriers, type Props } from '../lib/schema';
   import CarrierList from './CarrierList.svelte';
+  import Icon from './Icon.svelte';
 
   const sel = $derived(app.selection);
   const schema = $derived(sel ? entitySchema(sel.kind) : undefined);
@@ -28,7 +29,7 @@
         <h2>{schema ? schema.title(props) : 'Details'}</h2>
       </div>
       <button class="close" onclick={() => app.clearSelection()} aria-label="Close details">
-        ×
+        <Icon name="x" />
       </button>
     </header>
 
@@ -139,14 +140,15 @@
   .close {
     margin-left: auto;
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 26px;
     height: 26px;
-    font-size: 18px;
-    line-height: 1;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 4px;
-    color: var(--text);
+    color: var(--text-2);
   }
 
   .tags {

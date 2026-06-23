@@ -36,6 +36,23 @@ export const STATUS_LABELS: Record<LeadStatus, string> = {
   uninterested: 'Uninterested',
 };
 
+// Halo chip tone per status, for non-kanban surfaces (the Leads list, etc).
+// Decorative only — the text label always rides along, so this stays
+// colorblind-safe (meaning never on hue alone). `interested` uses the default
+// primary chip (empty tone). The kanban (MyLeads) keeps its own --s-* lanes +
+// glyph cue and does NOT use this.
+export const STATUS_TONE: Record<
+  LeadStatus,
+  '' | 'neutral' | 'info' | 'warning' | 'success' | 'danger'
+> = {
+  new: 'neutral',
+  researching: 'warning',
+  contacted: 'info',
+  interested: '',
+  in_business: 'success',
+  uninterested: 'danger',
+};
+
 // Closed/end-of-pipeline lanes — used for the kanban's "closed" visual
 // treatment, NOT for transition-locking. `uninterested` shows as closed but
 // is reopenable (see ALLOWED_TRANSITIONS); only `in_business` is truly locked.

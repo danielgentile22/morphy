@@ -19,13 +19,13 @@
 </script>
 
 <div class="stat-strip" data-testid="stat-strip">
-  <div class="tile" data-testid="stat-towers">
-    <span class="num">{fmt(towers)}</span>
-    <span class="label">Towers</span>
+  <div class="stat-tile stat-sm" data-tone="info" data-testid="stat-towers">
+    <span class="stat-eyebrow">Towers</span>
+    <span class="stat-value">{fmt(towers)}</span>
   </div>
-  <div class="tile" data-testid="stat-solar">
-    <span class="num">{fmt(solar)}</span>
-    <span class="label">Solar</span>
+  <div class="stat-tile stat-sm" data-tone="warning" data-testid="stat-solar">
+    <span class="stat-eyebrow">Solar</span>
+    <span class="stat-value">{fmt(solar)}</span>
   </div>
 </div>
 
@@ -35,27 +35,5 @@
     grid-template-columns: 1fr 1fr;
     gap: 8px;
     padding: 12px 16px;
-  }
-  .tile {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 10px 12px;
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-  }
-  .num {
-    font-size: 20px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    color: var(--text);
-  }
-  .label {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--muted);
   }
 </style>

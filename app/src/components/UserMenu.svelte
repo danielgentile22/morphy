@@ -4,6 +4,7 @@
   // primary nav tabs stay uncluttered.
   import { auth } from '../lib/auth-store.svelte';
   import { settingsHash } from '../lib/nav';
+  import Icon from './Icon.svelte';
 
   let open = $state(false);
   let root = $state<HTMLDivElement>();
@@ -45,7 +46,7 @@
     onclick={() => (open = !open)}
   >
     <span class="who" data-testid="nav-user">{auth.name}{auth.team ? ` · ${auth.team}` : ''}</span>
-    <span class="caret" aria-hidden="true">▾</span>
+    <span class="caret" aria-hidden="true"><Icon name="chevron-down" size={14} /></span>
   </button>
   {#if open}
     <div class="menu" role="menu" data-testid="user-menu-popup">
@@ -82,7 +83,8 @@
     background: var(--panel-2);
   }
   .caret {
-    font-size: 9px;
+    display: inline-flex;
+    align-items: center;
     color: var(--muted);
   }
   .menu {
