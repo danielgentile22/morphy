@@ -207,7 +207,7 @@
 {:else}
   <div class="shell">
     <nav class="topnav" data-testid="topnav">
-      <span class="brand">Ground-Lease Triage</span>
+      <span class="brand"><span class="brand-mark" aria-hidden="true"></span>Ground-Lease Triage</span>
       <div class="tabs" role="tablist" aria-label="Sections">
         <button
           class="tab"
@@ -455,8 +455,25 @@
     z-index: 30;
   }
   .topnav .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
     font-weight: 600;
     font-size: 14px;
+  }
+  /* Halo conic brand mark. */
+  .brand-mark {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border-strong);
+    background: conic-gradient(
+      from 220deg at 50% 50%,
+      var(--color-primary),
+      #1e2029,
+      var(--color-primary)
+    );
   }
   .tabs {
     display: flex;
