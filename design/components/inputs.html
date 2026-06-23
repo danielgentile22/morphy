@@ -1,0 +1,36 @@
+<!-- @dsCard group="Controls" name="Inputs & fields" subtitle="text, select, checkbox, labeled rows" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inputs & fields</title>
+  <link rel="stylesheet" href="../tokens.css" />
+  <link rel="stylesheet" href="../base.css" />
+  <style>
+    .set-section { max-width: 560px; }
+  </style>
+</head>
+<body>
+  <div class="ds-stage">
+    <div class="set-section">
+      <div class="set-row">
+        <label class="set-label" for="org">Organization</label>
+        <input class="set-input" id="org" value="Morphy Consulting" />
+      </div>
+      <div class="set-row">
+        <label class="set-label" for="state">Default state</label>
+        <select class="set-select" id="state">
+          <option>Arkansas (05)</option>
+          <option>Florida (12)</option>
+          <option>Montana (30)</option>
+          <option>West Virginia (54)</option>
+        </select>
+      </div>
+      <div class="set-row">
+        <label class="set-check"><input type="checkbox" checked /> Show only towers with an identified carrier</label>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

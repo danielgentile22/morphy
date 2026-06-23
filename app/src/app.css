@@ -1,66 +1,76 @@
+/* Halo design system (dark) — wired once. Provides --color-* tokens, type
+   utilities (.t-*), and component classes (.btn, .card, .stat-tile, .tabs,
+   .field, .chip…). The app's chrome tokens below ALIAS onto it, so every
+   existing component repaints in Halo without touching its markup. */
+@import './system.css';
+
 /* Global design tokens + reset. Component-specific styles are scoped
    inside their .svelte files. Data-encoding colors (distress tiers,
    layer hues) live in src/lib/palette.ts — they are consumed by
    MapLibre paint expressions, not CSS. */
 
 :root {
-  /* UI chrome */
-  --bg: #fafafa;
-  --panel: #ffffff;
-  --panel-2: #f4f5f7;
-  --border: #e3e3e6;
-  --border-strong: #c9cbd1;
-  --text: #1f2328;
-  --text-2: #424752;
-  --muted: #6b7280;
-  --accent: #0072b2; /* Wong CB-safe blue */
-  --accent-soft: #d4e6f4;
-  --danger: #d55e00; /* Wong vermillion */
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 4px 24px rgba(0, 0, 0, 0.14);
+  /* "Halo" facelift — the app's chrome tokens alias Halo's system tokens
+     (imported above). Halo is dark-only, so :root and [data-theme=dark] both
+     resolve to Halo; the light "Linen" palette is parked (design/tokens.css). */
+  --bg: var(--color-background);
+  --panel: var(--color-surface);
+  --panel-2: var(--color-elevated);
+  --border: var(--color-border);
+  --border-strong: var(--color-border-strong);
+  --text: var(--color-text-primary);
+  --text-2: var(--color-text-secondary);
+  --muted: var(--color-text-muted);
+  --accent: var(--color-primary);
+  --accent-soft: var(--color-primary-soft);
+  --danger: var(--color-danger);
+  --shadow: var(--shadow-md);
+  /* --shadow-lg name-collides with Halo's token, so alias would self-reference;
+     hardcode Halo's lg elevation value instead. */
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
 
-  --font:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
-    Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --font: var(--font-body);
+  --mono: var(--font-mono);
 
   --sidebar-w: 380px;
-  --radius: 6px;
+  --radius: var(--radius-md); /* 10px */
 
-  /* Lead status colors (Candidates + Lead page). Mirror prototype/styles.css. */
-  --s-new: #8893a0;
-  --s-researching: #b8860b;
-  --s-contacted: #0072b2;
-  --s-interested: #6f42c1;
-  --s-in_business: #2e7d4f;
-  --s-uninterested: #b0392b;
+  /* Lead status → Halo signal tones. Six kept distinct in hue; green/red are
+     the colorblind pair (.cb) + glyph cue, never meaning-on-hue-alone. */
+  --s-new: var(--color-text-muted);
+  --s-researching: var(--color-warning);
+  --s-contacted: var(--color-info);
+  --s-interested: var(--color-primary);
+  --s-in_business: var(--color-success);
+  --s-uninterested: var(--color-danger);
 }
 
 /* Dark theme (PRD #121). A full token override — the same variables the whole
    app already paints through, re-valued for a dark surface. The bar is
    "coherent and legible"; per-component contrast polish iterates post-merge. */
 [data-theme='dark'] {
-  --bg: #14171b;
-  --panel: #1c2025;
-  --panel-2: #23282f;
-  --border: #2e343c;
-  --border-strong: #444c57;
-  --text: #e7e9ec;
-  --text-2: #b7bdc6;
-  --muted: #8b939e;
-  --accent: #4ea3da; /* Wong blue, lightened for dark-bg contrast */
-  --accent-soft: #1e3a4d;
-  --danger: #e8772f; /* Wong vermillion, lightened */
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 4px 24px rgba(0, 0, 0, 0.6);
+  /* Halo (dark-only) applies to the dark slot too — identical to :root — so the
+     light/dark toggle is a no-op while Halo is the active facelift. */
+  --bg: var(--color-background);
+  --panel: var(--color-surface);
+  --panel-2: var(--color-elevated);
+  --border: var(--color-border);
+  --border-strong: var(--color-border-strong);
+  --text: var(--color-text-primary);
+  --text-2: var(--color-text-secondary);
+  --muted: var(--color-text-muted);
+  --accent: var(--color-primary);
+  --accent-soft: var(--color-primary-soft);
+  --danger: var(--color-danger);
+  --shadow: var(--shadow-md);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
 
-  /* Lead-status hues, lifted for legibility on the dark panel. */
-  --s-new: #9aa4b1;
-  --s-researching: #d6a429;
-  --s-contacted: #4ea3da;
-  --s-interested: #a07fd6;
-  --s-in_business: #3fae74;
-  --s-uninterested: #d35a48;
+  --s-new: var(--color-text-muted);
+  --s-researching: var(--color-warning);
+  --s-contacted: var(--color-info);
+  --s-interested: var(--color-primary);
+  --s-in_business: var(--color-success);
+  --s-uninterested: var(--color-danger);
 }
 
 /* Colorblind mode (PRD #121) — independent of theme. Remap the green/red

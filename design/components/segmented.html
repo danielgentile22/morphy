@@ -1,0 +1,36 @@
+<!-- @dsCard group="Controls" name="Segmented & view toggles" subtitle="settings segment / board-list pill toggle" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Segmented controls</title>
+  <link rel="stylesheet" href="../tokens.css" />
+  <link rel="stylesheet" href="../base.css" />
+  <style>
+    /* Pill view-toggle from the Leads header. */
+    .viewtoggle { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 999px; overflow: hidden; }
+    .vbtn { padding: 5px 14px; font-size: 12.5px; background: var(--panel); color: var(--text-2); border: none; }
+    .vbtn.on { background: var(--accent); color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="ds-stage">
+    <p class="ds-label">Settings segment (.set-seg)</p>
+    <div class="ds-row">
+      <div class="set-seg">
+        <button class="on">Light</button>
+        <button>Dark</button>
+        <button>System</button>
+      </div>
+    </div>
+    <p class="ds-label" style="margin-top:24px">View toggle (Leads header)</p>
+    <div class="ds-row">
+      <div class="viewtoggle">
+        <button class="vbtn on">Board</button>
+        <button class="vbtn">List</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<!-- @dsCard group="Controls" name="Buttons" subtitle="primary / secondary / disabled" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Buttons</title>
+  <link rel="stylesheet" href="../tokens.css" />
+  <link rel="stylesheet" href="../base.css" />
+</head>
+<body>
+  <div class="ds-stage">
+    <p class="ds-label">Light</p>
+    <div class="ds-row">
+      <button class="set-btn">Save changes</button>
+      <button class="set-btn secondary">Cancel</button>
+      <button class="set-btn" disabled>Saving…</button>
+    </div>
+    <p class="ds-label" style="margin-top:24px">Dark</p>
+    <div class="ds-row" data-theme="dark" style="background:var(--bg);padding:18px;border-radius:10px">
+      <button class="set-btn">Save changes</button>
+      <button class="set-btn secondary">Cancel</button>
+      <button class="set-btn" disabled>Saving…</button>
+    </div>
+  </div>
+</body>
+</html>

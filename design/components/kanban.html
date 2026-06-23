@@ -1,0 +1,48 @@
+<!-- @dsCard group="Surfaces" name="Leads table" subtitle="header, count badge, status, owner rows" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Leads table</title>
+  <link rel="stylesheet" href="../tokens.css" />
+  <link rel="stylesheet" href="../base.css" />
+  <style>
+    .leads { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; max-width: 720px; }
+    .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 22px 6px; }
+    .title { display: flex; align-items: baseline; gap: 8px; }
+    .head h2 { font-size: 18px; }
+    .count { font-size: 12px; font-weight: 600; background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; color: var(--text-2); }
+    .viewtoggle { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 999px; overflow: hidden; }
+    .vbtn { padding: 5px 14px; font-size: 12.5px; background: var(--panel); color: var(--text-2); border: none; }
+    .vbtn.on { background: var(--accent); color: #fff; }
+    .listwrap { padding: 8px 22px 20px; }
+    .lead-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .lead-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--border); }
+    .lead-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    .lead-table .owner { font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="ds-stage">
+    <div class="leads">
+      <div class="head">
+        <div class="title"><h2>My Leads</h2><span class="count">5</span></div>
+        <div class="viewtoggle"><button class="vbtn on">Board</button><button class="vbtn">List</button></div>
+      </div>
+      <div class="listwrap">
+        <table class="lead-table">
+          <thead><tr><th>Owner</th><th>Carrier</th><th>State</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="owner">R. Calloway</td><td>Verizon</td><td>AR</td><td><span class="pill" data-status="contacted">Contacted</span></td></tr>
+            <tr><td class="owner">Delta Land Co.</td><td>AT&amp;T</td><td>FL</td><td><span class="pill" data-status="interested">Interested</span></td></tr>
+            <tr><td class="owner">J. Whitmore</td><td>Unknown</td><td>MT</td><td><span class="pill" data-status="new">New</span></td></tr>
+            <tr><td class="owner">Highline LLC</td><td>T-Mobile</td><td>WV</td><td><span class="pill" data-status="researching">Researching</span></td></tr>
+            <tr><td class="owner">P. Okafor</td><td>SBA</td><td>AR</td><td><span class="pill" data-status="in_business">In business</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

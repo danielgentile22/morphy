@@ -1,0 +1,41 @@
+<!-- @dsCard group="Surfaces" name="Sign-in card" subtitle="brand + username/password form" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign-in</title>
+  <link rel="stylesheet" href="../tokens.css" />
+  <link rel="stylesheet" href="../base.css" />
+  <style>
+    .signin { display: flex; justify-content: center; padding: 24px 22px; }
+    .card { width: 100%; max-width: 360px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 30px 28px; box-shadow: var(--shadow); }
+    .brand { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 24px; }
+    .logo { width: 44px; height: 44px; border-radius: 10px; background: var(--accent); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; }
+    .name { font-size: 19px; font-weight: 600; letter-spacing: 0.01em; }
+    form { display: flex; flex-direction: column; gap: 6px; }
+    label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    input { padding: 9px 11px; font-size: 13px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--panel); color: var(--text); }
+    button[type='submit'] { margin-top: 14px; padding: 10px 14px; font-size: 13px; font-weight: 600; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: var(--radius); cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="ds-stage">
+    <div class="signin">
+      <div class="card">
+        <div class="brand">
+          <div class="logo">M</div>
+          <span class="name">Morphy Consulting</span>
+        </div>
+        <form onsubmit="return false">
+          <label for="u">Username</label>
+          <input id="u" type="text" value="daniel" />
+          <label for="p">Password</label>
+          <input id="p" type="password" value="········" />
+          <button type="submit">Sign in</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
