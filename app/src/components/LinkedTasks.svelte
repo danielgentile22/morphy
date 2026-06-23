@@ -101,7 +101,7 @@
     background: var(--accent);
   }
   .dot[data-status='done'] {
-    background: var(--ok, #2e8b57);
+    background: var(--color-success);
   }
   .lt-title {
     flex: 1;

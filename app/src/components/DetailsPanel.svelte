@@ -19,6 +19,15 @@
   function humanize(s: string): string {
     return s.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
   }
+
+  // Schema tag tone → Halo chip tone (preserves the hue intent: opportunity
+  // zone blue, distress amber, infrastructure green).
+  const TAG_TONE: Record<string, 'info' | 'warning' | 'success' | 'neutral'> = {
+    oz: 'info',
+    distress: 'warning',
+    infra: 'success',
+    neutral: 'neutral',
+  };
 </script>
 
 {#if sel}
@@ -38,7 +47,7 @@
       {#if tags.length > 0}
         <div class="tags">
           {#each tags as t (t.label)}
-            <span class="tag tag-{t.tone}">{t.label}</span>
+            <span class="chip" data-tone={TAG_TONE[t.tone] ?? 'neutral'}>{t.label}</span>
           {/each}
         </div>
       {/if}
@@ -156,28 +165,6 @@
     flex-wrap: wrap;
     gap: 5px;
     padding: 10px 14px 0;
-  }
-  .tag {
-    font-size: 11px;
-    font-weight: 500;
-    padding: 2px 8px;
-    border-radius: 999px;
-  }
-  .tag-oz {
-    background: rgba(0, 114, 178, 0.13);
-    color: #04519a;
-  }
-  .tag-distress {
-    background: rgba(213, 94, 0, 0.14);
-    color: #9c4500;
-  }
-  .tag-infra {
-    background: rgba(0, 158, 115, 0.15);
-    color: #006146;
-  }
-  .tag-neutral {
-    background: var(--panel-2);
-    color: var(--text-2);
   }
 
   .body {

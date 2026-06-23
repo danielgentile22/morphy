@@ -165,7 +165,7 @@
     font-weight: 700;
   }
   .kind-flag {
-    color: #9a5b00;
+    color: var(--color-warning);
   }
   .owner {
     color: var(--text);

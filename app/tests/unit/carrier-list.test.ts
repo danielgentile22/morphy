@@ -59,11 +59,13 @@ describe('CarrierList — populated', () => {
     expect(possible.textContent?.trim()).toBe('Possible');
   });
 
-  it('colours each badge by tone via a distinct class (not colour-alone)', () => {
+  it('encodes each badge tone in a distinct attribute (not colour-alone)', () => {
     const el = render(SAMPLE);
-    expect(el.querySelector('[data-confidence="verified"]')!.className).toContain('badge-verified');
-    expect(el.querySelector('[data-confidence="likely"]')!.className).toContain('badge-likely');
-    expect(el.querySelector('[data-confidence="possible"]')!.className).toContain('badge-possible');
+    // Rendered as a Halo signal chip; tone rides in data-tone (plus the label
+    // text + aria-label), so colour is never the only cue.
+    expect(el.querySelector('[data-confidence="verified"]')!.getAttribute('data-tone')).toBe('success');
+    expect(el.querySelector('[data-confidence="likely"]')!.getAttribute('data-tone')).toBe('warning');
+    expect(el.querySelector('[data-confidence="possible"]')!.getAttribute('data-tone')).toBe('neutral');
   });
 
   it('explains each tag in a tooltip (title) + accessible aria-label', () => {

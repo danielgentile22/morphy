@@ -10,6 +10,15 @@
   import { confidenceMeta, type Carrier } from '../lib/carrier';
 
   let { carriers, compact = false }: { carriers: Carrier[]; compact?: boolean } = $props();
+
+  // Confidence tone → Halo chip tone. The label text + aria-label always ride
+  // along (see below), so colour is never the only signal.
+  const BADGE_TONE: Record<string, 'success' | 'warning' | 'neutral'> = {
+    verified: 'success',
+    likely: 'warning',
+    possible: 'neutral',
+    unknown: 'neutral',
+  };
 </script>
 
 {#if carriers.length === 0}
@@ -27,7 +36,8 @@
           <span class="sub">{c.callsign || '—'}</span>
         </span>
         <span
-          class="badge badge-{m.tone}"
+          class="chip"
+          data-tone={BADGE_TONE[m.tone] ?? 'neutral'}
           data-confidence={c.confidence_tag}
           title={m.tooltip}
           aria-label="Confidence: {m.label}. {m.tooltip}"
@@ -73,30 +83,11 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Confidence badge — mirrors the DetailsPanel `.tag-*` idiom; hues are the
-     Wong colourblind-safe palette (green / amber / gray). The tag word is in
-     the badge text + aria-label, so colour is never the only cue. */
-  .badge {
+  /* Confidence badge renders as a Halo signal chip (tone in BADGE_TONE). The
+     tag word is in the chip text + aria-label, so colour is never the only
+     cue — stays colourblind-safe. */
+  .chip {
     flex-shrink: 0;
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    padding: 2px 8px;
-    border-radius: 999px;
-    white-space: nowrap;
-  }
-  .badge-verified {
-    background: rgba(0, 158, 115, 0.15);
-    color: #006146;
-  }
-  .badge-likely {
-    background: rgba(230, 159, 0, 0.18);
-    color: #7a5b00;
-  }
-  .badge-possible,
-  .badge-unknown {
-    background: var(--panel-2);
-    color: var(--text-2);
   }
 
   .empty {

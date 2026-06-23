@@ -323,9 +323,9 @@
     color: var(--muted);
   }
   .tag.archived {
-    color: #7a5b00;
-    background: rgba(230, 159, 0, 0.18);
-    border-color: rgba(230, 159, 0, 0.4);
+    color: var(--color-warning);
+    background: var(--color-warning-soft);
+    border-color: transparent;
   }
   .owner-line {
     font-size: 13px;
@@ -437,7 +437,7 @@
   }
   .ok {
     font-size: 12px;
-    color: #006146;
+    color: var(--color-success);
   }
   .archive-card {
     display: flex;
@@ -447,7 +447,7 @@
   }
   .btn.archive {
     background: var(--panel);
-    color: var(--text-1, #1a1f28);
+    color: var(--text);
     border-color: var(--border-strong);
   }
   .muted {

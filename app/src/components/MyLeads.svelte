@@ -211,7 +211,7 @@
     border-radius: var(--radius);
   }
   .lane.closed {
-    background: #fbeeec;
+    background: var(--color-danger-soft);
   }
   /* Drop affordance while dragging. */
   .lane.dragover.legal {
@@ -278,12 +278,12 @@
     color: var(--muted);
   }
   .card .cmeta .x {
-    color: #5a3aa8;
+    color: var(--color-info);
   }
   .card .trigger {
     margin-top: 4px;
     font-size: 11px;
-    color: #9a5b00;
+    color: var(--color-warning);
   }
   .distress-high {
     color: var(--danger);

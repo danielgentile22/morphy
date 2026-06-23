@@ -182,15 +182,15 @@
       <span class="dot" style="background:{statusVar(l.status)}"></span>
       <span class="cb-cue" aria-hidden="true">{statusGlyph(l.status)}</span>
       <h1>{o.owner_name}</h1>
-      <span class="tag">{kindLabel(o.owner_kind)}</span>
+      <span class="chip" data-tone="neutral">{kindLabel(o.owner_kind)}</span>
       {#each o.states as s (s)}
-        <span class="tag state">{s}</span>
+        <span class="chip" data-tone="neutral">{s}</span>
       {/each}
       {#if o.cross_state}
-        <span class="tag x" data-testid="cross-state-badge">cross-state lead</span>
+        <span class="chip" data-tone="info" data-testid="cross-state-badge">cross-state lead</span>
       {/if}
       {#if o.trigger_asr}
-        <span class="tag trigger" data-testid="trigger-badge">⚑ flagged from ASR {o.trigger_asr}</span>
+        <span class="chip" data-tone="warning" data-testid="trigger-badge">⚑ flagged from ASR {o.trigger_asr}</span>
       {/if}
     </header>
 
@@ -358,7 +358,7 @@
               {#each CHANNELS as c (c)}<option value={c}>{c}</option>{/each}
             </select>
           </label>
-          <button class="save" data-testid="save-contact" onclick={saveContact} disabled={leads.saving}>
+          <button class="btn btn-primary save" data-testid="save-contact" onclick={saveContact} disabled={leads.saving}>
             {leads.saving ? 'Saving…' : 'Save contact'}
           </button>
         </section>
@@ -437,7 +437,7 @@
             bind:value={noteDraft}
             placeholder="Free-text notes…"
           ></textarea>
-          <button class="save" data-testid="save-note" onclick={saveNote} disabled={leads.saving}>
+          <button class="btn btn-primary save" data-testid="save-note" onclick={saveNote} disabled={leads.saving}>
             {leads.saving ? 'Saving…' : 'Save note'}
           </button>
         </section>
@@ -614,25 +614,6 @@
     color: var(--danger);
     font-weight: 600;
   }
-  .tag {
-    display: inline-block;
-    padding: 2px 7px;
-    font-size: 11px;
-    border-radius: 3px;
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    color: var(--text-2);
-  }
-  .tag.x {
-    background: #efe7fb;
-    border-color: #d9c8f5;
-    color: #5a3aa8;
-  }
-  .tag.trigger {
-    background: #fff4e6;
-    border-color: #f0d2a8;
-    color: #9a5b00;
-  }
   /* holdings */
   .holdings {
     list-style: none;
@@ -798,15 +779,6 @@
   }
   .save {
     margin-top: 8px;
-    padding: 7px 14px;
-    font-size: 12.5px;
-    border: 1px solid var(--accent);
-    background: var(--accent);
-    color: #fff;
-    border-radius: var(--radius);
-  }
-  .save:disabled {
-    opacity: 0.6;
   }
   .activity {
     list-style: none;

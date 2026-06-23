@@ -11,14 +11,15 @@
 
   let { holdings }: { holdings: Holding[] } = $props();
 
-  // Keyless Carto Positron — identical to the main map, no API key.
+  // Keyless Carto Dark Matter — matches the dark Halo chrome + the main map's
+  // default basemap, no API key.
   const BASEMAP: StyleSpecification = {
     version: 8,
     sources: {
       basemap: {
         type: 'raster',
         tiles: ['a', 'b', 'c'].map(
-          (s) => `https://${s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png`,
+          (s) => `https://${s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png`,
         ),
         tileSize: 256,
         attribution: '&copy; OpenStreetMap &copy; CARTO',

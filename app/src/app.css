@@ -100,6 +100,28 @@ button {
   cursor: pointer;
 }
 
+/* Dark scrollbars to match the Halo chrome — the default light OS track jars
+   against the dark surfaces. Firefox via scrollbar-color; WebKit via the
+   pseudo-elements. The thumb's border colour fakes inset padding off --bg. */
+html {
+  scrollbar-color: var(--border-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 3px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
 a {
   color: var(--accent);
 }
