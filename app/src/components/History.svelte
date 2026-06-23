@@ -83,7 +83,7 @@
         <li class="evt" data-kind={e.kind}>
           <span class="when">{e.date}</span>
           <span class="kind kind-{e.kind}">{KIND_ICON[e.kind]}</span>
-          <a class="owner" href={leadHash(e.cluster_id)}>{e.owner_name || e.cluster_id}</a>
+          <a class="owner" href={leadHash(e.cluster_id)} title={e.owner_name || e.cluster_id}>{e.owner_name || e.cluster_id}</a>
           <span class="what">{KIND_LABEL[e.kind]}{e.channel && e.kind !== 'status' && e.kind !== 'flag' ? ` · ${e.channel}` : ''}</span>
           <span class="summary">{e.summary}</span>
           {#if e.member_name}<span class="member">{e.member_name}</span>{/if}
@@ -142,8 +142,12 @@
     margin: 0;
     padding: 0;
   }
+  /* Fixed column tracks so the icon / kind label / value line up vertically
+     regardless of the owner name's length. Owner is a fixed track and
+     truncates (full name on hover); the value flexes to fill the rest. */
   .evt {
-    display: flex;
+    display: grid;
+    grid-template-columns: 86px 22px 16rem 7em 1fr auto;
     align-items: baseline;
     gap: 10px;
     padding: 7px 2px;
@@ -151,12 +155,10 @@
     font-size: 12.5px;
   }
   .when {
-    min-width: 86px;
     color: var(--muted);
     font-variant-numeric: tabular-nums;
   }
   .kind {
-    width: 22px;
     text-align: center;
     color: var(--text-2);
   }
@@ -171,17 +173,26 @@
     color: var(--text);
     font-weight: 600;
     text-decoration: none;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .owner:hover {
     text-decoration: underline;
   }
   .what {
     color: var(--text-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .summary {
     color: var(--muted);
-    flex: 1;
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .member {
     font-size: 11px;
