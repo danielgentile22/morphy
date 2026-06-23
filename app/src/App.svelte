@@ -608,10 +608,10 @@
     align-items: flex-start;
     gap: 8px;
     padding: 8px 14px;
-    background: #fff7e6;
-    border-bottom: 1px solid #f0d9a8;
+    background: var(--color-warning-soft);
+    border-bottom: 1px solid var(--color-border);
     font-size: 12px;
-    color: #7a5b00;
+    color: var(--color-warning);
   }
   .notice-close {
     margin-left: auto;

@@ -145,10 +145,10 @@
       </p>
       <div class="actions">
         {#if worked}
-          <a class="btn open" href={leadHash(cid)} data-testid="open-in-leads">Open in Leads →</a>
+          <a class="btn btn-secondary open" href={leadHash(cid)} data-testid="open-in-leads">Open in Leads →</a>
           <span class="worked-note">already a lead ({leads.lead.status})</span>
         {:else}
-          <button class="btn pursue" data-testid="pursue" onclick={pursue} disabled={leads.saving}>
+          <button class="btn btn-primary pursue" data-testid="pursue" onclick={pursue} disabled={leads.saving}>
             {leads.saving ? 'Pursuing…' : 'Pursue this owner'}
           </button>
           <span class="worked-note">starts a Lead (all their towers); records this antenna as the trigger</span>
@@ -251,7 +251,7 @@
 
         <div class="form-actions">
           <button
-            class="btn save"
+            class="btn btn-primary save"
             onclick={saveDetails}
             disabled={antStatus === 'saving' || antStatus === 'loading'}
             data-testid="manual-save"
@@ -267,7 +267,7 @@
     <!-- Archive (round 2): park an antenna that's not of interest — it drops
          off the Explore map + list until un-archived (recoverable). -->
     <section class="card archive-card">
-      <button class="btn archive" onclick={toggleArchive} data-testid="archive-toggle">
+      <button class="btn btn-secondary archive" onclick={toggleArchive} data-testid="archive-toggle">
         {archived ? 'Un-archive antenna' : 'Archive antenna'}
       </button>
       <span class="worked-note">
@@ -417,7 +417,7 @@
     font-family: inherit;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
-    background: var(--bg, #fff);
+    background: var(--panel);
   }
   .form textarea {
     resize: vertical;

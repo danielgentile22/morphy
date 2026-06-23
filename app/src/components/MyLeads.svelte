@@ -214,8 +214,14 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
   }
+  /* Terminal lanes: lost reads danger-soft, won reads success-soft — both are
+     "closed" but must not share the failure cue (the lane-head dot is already
+     status-colored; the body follows it). */
   .lane.closed {
     background: var(--color-danger-soft);
+  }
+  .lane.closed[data-lane='in_business'] {
+    background: var(--color-success-soft);
   }
   /* Drop affordance while dragging. */
   .lane.dragover.legal {

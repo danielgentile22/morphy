@@ -1,9 +1,11 @@
 # Morphy Consulting — design gallery
 
-The current look of the app, extracted as a Claude Design–syncable component
-library. **`tokens.css` is the single source of truth** — it mirrors
-`app/src/app.css` `:root` (+ dark + colorblind). Every preview paints through
-it, so the gallery renders identically to the live app.
+A Claude Design–syncable component library. **This is the parked light "Linen"
+reference** — warm-paper neutrals + a pine-teal accent — kept as an exploration
+surface, *not* a mirror of the live app. The shipped chrome is the dark "Halo"
+facelift, whose source of truth is **`app/src/system.css`** (aliased onto the
+app's tokens in `app/src/app.css`). `tokens.css` here still holds the Linen
+palette, so previews render in Linen, not in the live Halo look.
 
 ## Layout
 
@@ -15,9 +17,9 @@ it, so the gallery renders identically to the live app.
 
 `/design-login` is already done. Then run the **`/design-sync`** skill, which
 drives the `DesignSync` tool: `create_project` → review plan → `finalize_plan`
-→ `write_files`. Iterate the facelift there; pull refined `tokens.css` back and
-re-apply to `app/src/app.css`, then propagate to `audit-site/` and the landing
-page. (The Qt puller needs a tokens→QSS translation, not direct reuse, and is
+→ `write_files`. Iterate Linen explorations here. To change the *live* (Halo)
+look, edit `app/src/system.css` directly — `app/src/app.css` only aliases onto
+it. (The Qt puller needs a tokens→QSS translation, not direct reuse, and is
 frozen — PRD #138.)
 
 ## Out of scope
