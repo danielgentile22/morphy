@@ -38,11 +38,13 @@ NOW = datetime(2026, 6, 20, tzinfo=UTC)
 
 
 # ── fixture builders ─────────────────────────────────────────────────────────
-def _src(days_ago: int, cadence: int | None, status: str = "ok") -> dict:
-    """A fetched manifest entry pulled ``days_ago`` days before NOW, with the
-    given cadence (``None`` = no declared cadence). ``next_recommended_check_at``
-    is derived from the fetch + cadence, exactly as the puller writes it."""
-    fetched = NOW - timedelta(days=days_ago)
+def _src(days_ago: int, cadence: int | None, status: str = "ok", anchor: datetime = NOW) -> dict:
+    """A fetched manifest entry pulled ``days_ago`` days before ``anchor`` (the
+    pinned NOW by default), with the given cadence (``None`` = no declared
+    cadence). ``next_recommended_check_at`` is derived from the fetch + cadence,
+    exactly as the puller writes it. The CLI test overrides ``anchor`` with the
+    real wall-clock, since ``main()`` computes freshness against real ``now``."""
+    fetched = anchor - timedelta(days=days_ago)
     entry: dict = {
         "local_version": "v1",
         "remote_version": "v1",
@@ -199,8 +201,13 @@ def test_projection_is_deterministic():
 
 # ── CLI writes the artifact ──────────────────────────────────────────────────
 def test_cli_writes_freshness_json(tmp_path: Path):
+    # main() computes freshness against the real wall-clock (not the pinned NOW),
+    # so anchor the fixture to real now — otherwise "1 day ago" drifts past the
+    # cadence window and the status ages fresh → due_soon → stale over time.
     manifest_path = tmp_path / "manifest.json"
-    manifest_path.write_text(json.dumps(_manifest({"fcc_asr": _src(1, 7)})))
+    manifest_path.write_text(
+        json.dumps(_manifest({"fcc_asr": _src(1, 7, anchor=datetime.now(UTC))}))
+    )
     out = tmp_path / "freshness.json"
     rc = main(["--manifest", str(manifest_path), "--out", str(out)])
     assert rc == 0
