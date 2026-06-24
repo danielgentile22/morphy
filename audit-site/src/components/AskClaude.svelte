@@ -378,12 +378,9 @@
     font-size: 11px;
   }
   .err {
-    color: #b00020;
+    color: var(--danger);
     font-size: 13px;
     margin: 0;
-  }
-  :global(.dark) .err {
-    color: #ff8a8a;
   }
 
   /* The selection-scope chip above the composer (#189). */

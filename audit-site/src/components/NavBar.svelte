@@ -1,6 +1,5 @@
 <script lang="ts">
   import { router, hrefs } from '../lib/router.svelte';
-  import { themeStore } from '../lib/theme.svelte';
 
   const route = $derived(router.route);
 
@@ -32,9 +31,6 @@
       </a>
     {/each}
   </nav>
-  <button class="theme" onclick={() => themeStore.toggle()} title="Toggle light / dark" aria-label="Toggle theme">
-    {themeStore.current === 'dark' ? '☀' : '☾'}
-  </button>
 </header>
 
 <style>
@@ -100,20 +96,5 @@
     background: var(--accent-bg);
     color: var(--accent);
     font-weight: 600;
-  }
-  .theme {
-    margin-left: auto;
-    flex-shrink: 0;
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--border);
-    background: var(--panel);
-    color: var(--text-2);
-    border-radius: var(--radius-sm);
-    font-size: 15px;
-    line-height: 1;
-  }
-  .theme:hover {
-    background: var(--panel-2);
   }
 </style>
