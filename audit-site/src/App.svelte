@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import { store } from './lib/audit-store.svelte';
   import { router } from './lib/router.svelte';
-  import { themeStore } from './lib/theme.svelte';
   import NavBar from './components/NavBar.svelte';
   import Footer from './components/Footer.svelte';
   import Overview from './components/Overview.svelte';
@@ -16,7 +15,6 @@
   import AskClaude from './components/AskClaude.svelte';
   import { enableTextSelectionInLinks } from './lib/selectable-links';
 
-  themeStore.init();
   onMount(() => {
     void store.load();
     // Let text inside clickable cards be drag-selected (so "highlight → Ask
