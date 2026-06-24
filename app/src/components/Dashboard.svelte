@@ -60,10 +60,11 @@
 </script>
 
 <div class="dashboard" data-testid="dashboard" data-target={sub} bind:this={rootEl}>
+  <div class="dash-inner">
   <!-- Attention — the headline, full-width at the top (data behavior unchanged). -->
   <section class="view attention" data-testid="digest-attention" aria-label="Attention">
     <h2 class="view-h">
-      Attention{#if dashboard.count}<span class="abadge" data-testid="attention-count">{dashboard.count}</span>{/if}
+      Attention{#if dashboard.count}<span class="chip abadge" data-tone="info" data-testid="attention-count">{dashboard.count}</span>{/if}
     </h2>
     {#if dashboard.status === 'loading'}
       <p class="placeholder">Loading…</p>
@@ -78,7 +79,7 @@
               <a class="attn-link" href={leadHash(it.cluster_id)}>{it.title}</a>
               <span class="attn-when">{it.when}</span>
               <button
-                class="dismiss"
+                class="btn btn-secondary btn-sm dismiss"
                 data-testid="dismiss-{it.cluster_id}"
                 onclick={() => dashboard.dismiss(it.cluster_id)}
               >
@@ -95,40 +96,65 @@
     {/if}
   </section>
 
-  <section id={SECTION_ID.tasks} class="view" data-section="tasks" aria-label="Tasks">
-    <h2 class="view-h">Tasks</h2>
-    <Tasks />
-  </section>
+  <!-- The four workspaces in a 2×2 grid (Tasks | Calendar / Stats | History)
+       instead of a long single-column scroll; collapses to one column when the
+       column is too narrow for two (auto-fit). -->
+  <div class="grid2">
+    <section id={SECTION_ID.tasks} class="view" data-section="tasks" aria-label="Tasks">
+      <h2 class="view-h">Tasks</h2>
+      <Tasks />
+    </section>
 
-  <section id={SECTION_ID.calendar} class="view" data-section="calendar" aria-label="Calendar">
-    <h2 class="view-h">Calendar</h2>
-    <Calendar heading={false} />
-  </section>
+    <section id={SECTION_ID.calendar} class="view" data-section="calendar" aria-label="Calendar">
+      <h2 class="view-h">Calendar</h2>
+      <Calendar heading={false} />
+    </section>
 
-  <section id={SECTION_ID.history} class="view" data-section="history" aria-label="History">
-    <h2 class="view-h">History</h2>
-    <History heading={false} />
-  </section>
+    <section id={SECTION_ID.stats} class="view" data-section="stats" aria-label="Stats">
+      <h2 class="view-h">Stats</h2>
+      <Stats heading={false} />
+    </section>
 
-  <section id={SECTION_ID.stats} class="view" data-section="stats" aria-label="Stats">
-    <h2 class="view-h">Stats</h2>
-    <Stats heading={false} />
-  </section>
+    <section id={SECTION_ID.history} class="view" data-section="history" aria-label="History">
+      <h2 class="view-h">History</h2>
+      <History heading={false} />
+    </section>
+  </div>
+  </div>
 </div>
 
 <style>
+  /* Full-width scroll container so the scrollbar sits at the viewport's right
+     edge; the content itself is centred + width-capped by .dash-inner. */
   .dashboard {
     height: 100%;
     overflow-y: auto;
     padding: 18px 22px 60px;
-    max-width: 1100px;
   }
-  /* Each stacked view is a section with one uniform heading; a top rule and
-     spacing separate it from the one above as you scroll. */
-  .view {
-    padding-top: 22px;
+  /* Single width authority for the whole dashboard. Wide enough for the 2×2
+     grid below to give each quadrant room; the inlined sections fill their
+     cell. */
+  .dash-inner {
+    max-width: 1500px;
+    margin: 0 auto;
+  }
+  /* The four workspaces as a 2-column grid under the Attention headline. Cells
+     align to the top (a short Tasks cell doesn't stretch to the tall Calendar)
+     and auto-fit drops to one column when two won't fit. */
+  .grid2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+    align-items: start;
+    gap: 26px 34px;
     margin-top: 22px;
+    padding-top: 22px;
     border-top: 1px solid var(--border);
+  }
+  .grid2 > .view {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+    min-width: 0; /* let the grid column shrink below the content's intrinsic width */
   }
   /* The headline Attention section sits flush at the very top — no rule above. */
   .view.attention {
@@ -145,13 +171,7 @@
     color: var(--muted);
   }
   .abadge {
-    display: inline-block;
     margin-left: 7px;
-    background: var(--accent);
-    color: #fff;
-    border-radius: 999px;
-    padding: 0 7px;
-    font-size: 11px;
     vertical-align: middle;
   }
   .attn-list {
@@ -188,12 +208,5 @@
   }
   .dismiss {
     margin-left: auto;
-    background: none;
-    border: 1px solid var(--border-strong);
-    border-radius: 999px;
-    padding: 2px 10px;
-    font-size: 11px;
-    color: var(--text-2);
-    cursor: pointer;
   }
 </style>

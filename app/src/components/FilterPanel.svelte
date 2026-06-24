@@ -411,7 +411,8 @@
     border-radius: 999px;
     font-size: 12.5px;
     font-family: inherit;
-    background: var(--bg, #fff);
+    background: var(--panel);
+    color: var(--text);
   }
 
   /* Each filter is a collapsible <details> section (#119 follow-up). */
@@ -516,6 +517,8 @@
     border-radius: 4px;
     font-size: 12px;
     font-family: inherit;
+    background: var(--panel);
+    color: var(--text);
   }
   .range span {
     font-size: 11px;

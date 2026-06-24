@@ -1,0 +1,52 @@
+<!-- @dsCard group="Foundations" name="Color tokens" subtitle="UI chrome — light / dark" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Color tokens</title>
+  <link rel="stylesheet" href="../tokens.css" />
+  <link rel="stylesheet" href="../base.css" />
+  <style>
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+    .swatch { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--panel); }
+    .chipfill { height: 56px; }
+    .meta { padding: 7px 9px; font: 11px/1.4 var(--mono); color: var(--text-2); }
+    .meta b { display: block; color: var(--text); font-family: var(--font); font-size: 12px; }
+    .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .pane { padding: 22px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+  <div class="ds-stage">
+    <div class="pair">
+      <div class="pane">
+        <p class="ds-label">Light</p>
+        <div class="grid">
+          <div class="swatch"><div class="chipfill" style="background:var(--bg)"></div><div class="meta"><b>bg</b>#fafafa</div></div>
+          <div class="swatch"><div class="chipfill" style="background:var(--panel)"></div><div class="meta"><b>panel</b>#ffffff</div></div>
+          <div class="swatch"><div class="chipfill" style="background:var(--panel-2)"></div><div class="meta"><b>panel-2</b>#f4f5f7</div></div>
+          <div class="swatch"><div class="chipfill" style="background:var(--border)"></div><div class="meta"><b>border</b>#e3e3e6</div></div>
+          <div class="swatch"><div class="chipfill" style="background:var(--text)"></div><div class="meta"><b>text</b>#1f2328</div></div>
+          <div class="swatch"><div class="chipfill" style="background:var(--muted)"></div><div class="meta"><b>muted</b>#6b7280</div></div>
+          <div class="swatch"><div class="chipfill" style="background:var(--accent)"></div><div class="meta"><b>accent</b>#0072b2</div></div>
+          <div class="swatch"><div class="chipfill" style="background:var(--danger)"></div><div class="meta"><b>danger</b>#d55e00</div></div>
+        </div>
+      </div>
+      <div class="pane" data-theme="dark">
+        <p class="ds-label">Dark</p>
+        <div class="grid">
+          <div class="swatch"><div class="chipfill" style="background:var(--bg)"></div><div class="meta"><b>bg</b>#14171b</div></div>
+          <div class="swatch"><div class="chipfill" style="background:var(--panel)"></div><div class="meta"><b>panel</b>#1c2025</div></div>
+          <div class="swatch"><div class="chipfill" style="background:var(--panel-2)"></div><div class="meta"><b>panel-2</b>#23282f</div></div>
+          <div class="swatch"><div class="chipfill" style="background:var(--border)"></div><div class="meta"><b>border</b>#2e343c</div></div>
+          <div class="swatch"><div class="chipfill" style="background:var(--text)"></div><div class="meta"><b>text</b>#e7e9ec</div></div>
+          <div class="swatch"><div class="chipfill" style="background:var(--muted)"></div><div class="meta"><b>muted</b>#8b939e</div></div>
+          <div class="swatch"><div class="chipfill" style="background:var(--accent)"></div><div class="meta"><b>accent</b>#4ea3da</div></div>
+          <div class="swatch"><div class="chipfill" style="background:var(--danger)"></div><div class="meta"><b>danger</b>#e8772f</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

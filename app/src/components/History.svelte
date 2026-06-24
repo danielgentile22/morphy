@@ -83,7 +83,7 @@
         <li class="evt" data-kind={e.kind}>
           <span class="when">{e.date}</span>
           <span class="kind kind-{e.kind}">{KIND_ICON[e.kind]}</span>
-          <a class="owner" href={leadHash(e.cluster_id)}>{e.owner_name || e.cluster_id}</a>
+          <a class="owner" href={leadHash(e.cluster_id)} title={e.owner_name || e.cluster_id}>{e.owner_name || e.cluster_id}</a>
           <span class="what">{KIND_LABEL[e.kind]}{e.channel && e.kind !== 'status' && e.kind !== 'flag' ? ` · ${e.channel}` : ''}</span>
           <span class="summary">{e.summary}</span>
           {#if e.member_name}<span class="member">{e.member_name}</span>{/if}
@@ -94,9 +94,7 @@
 </div>
 
 <style>
-  .history {
-    max-width: 900px;
-  }
+  /* No width cap — fills the dashboard column (.dash-inner). */
   .head {
     display: flex;
     align-items: baseline;
@@ -142,21 +140,24 @@
     margin: 0;
     padding: 0;
   }
+  /* Fixed column tracks so the icon / kind label / value line up vertically
+     regardless of the owner name's length. Owner is a fixed track and
+     truncates (full name on hover); the value flexes to fill the rest. */
   .evt {
-    display: flex;
+    display: grid;
+    grid-template-columns: 84px 18px minmax(0, 12rem) 5.5em minmax(0, 1fr) auto;
     align-items: baseline;
-    gap: 10px;
+    gap: 8px;
     padding: 7px 2px;
     border-bottom: 1px solid var(--border);
     font-size: 12.5px;
   }
   .when {
-    min-width: 86px;
     color: var(--muted);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .kind {
-    width: 22px;
     text-align: center;
     color: var(--text-2);
   }
@@ -165,23 +166,32 @@
     font-weight: 700;
   }
   .kind-flag {
-    color: #9a5b00;
+    color: var(--color-warning);
   }
   .owner {
     color: var(--text);
     font-weight: 600;
     text-decoration: none;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .owner:hover {
     text-decoration: underline;
   }
   .what {
     color: var(--text-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .summary {
     color: var(--muted);
-    flex: 1;
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .member {
     font-size: 11px;

@@ -1,66 +1,56 @@
+/* Halo design system (dark) — wired once. Provides --color-* tokens, type
+   utilities (.t-*), and component classes (.btn, .card, .stat-tile, .tabs,
+   .field, .chip…). The app's chrome tokens below ALIAS onto it, so every
+   existing component repaints in Halo without touching its markup. */
+@import './system.css';
+
 /* Global design tokens + reset. Component-specific styles are scoped
    inside their .svelte files. Data-encoding colors (distress tiers,
    layer hues) live in src/lib/palette.ts — they are consumed by
    MapLibre paint expressions, not CSS. */
 
 :root {
-  /* UI chrome */
-  --bg: #fafafa;
-  --panel: #ffffff;
-  --panel-2: #f4f5f7;
-  --border: #e3e3e6;
-  --border-strong: #c9cbd1;
-  --text: #1f2328;
-  --text-2: #424752;
-  --muted: #6b7280;
-  --accent: #0072b2; /* Wong CB-safe blue */
-  --accent-soft: #d4e6f4;
-  --danger: #d55e00; /* Wong vermillion */
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 4px 24px rgba(0, 0, 0, 0.14);
+  /* "Halo" facelift — the app's chrome tokens alias Halo's system tokens
+     (imported above). Halo is the single, dark-only chrome palette: the
+     light/dark theme control was retired, so these :root values apply
+     regardless of [data-theme]. Map basemap light/dark lives in Settings →
+     Basemap. The light "Linen" palette is parked (design/tokens.css). */
+  /* Tell the browser the UI is dark so native controls (checkboxes, selects,
+     range sliders, date/number inputs, their dropdowns) render dark instead of
+     the default white — the single fix for stray-white form controls + the
+     dark-on-dark default text inside dark-backgrounded inputs. */
+  color-scheme: dark;
 
-  --font:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
-    Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --bg: var(--color-background);
+  --panel: var(--color-surface);
+  --panel-2: var(--color-elevated);
+  --border: var(--color-border);
+  --border-strong: var(--color-border-strong);
+  --text: var(--color-text-primary);
+  --text-2: var(--color-text-secondary);
+  --muted: var(--color-text-muted);
+  --accent: var(--color-primary);
+  --accent-soft: var(--color-primary-soft);
+  --danger: var(--color-danger);
+  --shadow: var(--shadow-md);
+  /* --shadow-lg name-collides with Halo's token, so alias would self-reference;
+     hardcode Halo's lg elevation value instead. */
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+
+  --font: var(--font-body);
+  --mono: var(--font-mono);
 
   --sidebar-w: 380px;
-  --radius: 6px;
+  --radius: var(--radius-md); /* 10px */
 
-  /* Lead status colors (Candidates + Lead page). Mirror prototype/styles.css. */
-  --s-new: #8893a0;
-  --s-researching: #b8860b;
-  --s-contacted: #0072b2;
-  --s-interested: #6f42c1;
-  --s-in_business: #2e7d4f;
-  --s-uninterested: #b0392b;
-}
-
-/* Dark theme (PRD #121). A full token override — the same variables the whole
-   app already paints through, re-valued for a dark surface. The bar is
-   "coherent and legible"; per-component contrast polish iterates post-merge. */
-[data-theme='dark'] {
-  --bg: #14171b;
-  --panel: #1c2025;
-  --panel-2: #23282f;
-  --border: #2e343c;
-  --border-strong: #444c57;
-  --text: #e7e9ec;
-  --text-2: #b7bdc6;
-  --muted: #8b939e;
-  --accent: #4ea3da; /* Wong blue, lightened for dark-bg contrast */
-  --accent-soft: #1e3a4d;
-  --danger: #e8772f; /* Wong vermillion, lightened */
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 4px 24px rgba(0, 0, 0, 0.6);
-
-  /* Lead-status hues, lifted for legibility on the dark panel. */
-  --s-new: #9aa4b1;
-  --s-researching: #d6a429;
-  --s-contacted: #4ea3da;
-  --s-interested: #a07fd6;
-  --s-in_business: #3fae74;
-  --s-uninterested: #d35a48;
+  /* Lead status → Halo signal tones. Six kept distinct in hue; green/red are
+     the colorblind pair (.cb) + glyph cue, never meaning-on-hue-alone. */
+  --s-new: var(--color-text-muted);
+  --s-researching: var(--color-warning);
+  --s-contacted: var(--color-info);
+  --s-interested: var(--color-primary);
+  --s-in_business: var(--color-success);
+  --s-uninterested: var(--color-danger);
 }
 
 /* Colorblind mode (PRD #121) — independent of theme. Remap the green/red
@@ -116,6 +106,28 @@ button {
   cursor: pointer;
 }
 
+/* Dark scrollbars to match the Halo chrome — the default light OS track jars
+   against the dark surfaces. Firefox via scrollbar-color; WebKit via the
+   pseudo-elements. The thumb's border colour fakes inset padding off --bg. */
+html {
+  scrollbar-color: var(--border-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 3px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
 a {
   color: var(--accent);
 }
@@ -137,27 +149,10 @@ a {
   margin-bottom: 6px;
 }
 
-/* Pill-shaped filter chip — used in FilterPanel + TopList for
-   single-select category filters. Per-component overrides handle small
-   variations (FilterPanel chips embed a count, TopList chips are
-   text-only). */
-.chip {
-  display: inline-flex;
-  gap: 5px;
-  align-items: baseline;
-  padding: 3px 9px;
-  font-size: 11.5px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--panel);
-  color: var(--text-2);
-  cursor: pointer;
-}
-.chip.on {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
+/* `.chip` is owned by Halo (system.css) — signal-tone chips via [data-tone].
+   FilterPanel keeps its own scoped `.chip`/`.chip.on` for the pill filters; no
+   global legacy chip rule, which previously won on source order and stripped
+   Halo's tone styling from every chip in the app. */
 
 .visually-hidden {
   position: absolute;
@@ -220,25 +215,6 @@ a {
 .set-input {
   min-width: 220px;
 }
-.set-btn {
-  font: inherit;
-  font-size: 12.5px;
-  padding: 7px 14px;
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: #fff;
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-.set-btn.secondary {
-  background: var(--panel);
-  color: var(--text-2);
-  border-color: var(--border-strong);
-}
-.set-btn:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
 .set-status {
   font-size: 12px;
 }
@@ -258,27 +234,4 @@ a {
   gap: 8px;
   font-size: 13px;
   color: var(--text);
-}
-.set-seg {
-  display: inline-flex;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-.set-seg button {
-  font: inherit;
-  font-size: 12.5px;
-  padding: 6px 14px;
-  background: var(--panel);
-  border: none;
-  border-right: 1px solid var(--border);
-  color: var(--text-2);
-  cursor: pointer;
-}
-.set-seg button:last-child {
-  border-right: none;
-}
-.set-seg button.on {
-  background: var(--accent);
-  color: #fff;
 }

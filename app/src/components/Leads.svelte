@@ -5,7 +5,7 @@
   import { onMount } from 'svelte';
   import { leads } from '../lib/leads-store.svelte';
   import { scoring } from '../lib/scoring-store.svelte';
-  import { STATUS_LABELS } from '../lib/lead-status';
+  import { STATUS_LABELS, STATUS_TONE } from '../lib/lead-status';
   import { kindLabel } from '../lib/lead-format';
   import { leadHash } from '../lib/nav';
   import MyLeads from './MyLeads.svelte';
@@ -38,12 +38,12 @@
   <header class="head">
     <div class="title">
       <h2>Leads</h2>
-      <span class="count" data-testid="leads-count">{leads.myLeadsCount}</span>
+      <span class="chip" data-tone="neutral" data-testid="leads-count">{leads.myLeadsCount}</span>
     </div>
-    <div class="viewtoggle" role="tablist" aria-label="Leads view">
+    <div class="tabs" role="tablist" aria-label="Leads view">
       <button
-        class="vbtn"
-        class:on={view === 'board'}
+        class="tab"
+        class:is-active={view === 'board'}
         data-testid="leads-view-board"
         role="tab"
         aria-selected={view === 'board'}
@@ -52,8 +52,8 @@
         Board
       </button>
       <button
-        class="vbtn"
-        class:on={view === 'list'}
+        class="tab"
+        class:is-active={view === 'list'}
         data-testid="leads-view-list"
         role="tab"
         aria-selected={view === 'list'}
@@ -98,7 +98,11 @@
                 <td>{kindLabel(o.owner_kind)}</td>
                 <td>{o.states.join('/')}</td>
                 <td>{o.tower_count}</td>
-                <td>{STATUS_LABELS[o.status]}</td>
+                <td>
+                  <span class="chip" data-tone={STATUS_TONE[o.status] || undefined}>
+                    {STATUS_LABELS[o.status]}
+                  </span>
+                </td>
               </tr>
             {/each}
           </tbody>
@@ -129,32 +133,6 @@
   }
   h2 {
     font-size: 18px;
-  }
-  .count {
-    font-size: 12px;
-    font-weight: 600;
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 0 8px;
-    color: var(--text-2);
-  }
-  .viewtoggle {
-    display: inline-flex;
-    border: 1px solid var(--border-strong);
-    border-radius: 999px;
-    overflow: hidden;
-  }
-  .vbtn {
-    padding: 5px 14px;
-    font-size: 12.5px;
-    background: var(--panel);
-    color: var(--text-2);
-    border: none;
-  }
-  .vbtn.on {
-    background: var(--accent);
-    color: #fff;
   }
   .state-msg {
     padding: 18px 22px;

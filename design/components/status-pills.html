@@ -1,0 +1,35 @@
+<!-- @dsCard group="Status" name="Lead status pills" subtitle="six states · default + colorblind" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lead status pills</title>
+  <link rel="stylesheet" href="../tokens.css" />
+  <link rel="stylesheet" href="../base.css" />
+  <style>
+    .legend { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div class="ds-stage">
+    <p class="ds-label">Default</p>
+    <div class="ds-row">
+      <span class="pill" data-status="new">New</span>
+      <span class="pill" data-status="researching">Researching</span>
+      <span class="pill" data-status="contacted">Contacted</span>
+      <span class="pill" data-status="interested">Interested</span>
+      <span class="pill" data-status="in_business">In business</span>
+      <span class="pill" data-status="uninterested">Uninterested</span>
+    </div>
+
+    <p class="ds-label" style="margin-top:26px">Colorblind mode — green/red remapped + glyph cue</p>
+    <div class="ds-row cb">
+      <span class="pill" data-status="interested"><span class="cb-cue">◆</span> Interested</span>
+      <span class="pill" data-status="in_business"><span class="cb-cue">●</span> In business</span>
+      <span class="pill" data-status="uninterested"><span class="cb-cue">✕</span> Uninterested</span>
+    </div>
+    <p class="legend">Meaning never rides on hue alone — the glyph is the safety net.</p>
+  </div>
+</body>
+</html>

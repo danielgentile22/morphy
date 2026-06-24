@@ -22,7 +22,7 @@
 <div class="settings" data-testid="settings">
   <header class="head">
     <h1>Settings</h1>
-    <button class="done" data-testid="settings-done" onclick={() => (location.hash = SECTION_HASH.dashboard)}>
+    <button class="btn btn-secondary btn-sm" data-testid="settings-done" onclick={() => (location.hash = SECTION_HASH.dashboard)}>
       Done
     </button>
   </header>
@@ -69,16 +69,6 @@
   }
   .head h1 {
     font-size: 18px;
-  }
-  .done {
-    font: inherit;
-    font-size: 12.5px;
-    padding: 6px 14px;
-    border: 1px solid var(--border-strong);
-    background: var(--panel);
-    color: var(--text-2);
-    border-radius: var(--radius);
-    cursor: pointer;
   }
   .body {
     flex: 1;

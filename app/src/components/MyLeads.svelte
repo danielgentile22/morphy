@@ -191,27 +191,37 @@
     color: var(--danger);
   }
 
-  /* Board: a row of lanes, horizontally scrollable, filling the surface. */
+  /* Board: a row of lanes that fill the surface width. Lanes size to their
+     content (top-aligned), so the board is only as tall as the fullest lane;
+     the whole board scrolls as one unit when that exceeds the surface — no
+     per-lane scrollbars. */
   .kanban {
     display: flex;
-    gap: 12px;
+    align-items: flex-start;
+    gap: 14px;
     flex: 1;
     min-height: 0;
-    overflow-x: auto;
+    overflow: auto;
     padding-bottom: 18px;
   }
   .lane {
-    width: 250px;
-    flex-shrink: 0;
+    flex: 1 1 0;
+    min-width: 240px;
+    max-width: 360px;
     display: flex;
     flex-direction: column;
-    max-height: 100%;
     background: var(--panel-2);
     border: 1px solid var(--border);
     border-radius: var(--radius);
   }
+  /* Terminal lanes: lost reads danger-soft, won reads success-soft — both are
+     "closed" but must not share the failure cue (the lane-head dot is already
+     status-colored; the body follows it). */
   .lane.closed {
-    background: #fbeeec;
+    background: var(--color-danger-soft);
+  }
+  .lane.closed[data-lane='in_business'] {
+    background: var(--color-success-soft);
   }
   /* Drop affordance while dragging. */
   .lane.dragover.legal {
@@ -248,9 +258,7 @@
     color: var(--text-2);
   }
   .lane-body {
-    flex: 1;
     min-height: 48px;
-    overflow-y: auto;
     padding: 8px;
   }
   .card {
@@ -278,12 +286,12 @@
     color: var(--muted);
   }
   .card .cmeta .x {
-    color: #5a3aa8;
+    color: var(--color-info);
   }
   .card .trigger {
     margin-top: 4px;
     font-size: 11px;
-    color: #9a5b00;
+    color: var(--color-warning);
   }
   .distress-high {
     color: var(--danger);

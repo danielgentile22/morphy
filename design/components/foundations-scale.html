@@ -1,0 +1,35 @@
+<!-- @dsCard group="Foundations" name="Radius, shadow & elevation" subtitle="--radius, --shadow, --shadow-lg" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Radius & elevation</title>
+  <link rel="stylesheet" href="../tokens.css" />
+  <link rel="stylesheet" href="../base.css" />
+  <style>
+    .grid { display: flex; gap: 24px; flex-wrap: wrap; }
+    .box { width: 150px; height: 96px; background: var(--panel); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font: 11px var(--mono); color: var(--text-2); }
+    .r0 { border-radius: 0; }
+    .r1 { border-radius: var(--radius); }
+    .rpill { border-radius: 999px; }
+    .e1 { box-shadow: var(--shadow); border: none; }
+    .e2 { box-shadow: var(--shadow-lg); border: none; }
+  </style>
+</head>
+<body>
+  <div class="ds-stage">
+    <p class="ds-label">Radius</p>
+    <div class="grid" style="margin-bottom:34px">
+      <div class="box r0">0 — square</div>
+      <div class="box r1">--radius 6px</div>
+      <div class="box rpill">999px — pill</div>
+    </div>
+    <p class="ds-label">Elevation</p>
+    <div class="grid">
+      <div class="box r1 e1">--shadow</div>
+      <div class="box r1 e2">--shadow-lg</div>
+    </div>
+  </div>
+</body>
+</html>

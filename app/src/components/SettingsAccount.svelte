@@ -88,7 +88,7 @@
         aria-label="Display name"
       />
       <button
-        class="set-btn"
+        class="btn btn-primary btn-sm"
         data-testid="display-name-save"
         disabled={nameStatus === 'saving'}
         onclick={saveName}
@@ -138,7 +138,7 @@
     </div>
     <div class="set-row">
       <button
-        class="set-btn"
+        class="btn btn-primary btn-sm"
         type="submit"
         data-testid="pw-save"
         disabled={pwStatus === 'saving' || !current || !next}

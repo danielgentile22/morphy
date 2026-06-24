@@ -78,11 +78,25 @@
     <p class="muted">Could not load stats.</p>
   {:else}
     {@const s = stats}
-    <div class="cards">
-      <div class="kpi" data-testid="kpi-reply"><b>{pct(s.reply_rate)}</b><span>reply rate</span></div>
-      <div class="kpi" data-testid="kpi-win"><b>{pct(s.win_rate)}</b><span>win rate</span></div>
-      <div class="kpi"><b>{s.activity_total}</b><span>activity events</span></div>
-      <div class="kpi"><b>{s.active_days}</b><span>active days</span></div>
+    <!-- Halo signature: stat-tiles with a toned top hairline, eyebrow label,
+         and a large tabular metric. -->
+    <div class="kpis">
+      <div class="stat-tile stat-sm" data-tone="info" data-testid="kpi-reply">
+        <span class="stat-eyebrow">Reply rate</span>
+        <span class="stat-value">{pct(s.reply_rate)}</span>
+      </div>
+      <div class="stat-tile stat-sm" data-tone="success" data-testid="kpi-win">
+        <span class="stat-eyebrow">Win rate</span>
+        <span class="stat-value">{pct(s.win_rate)}</span>
+      </div>
+      <div class="stat-tile stat-sm" data-testid="kpi-activity">
+        <span class="stat-eyebrow">Activity events</span>
+        <span class="stat-value">{s.activity_total}</span>
+      </div>
+      <div class="stat-tile stat-sm" data-tone="warning" data-testid="kpi-active-days">
+        <span class="stat-eyebrow">Active days</span>
+        <span class="stat-value">{s.active_days}</span>
+      </div>
     </div>
 
     <section class="card">
@@ -156,9 +170,7 @@
 </div>
 
 <style>
-  .stats {
-    max-width: 820px;
-  }
+  /* No width cap — fills the dashboard column (.dash-inner). */
   .head {
     display: flex;
     align-items: baseline;
@@ -194,30 +206,11 @@
   .small {
     font-size: 11.5px;
   }
-  .cards {
-    display: flex;
-    flex-wrap: wrap;
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 12px;
     margin-bottom: 16px;
-  }
-  .kpi {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    min-width: 110px;
-    padding: 14px 18px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-  }
-  .kpi b {
-    font-size: 22px;
-  }
-  .kpi span {
-    font-size: 11px;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
   }
   .card {
     background: var(--panel);

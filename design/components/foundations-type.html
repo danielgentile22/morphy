@@ -1,0 +1,37 @@
+<!-- @dsCard group="Foundations" name="Typography" subtitle="headings, body, caps title, mono" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Typography</title>
+  <link rel="stylesheet" href="../tokens.css" />
+  <link rel="stylesheet" href="../base.css" />
+  <style>
+    .stack { max-width: 620px; }
+    .stack > * + * { margin-top: 18px; }
+    .row { display: flex; align-items: baseline; gap: 16px; }
+    .tag { font: 600 10px/1 var(--mono); color: var(--muted); width: 92px; flex-shrink: 0; }
+    .h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.01em; }
+    .h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+    .h3 { font-size: 13px; font-weight: 600; }
+    .body { font-size: 13px; color: var(--text); }
+    .small { font-size: 12px; color: var(--text-2); }
+    .caps { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+    .mono { font: 12px var(--mono); color: var(--text-2); }
+  </style>
+</head>
+<body>
+  <div class="ds-stage">
+    <div class="stack">
+      <div class="row"><span class="tag">H1 / 28</span><span class="h1">Renegotiate the ground lease</span></div>
+      <div class="row"><span class="tag">H2 / 18</span><span class="h2">My Leads</span></div>
+      <div class="row"><span class="tag">H3 / 13</span><span class="h3">Carrier identification</span></div>
+      <div class="row"><span class="tag">Body / 13</span><span class="body">The owner of record for this freestanding tower across the parcel join.</span></div>
+      <div class="row"><span class="tag">Small / 12</span><span class="small">Last contacted 4 days ago · 2 attempts</span></div>
+      <div class="row"><span class="tag">Caps / 11</span><span class="caps">Layers</span></div>
+      <div class="row"><span class="tag">Mono / 12</span><span class="mono">ASR-1042217 · 05-AR · 34.7449, -92.2896</span></div>
+    </div>
+  </div>
+</body>
+</html>

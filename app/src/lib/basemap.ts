@@ -12,8 +12,6 @@
 
 import type { StyleSpecification } from 'maplibre-gl';
 
-import type { EffectiveTheme } from './appearance';
-
 export type BasemapName = 'light' | 'voyager' | 'dark';
 
 /** Carto tileset slug per basemap choice (the keyless raster CDN). */
@@ -27,33 +25,26 @@ const ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' +
   'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
-/** Which tileset actually paints. The dark theme nudges the *default* light
- *  basemap to Dark Matter so a bright map doesn't glare inside a dark UI; an
- *  explicit Voyager/Dark choice is honoured as-is (overridable). */
-export function resolveBasemapName(name: BasemapName, theme: EffectiveTheme): BasemapName {
-  if (theme === 'dark' && name === 'light') return 'dark';
-  return name;
-}
-
-/** The raster tile URLs for a basemap choice (theme-aware). Exposed on its own
- *  so a mounted map can hot-swap just the basemap source's tiles
+/** The raster tile URLs for a basemap choice. The chrome is dark-only (Halo),
+ *  so the basemap pick is honoured literally — no theme nudge. Exposed on its
+ *  own so a mounted map can hot-swap just the basemap source's tiles
  *  (`RasterTileSource.setTiles`) without a full `setStyle` that would drop the
  *  app's tower/parcel/solar layers. */
-export function basemapTiles(name: BasemapName, theme: EffectiveTheme): string[] {
-  const tileset = CARTO_TILESET[resolveBasemapName(name, theme)];
+export function basemapTiles(name: BasemapName): string[] {
+  const tileset = CARTO_TILESET[name];
   return ['a', 'b', 'c'].map(
     (s) => `https://${s}.basemaps.cartocdn.com/${tileset}/{z}/{x}/{y}.png`,
   );
 }
 
-/** A MapLibre style for the chosen basemap, theme-aware (see resolveBasemapName). */
-export function basemapStyle(name: BasemapName, theme: EffectiveTheme): StyleSpecification {
+/** A MapLibre style for the chosen basemap. */
+export function basemapStyle(name: BasemapName): StyleSpecification {
   return {
     version: 8,
     sources: {
       basemap: {
         type: 'raster',
-        tiles: basemapTiles(name, theme),
+        tiles: basemapTiles(name),
         tileSize: 256,
         attribution: ATTRIBUTION,
       },

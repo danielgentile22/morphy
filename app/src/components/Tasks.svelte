@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import { tasks } from '../lib/tasks-store.svelte';
   import { leadHash, towerHash, settingsHash } from '../lib/nav';
+  import Icon from './Icon.svelte';
   import type { Task, TaskStatus, TaskPriority } from '../lib/tasks-api';
 
   // The auto-follow-up automation moved to Settings → Automations (PRD #121);
@@ -61,6 +62,19 @@
     in_progress: 'In progress',
     done: 'Done',
   };
+  // Halo chip tone for the cycle-status pill + the priority badge (decorative;
+  // the text label always rides along, so colorblind-safe).
+  const STATUS_TONE: Record<TaskStatus, 'neutral' | 'info' | 'success'> = {
+    open: 'neutral',
+    in_progress: 'info',
+    done: 'success',
+  };
+  const PRIO_TONE: Record<TaskPriority, '' | 'neutral' | 'warning' | 'danger'> = {
+    none: '',
+    low: 'neutral',
+    med: 'warning',
+    high: 'danger',
+  };
   const NEXT: Record<TaskStatus, TaskStatus> = {
     open: 'in_progress',
     in_progress: 'done',
@@ -90,13 +104,13 @@
     }}
   >
     <div class="newtask-row">
-      <input class="t-title" data-testid="task-title" bind:value={draft.title} placeholder="New task…" aria-label="Task title" />
-      <input class="t-desc" data-testid="task-desc" bind:value={draft.description} placeholder="Description (optional)" aria-label="Task description" />
-      <button type="button" class="more" onclick={() => (showDetails = !showDetails)}>
+      <input class="input t-title" data-testid="task-title" bind:value={draft.title} placeholder="New task…" aria-label="Task title" />
+      <input class="input t-desc" data-testid="task-desc" bind:value={draft.description} placeholder="Description (optional)" aria-label="Task description" />
+      <button type="button" class="btn btn-secondary" onclick={() => (showDetails = !showDetails)}>
         {showDetails ? 'Less' : 'More'}
       </button>
-      <button class="add" type="submit" data-testid="task-add" disabled={tasks.saving || !draft.title.trim()}>
-        + Add
+      <button class="btn btn-primary" type="submit" data-testid="task-add" disabled={tasks.saving || !draft.title.trim()}>
+        Add
       </button>
     </div>
     {#if showDetails}
@@ -178,9 +192,9 @@
           <div class="body">
             <div class="line1">
               <span class="ttitle">{t.title}</span>
-              {#if t.priority !== 'none'}<span class="badge prio prio-{t.priority}">{t.priority}</span>{/if}
-              {#if t.due_date}<span class="badge due">due {t.due_date}</span>{/if}
-              {#if t.source === 'auto'}<span class="badge auto">auto</span>{/if}
+              {#if t.priority !== 'none'}<span class="chip" data-tone={PRIO_TONE[t.priority] || undefined}>{t.priority}</span>{/if}
+              {#if t.due_date}<span class="chip" data-tone="warning">due {t.due_date}</span>{/if}
+              {#if t.source === 'auto'}<span class="chip" data-tone="info">auto</span>{/if}
             </div>
             {#if t.description}<span class="tdesc">{t.description}</span>{/if}
             <div class="meta">
@@ -188,13 +202,13 @@
               {#if t.lead_cluster_id}<a class="link" href={leadHash(t.lead_cluster_id)}>owner</a>{/if}
               {#if t.tower_asr && t.lead_cluster_id}<a class="link" href={towerHash(t.lead_cluster_id, t.tower_asr)}>ASR {t.tower_asr}</a>
               {:else if t.tower_asr}<span class="link muted">ASR {t.tower_asr}</span>{/if}
-              {#each t.labels as l (l)}<span class="badge label">{l}</span>{/each}
+              {#each t.labels as l (l)}<span class="chip" data-tone="neutral">{l}</span>{/each}
             </div>
           </div>
-          <button class="status-pill" data-testid="task-status" data-status={t.status} onclick={() => cycle(t)} title="Cycle status">
+          <button class="chip status-pill" data-testid="task-status" data-status={t.status} data-tone={STATUS_TONE[t.status]} onclick={() => cycle(t)} title="Cycle status">
             {STATUS_LABEL[t.status]}
           </button>
-          <button class="del" data-testid="task-delete" onclick={() => tasks.remove(t.id)} aria-label="Delete task">×</button>
+          <button class="del" data-testid="task-delete" onclick={() => tasks.remove(t.id)} aria-label="Delete task"><Icon name="x" size={15} /></button>
         </li>
       {/each}
     </ul>
@@ -202,9 +216,8 @@
 </div>
 
 <style>
-  .tasks {
-    max-width: 860px;
-  }
+  /* No width cap — fills the dashboard column (.dash-inner); Tasks is only ever
+     rendered there. */
   .auto-pointer {
     margin: 0 0 12px;
     padding: 8px 12px;
@@ -225,31 +238,6 @@
   .t-desc {
     flex: 1;
     min-width: 150px;
-    font: inherit;
-    font-size: 13px;
-    padding: 7px 10px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius);
-    background: var(--panel);
-  }
-  .more {
-    padding: 7px 12px;
-    font-size: 12px;
-    border: 1px solid var(--border-strong);
-    background: var(--panel);
-    border-radius: var(--radius);
-    color: var(--text-2);
-  }
-  .add {
-    padding: 7px 16px;
-    font-size: 12.5px;
-    border: 1px solid var(--accent);
-    background: var(--accent);
-    color: #fff;
-    border-radius: var(--radius);
-  }
-  .add:disabled {
-    opacity: 0.6;
   }
   .newtask-details {
     display: flex;
@@ -277,6 +265,7 @@
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     background: var(--panel);
+    color: var(--text);
   }
   .filterbar {
     display: flex;
@@ -299,6 +288,7 @@
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     background: var(--panel);
+    color: var(--text);
   }
   .filterbar .lbl {
     width: 90px;
@@ -373,41 +363,21 @@
   .meta .link.muted {
     color: var(--muted);
   }
-  .badge {
-    font-size: 10.5px;
-    padding: 1px 7px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--panel-2);
-    color: var(--text-2);
-  }
-  .badge.prio-high {
-    color: var(--danger);
-    border-color: var(--danger);
-  }
-  .badge.due {
-    color: #9a5b00;
-  }
   .status-pill {
     flex-shrink: 0;
-    font-size: 11px;
-    padding: 3px 10px;
-    border: 1px solid var(--border-strong);
-    border-radius: 999px;
-    background: var(--panel-2);
-    color: var(--text-2);
-  }
-  .status-pill[data-status='done'] {
-    color: var(--accent);
-    border-color: var(--accent);
+    cursor: pointer;
   }
   .del {
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    margin-top: 3px;
     background: none;
     border: none;
     color: var(--muted);
-    font-size: 16px;
-    line-height: 1;
     cursor: pointer;
+  }
+  .del:hover {
+    color: var(--text);
   }
 </style>

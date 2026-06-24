@@ -24,39 +24,50 @@
   }
 </script>
 
+<!-- Halo design-system anatomy: .card surface, .field/.input form rows, an
+     .eyebrow brand label, and a primary .btn. Logic + testids unchanged. -->
 <div class="signin" data-testid="signin">
-  <div class="card">
+  <div class="card signin-card">
     <div class="brand">
-      <img class="logo" src="/favicon.png" alt="" width="44" height="44" />
-      <span class="name">Morphy Consulting</span>
+      <div class="brand-mark" aria-hidden="true"></div>
+      <div class="brand-text">
+        <span class="eyebrow">Morphy Consulting</span>
+        <span class="t-headline-md">Sign in</span>
+      </div>
     </div>
 
-    <form onsubmit={submit}>
-      <label for="username">Username</label>
-      <input
-        id="username"
-        type="text"
-        data-testid="signin-username"
-        bind:value={username}
-        autocomplete="username"
-        required
-      />
-      <label for="password">Password</label>
-      <input
-        id="password"
-        type="password"
-        data-testid="signin-password"
-        bind:value={password}
-        autocomplete="current-password"
-        required
-      />
-      <button type="submit" data-testid="signin-submit" disabled={busy}>
+    <form onsubmit={submit} class="stack">
+      <div class="field">
+        <label class="field-label" for="username">Username</label>
+        <input
+          class="input"
+          id="username"
+          type="text"
+          data-testid="signin-username"
+          bind:value={username}
+          autocomplete="username"
+          required
+        />
+      </div>
+      <div class="field">
+        <label class="field-label" for="password">Password</label>
+        <input
+          class="input"
+          id="password"
+          type="password"
+          data-testid="signin-password"
+          bind:value={password}
+          autocomplete="current-password"
+          required
+        />
+      </div>
+      <button class="btn btn-primary btn-lg" type="submit" data-testid="signin-submit" disabled={busy}>
         {busy ? 'Signing in…' : 'Sign in'}
       </button>
     </form>
 
     {#if error}
-      <p class="err" data-testid="signin-error">{error}</p>
+      <p class="field-help is-error" data-testid="signin-error">{error}</p>
     {/if}
   </div>
 </div>
@@ -65,66 +76,38 @@
   .signin {
     display: flex;
     justify-content: center;
-    padding: 24px 22px;
+    padding: 48px 22px;
   }
-  .card {
+  .signin-card {
     width: 100%;
-    max-width: 360px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 30px 28px;
-    box-shadow: var(--shadow);
+    max-width: 380px;
   }
   .brand {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 24px;
+    gap: 12px;
   }
-  .logo {
-    border-radius: 10px;
+  .brand-mark {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border-strong);
+    background: conic-gradient(
+      from 220deg at 50% 50%,
+      var(--color-primary),
+      #1e2029,
+      var(--color-primary)
+    );
   }
-  .name {
-    font-size: 19px;
-    font-weight: 600;
-    letter-spacing: 0.01em;
-  }
-  form {
+  .brand-text {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 2px;
   }
-  label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--muted);
-  }
-  input {
-    padding: 9px 11px;
-    font-size: 13px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius);
-  }
-  button[type='submit'] {
-    margin-top: 14px;
-    padding: 10px 14px;
-    font-size: 13px;
-    font-weight: 600;
-    border: 1px solid var(--accent);
-    background: var(--accent);
-    color: #fff;
-    border-radius: var(--radius);
-    cursor: pointer;
-  }
-  button[type='submit']:disabled {
-    opacity: 0.6;
-  }
-  .err {
-    margin-top: 12px;
-    font-size: 12.5px;
-    color: var(--danger);
+  /* Full-width primary action for the form. */
+  .signin .btn {
+    width: 100%;
+    margin-top: 4px;
   }
 </style>

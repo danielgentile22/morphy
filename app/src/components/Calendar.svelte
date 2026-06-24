@@ -132,9 +132,7 @@
 </div>
 
 <style>
-  .calendar {
-    max-width: 760px;
-  }
+  /* No width cap — fills the dashboard column (.dash-inner). */
   .head {
     display: flex;
     align-items: baseline;
@@ -219,8 +217,8 @@
     color: #fff;
   }
   .badge.due {
-    background: #fff4e6;
-    color: #9a5b00;
+    background: var(--color-warning-soft);
+    color: var(--color-warning);
   }
   .daydetail {
     margin-top: 14px;
