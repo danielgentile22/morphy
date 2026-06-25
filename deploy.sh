@@ -28,6 +28,8 @@
 #   VOLUME_DEST    composite path on volume  (/data/processed/composite)
 #   APP_URL        base URL for smoke        (https://$FLY_APP.fly.dev)
 #   PYTHON         local python              (python3)
+#   VITE_MAPTILER_KEY  client-side MapTiler key for the Satellite basemap,
+#                  baked into the SPA at build (unset → Carto Dark fallback)
 set -euo pipefail
 
 FLY_APP="${FLY_APP:-morphy-consulting}"
@@ -83,8 +85,12 @@ deploy_code() {
   need_fly
   require_clean_tree
   export_freshness
-  log "fly deploy --app ${FLY_APP}"
-  fly deploy --app "${FLY_APP}"
+  # VITE_MAPTILER_KEY is baked into the SPA at image-build time (the Satellite
+  # basemap, now the default). It's a referrer-restricted client-side key, not a
+  # secret. Unset → satellite degrades to Carto Dark, so a keyless deploy is safe
+  # but shows no imagery; export it (or keep it in a sourced, git-ignored file).
+  log "fly deploy --app ${FLY_APP}${VITE_MAPTILER_KEY:+ (with MapTiler key)}"
+  fly deploy --app "${FLY_APP}" --build-arg VITE_MAPTILER_KEY="${VITE_MAPTILER_KEY:-}"
 }
 
 # Run one leg through the tested contract. Explicit branches (rather than an
