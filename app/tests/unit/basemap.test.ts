@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { basemapStyle, resolveInitialView, parseMapView, type MapView } from '../../src/lib/basemap';
+import {
+  basemapStyle,
+  basemapSource,
+  maptilerEnabled,
+  resolveInitialView,
+  parseMapView,
+  type MapView,
+} from '../../src/lib/basemap';
 
 /** The single raster tileset a style points at (the bit that varies). */
 function tilesetOf(style: ReturnType<typeof basemapStyle>): string {
@@ -22,6 +29,21 @@ describe('basemapStyle — keyless Carto raster per basemap choice (PRD #121)', 
     expect(s.layers[0]).toMatchObject({ type: 'raster', source: 'basemap' });
     // keyless: the CDN host carries no API key
     expect(tilesetOf(s)).toContain('basemaps.cartocdn.com');
+  });
+});
+
+describe('basemapSource — satellite resolves by MapTiler key presence', () => {
+  // `maptilerEnabled` reflects VITE_MAPTILER_KEY at build time, so this asserts
+  // the contract in *either* environment: keyed (a dev .env.local) → MapTiler;
+  // keyless (CI) → the Carto Dark fallback that can never 403.
+  it('routes `satellite` to MapTiler when keyed, Carto Dark when not', () => {
+    const src = basemapSource('satellite') as { tiles?: string[]; url?: string };
+    if (maptilerEnabled) {
+      expect(src.url).toContain('api.maptiler.com/maps/hybrid');
+    } else {
+      expect(src.url).toBeUndefined(); // not the MapTiler TileJSON
+      expect(src.tiles?.[0]).toContain('dark_all'); // safe keyless fallback
+    }
   });
 });
 

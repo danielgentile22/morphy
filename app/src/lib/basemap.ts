@@ -2,53 +2,73 @@
  * Basemap + initial-view helpers (PRD #121) — pure, so they unit-test cleanly
  * (the live MapLibre map is e2e territory).
  *
- * The three offered basemaps are all keyless Carto raster tilesets, under the
- * license already accepted for the current Positron basemap — no API key, in
- * keeping with the no-backend basemap constraint:
- *   - `light`   → Positron   (`light_all`)
- *   - `voyager` → Voyager    (`voyager`)
- *   - `dark`    → Dark Matter (`dark_all`)
+ * Three keyless Carto raster basemaps, plus an optional MapTiler Satellite
+ * Hybrid (imagery + baked labels) gated on a client-side key:
+ *   - `light`     → Positron    (`light_all`)
+ *   - `voyager`   → Voyager     (`voyager`)
+ *   - `dark`      → Dark Matter (`dark_all`)
+ *   - `satellite` → MapTiler Satellite Hybrid (needs `VITE_MAPTILER_KEY`)
  */
 
-import type { StyleSpecification } from 'maplibre-gl';
+import type { RasterSourceSpecification, StyleSpecification } from 'maplibre-gl';
 
-export type BasemapName = 'light' | 'voyager' | 'dark';
+export type BasemapName = 'light' | 'voyager' | 'dark' | 'satellite';
+
+/** The keyless Carto raster basemaps. */
+type CartoBasemap = 'light' | 'voyager' | 'dark';
 
 /** Carto tileset slug per basemap choice (the keyless raster CDN). */
-const CARTO_TILESET: Record<BasemapName, string> = {
+const CARTO_TILESET: Record<CartoBasemap, string> = {
   light: 'light_all',
   voyager: 'voyager',
   dark: 'dark_all',
 };
 
-const ATTRIBUTION =
+const CARTO_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' +
   'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
-/** The raster tile URLs for a basemap choice. The chrome is dark-only (Halo),
- *  so the basemap pick is honoured literally — no theme nudge. Exposed on its
- *  own so a mounted map can hot-swap just the basemap source's tiles
- *  (`RasterTileSource.setTiles`) without a full `setStyle` that would drop the
- *  app's tower/parcel/solar layers. */
-export function basemapTiles(name: BasemapName): string[] {
-  const tileset = CARTO_TILESET[name];
-  return ['a', 'b', 'c'].map(
-    (s) => `https://${s}.basemaps.cartocdn.com/${tileset}/{z}/{x}/{y}.png`,
-  );
+/** MapTiler key (client-side, referrer-restricted). Absent → Satellite is
+ *  hidden in settings and any stored `satellite` pref degrades to Carto Dark,
+ *  so the map never 403s on a missing key. */
+const MAPTILER_KEY = (import.meta.env.VITE_MAPTILER_KEY as string | undefined) ?? '';
+export const maptilerEnabled = MAPTILER_KEY.length > 0;
+
+function cartoSource(name: CartoBasemap): RasterSourceSpecification {
+  return {
+    type: 'raster',
+    tiles: ['a', 'b', 'c'].map(
+      (s) => `https://${s}.basemaps.cartocdn.com/${CARTO_TILESET[name]}/{z}/{x}/{y}.png`,
+    ),
+    tileSize: 256,
+    attribution: CARTO_ATTRIBUTION,
+  };
+}
+
+/** MapTiler Satellite Hybrid via its TileJSON — MapLibre reads the tile URLs,
+ *  tile size, and (license-required) attribution straight from it, so swapping
+ *  to this source credits MapTiler correctly without a manual attribution set. */
+function maptilerHybridSource(key: string): RasterSourceSpecification {
+  return { type: 'raster', url: `https://api.maptiler.com/maps/hybrid/tiles.json?key=${key}` };
+}
+
+/** The raster source for a basemap choice. `satellite` needs a MapTiler key;
+ *  without one it degrades to Carto Dark rather than failing. Exposed so a
+ *  mounted map can rebuild just the `basemap` source on a pref change — keeping
+ *  the app's tower/parcel/solar layers untouched, and picking up the new
+ *  source's attribution (which `setTiles` alone can't update). */
+export function basemapSource(name: BasemapName): RasterSourceSpecification {
+  if (name === 'satellite') {
+    return maptilerEnabled ? maptilerHybridSource(MAPTILER_KEY) : cartoSource('dark');
+  }
+  return cartoSource(name);
 }
 
 /** A MapLibre style for the chosen basemap. */
 export function basemapStyle(name: BasemapName): StyleSpecification {
   return {
     version: 8,
-    sources: {
-      basemap: {
-        type: 'raster',
-        tiles: basemapTiles(name),
-        tileSize: 256,
-        attribution: ATTRIBUTION,
-      },
-    },
+    sources: { basemap: basemapSource(name) },
     layers: [{ id: 'basemap', type: 'raster', source: 'basemap' }],
   };
 }

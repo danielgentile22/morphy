@@ -7,6 +7,7 @@
 import type { LeadStatus } from './lead-status';
 import type { FilterableOwner } from './filter-model';
 import type { Carrier } from './carrier';
+import type { BasemapName } from './basemap';
 import type { components } from './api-types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api';
@@ -129,7 +130,7 @@ export type UserSettings = Omit<
   'theme' | 'basemap' | 'view_mode'
 > & {
   theme: 'light' | 'dark' | 'system';
-  basemap: 'light' | 'voyager' | 'dark';
+  basemap: BasemapName;
   view_mode: 'home' | 'last';
 };
 

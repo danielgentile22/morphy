@@ -4,14 +4,19 @@
   // appearance ones apply live through the user-settings store.
   import { userSettings } from '../lib/user-settings-store.svelte';
   import { readLastView } from '../lib/map-view-cache';
-  import type { BasemapName } from '../lib/basemap';
+  import { maptilerEnabled, type BasemapName } from '../lib/basemap';
 
   const s = $derived(userSettings.settings);
 
+  // Satellite only appears when a MapTiler key is configured (VITE_MAPTILER_KEY);
+  // without one it would 403, so we hide it rather than offer a broken option.
   const BASEMAPS: { value: BasemapName; label: string }[] = [
     { value: 'light', label: 'Light (Positron)' },
     { value: 'voyager', label: 'Voyager' },
     { value: 'dark', label: 'Dark Matter' },
+    ...(maptilerEnabled
+      ? [{ value: 'satellite' as BasemapName, label: 'Satellite (MapTiler)' }]
+      : []),
   ];
 
   let homeStatus = $state<'idle' | 'saved' | 'nohome' | 'error'>('idle');

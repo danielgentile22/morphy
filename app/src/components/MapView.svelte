@@ -26,7 +26,7 @@
   import { archivedAntennas } from '../lib/archived-antennas.svelte';
   import { towerHash } from '../lib/nav';
   import { userSettings } from '../lib/user-settings-store.svelte';
-  import { basemapStyle, basemapTiles, resolveInitialView } from '../lib/basemap';
+  import { basemapStyle, basemapSource, resolveInitialView } from '../lib/basemap';
   import { readLastView, writeLastView } from '../lib/map-view-cache';
   import { parcelLayerAppearance } from '../lib/parcel-layers';
 
@@ -187,15 +187,23 @@
     if (view) map.jumpTo({ center: [view.lng, view.lat], zoom: view.zoom });
   });
 
-  // Hot-swap just the basemap raster tiles when the basemap pref changes —
-  // leaves every app layer (towers, parcels, solar) untouched, unlike a full
-  // setStyle.
+  // Swap the basemap when the pref changes. Rebuilds only the `basemap`
+  // source+layer (re-inserted at the bottom), leaving every app layer +
+  // feature-state untouched — and unlike a bare `setTiles`, it picks up the new
+  // source's attribution (MapTiler's license needs its own credit; Carto and
+  // MapTiler don't share one).
+  let appliedBasemap = untrack(() => userSettings.basemap);
   $effect(() => {
-    const tiles = basemapTiles(userSettings.basemap);
-    const src = map?.getSource('basemap');
-    if (src && 'setTiles' in src) {
-      (src as maplibregl.RasterTileSource).setTiles(tiles);
-    }
+    const name = userSettings.basemap;
+    if (!map || !ready || name === appliedBasemap) return;
+    appliedBasemap = name;
+    // beforeId = the lowest app layer, so the rebuilt basemap stays at the
+    // bottom of the stack (addLayer otherwise appends on top).
+    const firstAppLayer = map.getStyle().layers.find((l) => l.id !== 'basemap')?.id;
+    if (map.getLayer('basemap')) map.removeLayer('basemap');
+    if (map.getSource('basemap')) map.removeSource('basemap');
+    map.addSource('basemap', basemapSource(name));
+    map.addLayer({ id: 'basemap', type: 'raster', source: 'basemap' }, firstAppLayer);
   });
 
   // ── hover cursor (shared by parcels) ─────────────────────────────────────
@@ -365,7 +373,12 @@
   function attachTowerHandlers(): void {
     if (!map || towerHandlersAttached) return;
     towerHandlersAttached = true;
-    towerPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
+    towerPopup = new maplibregl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      offset: 12,
+      className: 'tower-pop',
+    });
 
     map.on('mouseenter', TL_POINT, (e) => {
       if (!map) return;
@@ -635,5 +648,21 @@
   /* MapLibre canvas focus outline is distracting for a kiosk-style app. */
   .map :global(.maplibregl-canvas:focus) {
     outline: none;
+  }
+  /* Tower hover tooltip: dark box + light text so it reads on any basemap —
+     the white MapLibre default vanished under the dark chrome's light text,
+     and was unreadable over satellite imagery. Tipless: cleanest over photos. */
+  .map :global(.tower-pop .maplibregl-popup-content) {
+    background: #15171c;
+    color: #f1f3f7;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    padding: 8px 11px;
+    font-size: 12px;
+    line-height: 1.4;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  }
+  .map :global(.tower-pop .maplibregl-popup-tip) {
+    display: none;
   }
 </style>

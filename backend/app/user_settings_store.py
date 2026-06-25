@@ -21,7 +21,7 @@ from .models import UserSetting
 # ── known keys ────────────────────────────────────────────────────────────────
 THEME = "theme"  # light | dark | system
 COLORBLIND = "colorblind"  # 0 | 1
-BASEMAP = "basemap"  # light | voyager | dark
+BASEMAP = "basemap"  # light | voyager | dark | satellite
 VIEW_MODE = "view_mode"  # home | last
 HOME_VIEW = "home_view"  # JSON {lng,lat,zoom} or ""
 FILTER_DEFAULT = "filter_default"  # opaque FilterModel snapshot JSON or ""
@@ -30,7 +30,8 @@ FILTER_DEFAULT_APPLY = "filter_default_apply"  # 0 | 1
 _DEFAULTS: dict[str, str] = {
     THEME: "system",  # follow the OS by default — no surprise dark/light
     COLORBLIND: "0",
-    BASEMAP: "light",
+    BASEMAP: "satellite",  # aerial imagery out of the box (frontend falls back
+    #                        to Carto Dark when no MapTiler key is built in)
     VIEW_MODE: "last",  # restore where I left off rather than force a home view
     HOME_VIEW: "",
     FILTER_DEFAULT: "",
