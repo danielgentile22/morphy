@@ -12,6 +12,7 @@ export type Route =
   | { name: 'overview' }
   | { name: 'catalog'; anchor: string | null }
   | { name: 'freshness' }
+  | { name: 'fixes' }
   | { name: 'signals'; query: string }
   | { name: 'signal'; id: string }
   | { name: 'cards' }
@@ -29,6 +30,9 @@ export function parseHash(hash: string): Route {
     case 'freshness':
       // "What needs updating" — the live freshness view (freshness.json + M9 model).
       return { name: 'freshness' };
+    case 'fixes':
+      // The live fix-status board (fixes.json).
+      return { name: 'fixes' };
     case 'signals':
       return parts[1] ? { name: 'signal', id: parts[1] } : { name: 'signals', query };
     case 'cards':
@@ -45,6 +49,7 @@ export const hrefs = {
   catalog: (anchor?: string | null) =>
     `#/catalog${anchor ? `/${encodeURIComponent(anchor)}` : ''}`,
   freshness: '#/freshness',
+  fixes: '#/fixes',
   signals: (query = '') => (query ? `#/signals?${query}` : '#/signals'),
   signal: (id: string) => `#/signals/${encodeURIComponent(id)}`,
   cards: '#/cards',

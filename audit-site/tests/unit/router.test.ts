@@ -14,6 +14,9 @@ describe('parseHash', () => {
   it('parses the freshness placeholder route', () => {
     expect(parseHash('#/freshness')).toEqual({ name: 'freshness' });
   });
+  it('parses the fixes route', () => {
+    expect(parseHash('#/fixes')).toEqual({ name: 'fixes' });
+  });
   it('parses the signals list and its query', () => {
     expect(parseHash('#/signals')).toEqual({ name: 'signals', query: '' });
     expect(parseHash('#/signals?conf=low&state=12')).toEqual({ name: 'signals', query: 'conf=low&state=12' });
@@ -49,5 +52,7 @@ describe('hrefs', () => {
     expect(parseHash(hrefs.catalog('landowner'))).toEqual({ name: 'catalog', anchor: 'landowner' });
     expect(hrefs.freshness).toBe('#/freshness');
     expect(parseHash(hrefs.freshness)).toEqual({ name: 'freshness' });
+    expect(hrefs.fixes).toBe('#/fixes');
+    expect(parseHash(hrefs.fixes)).toEqual({ name: 'fixes' });
   });
 });

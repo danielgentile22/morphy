@@ -8,6 +8,7 @@
  */
 
 import type { FreshnessDoc } from './freshness';
+import type { FixesDoc } from './fixes';
 
 export type Confidence = 'high' | 'medium' | 'low';
 export type CardStatus = 'todo' | 'in_progress' | 'done' | 'stale' | 'needs_redo';
@@ -129,6 +130,20 @@ export async function fetchFreshness(): Promise<FreshnessDoc | null> {
     const res = await fetch(`${DATA_BASE}freshness.json`, { cache: 'no-store' });
     if (!res.ok) return null;
     return (await res.json()) as FreshnessDoc;
+  } catch {
+    return null;
+  }
+}
+
+// `fixes.json` is the hand-authored fix-status board (companion to
+// fix-ledger.md). Like freshness.json it's an optional sibling artifact —
+// degrade to `null` on any failure so the Fixes tab shows its "not yet
+// generated" state and the rest of the app is unaffected. See lib/fixes.ts.
+export async function fetchFixes(): Promise<FixesDoc | null> {
+  try {
+    const res = await fetch(`${DATA_BASE}fixes.json`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return (await res.json()) as FixesDoc;
   } catch {
     return null;
   }
