@@ -95,14 +95,16 @@ The app fetches root-relative `/data/...`. **`python -m http.server`
 will not work** — PMTiles and DuckDB-WASM need HTTP Range / 206 responses
 and it does not send them. Use the range-capable `scripts/serve.py`.
 
-**MapTiler Satellite basemap (optional).** Set `VITE_MAPTILER_KEY` (a
-referrer-restricted client-side key) to expose the **Satellite (MapTiler)**
-basemap in Settings → Map & display. Dev: put it in `app/.env.local`
-(git-ignored). Prod: the SPA builds inside the image, so pass it as a Docker
-build arg — `fly deploy --build-arg VITE_MAPTILER_KEY=…`. Unset → the option is
-hidden and any stored `satellite` pref degrades to Carto Dark (never 403s).
-MapTiler's free tier is non-commercial / R&D; production commercial use needs a
-paid plan (~$25/mo).
+**MapTiler Satellite basemap (the default).** `VITE_MAPTILER_KEY` is a
+*client-side* key (it ships in the bundle), protected by MapTiler's
+HTTP-referrer allowlist, not by secrecy — so it's **baked into the image as the
+`Dockerfile` `ARG VITE_MAPTILER_KEY` default**; a bare deploy needs no arg. Dev:
+put it in `app/.env.local` (git-ignored). Override with a different key via
+`fly deploy --build-arg VITE_MAPTILER_KEY=…` (deploy.sh forwards `$VITE_MAPTILER_KEY`
+when set). With no key anywhere (e.g. CI builds, which don't see the Dockerfile),
+the Satellite option is hidden and any stored `satellite` pref degrades to Carto
+Dark (never 403s). MapTiler's free tier is non-commercial / R&D; production
+commercial use needs a paid plan (~$25/mo).
 
 - **Dev:** `npm run dev` (Vite proxies `/data` → `scripts/serve.py` on
   :8765).

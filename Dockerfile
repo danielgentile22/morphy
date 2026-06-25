@@ -9,10 +9,12 @@ WORKDIR /app
 COPY app/package.json app/package-lock.json ./
 RUN npm ci
 COPY app/ ./
-# Client-side MapTiler key for the Satellite basemap (referrer-restricted, so
-# it's not a secret). Unset → the Satellite option is simply hidden.
-# Pass at deploy: fly deploy --build-arg VITE_MAPTILER_KEY=...
-ARG VITE_MAPTILER_KEY=""
+# Client-side MapTiler key for the Satellite basemap (now the default). This is
+# NOT a secret — it ships in the browser bundle regardless, and is protected by
+# MapTiler's HTTP-referrer allowlist (morphyconsulting.com + localhost), not by
+# secrecy. So it's baked in as the default here; no deploy-time arg needed.
+# Override (e.g. a different key) with: fly deploy --build-arg VITE_MAPTILER_KEY=...
+ARG VITE_MAPTILER_KEY="REDACTED_MAPTILER_KEY"
 ENV VITE_MAPTILER_KEY=$VITE_MAPTILER_KEY
 RUN npm run build
 # -> /app/dist
