@@ -16,6 +16,7 @@
     { label: 'Overview', href: hrefs.overview, active: route.name === 'overview' },
     { label: 'Data Catalog', href: hrefs.catalog(), active: route.name === 'catalog' },
     { label: 'What needs updating', href: hrefs.freshness, active: route.name === 'freshness' },
+    { label: 'Fixes', href: hrefs.fixes, active: route.name === 'fixes' },
   ]);
 </script>
 

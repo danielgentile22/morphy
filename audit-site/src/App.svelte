@@ -7,6 +7,7 @@
   import Overview from './components/Overview.svelte';
   import CatalogView from './components/CatalogView.svelte';
   import FreshnessView from './components/FreshnessView.svelte';
+  import FixesView from './components/FixesView.svelte';
   import SignalsBrowser from './components/SignalsBrowser.svelte';
   import SignalDetail from './components/SignalDetail.svelte';
   import CardsBrowser from './components/CardsBrowser.svelte';
@@ -55,6 +56,8 @@
     <CatalogView anchor={route.anchor} />
   {:else if route.name === 'freshness'}
     <FreshnessView />
+  {:else if route.name === 'fixes'}
+    <FixesView />
   {:else if route.name === 'signals'}
     <SignalsBrowser query={route.query} />
   {:else if route.name === 'signal'}
