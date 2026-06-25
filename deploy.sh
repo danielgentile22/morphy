@@ -28,8 +28,9 @@
 #   VOLUME_DEST    composite path on volume  (/data/processed/composite)
 #   APP_URL        base URL for smoke        (https://$FLY_APP.fly.dev)
 #   PYTHON         local python              (python3)
-#   VITE_MAPTILER_KEY  client-side MapTiler key for the Satellite basemap,
-#                  baked into the SPA at build (unset → Carto Dark fallback)
+#   VITE_MAPTILER_KEY  OPTIONAL override of the Satellite basemap key (the
+#                  prod key is the Dockerfile ARG default; set this only to
+#                  build with a different key)
 set -euo pipefail
 
 FLY_APP="${FLY_APP:-morphy-consulting}"
@@ -85,12 +86,18 @@ deploy_code() {
   need_fly
   require_clean_tree
   export_freshness
-  # VITE_MAPTILER_KEY is baked into the SPA at image-build time (the Satellite
-  # basemap, now the default). It's a referrer-restricted client-side key, not a
-  # secret. Unset → satellite degrades to Carto Dark, so a keyless deploy is safe
-  # but shows no imagery; export it (or keep it in a sourced, git-ignored file).
-  log "fly deploy --app ${FLY_APP}${VITE_MAPTILER_KEY:+ (with MapTiler key)}"
-  fly deploy --app "${FLY_APP}" --build-arg VITE_MAPTILER_KEY="${VITE_MAPTILER_KEY:-}"
+  # VITE_MAPTILER_KEY (Satellite basemap, the default) is baked into the SPA at
+  # build. The Dockerfile carries the production key as its ARG default, so a
+  # bare deploy just works — set this env var only to override with a different
+  # key. Pass --build-arg ONLY when set; an empty value would clobber the
+  # Dockerfile default (and an empty array trips bash 3.2 under set -u).
+  if [[ -n "${VITE_MAPTILER_KEY:-}" ]]; then
+    log "fly deploy --app ${FLY_APP} (MapTiler key override from env)"
+    fly deploy --app "${FLY_APP}" --build-arg "VITE_MAPTILER_KEY=${VITE_MAPTILER_KEY}"
+  else
+    log "fly deploy --app ${FLY_APP} (Dockerfile default MapTiler key)"
+    fly deploy --app "${FLY_APP}"
+  fi
 }
 
 # Run one leg through the tested contract. Explicit branches (rather than an
