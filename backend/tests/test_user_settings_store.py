@@ -31,7 +31,7 @@ def test_defaults_before_any_write(engine: Engine) -> None:
     s = _store(engine)
     assert s.theme == "system"
     assert s.colorblind is False
-    assert s.basemap == "light"
+    assert s.basemap == "satellite"
     assert s.view_mode == "last"
     assert s.home_view == ""
     assert s.filter_default == ""

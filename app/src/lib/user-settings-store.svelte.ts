@@ -18,9 +18,10 @@ const APPEARANCE_CACHE_KEY = 'settings.appearance';
 const DEFAULTS: UserSettings = {
   theme: 'system',
   colorblind: false,
-  // Dark Matter by default so the out-of-box map matches the dark Halo chrome;
-  // the Light (Positron) basemap stays selectable for daylight/field reading.
-  basemap: 'dark',
+  // Satellite (MapTiler) is the default — aerial imagery shows the actual tower
+  // site/land out of the box. Degrades to Carto Dark when no MapTiler key is
+  // built in (so it never 403s); the other basemaps stay selectable.
+  basemap: 'satellite',
   view_mode: 'last',
   home_view: '',
   filter_default: '',

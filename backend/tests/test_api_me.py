@@ -55,7 +55,7 @@ def test_get_settings_returns_sane_defaults_for_a_fresh_user() -> None:
         assert body == {
             "theme": "system",
             "colorblind": False,
-            "basemap": "light",
+            "basemap": "satellite",
             "view_mode": "last",
             "home_view": "",
             "filter_default": "",

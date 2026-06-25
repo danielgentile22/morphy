@@ -11,7 +11,7 @@ that composes appears with zero app changes.
 | Concern | Choice |
 |---|---|
 | Framework | Svelte 5 (runes) + Vite 8 + TypeScript |
-| Map | MapLibre GL JS 5 + a keyless raster basemap (Carto Positron) |
+| Map | MapLibre GL JS 5 + keyless raster basemaps (Carto Positron/Voyager/Dark Matter); optional MapTiler Satellite Hybrid when `VITE_MAPTILER_KEY` is set |
 | Parcel base layer | PMTiles vector tiles (tippecanoe-built) |
 | Lead filter / search | One shared lead-centric `FilterModel` over the slim owners index (top bar + "More" popover + owner/ASR search — Slice 6 / #52) |
 | Parcel base-layer filter | DuckDB-WASM over a slim per-state parquet (now UI-less — see below) |
@@ -94,6 +94,15 @@ were removed in Slice 6). It range-queries `<fips>/parcels_attr.parquet`:
 The app fetches root-relative `/data/...`. **`python -m http.server`
 will not work** — PMTiles and DuckDB-WASM need HTTP Range / 206 responses
 and it does not send them. Use the range-capable `scripts/serve.py`.
+
+**MapTiler Satellite basemap (optional).** Set `VITE_MAPTILER_KEY` (a
+referrer-restricted client-side key) to expose the **Satellite (MapTiler)**
+basemap in Settings → Map & display. Dev: put it in `app/.env.local`
+(git-ignored). Prod: the SPA builds inside the image, so pass it as a Docker
+build arg — `fly deploy --build-arg VITE_MAPTILER_KEY=…`. Unset → the option is
+hidden and any stored `satellite` pref degrades to Carto Dark (never 403s).
+MapTiler's free tier is non-commercial / R&D; production commercial use needs a
+paid plan (~$25/mo).
 
 - **Dev:** `npm run dev` (Vite proxies `/data` → `scripts/serve.py` on
   :8765).

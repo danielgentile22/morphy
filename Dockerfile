@@ -9,6 +9,11 @@ WORKDIR /app
 COPY app/package.json app/package-lock.json ./
 RUN npm ci
 COPY app/ ./
+# Client-side MapTiler key for the Satellite basemap (referrer-restricted, so
+# it's not a secret). Unset → the Satellite option is simply hidden.
+# Pass at deploy: fly deploy --build-arg VITE_MAPTILER_KEY=...
+ARG VITE_MAPTILER_KEY=""
+ENV VITE_MAPTILER_KEY=$VITE_MAPTILER_KEY
 RUN npm run build
 # -> /app/dist
 
