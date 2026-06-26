@@ -11,7 +11,50 @@ FIPS column. ``county_resolver`` maps the uppercased name to its
 
 from __future__ import annotations
 
+import re
+
+import geopandas as gpd
+
 from ..state_parcels import ParcelAdapter
+
+_ZIP_RE = re.compile(r"(\d{5}(?:-\d{4})?)\s*$")
+_STATE_RE = re.compile(r"[,\s]([A-Za-z]{2})\s*$")
+
+
+def _parse_city_state_zip(value: object) -> tuple[str, str, str]:
+    """Split MT Cadastral's combined ``CityStateZ`` into (city, state, zip).
+
+    Parsed from the right so it tolerates the raw's format drift
+    ("MISSOULA, MT 59801", "MISSOULA MT 59801", "GREAT FALLS MT 59405-1234").
+    A standalone trailing 2-letter token is the state and a trailing 5(-4)-digit
+    token is the zip; everything else is the city. Missing parts come back ''.
+    """
+    s = ("" if value is None else str(value)).strip().rstrip(",").strip()
+    if not s:
+        return "", "", ""
+    zip_ = ""
+    m = _ZIP_RE.search(s)
+    if m:
+        zip_ = m.group(1)
+        s = s[: m.start()].strip()
+    state = ""
+    m2 = _STATE_RE.search(s)
+    if m2:
+        state = m2.group(1).upper()
+        s = s[: m2.start()].strip()
+    return s.rstrip(",").strip(), state, zip_
+
+
+def _split_situs(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """E12: split the combined CityStateZ (carried into situs_city by the
+    field_map) into the three situs sub-fields."""
+    gdf = gdf.copy()
+    parts = [_parse_city_state_zip(v) for v in gdf["situs_city"]]
+    gdf["situs_city"] = [p[0] for p in parts]
+    gdf["situs_state"] = [p[1] for p in parts]
+    gdf["situs_zip"] = [p[2] for p in parts]
+    return gdf
+
 
 # County name → 5-digit FIPS. MT FIPS are alphabetical, odd codes 30001–30111.
 MT_COUNTY_NAME_TO_FIPS: dict[str, str] = {
@@ -91,6 +134,9 @@ MT_CADASTRAL_PARCELS_ADAPTER = ParcelAdapter(
         "mailing_state": ["OwnerState"],
         "mailing_zip": ["OwnerZipCo"],
         "situs_addr": ["AddressLin"],
+        # CityStateZ is a combined "city state zip" — carried into situs_city
+        # here, then split into city/state/zip by the _split_situs post_map (E12).
+        "situs_city": ["CityStateZ"],
         "acreage": ["GISAcres"],
         "land_value": ["TotalLandV"],
         "improvement_value": ["TotalBuild"],
@@ -100,4 +146,5 @@ MT_CADASTRAL_PARCELS_ADAPTER = ParcelAdapter(
         "county_fips": ["CountyName"],
     },
     county_resolver=_resolve_mt_county,
+    post_map=_split_situs,
 )

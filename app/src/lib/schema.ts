@@ -35,11 +35,18 @@ export type EntityKind = 'tower' | 'parcel' | 'solar' | 'distress_overlay' | 'co
 
 /** A single row in a detail panel. */
 export interface FieldDef {
-  label: string;
+  /** Row label. A function lets the label depend on the feature (E3: AR's
+   *  mailing field is really the situs, so it's labelled per state). */
+  label: string | ((p: Props) => string);
   /** v3 property keys this row reads — drives the schema-completeness test. */
   keys: string[];
   /** Render the row's display value, or null when there is nothing to show. */
   value: (p: Props) => string | null;
+}
+
+/** Resolve a (possibly per-feature) field label to a string. */
+export function fieldLabel(f: FieldDef, p: Props): string {
+  return typeof f.label === 'function' ? f.label(p) : f.label;
 }
 
 export interface FieldSection {
@@ -207,7 +214,9 @@ export const TOWER_SCHEMA: EntitySchema = {
           value: (p) => joinNonEmpty([p.street, p.city, p.state, p.zip]),
         },
         {
-          label: 'FAA registrant',
+          // The ASR owner is the towerco/carrier (the lease counterparty),
+          // not an FAA filing artifact (E1).
+          label: 'Tower owner (ASR)',
           keys: ['owner_name'],
           value: (p) => fmtText(p.owner_name),
         },
@@ -284,7 +293,11 @@ export const PARCEL_SCHEMA: EntitySchema = {
           value: (p) => (fmtText(p.owner_kind) ? ownerKindLabel(p.owner_kind) : null),
         },
         {
-          label: 'Mailing address',
+          // AR (FIPS 05) ships no owner-mailing column — the "mailing" field is
+          // wired to the situs (physical) address, so label it honestly there
+          // and don't invite outreach to a property location (E3). Data
+          // untouched; the real AR mailing source is MACRO-8.
+          label: (p) => (p.state_fips === '05' ? 'Situs address' : 'Mailing address'),
           keys: ['mailing_addr', 'mailing_city', 'mailing_state', 'mailing_zip'],
           value: (p) =>
             joinNonEmpty([p.mailing_addr, p.mailing_city, p.mailing_state, p.mailing_zip]),
@@ -296,8 +309,8 @@ export const PARCEL_SCHEMA: EntitySchema = {
       fields: [
         {
           label: 'Situs address',
-          keys: ['situs_addr', 'situs_city'],
-          value: (p) => joinNonEmpty([p.situs_addr, p.situs_city]),
+          keys: ['situs_addr', 'situs_city', 'situs_state', 'situs_zip'],
+          value: (p) => joinNonEmpty([p.situs_addr, p.situs_city, p.situs_state, p.situs_zip]),
         },
         { label: 'County FIPS', keys: ['county_fips'], value: (p) => fmtText(p.county_fips) },
         { label: 'Acreage', keys: ['acreage'], value: (p) => fmtAcres(p.acreage) },
@@ -313,7 +326,10 @@ export const PARCEL_SCHEMA: EntitySchema = {
       title: 'Valuation',
       fields: [
         {
-          label: 'Assessed value',
+          // Fed by market/appraised value in all 4 states (FL JV, AR/MT
+          // TotalValue, WV TotalAppraisal), not the statutory assessed figure
+          // (E2). The true assessed value is the separate M-k item.
+          label: 'Market / appraised value',
           keys: ['assessed_value'],
           value: (p) => fmtMoney(p.assessed_value),
         },
@@ -348,11 +364,6 @@ export const PARCEL_SCHEMA: EntitySchema = {
           label: 'Solar facilities',
           keys: ['solar_count'],
           value: (p) => fmtInt(p.solar_count),
-        },
-        {
-          label: 'Billboards',
-          keys: ['billboard_count'],
-          value: (p) => fmtInt(p.billboard_count),
         },
       ],
     },

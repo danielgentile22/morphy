@@ -16,6 +16,10 @@ AR_PARCELS_ADAPTER = ParcelAdapter(
         "mailing_zip": ["AdrZip5"],
         "situs_addr": ["AdrLabel"],
         "situs_city": ["AdrCity"],
+        # AR's AdrLabel/AdrCity/AdrZip5 ARE the situs (physical) location — the
+        # parcel ships no separate owner-mailing column (E3 relabels it). Map
+        # AdrZip5 as the situs zip too (E9). No situs-state column in OneMap.
+        "situs_zip": ["AdrZip5"],
         "acreage": ["TaxArea"],
         "land_value": ["LandValue"],
         "improvement_value": ["ImpValue"],

@@ -38,7 +38,6 @@ def _make_parcels_parquet(path: Path, n: int = 10) -> None:
         "in_oz": pa.array([i % 2 == 0 for i in range(n)]),
         "has_tower": pa.array([i % 3 == 0 for i in range(n)]),
         "has_solar": pa.array([False] * n),
-        "has_billboard": pa.array([False] * n),
         "interestingness_score": pa.array([round(0.1 * i, 2) for i in range(n)]),
         # An extra column that must NOT leak into the tiles.
         "owner_name_norm": pa.array([f"owner {i}" for i in range(n)]),

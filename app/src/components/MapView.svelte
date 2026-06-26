@@ -308,7 +308,6 @@
               'any',
               ['coalesce', ['get', 'has_tower'], false],
               ['coalesce', ['get', 'has_solar'], false],
-              ['coalesce', ['get', 'has_billboard'], false],
             ],
             1.8,
             0.25,

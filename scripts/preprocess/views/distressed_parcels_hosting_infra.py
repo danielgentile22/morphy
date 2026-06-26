@@ -26,9 +26,7 @@ class DistressedParcelsHostingInfraView(View):
             | parcels.get("persistent_poverty", False).fillna(False)
             | (parcels.get("distress_tier", "").fillna("").isin(["distressed", "at-risk"]))
         )
-        infra_mask = (
-            parcels.get("has_tower", False).fillna(False)
-            | parcels.get("has_solar", False).fillna(False)
-            | parcels.get("has_billboard", False).fillna(False)
-        )
+        infra_mask = parcels.get("has_tower", False).fillna(False) | parcels.get(
+            "has_solar", False
+        ).fillna(False)
         return parcels[distress_mask & infra_mask].copy()

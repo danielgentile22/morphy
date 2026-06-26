@@ -438,6 +438,139 @@ def test_owner_kind_inferred_from_owner_name():
 # ── post_map escape hatch ────────────────────────────────────────────────
 
 
+# ── E9: situs state/zip populate from the raw (no longer hard-coded None) ─
+
+
+def test_fl_situs_zip_populates_from_phy_zipcd():
+    """FDOR NAL carries PHY_ZIPCD; E9 maps it to situs_zip (was hard-coded None).
+    FL has no physical-state column, so situs_state stays blank."""
+    g = _gdf(
+        [
+            {
+                "PARCEL_ID": "F1",
+                "OWN_NAME": "OWNER",
+                "PHY_ADDR1": "1 BEACH RD",
+                "PHY_CITY": "MIAMI",
+                "PHY_ZIPCD": "33101",
+                "CENSUS_BK": "120860001001",
+                "geometry": _square(),
+            }
+        ]
+    )
+    out = map_layer_to_canonical(g, FDOR_NAL_ADAPTER)
+    assert out["situs_zip"].iloc[0] == "33101"
+    assert out["situs_city"].iloc[0] == "MIAMI"
+    assert out["situs_state"].iloc[0] == ""
+
+
+def test_ar_situs_zip_populates_from_adrzip5():
+    """AR's AdrLabel/AdrCity/AdrZip5 are the situs (physical) location — E9 maps
+    AdrZip5 to situs_zip too."""
+    g = _gdf(
+        [
+            {
+                "ParcelId": "A1",
+                "OwnerName": "OWNER",
+                "AdrLabel": "100 MAIN ST",
+                "AdrCity": "LITTLE ROCK",
+                "AdrZip5": "72201",
+                "CountyFips": "001",
+                "geometry": _square(),
+            }
+        ]
+    )
+    out = map_layer_to_canonical(g, AR_PARCELS_ADAPTER)
+    assert out["situs_zip"].iloc[0] == "72201"
+
+
+# ── E11: WV year_built maps from the joined ParcelSummary.YearBuilt ───────
+
+
+def test_wv_year_built_maps_from_parcel_summary():
+    from preprocess.normalizers.state_parcel_adapters.wv import WV_PARCELS_ADAPTER
+
+    g = _gdf(
+        [
+            {
+                "CleanParcelID": "W1",
+                "CountyID": "01",
+                "Owner1": "OWNER",
+                "YearBuilt": 1975,  # rides the joined ParcelSummary
+                "geometry": _square(),
+            },
+            {
+                "CleanParcelID": "W2",
+                "CountyID": "01",
+                "Owner1": "OWNER",
+                "YearBuilt": None,  # ~46% are null — stays NaN, not 0
+                "geometry": _square(),
+            },
+        ]
+    )
+    out = map_layer_to_canonical(g, WV_PARCELS_ADAPTER)
+    assert out["year_built"].iloc[0] == 1975
+    assert pd.isna(out["year_built"].iloc[1])
+
+
+# ── E12: MT CityStateZ parses into situs city/state/zip ──────────────────
+
+
+def test_mt_parse_city_state_zip_handles_format_drift():
+    from preprocess.normalizers.state_parcel_adapters.mt import _parse_city_state_zip
+
+    assert _parse_city_state_zip("MISSOULA, MT 59801") == ("MISSOULA", "MT", "59801")
+    assert _parse_city_state_zip("MISSOULA MT 59801") == ("MISSOULA", "MT", "59801")
+    assert _parse_city_state_zip("GREAT FALLS MT 59405-1234") == ("GREAT FALLS", "MT", "59405-1234")
+    # Missing parts come back blank; a one-word city is not mistaken for a state.
+    assert _parse_city_state_zip("BILLINGS") == ("BILLINGS", "", "")
+    assert _parse_city_state_zip("") == ("", "", "")
+
+
+def test_mt_split_situs_post_map_fills_three_fields():
+    """The combined CityStateZ is carried into situs_city by the field_map, then
+    the post_map splits it. (map_layer_to_canonical doesn't run post_map — the
+    driver does — so apply it directly, as test_post_map_runs_when_set does.)"""
+    from preprocess.normalizers.state_parcel_adapters.mt import _split_situs
+
+    g = _gdf(
+        [
+            {
+                "PARCELID": "M1",
+                "OwnerName": "OWNER",
+                "AddressLin": "1 BIG SKY RD",
+                "CityStateZ": "BOZEMAN, MT 59715",
+                "CountyName": "Gallatin",
+                "geometry": _square(),
+            }
+        ]
+    )
+    out = _split_situs(map_layer_to_canonical(g, MT_CADASTRAL_PARCELS_ADAPTER))
+    assert out["situs_addr"].iloc[0] == "1 BIG SKY RD"
+    assert out["situs_city"].iloc[0] == "BOZEMAN"
+    assert out["situs_state"].iloc[0] == "MT"
+    assert out["situs_zip"].iloc[0] == "59715"
+
+
+# ── E4: FL DOR use code decodes to land-use text via the adapter post_map ─
+
+
+def test_fl_land_use_decodes_via_post_map():
+    from preprocess.normalizers.state_parcel_adapters.fdor_nal import _decode_land_use
+
+    g = _gdf(
+        [
+            {"PARCEL_ID": "F1", "OWN_NAME": "O", "DOR_UC": "071", "geometry": _square()},
+            {"PARCEL_ID": "F2", "OWN_NAME": "O", "DOR_UC": "072", "geometry": _square()},
+            # A local code ≥ 100 has no statewide text → falls back to the code.
+            {"PARCEL_ID": "F3", "OWN_NAME": "O", "DOR_UC": "150", "geometry": _square()},
+        ]
+    )
+    out = _decode_land_use(map_layer_to_canonical(g, FDOR_NAL_ADAPTER))
+    assert out["land_use_desc"].tolist() == ["Churches", "Private schools and colleges", "150"]
+    # The raw code column is untouched.
+    assert out["land_use_code"].tolist() == ["071", "072", "150"]
+
+
 def test_post_map_runs_when_set():
     """An adapter's optional post_map callable must run after the default
     mapping — verified end-to-end via map_layer_to_canonical (the driver

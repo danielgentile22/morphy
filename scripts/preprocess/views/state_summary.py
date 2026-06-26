@@ -30,7 +30,9 @@ class StateSummaryView(View):
             billboard_count = len(ctx.get("billboard"))
 
         df = parcels.copy()
-        df["_any_infra"] = df["has_tower"] | df["has_solar"] | df["has_billboard"]
+        # billboard_count below is the billboard-layer feature count (kept,
+        # always 0 — sources deferred); parcels no longer carry has_billboard (E14).
+        df["_any_infra"] = df["has_tower"] | df["has_solar"]
 
         # Top 20 owners by total assessed value
         top_owners = (

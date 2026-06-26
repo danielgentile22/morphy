@@ -29,9 +29,9 @@ class ScoreComponents:
     """Per-parcel weight-free signals. Same shape Python ↔ TypeScript.
 
     Field semantics:
-      - infra_types — number of distinct infra kinds present (0..3 today:
-        tower + solar + billboard)
-      - max_infra_instances — max(tower_count, solar_count, billboard_count)
+      - infra_types — number of distinct infra kinds present (0..2 today:
+        tower + solar)
+      - max_infra_instances — max(tower_count, solar_count)
       - overlays — number of distress overlays the parcel sits in (0..3)
       - arc_tier — "" | "transitional" | "at-risk" | "distressed"
       - owner_kind — "" | "individual" | "llc" | "trust" | …
@@ -65,10 +65,8 @@ def compute_components(row: Any) -> ScoreComponents:
     """
     has_tower = bool(_get(row, "has_tower", False))
     has_solar = bool(_get(row, "has_solar", False))
-    has_billboard = bool(_get(row, "has_billboard", False))
     tower_count = int(_get(row, "tower_count", 0) or 0)
     solar_count = int(_get(row, "solar_count", 0) or 0)
-    billboard_count = int(_get(row, "billboard_count", 0) or 0)
 
     in_oz = bool(_get(row, "in_oz", False))
     in_qct = bool(_get(row, "in_qct", False))
@@ -79,8 +77,8 @@ def compute_components(row: Any) -> ScoreComponents:
     cluster_size = int(_get(row, "owner_cluster_size", 0) or 0)
 
     return ScoreComponents(
-        infra_types=int(has_tower) + int(has_solar) + int(has_billboard),
-        max_infra_instances=max(tower_count, solar_count, billboard_count),
+        infra_types=int(has_tower) + int(has_solar),
+        max_infra_instances=max(tower_count, solar_count),
         overlays=int(in_oz) + int(in_qct) + int(persistent_poverty),
         arc_tier=arc_tier,
         owner_kind=owner_kind,

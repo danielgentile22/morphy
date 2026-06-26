@@ -406,8 +406,12 @@ def map_layer_to_canonical(
     out["mailing_zip"] = _str_series(g, fm.get("mailing_zip", []))
     out["situs_addr"] = _str_series(g, fm.get("situs_addr", []))
     out["situs_city"] = _str_series(g, fm.get("situs_city", []))
-    out["situs_state"] = None
-    out["situs_zip"] = None
+    # E9: populate situs state/zip from the raw where the adapter's field_map
+    # carries them (was hard-coded None for every state, cutting the situs
+    # address off at the city). States whose raw has no such column stay blank;
+    # MT parses its combined CityStateZ in a post_map (E12).
+    out["situs_state"] = _str_series(g, fm.get("situs_state", []))
+    out["situs_zip"] = _str_series(g, fm.get("situs_zip", []))
     out["acreage"] = _num_series(g, fm.get("acreage", []))
     out["land_value"] = _num_series(g, fm.get("land_value", []))
     out["improvement_value"] = _num_series(g, fm.get("improvement_value", []))
@@ -424,8 +428,8 @@ def map_layer_to_canonical(
     out["tower_count"] = 0
     out["has_solar"] = False
     out["solar_count"] = 0
-    out["has_billboard"] = False
-    out["billboard_count"] = 0
+    # Billboard columns dropped (E14): every billboard source is deferred, so
+    # has_billboard/billboard_count were false/0 on 100% of parcels.
     out["infrastructure_summary"] = [[] for _ in range(n)]
     out["in_oz"] = False
     out["in_qct"] = False

@@ -306,8 +306,6 @@ PARCEL_COLS_TO_COMPARE = [
     "tower_count",
     "has_solar",
     "solar_count",
-    "has_billboard",
-    "billboard_count",
     "infrastructure_summary",
     "distress_tier",
     "persistent_poverty",

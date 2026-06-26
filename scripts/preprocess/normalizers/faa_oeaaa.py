@@ -22,6 +22,7 @@ from ..base import (
 )
 from ..geom import add_point_derivatives
 from ..io import dual_write_spatial, write_raw_parquet
+from .faa_verification_status import verification_status_desc
 from .fips import canon_state_fips
 from .pandas_coerce import safe_str, to_float
 
@@ -104,9 +105,11 @@ class FaaDofNormalizer(Normalizer):
                     "structure_type": safe_str(r.get("obstacle_type")),
                     "structure_type_desc": safe_str(r.get("obstacle_type")),
                     "status": safe_str(r.get("verification_status")),
-                    "status_desc": "Verified"
-                    if safe_str(r.get("verification_status")) == "V"
-                    else "Other",
+                    # Faithful FAA verification-status mapping (E8): "O"=Verified,
+                    # "U"=Unverified, unknown→bare code (was a wrong "V"→Verified
+                    # / else→"Other" collapse). The is_active hard-code below is
+                    # MACRO-2 (FAA↔ASR corroboration), deliberately untouched here.
+                    "status_desc": verification_status_desc(r.get("verification_status")),
                     "is_active": True,
                     "date_built": None,
                     "date_dismantled": None,

@@ -38,20 +38,16 @@ def apply_parcel_hosts_infra(
     chunk: gpd.GeoDataFrame,
     tower_counts: dict[str, int],
     solar_counts: dict[str, int],
-    billboard_counts: dict[str, int],
     tower_summary: dict[str, list[dict]],
     solar_summary: dict[str, list[dict]],
-    billboard_summary: dict[str, list[dict]],
 ) -> gpd.GeoDataFrame:
     """Feed a parcel chunk + infra reverse-maps to the hosts-infra annotator."""
     return parcel_hosts_infra.annotate(
         chunk,
         tower_counts=tower_counts,
         solar_counts=solar_counts,
-        billboard_counts=billboard_counts,
         tower_summary=tower_summary,
         solar_summary=solar_summary,
-        billboard_summary=billboard_summary,
     )
 
 

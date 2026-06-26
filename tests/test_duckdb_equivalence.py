@@ -337,11 +337,9 @@ class _LegacyCountySummaryAggregator:
         if "county_fips" not in chunk.columns:
             return
         df = chunk.copy()
-        df["_any_infra"] = (
-            df.get("has_tower", False).fillna(False)
-            | df.get("has_solar", False).fillna(False)
-            | df.get("has_billboard", False).fillna(False)
-        )
+        df["_any_infra"] = df.get("has_tower", False).fillna(False) | df.get(
+            "has_solar", False
+        ).fillna(False)
         df["_llc"] = (df.get("owner_kind", "") == "llc").astype(int)
         partial = (
             df.groupby("county_fips")
@@ -351,7 +349,6 @@ class _LegacyCountySummaryAggregator:
                 total_acres=("acreage", "sum"),
                 tower_count=("tower_count", "sum"),
                 solar_count=("solar_count", "sum"),
-                billboard_count=("billboard_count", "sum"),
                 parcels_hosting_infra=("_any_infra", "sum"),
                 parcels_in_oz=("in_oz", "sum"),
                 parcels_in_qct=("in_qct", "sum"),
@@ -375,7 +372,6 @@ class _LegacyCountySummaryAggregator:
                 total_acres=("total_acres", "sum"),
                 tower_count=("tower_count", "sum"),
                 solar_count=("solar_count", "sum"),
-                billboard_count=("billboard_count", "sum"),
                 parcels_hosting_infra=("parcels_hosting_infra", "sum"),
                 parcels_in_oz=("parcels_in_oz", "sum"),
                 parcels_in_qct=("parcels_in_qct", "sum"),
@@ -460,10 +456,9 @@ def test_county_summary_equivalence_synthetic_edges(tmp_path):
                 "acreage": [r[3] for r in rows],
                 "tower_count": [r[4] for r in rows],
                 "solar_count": 0,
-                "billboard_count": 0,
                 "has_tower": [r[4] > 0 for r in rows],
                 "has_solar": False,
-                "has_billboard": [r[5] for r in rows],
+                # r[5] was the old has_billboard flag (dropped, E14) — unused now.
                 "in_oz": [r[6] for r in rows],
                 "in_qct": False,
                 "distress_tier": [r[7] for r in rows],
@@ -511,7 +506,10 @@ def test_county_summary_equivalence_synthetic_edges(tmp_path):
     assert int(by_county.loc["11111", "llc_owner_count"]) == 2
     assert int(by_county.loc["11111", "parcels_in_oz"]) == 2
     assert bool(by_county.loc["11111", "persistent_poverty"]) is True
-    assert int(by_county.loc["22222", "parcels_hosting_infra"]) == 1  # billboard counts as infra
+    # Towers count as infra (X1+X5 in 11111); 22222's only "infra" was a
+    # billboard, which no longer counts (E14), so it drops to 0.
+    assert int(by_county.loc["11111", "parcels_hosting_infra"]) == 2
+    assert int(by_county.loc["22222", "parcels_hosting_infra"]) == 0
 
 
 def test_county_summary_rollup_no_eligible_shards(tmp_path):

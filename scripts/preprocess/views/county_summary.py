@@ -11,7 +11,7 @@ class CountySummaryView(View):
     inputs = ["parcel"]
     description = (
         "Per-county rollup: parcel count, total assessed value, infra "
-        "counts (tower/solar/billboard), distress flags, top owners. "
+        "counts (tower/solar), distress flags, top owners. "
         "Foundation for county-level dashboards."
     )
     write_geojson = False
@@ -29,7 +29,6 @@ class CountySummaryView(View):
                 total_acres=("acreage", "sum"),
                 tower_count=("tower_count", "sum"),
                 solar_count=("solar_count", "sum"),
-                billboard_count=("billboard_count", "sum"),
                 parcels_hosting_infra=("has_tower", "sum"),  # approx; refined below
                 parcels_in_oz=("in_oz", "sum"),
                 parcels_in_qct=("in_qct", "sum"),
@@ -40,7 +39,7 @@ class CountySummaryView(View):
             .reset_index()
         )
         # Refine parcels_hosting_infra to count parcels with ANY infra type.
-        df["_any_infra"] = df["has_tower"] | df["has_solar"] | df["has_billboard"]
+        df["_any_infra"] = df["has_tower"] | df["has_solar"]
         infra = (
             df.groupby("county_fips")["_any_infra"]
             .sum()

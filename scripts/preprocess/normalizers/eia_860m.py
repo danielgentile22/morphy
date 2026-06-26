@@ -59,8 +59,13 @@ class Eia860MNormalizer(Normalizer):
             geom = None
             if lat is not None and lon is not None and -90 <= lat <= 90 and -180 <= lon <= 180:
                 geom = Point(lon, lat)
-            state_fips = canon_state_fips(r.get("State"))
-            county_fips = canon_county_fips(r.get("County"), state_fips=state_fips)
+            # E5: the 860M column is "Plant State", not "State" — reading the
+            # wrong name nulled state_fips on 100% of rows, dropping the whole
+            # feed downstream. Keep "State" as a fallback for older vintages.
+            state_fips = canon_state_fips(r.get("Plant State") or r.get("State"))
+            county_fips = canon_county_fips(
+                r.get("Plant County") or r.get("County"), state_fips=state_fips
+            )
             rows.append(
                 {
                     "facility_id": safe_str(r.get("Plant ID") or r.get("Plant Code")),

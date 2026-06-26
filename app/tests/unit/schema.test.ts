@@ -6,6 +6,7 @@ import {
   DISTRESS_SCHEMA,
   COUNTY_SCHEMA,
   entitySchema,
+  fieldLabel,
   infrastructureItems,
   scoreComponents,
   type EntitySchema,
@@ -20,7 +21,7 @@ const AR_TOWER: Props = {
   lat: 33.00588,
   lon: -91.31267,
   status: 'O',
-  status_desc: 'Other',
+  status_desc: 'Verified', // FAA "O" = Verified (E8)
   structure_type: 'TOWER',
   structure_type_desc: 'TOWER',
   is_active: true,
@@ -64,7 +65,6 @@ const AR_PARCEL: Props = {
   owner_cluster_value_total: 791935.0,
   tower_count: 2,
   solar_count: 1,
-  billboard_count: 0,
   distress_tier: 'distressed',
   in_oz: false,
   in_qct: true,
@@ -83,11 +83,11 @@ const AR_PARCEL: Props = {
   ],
 };
 
-/** Find a field's rendered value by its label. */
+/** Find a field's rendered value by its (resolved) label. */
 function renderField(schema: EntitySchema, label: string, props: Props): string | null {
   for (const section of schema.sections) {
     for (const f of section.fields) {
-      if (f.label === label) return f.value(props);
+      if (fieldLabel(f, props) === label) return f.value(props);
     }
   }
   throw new Error(`no field labelled "${label}" in the ${schema.kind} schema`);
@@ -147,14 +147,14 @@ describe('TOWER_SCHEMA against a real AR tower', () => {
 
   it('renders the tower facts with v3 field names', () => {
     expect(renderField(TOWER_SCHEMA, 'Height', AR_TOWER)).toBe('79.2 m (260 ft)');
-    expect(renderField(TOWER_SCHEMA, 'Status', AR_TOWER)).toBe('Other');
+    expect(renderField(TOWER_SCHEMA, 'Status', AR_TOWER)).toBe('Verified');
     expect(renderField(TOWER_SCHEMA, 'Coordinates', AR_TOWER)).toBe('33.00588, -91.31267');
     expect(renderField(TOWER_SCHEMA, 'Active', AR_TOWER)).toBe('Yes');
   });
 
   it('returns null (not a crash) for genuinely-empty fields', () => {
     // owner_name is empty on most towers; distress_tier is blank.
-    expect(renderField(TOWER_SCHEMA, 'FAA registrant', AR_TOWER)).toBeNull();
+    expect(renderField(TOWER_SCHEMA, 'Tower owner (ASR)', AR_TOWER)).toBeNull();
     expect(renderField(TOWER_SCHEMA, 'County economic tier', AR_TOWER)).toBeNull();
   });
 
@@ -181,7 +181,7 @@ describe('PARCEL_SCHEMA against a real AR parcel', () => {
   it('shows owner, valuation and score — the pitch-critical fields', () => {
     expect(renderField(PARCEL_SCHEMA, 'Owner', AR_PARCEL)).toContain('BURCH');
     expect(renderField(PARCEL_SCHEMA, 'Owner type', AR_PARCEL)).toBe('Trust');
-    expect(renderField(PARCEL_SCHEMA, 'Assessed value', AR_PARCEL)).toBe('$299,935');
+    expect(renderField(PARCEL_SCHEMA, 'Market / appraised value', AR_PARCEL)).toBe('$299,935');
     expect(renderField(PARCEL_SCHEMA, 'Score', AR_PARCEL)).toBe('0.90');
   });
 
@@ -194,9 +194,24 @@ describe('PARCEL_SCHEMA against a real AR parcel', () => {
   it('renders infrastructure counts', () => {
     expect(renderField(PARCEL_SCHEMA, 'Towers', AR_PARCEL)).toBe('2');
     expect(renderField(PARCEL_SCHEMA, 'Solar facilities', AR_PARCEL)).toBe('1');
-    expect(renderField(PARCEL_SCHEMA, 'Billboards', AR_PARCEL)).toBe('0');
+  });
+
+  it('labels the mailing field as situs for AR (no mailing source) but mailing elsewhere (E3)', () => {
+    expect(fieldLabel(mailingField(), { ...AR_PARCEL, state_fips: '05' })).toBe('Situs address');
+    expect(fieldLabel(mailingField(), { ...AR_PARCEL, state_fips: '12' })).toBe('Mailing address');
+    // No state_fips → defaults to the mailing label (and renders the address).
+    expect(renderField(PARCEL_SCHEMA, 'Mailing address', AR_PARCEL)).toBe(
+      '123 FARM RD, STAR CITY, AR, 71667',
+    );
   });
 });
+
+/** The Ownership-section field whose label flips for AR (E3). */
+function mailingField() {
+  return PARCEL_SCHEMA.sections
+    .flatMap((s) => s.fields)
+    .find((f) => f.keys.includes('mailing_addr'))!;
+}
 
 const AR_SOLAR: Props = {
   name: 'Carpenter',

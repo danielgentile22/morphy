@@ -407,13 +407,10 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
         id_col="facility_id",
         owner_col="operator",
     )
-    billboard_counts, billboard_summary = _reverse_index(
-        billboard_lookup,
-        infra=ctx.get("billboard"),
-        kind="billboard",
-        id_col="permit_no",
-        owner_col="owner",
-    )
+    # Billboards are no longer rolled up onto parcels (E14): every source is
+    # deferred (MACRO-9), so the per-parcel counts were 0 on 100% of rows. The
+    # billboard layer itself is still composed below (billboard_lookup) so the
+    # plumbing is ready when a source is acquired.
 
     # 4. Per-chunk loop -----------------------------------------------------
     # Hoist the county_score rollup out of the shard loop (PERF-021): it's a
@@ -441,10 +438,8 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
             chunk,
             tower_counts,
             solar_counts,
-            billboard_counts,
             tower_summary,
             solar_summary,
-            billboard_summary,
         )
         chunk = apply_county_score(chunk, county_score_prepared)
         chunk = apply_parcel_to_distress(chunk, ctx.get("distress_overlay"))

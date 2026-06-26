@@ -289,10 +289,8 @@ class StateSummaryAggregator:
     def consume(self, chunk: gpd.GeoDataFrame) -> None:
         df = chunk
         self._parcel_count += len(df)
-        any_infra = (
-            df.get("has_tower", False).fillna(False)
-            | df.get("has_solar", False).fillna(False)
-            | df.get("has_billboard", False).fillna(False)
+        any_infra = df.get("has_tower", False).fillna(False) | df.get("has_solar", False).fillna(
+            False
         )
         self._any_infra += int(any_infra.sum())
         if "owner_kind" in df.columns:
@@ -401,9 +399,7 @@ def aggregator_for_view(view: View) -> ChunkAggregator | None:
         return FilterChunkAggregator(
             name,
             lambda df: (
-                df.get("has_tower", False).fillna(False)
-                | df.get("has_solar", False).fillna(False)
-                | df.get("has_billboard", False).fillna(False)
+                df.get("has_tower", False).fillna(False) | df.get("has_solar", False).fillna(False)
             ),
         )
     if name == "distressed_parcels_hosting_infra":
@@ -419,7 +415,6 @@ def aggregator_for_view(view: View) -> ChunkAggregator | None:
                 & (
                     df.get("has_tower", False).fillna(False)
                     | df.get("has_solar", False).fillna(False)
-                    | df.get("has_billboard", False).fillna(False)
                 )
             ),
         )
@@ -432,7 +427,6 @@ def aggregator_for_view(view: View) -> ChunkAggregator | None:
                 & (
                     df.get("has_tower", False).fillna(False)
                     | df.get("has_solar", False).fillna(False)
-                    | df.get("has_billboard", False).fillna(False)
                 )
             ),
         )
@@ -471,7 +465,6 @@ _COUNTY_SUMMARY_REQUIRED = frozenset(
         "acreage",
         "tower_count",
         "solar_count",
-        "billboard_count",
         "in_oz",
         "in_qct",
         "distress_tier",
@@ -497,8 +490,8 @@ def county_summary_rollup(paths: list[Path]) -> pd.DataFrame | None:
 
       - a shard missing any required column contributes nothing (the
         streaming consume() raised per chunk and the loop skipped it);
-      - has_tower / has_solar / has_billboard / owner_kind are optional
-        with the same defaults the pandas ``.get()`` calls supplied;
+      - has_tower / has_solar / owner_kind are optional with the same
+        defaults the pandas ``.get()`` calls supplied;
       - ``distress_tier`` "first" / ``persistent_poverty`` "any" are
         county-constant by construction (one county_score rollup annotates
         every chunk), read in deterministic file order;
@@ -537,9 +530,9 @@ def county_summary_rollup(paths: list[Path]) -> pd.DataFrame | None:
     union_cols = set(col_types)
     flags = {
         c: (f'coalesce(p."{c}", FALSE)' if c in union_cols else "FALSE")
-        for c in ("has_tower", "has_solar", "has_billboard")
+        for c in ("has_tower", "has_solar")
     }
-    any_infra = f"({flags['has_tower']} OR {flags['has_solar']} OR {flags['has_billboard']})"
+    any_infra = f"({flags['has_tower']} OR {flags['has_solar']})"
     llc = (
         "CAST(coalesce(sum(CASE WHEN p.owner_kind = 'llc' THEN 1 ELSE 0 END), 0) AS BIGINT)"
         if "owner_kind" in union_cols
@@ -554,7 +547,6 @@ def county_summary_rollup(paths: list[Path]) -> pd.DataFrame | None:
           {_sum_sql("acreage", int_like=int_like("acreage"))} AS total_acres,
           {_sum_sql("tower_count", int_like=int_like("tower_count"))} AS tower_count,
           {_sum_sql("solar_count", int_like=int_like("solar_count"))} AS solar_count,
-          {_sum_sql("billboard_count", int_like=int_like("billboard_count"))} AS billboard_count,
           CAST(coalesce(sum(CASE WHEN {any_infra} THEN 1 ELSE 0 END), 0) AS BIGINT)
             AS parcels_hosting_infra,
           {_sum_sql("in_oz", int_like=int_like("in_oz"), boolean=is_bool("in_oz"))} AS parcels_in_oz,

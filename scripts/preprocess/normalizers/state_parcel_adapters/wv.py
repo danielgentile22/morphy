@@ -192,6 +192,9 @@ WV_PARCELS_ADAPTER = ParcelAdapter(
         "assessed_value": ["TotalAppraisal"],
         "land_use_code": ["LandUseCode", "PropertyClassCode"],
         "land_use_desc": ["LandUse", "PropertyClassDescription"],
+        # YearBuilt rides the joined ParcelSummary (~54% populated); was
+        # unmapped → 100% null in output (E11).
+        "year_built": ["YearBuilt"],
         # CountyID (polygon, every row) preferred; CountyName/Code as fallback.
         "county_fips": ["CountyID", "CountyName", "CountyCode"],
     },
@@ -216,6 +219,7 @@ WV_PARCELS_ADAPTER = ParcelAdapter(
             "LandUseCode",
             "PropertyClassCode",
             "PropertyClassDescription",
+            "YearBuilt",
             "CalculatedAcres",
             "DeededAcres",
             "CountyName",

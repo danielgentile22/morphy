@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app } from '../lib/stores.svelte';
-  import { entitySchema, infrastructureItems, scoreComponents, carriers, type Props } from '../lib/schema';
+  import { entitySchema, fieldLabel, infrastructureItems, scoreComponents, carriers, type Props } from '../lib/schema';
   import CarrierList from './CarrierList.svelte';
   import Icon from './Icon.svelte';
 
@@ -56,7 +56,7 @@
         <!-- The Carriers section is a list-of-struct, rendered as badges
              below — exclude it from the flat key/value loop. -->
         {#each schema.sections.filter((s) => s.title !== 'Carriers') as section (section.title)}
-          {@const rows = section.fields.map((f) => ({ label: f.label, value: f.value(props) }))}
+          {@const rows = section.fields.map((f) => ({ label: fieldLabel(f, props), value: f.value(props) }))}
           {#if rows.some((r) => r.value !== null)}
             <div class="section">
               <h3>{section.title}</h3>

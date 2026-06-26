@@ -11,7 +11,7 @@ class LlcOwnedParcelsWithInfraView(View):
     inputs = ["parcel"]
     description = (
         "Parcels owned by an LLC, trust, or partnership that host any "
-        "tower / billboard / solar facility. Highest-value outreach segment."
+        "tower / solar facility. Highest-value outreach segment."
     )
     write_geojson = True
 
@@ -21,9 +21,7 @@ class LlcOwnedParcelsWithInfraView(View):
             return None
         owner_kinds = {"llc", "trust", "partnership"}
         kind_mask = parcels["owner_kind"].isin(owner_kinds)
-        infra_mask = (
-            parcels.get("has_tower", False).fillna(False)
-            | parcels.get("has_solar", False).fillna(False)
-            | parcels.get("has_billboard", False).fillna(False)
-        )
+        infra_mask = parcels.get("has_tower", False).fillna(False) | parcels.get(
+            "has_solar", False
+        ).fillna(False)
         return parcels[kind_mask & infra_mask].copy()

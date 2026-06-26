@@ -25,10 +25,8 @@ def _row(**kw) -> pd.Series:
     base = {
         "has_tower": False,
         "has_solar": False,
-        "has_billboard": False,
         "tower_count": 0,
         "solar_count": 0,
-        "billboard_count": 0,
         "in_oz": False,
         "in_qct": False,
         "persistent_poverty": False,
@@ -103,7 +101,6 @@ def test_score_clipped_to_unit_interval():
     row = _row(
         has_tower=True,
         has_solar=True,
-        has_billboard=True,
         tower_count=5,
         in_oz=True,
         in_qct=True,

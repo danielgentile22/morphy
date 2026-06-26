@@ -31,6 +31,22 @@ from .pandas_coerce import safe_str, to_float
 log = logging.getLogger("preprocess.eia_860")
 
 
+def _solar_only(df: pd.DataFrame) -> pd.DataFrame:
+    """Rows whose Technology marks them solar (E6).
+
+    The 860 *plant* sheet lists every generation technology; the solar tab is
+    left-merged onto it, so a non-solar plant carries a blank Technology. The
+    canonical ``solar_facility`` layer must be solar-only — without this filter
+    ~61% of "solar facilities" were gas/coal/nuclear. Full-fidelity raw is
+    untouched (the complete merged plant list is still written to raw.parquet);
+    only the canonical layer is filtered, so the no-normalize-time-filtering
+    invariant holds — this filters the canonical *projection*, not the raw.
+    """
+    if "Technology" not in df.columns:
+        return df.iloc[0:0]
+    return df[df["Technology"].astype(str).str.contains("Solar", na=False)]
+
+
 @register_normalizer
 class Eia860Normalizer(Normalizer):
     source_id = "eia_860"
@@ -69,10 +85,12 @@ class Eia860Normalizer(Normalizer):
                 suffixes=("", "_solar"),
             )
 
+        # raw.parquet keeps the full merged plant list (full fidelity); the
+        # canonical loop below iterates only the solar subset (E6).
         raw_bytes = write_raw_parquet(merged, out_dir, name="raw.parquet")
 
         rows = []
-        for _, r in merged.iterrows():
+        for _, r in _solar_only(merged).iterrows():
             lat = to_float(r.get("Latitude"))
             lon = to_float(r.get("Longitude"))
             geom = None

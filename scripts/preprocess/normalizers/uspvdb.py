@@ -23,6 +23,23 @@ from .pandas_coerce import safe_str, to_float
 log = logging.getLogger("preprocess.uspvdb")
 
 
+def _select_capacity(p_cap_ac: object, p_cap_dc: object) -> tuple[float | None, str | None]:
+    """USPVDB capacity standardized to the AC rating (E7).
+
+    USPVDB carries both an AC and a DC nameplate rating (they differ ~1.2–1.4×).
+    The old ``to_float(p_cap_ac or p_cap_dc)`` silently mixed the two across
+    rows; here we prefer AC, fall back to DC only when AC is absent, and return
+    which rating was used so the mix is recorded rather than hidden.
+    """
+    ac = to_float(p_cap_ac)
+    if ac is not None:
+        return ac, "AC"
+    dc = to_float(p_cap_dc)
+    if dc is not None:
+        return dc, "DC"
+    return None, None
+
+
 @register_normalizer
 class UspvdbNormalizer(Normalizer):
     source_id = "uspvdb"
@@ -42,12 +59,13 @@ class UspvdbNormalizer(Normalizer):
         for _, r in gdf.iterrows():
             state_fips = canon_state_fips(r.get("p_state"))
             county_fips = canon_county_fips(r.get("p_county"), state_fips=state_fips)
+            capacity_mw, capacity_rating = _select_capacity(r.get("p_cap_ac"), r.get("p_cap_dc"))
             rows.append(
                 {
                     "facility_id": safe_str(r.get("p_id") or r.get("case_id")),
                     "name": safe_str(r.get("p_name") or r.get("plant_name")),
                     "operator": safe_str(r.get("p_owner") or r.get("p_oper")),
-                    "capacity_mw": to_float(r.get("p_cap_ac") or r.get("p_cap_dc")),
+                    "capacity_mw": capacity_mw,
                     "online_date": safe_str(r.get("p_year")),
                     "retired_date": None,
                     "is_operational": True,
@@ -57,6 +75,7 @@ class UspvdbNormalizer(Normalizer):
                     "state_fips": state_fips,
                     "extras": {
                         "p_eia_id": r.get("p_eia_id"),
+                        "capacity_rating": capacity_rating,
                         "p_lulc_pre": r.get("p_lulc_pre"),
                         "p_area": r.get("p_area"),
                     },

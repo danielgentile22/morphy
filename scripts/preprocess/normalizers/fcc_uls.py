@@ -463,8 +463,13 @@ def _build_location(lo_band: pd.DataFrame, band: str) -> pd.DataFrame:
 
 
 def _build_entity(en_band: pd.DataFrame, band: str) -> pd.DataFrame:
-    """One row per EN record (licensee, contact, etc.) — preserved as-is for
-    the #22 carrier-brand rollup."""
+    """One row per EN record (licensee, contact, etc.), composed as-is.
+
+    NB: the #22 carrier-brand rollup does **not** read this layer — it reads
+    ``license.licensee_name`` (the EN entity_type 'L' name merged onto the
+    license layer in ``_build_license``). The full ``entity`` layer is composed
+    but currently consumed by nothing; its exploit-or-drop call is audit item
+    M-e (ledger ``uls_license_entity_location``)."""
     if en_band.empty:
         return pd.DataFrame(
             columns=[

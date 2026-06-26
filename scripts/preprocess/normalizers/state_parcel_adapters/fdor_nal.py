@@ -8,7 +8,24 @@ so ``STATE_PARCEL_ID`` → ``STATE_PAR_`` etc.
 
 from __future__ import annotations
 
+import geopandas as gpd
+
+from ..fdor_use_codes import land_use_desc
+from ..pandas_coerce import safe_str
 from ..state_parcels import ParcelAdapter
+
+
+def _decode_land_use(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """E4: decode the FL DOR use code into the land-use description.
+
+    ``land_use_code`` and ``land_use_desc`` both map from the bare ``DOR_UC``
+    numeric code; this replaces the description with the documented text where
+    the code is known (000–099), leaving the bare code for local codes ≥ 100 so
+    nothing is mislabeled. The code column is untouched."""
+    gdf = gdf.copy()
+    gdf["land_use_desc"] = [land_use_desc(c) or safe_str(c) for c in gdf["land_use_code"]]
+    return gdf
+
 
 FDOR_NAL_ADAPTER = ParcelAdapter(
     source_id="fdor_nal",
@@ -24,6 +41,9 @@ FDOR_NAL_ADAPTER = ParcelAdapter(
         "mailing_zip": ["OWN_ZIPCD"],
         "situs_addr": ["PHY_ADDR1"],
         "situs_city": ["PHY_CITY"],
+        # NAL has no physical-state column (FL parcels are all FL); PHY_ZIPCD
+        # carries the situs zip (E9).
+        "situs_zip": ["PHY_ZIPCD"],
         # NAL ships LND_SQFOOT (square feet), not acres — left null
         # rather than mislabel sqft as acreage.
         "acreage": [],
@@ -39,4 +59,5 @@ FDOR_NAL_ADAPTER = ParcelAdapter(
         # slices positions 0-4 for the county FIPS.
         "county_fips": ["CENSUS_BK"],
     },
+    post_map=_decode_land_use,
 )

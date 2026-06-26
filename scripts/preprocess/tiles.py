@@ -33,8 +33,7 @@ log = logging.getLogger("preprocess.tiles")
 
 # The display + styling attribute subset baked into each tile feature.
 # Enough for a useful click panel before DuckDB (Phase C upgrades the
-# panel to a full-row fetch). has_billboard is always false for AR/MT
-# (billboards are FL-only) — kept for FL / forward compatibility.
+# panel to a full-row fetch).
 TILE_ATTRIBUTES: tuple[str, ...] = (
     "parcel_id",
     "owner_name",
@@ -46,7 +45,6 @@ TILE_ATTRIBUTES: tuple[str, ...] = (
     "in_oz",
     "has_tower",
     "has_solar",
-    "has_billboard",
     "interestingness_score",
 )
 

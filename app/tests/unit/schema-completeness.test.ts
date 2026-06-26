@@ -103,7 +103,7 @@ for (const fips of ['05', '30']) {
       const field = (label: string) =>
         parcel.sections.flatMap((s) => s.fields).find((f) => f.label === label)!;
       expect(field('Owner').value(top), 'landowner').not.toBeNull();
-      expect(field('Assessed value').value(top), 'assessed value').not.toBeNull();
+      expect(field('Market / appraised value').value(top), 'assessed value').not.toBeNull();
       expect(field('Score').value(top), 'interestingness score').not.toBeNull();
     });
   });
