@@ -1,6 +1,6 @@
 # DECISIONS — Architecture Decision Records (index)
 
-**Last updated:** 2026-06-13 (doc sweep — PRD #161). Latest decisions: ADR-069 (credentials in DB + cookie sessions + edge-gated data plane, PRD #130); ADR-064 now shipped & deployed (#16 closed); ADR-019 marked superseded by ADR-047.
+**Last updated:** 2026-06-26 (doc sweep — PRD #205). Latest decisions: ADR-069 (credentials in DB + cookie sessions + edge-gated data plane, PRD #130); ADR-064 shipped & deployed (#16 closed); ADR-019 superseded by ADR-047. (No ADRs added since ADR-069; the data-audit catalog + Ask Claude shipped under PRDs #176/#187, not ADRs.)
 
 Index of every locked-in design choice in the repo. Per-ADR content lives under [`docs/adr/`](./adr/). New ADRs go straight there ([CLAUDE.md §9](../CLAUDE.md)).
 
@@ -46,7 +46,6 @@ The currently-binding decisions.
 | [ADR-021](./adr/0021-source-flag.md) | `--source` flag for selective rebuild |
 | [ADR-022](./adr/0022-rebuild-manifest.md) | `--rebuild-manifest` for disk-derived sync |
 | [ADR-050](./adr/0050-streaming-per-county-normalize.md) | Streaming per-county parcel normalize |
-| [ADR-051](./adr/0051-chunked-compose.md) | Chunked compose for memory-bounded large states |
 | [ADR-052](./adr/0052-no-geojson-threshold.md) | `NO_GEOJSON_THRESHOLD`: Parquet-only for very large layers |
 
 ### Policy
@@ -98,6 +97,7 @@ Locked, then shipped.
 |---|---|---|
 | [ADR-030](./adr/0030-map-app-v2-stack.md) | Map app v2 stack: MapLibre + PMTiles + DuckDB-WASM + Svelte | 2026-05-21 (`app/`) |
 | [ADR-043](./adr/0043-tests-pytest-vitest-playwright.md) | pytest + Vitest + Playwright test stack | 2026-05-21 (`tests/`, `app/tests/`) |
+| [ADR-051](./adr/0051-chunked-compose.md) | Chunked compose for memory-bounded large states | 2026-05-19 (single-shot retired 2026-05-27) |
 
 ---
 
@@ -109,7 +109,7 @@ Earlier decisions still partially in force, modified by a later ADR.
 |---|---|---|
 | [ADR-003](./adr/0003-dual-geoparquet-geojson.md) | Dual GeoParquet + GeoJSON output | Narrowed by [ADR-052](./adr/0052-no-geojson-threshold.md) (parquet-only above 250K rows) |
 | [ADR-010](./adr/0010-free-only-budget.md) | Strict free-only data budget | Revised by [ADR-057](./adr/0057-budget-posture-reframed.md) — "permanent" → "current Phase 1 posture" |
-| [ADR-011](./adr/0011-anchor-states.md) | Anchor states AR + NC + MT + UT (+ FL stretch) | Superseded UT portion by [ADR-049](./adr/0049-utah-dropped.md) |
+| [ADR-011](./adr/0011-anchor-states.md) | Anchor states AR + NC + MT + UT (+ FL stretch) | UT dropped by [ADR-049](./adr/0049-utah-dropped.md); committed set re-cut to **AR + MT + FL + WV** by [ADR-060](./adr/0060-wv-committed-anchor.md) (WV added, NC demoted to a deferred stretch) |
 | [ADR-013](./adr/0013-fcc-uls-deferred.md) | FCC ULS normalizers deferred | Partially reversed by [ADR-053](./adr/0053-product-phase-shift.md) Slice A — Cellular/PCS/AWS/700 MHz back in |
 | [ADR-014](./adr/0014-billboards-deferred.md) | Billboards deferred | Partially reversed by [ADR-053](./adr/0053-product-phase-shift.md) Slice C — billboards return as parcel enrichment |
 | [ADR-023](./adr/0023-huge-geojson-threshold.md) | `HUGE_GEOJSON_THRESHOLD = 100,000` | Narrowed by [ADR-052](./adr/0052-no-geojson-threshold.md) (250K hard ceiling above this) |

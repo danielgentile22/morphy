@@ -1,6 +1,6 @@
 # DEPLOYMENT — How this runs
 
-**Last updated:** 2026-06-04
+**Last updated:** 2026-06-26
 **Status:** **Live in production** at [morphyconsulting.com](https://morphyconsulting.com) (Fly app `morphy-consulting`, region `iad`) since 2026-06-04 — the hosted-private backend shipped per [ADR-055](./adr/0055-hosted-private-backend.md) as narrowed by [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md) (#96 built, #16 closed). Local dev still runs all four surfaces on a laptop (§1). **To update the running app, see §8 → "Day-2 operations".**
 
 This doc describes how to stand up the project — what to install, how to run each subsystem, how to ship outputs to a partner, and how the live backend is deployed + operated (§8).
@@ -116,29 +116,31 @@ cd app && npm run check && npm run test:unit && npm run test:e2e
 
 ---
 
-## 5. Sharing outputs (no hosted instance)
+## 5. Sharing outputs offline (no login)
 
-Until hosted deployment lands, sharing the system with a partner /
-investor means:
+The app is live in production (§8) — the normal way to share it is to
+give someone a login. For an **offline / async bundle** (no hosted
+access, no account), there are two paths:
 
 ### 5.1 Best: walk them through live (screen share)
 
 - Run the map app locally; share screen.
-- Pitch scenarios in [SCOPE.md §5](./SCOPE.md) walk cleanly.
+- The filter → rank → target flow walks cleanly; see [SCOPE.md](./SCOPE.md).
 
 ### 5.2 Static: hand them a ZIP
 
 For asynchronous review:
 
 ```bash
-# Bundle the public-facing app + per-state composites
+# Bundle the public-facing app + the four anchor-state composites
 tar -czf pilot-demo-$(date +%Y%m%d).tar.gz \
     app/ \
     data/processed/composite/05/ \
-    data/processed/composite/37/ \
-    docs/INVESTOR_BRIEF.md \
-    docs/NUMBERS.md \
+    data/processed/composite/12/ \
+    data/processed/composite/30/ \
+    data/processed/composite/54/ \
     docs/SCOPE.md \
+    PROJECT_BRIEF.md \
     README.md
 ```
 
@@ -189,7 +191,7 @@ bucket; encrypted at rest.
 
 ---
 
-## 8. Hosted-private backend (Slice 4 — D + E)
+## 8. Hosted-private backend (Slice D + E)
 
 Locked in [ADR-055](./adr/0055-hosted-private-backend.md) (supersedes ADR-006 — static-site, no backend — for write-layer features only; read-only analytical layers stay static). The **platform, database, and object-store** choices below are **narrowed by [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md)** (2026-06-03 hosting-decision session): Fly.io single always-on machine + SQLite-on-volume + Cloudflare front, ~$5–8/mo — not the managed-Postgres + separate-S3-service shape ADR-055 originally defaulted to. **Live in production since 2026-06-04** at [morphyconsulting.com](https://morphyconsulting.com) (Fly app `morphy-consulting`, region `iad`, 10 GB volume, SQLite + Litestream → R2 `morphy-prod`, Cloudflare orange-cloud / Full-strict): deploy artifacts built (#96), cloud provisioned, issue #16 closed. The **provisioning runbook** below is the one-time stand-up; **"Day-2 operations" is how you update the running app.**
 
@@ -398,9 +400,13 @@ backup).
 cd backend && uvicorn app.main:app --reload --port 8000
 
 # Tests (the four hosting modules need rclone / caddy / litestream + minio installed)
-pytest                                          # full suite
+pytest                                          # full suite (test.yml gate)
 pytest tests/test_sync_composite.py tests/test_caddy_serving.py tests/test_litestream_restore.py
-ruff check . && ruff format --check .           # the only real CI gate — run before declaring done
+
+# CI runs four PR merge gates — run all before declaring done:
+ruff check . && ruff format --check .           # lint.yml (also runs pyright on backend/)
+cd app && npm run check && npm run test:unit    # frontend.yml (svelte-check + vitest + vite build, app/ + audit-site/)
+# + test.yml (pytest, above) and api-types.yml (OpenAPI→TS drift — regen backend/openapi.json + app/src/lib/api-types.ts after any backend model change; both must match)
 ```
 
 ### PII custody (see [SECURITY.md](./SECURITY.md))
@@ -415,7 +421,7 @@ ruff check . && ruff format --check .           # the only real CI gate — run 
 
 For when the project sells to a third user or you want a hosted demo (Phase 3 path):
 
-- Map app: static-site hosted bundle (S3 + CloudFront / Cloudflare Pages / Vercel) — no backend changes from Slice 4.
+- Map app: static-site hosted bundle (S3 + CloudFront / Cloudflare Pages / Vercel) — no backend changes from the live D+E backend (§8).
 - Per-state PMTiles served via HTTP range requests.
 - DuckDB-WASM queries parquet directly from object storage.
 - Access controls via Cloudflare Access or a login gate on the static bundle.

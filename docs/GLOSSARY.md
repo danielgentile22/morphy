@@ -1,17 +1,20 @@
 # GLOSSARY — Domain Terms
 
-**Last updated:** 2026-05-29
+**Last updated:** 2026-06-26
 
-Alphabetical reference for every domain-specific term used across the docs and code. If a doc uses a term not defined here, file a fix.
+The A–Z reference of record for every domain-specific term used across the docs and code. If
+a doc uses a term not defined here, file a fix.
 
-For the canonical product-language slice (Vendor / Carrier / Registrant / Freestanding / Rooftop / Triage), `CONTEXT.md` at the repo root is the authority — this glossary mirrors it.
+For the **mental model + product-language slice** (Lead / Candidate / Trigger / Vendor /
+Carrier / Registrant / Freestanding / Triage / Explore / …), [`CONTEXT.md`](../CONTEXT.md) at
+the repo root is the authority; the entries below stay consistent with it.
 
 ---
 
 ## A
 
 - **ACS** — American Community Survey. The Census Bureau's rolling demographic + socio-economic survey; 5-year aggregates are the workhorse for tract-level poverty / income data.
-- **ADR** — Architecture Decision Record. Single-decision entries in `docs/DECISIONS.md` (legacy: ADR-001–052) or `docs/adr/` (new: ADR-053+).
+- **ADR** — Architecture Decision Record. One file per decision under `docs/adr/`; `docs/DECISIONS.md` is the index.
 - **APN** — Assessor's Parcel Number. The county-assigned identifier for a parcel. Synonyms: PIN (Parcel Identification Number), `parcel_id` (our canonical name).
 - **ARC** — Appalachian Regional Commission. Federal agency that classifies counties in the Appalachian region by economic-status tier (Distressed, At-Risk, Transitional, Competitive, Attainment).
 - **ArcGIS** — Esri's GIS product family. Many federal / state publishers expose datasets via ArcGIS REST services or hosted ArcGIS Online portals.
@@ -68,7 +71,7 @@ For the canonical product-language slice (Vendor / Carrier / Registrant / Freest
 
 ## I
 
-- **Interestingness score** — composite per-parcel score in [0, 1] used for outreach prioritization. Components: infrastructure presence, distress overlap, owner kind (LLCs / trusts weighted), cluster size. Implementation: `scripts/preprocess/score.py`. **In Phase 1 Slice 3 this becomes tunable + transparent** ([ADR-058](./adr/0058-tunable-transparent-scoring.md)) — components stored in parquet, weights set client-side via UI sliders, scoring profiles persisted, lease-derived signals plug in after Slice 4.
+- **Interestingness score** — composite per-tower / per-parcel score in [0, 1] used for outreach prioritization. Components: infrastructure presence, distress overlap, owner kind (LLCs / trusts weighted), cluster size. Implementation: `scripts/preprocess/scoring.py`. **Tunable + transparent** (Slice C, **shipped** — [ADR-058](./adr/0058-tunable-transparent-scoring.md)) — components stored in parquet, weights set client-side via UI sliders, scoring **presets** persisted (tenant-shared); per-tower scoring landed with owners-index schema v5.
 
 ## J
 
@@ -77,16 +80,16 @@ For the canonical product-language slice (Vendor / Carrier / Registrant / Freest
 ## L
 
 - **LBNL Tracking the Sun** — Lawrence Berkeley National Lab dataset of US rooftop / distributed PV installations. Dropped from active registry (ADR-016).
-- **Lead** — the co-founder's outreach unit. **Keyed on `owner_cluster_id`** ([ADR-056](./adr/0056-lead-equals-owner-cluster.md)) — one cluster = one lead, regardless of how many parcels the cluster owns. Outreach state (new / flagged / contacted / talking / won / lost / passed / re_engage_later) lives on the lead.
-- **Lease** — the carrier-side ground-lease record. Keyed on `(parcel_id, tower_asr_id, carrier_callsign)`. State machine: unknown → pending_upload → uploaded → extracted → verified → superseded. Document storage + LLM-extracted structured fields land here in Slice 4 ([ADR-059](./adr/0059-llm-lease-extraction.md)).
-- **Lease extraction** — the Slice 4 pipeline that turns an uploaded lease PDF into structured fields (rent, escalation, expiry, amendment count, parties, …) plus per-field confidence, via the Claude API. Sonnet 4.6 default with an Opus 4.7 retry path for low-confidence leases; prompt caching on. See [ADR-059](./adr/0059-llm-lease-extraction.md). **Design only — unimplemented as of 2026-05-29.**
-- **`lease_comp`** — per-area lease-rent benchmark table. Bootstrapped from Steel-in-the-Air free county-level data in Slice 4; augmented over time by extracted-lease rent from the cofounder's uploads. Powers the "comparables within X-mile radius" feature.
-- **libpostal** — native C library for international address normalization. Preferred for the address half of owner-cluster strengthening in Slice 4. Fall back to pure-Python `usaddress` if dep-management is painful.
-- **LLC unmasking** — the (sensitive, expensive) process of resolving the human(s) behind a legal entity. **Narrowed in [ADR-057](./adr/0057-budget-posture-reframed.md):** paid skip-trace + shell-piercing remain permanent non-goals; **free public-records officer disclosure** (Secretary of State business-entity lookups; UCC-1) is in scope for Phase 1 Slice 4 lead-detail panel.
+- **Lead** — the co-founder's outreach unit. **Keyed on the owner cluster (`display_cluster_id`)** ([ADR-056](./adr/0056-lead-equals-owner-cluster.md)), resolved **across all anchor states** — one landowner = one Lead regardless of how many parcels/towers they hold. Carries the **Lead status** ladder (new → researching → contacted → interested → in_business, or uninterested) plus contact info, attempts, and notes. See [`CONTEXT.md`](../CONTEXT.md) for the full Lead / Candidate / Trigger model.
+- **Lease** — the carrier-side ground-lease record. Keyed on `(parcel_id, tower_asr_id, carrier_callsign)`. State machine: unknown → pending_upload → uploaded → extracted → verified → superseded. Document storage + LLM-extracted structured fields land here in Slice D+E ([ADR-059](./adr/0059-llm-lease-extraction.md)).
+- **Lease extraction** — the Slice D+E pipeline that turns an uploaded lease PDF into structured fields (rent, escalation, expiry, amendment count, parties, …) plus per-field confidence, via the Claude API. Sonnet 4.6 default with an Opus 4.7 retry path for low-confidence leases; prompt caching on. See [ADR-059](./adr/0059-llm-lease-extraction.md). **Design only — unimplemented as of 2026-05-29.**
+- **`lease_comp`** — per-area lease-rent benchmark table. Bootstrapped from Steel-in-the-Air free county-level data in Slice D+E; augmented over time by extracted-lease rent from the cofounder's uploads. Powers the "comparables within X-mile radius" feature.
+- **libpostal** — native C library for international address normalization. Preferred for the address half of owner-cluster strengthening in Slice D+E. Fall back to pure-Python `usaddress` if dep-management is painful.
+- **LLC unmasking** — the (sensitive, expensive) process of resolving the human(s) behind a legal entity. **Narrowed in [ADR-057](./adr/0057-budget-posture-reframed.md):** paid skip-trace + shell-piercing remain permanent non-goals; **free public-records officer disclosure** (Secretary of State business-entity lookups; UCC-1) is in scope for Phase 1 Slice D+E lead-detail panel.
 
 ## M
 
-- **Magic-link auth** — passwordless auth via email-delivered one-time links; the original Slice 4 sign-in design ([ADR-055](./adr/0055-hosted-private-backend.md), implemented in #48). **Removed** — replaced by **username/password login** ([ADR-062](./adr/0062-username-password-replaces-magic-link.md), PRD #75).
+- **Magic-link auth** — passwordless auth via email-delivered one-time links; the original Slice D+E sign-in design ([ADR-055](./adr/0055-hosted-private-backend.md), implemented in #48). **Removed** — replaced by **username/password login** ([ADR-062](./adr/0062-username-password-replaces-magic-link.md), PRD #75).
 - **Manifest** — two distinct files in this project:
   - `data/manifest.json` — fetch manifest; what raw data is on disk.
   - `data/processed/preprocess_manifest.json` — preprocess manifest; what's been normalized / composed.
@@ -102,8 +105,8 @@ For the canonical product-language slice (Vendor / Carrier / Registrant / Freest
 ## O
 
 - **OE/AAA** — see FAA OEAAA.
-- **Owner cluster** — group of parcels sharing the same normalized-owner + normalized-address pair. ID is SHA1 of the concatenation. Surfaced via the `owner_clusters` view and `owner_cluster_size` column on parcels. **Becomes the Lead key in Slice 4** ([ADR-056](./adr/0056-lead-equals-owner-cluster.md)); ADR-024's algorithm is strengthened then with conservative normalization layers + manual merge/split UI.
-- **`owner_cluster_override`** — Slice 4 backend table storing co-founder-issued manual cluster merges/splits: `(tenant_id, source_cluster_id, target_cluster_id)`. Raw cluster IDs stay in parquet; backend computes `display_cluster_id = coalesce(override_target, raw_cluster_id)`.
+- **Owner cluster** — group of parcels sharing the same normalized-owner + normalized-address pair. ID is SHA1 of the concatenation. Surfaced via the `owner_clusters` view and `owner_cluster_size` column on parcels. **Becomes the Lead key in Slice D+E** ([ADR-056](./adr/0056-lead-equals-owner-cluster.md)); ADR-024's algorithm is strengthened then with conservative normalization layers + manual merge/split UI.
+- **`owner_cluster_override`** — Slice D+E backend table storing co-founder-issued manual cluster merges/splits: `(tenant_id, source_cluster_id, target_cluster_id)`. Raw cluster IDs stay in parquet; backend computes `display_cluster_id = coalesce(override_target, raw_cluster_id)`.
 - **owner_kind** — categorical inferred from owner-name patterns: `llc`, `individual`, `trust`, `corporation`, `gov`, `church`, `partnership`, `school`, `unknown`. Implementation in `scripts/preprocess/cluster.py`.
 - **OZ** — Opportunity Zone. Census tract designated under the 2017 Tax Cuts and Jobs Act; the original "OZ 1.0" designations are in effect through ~2028. "OZ 2.0" redesignations are being made by governors during 2026 — the layer will change.
 
@@ -111,7 +114,7 @@ For the canonical product-language slice (Vendor / Carrier / Registrant / Freest
 
 - **Parcel** — single legally-defined unit of real estate with a unique APN, polygon boundary, owner, mailing address, assessed value. Atomic geographic unit linking infrastructure to a human/entity. Not the same as a **Lead** (which is the owner-cluster).
 - **Persistent poverty** — USDA designation for counties with ≥ 20% poverty rate sustained over the past ~30 years.
-- **Phase 1** — the current cut. Co-founder-facing product across the committed anchors AR + MT + FL (NC demoted 2026-05-29 to a deferred Phase-1 stretch), freestanding towers only. Slices F → A → C → D+E → B. See [SCOPE.md](./SCOPE.md), [ADR-053](./adr/0053-product-phase-shift.md).
+- **Phase 1** — the current cut. Co-founder-facing product across the committed anchors AR + MT + FL + WV (NC a deferred Phase-1 stretch), freestanding towers only. Slices F → A → C → D+E → B. See [SCOPE.md](./SCOPE.md), [ADR-053](./adr/0053-product-phase-shift.md).
 - **Phase 2** — post-Phase-1 expansion. Rooftop installations + mass email + paid Steel-in-the-Air tier + self-serve refresh + recorded-lease automation. See [ROADMAP.md](./ROADMAP.md).
 - **PII** — Personally Identifiable Information. Parcel-owner names + mailing addresses meet most PII definitions even when individually public-record. See ADR-040 + [SECURITY.md](./SECURITY.md).
 - **PMTiles** — single-file format for vector tiles. HTTP Range-request friendly; no tile server needed. Used for the parcel base layer in the map app.
@@ -135,28 +138,28 @@ For the canonical product-language slice (Vendor / Carrier / Registrant / Freest
 - **Schema version** — integer field stamped on every canonical output (`_schema_version`). Bumps when the canonical-type schema changes.
 - **Scoring profile** — a saved set of client-side interestingness-score weights. Under the tunable/transparent scoring model the score components are stored in parquet and the weights are set via UI sliders; a scoring profile persists a chosen weighting so the co-founder can switch between prioritization lenses. See [ADR-058](./adr/0058-tunable-transparent-scoring.md) and **Interestingness score**.
 - **Skip-trace** — paid contact-data resolution (phone, email, current address) via third-party vendors (Whitepages Pro, Cole Information, IDI, Pipl). Permanent non-goal for Phase 1 per [ADR-057](./adr/0057-budget-posture-reframed.md) (narrowing ADR-041). Phase 2 unlock conversation.
-- **Slice** — one unit of Phase 1 work with its own "shipped" gate. Phase 1 slices in order: **F** (committed-anchor composes AR+MT+FL; NC deferred), **A** (carriers via ULS), **C** (asset enrichment + tunable scoring UI), **D+E** (lease docs + backend + triage state), **B** (vendor inference). See [GOALS.md §3](./GOALS.md) for gates.
-- **SoS** — Secretary of State. Each state's SoS publishes business-entity records (LLC formation, officers, registered agent). **In scope for Phase 1 Slice 4** lead-detail panel as a one-click helper — see [ADR-057](./adr/0057-budget-posture-reframed.md).
+- **Slice** — one unit of Phase 1 work with its own "shipped" gate. Phase 1 slices in order: **F** (committed-anchor composes AR+MT+FL+WV; NC deferred), **A** (carriers via ULS), **C** (asset enrichment + tunable scoring UI), **D+E** (lease docs + backend + triage state), **B** (vendor inference). See [SCOPE.md §3–§4](./SCOPE.md) for the canonical plan + gates.
+- **SoS** — Secretary of State. Each state's SoS publishes business-entity records (LLC formation, officers, registered agent). **In scope for Phase 1 Slice D+E** lead-detail panel as a one-click helper — see [ADR-057](./adr/0057-budget-posture-reframed.md).
 - **Spatial join** — assigning attributes from one geographic layer to another based on spatial relationship (typical case: point-in-polygon, "which parcel contains this tower").
-- **Steel-in-the-Air** — third-party publisher of cell-tower lease-rent benchmarks. Free tier publishes county-level rent averages (~3000 counties); paid tier has finer granularity. **Free tier bootstraps the `lease_comp` table in Slice 4** — see session summary §Comparables. Paid tier is a Phase 2 unlock.
+- **Steel-in-the-Air** — third-party publisher of cell-tower lease-rent benchmarks. The free county-level tier was the intended `lease_comp` bootstrap, but its existence was **overturned 2026-05-26** (the free dataset doesn't exist — see [STATUS.md §6](./STATUS.md)); the next-best free path is REIT 10-K / ABS rent disclosures. Paid tier is a Phase 2 unlock ([ADR-057](./adr/0057-budget-posture-reframed.md)).
 
 ## T
 
-- **Tenant** — in the backend (Slice 4), a tenant is a logical isolation unit; every table has a `tenant_id` column. Phase 1 has one tenant (`tenant_id = 1`); the schema is shaped Day 1 so a second tenant (intern / advisor / second cofounder / paid Phase-3 customer) is a row-add, not a refactor. See [ADR-055](./adr/0055-hosted-private-backend.md). Not to be confused with **building tenants** in the rooftop context (deferred to Phase 2).
-- **testcontainers-postgres** — the testing harness for Slice 4 backend — spins a real Postgres in Docker for the test session instead of stubbing with SQLite. Catches Postgres-specific bugs (JSON ops, FTS, isolation levels). See [TESTING.md](./TESTING.md).
+- **Tenant** — in the backend, a tenant is a logical isolation unit; every table has a `tenant_id` column and every route filters by it. **Teams ARE tenants** — each credential/user is bound to exactly one tenant (= team), resolved per request ([ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md)); there is no `tenant_id = 1` stub. The schema is tenant-shaped from Day 1 so a second team (intern / advisor / paid Phase-3 customer) is a row-add, not a refactor ([ADR-055](./adr/0055-hosted-private-backend.md)). Not to be confused with **building tenants** in the rooftop context (deferred to Phase 2).
+- **testcontainers-postgres** — opt-in backend test harness that spins a real Postgres in Docker (`PILOT_TEST_TESTCONTAINERS=1`) to catch Postgres-specific bugs (JSON ops, isolation levels). The default is SQLite (behaviorally equivalent for the schema); auto-starting Postgres was dropped as too slow. See [TESTING.md](./TESTING.md).
 - **TIGER** — Topologically Integrated Geographic Encoding and Referencing. Census Bureau's geospatial reference files.
 - **Tippecanoe** — Mapbox/Felt CLI tool for generating vector tiles (MBTiles / PMTiles) from large GeoJSON / NDJSON inputs. Required for the map app's parcel base layer.
 - **TPO** — Third-Party Ownership (of a solar system). Solar installations under PPA / lease where the contract can potentially be renegotiated. Solar-side concept; renewable-energy analogue of ground leases.
-- **Triage** — the co-founder's working session inside the product — filter parcels/towers across anchor states, rank by interestingness, drill into a candidate, mark as "working" / "passed" / "called", export or persist lead state. Primary user-flow once Phase 1 ships. Distinct from **Outreach** (Phase 2 — actual email / call layer).
+- **Triage** — the co-founder's working session inside the product — filter parcels/towers across anchor states, rank by interestingness, drill into a **Lead**, advance its **Lead status** (new → researching → contacted → interested → in_business / uninterested), log activity, and export. The product's primary user-flow. Distinct from **Outreach** (Phase 2 — the actual email / call layer). See [`CONTEXT.md`](../CONTEXT.md).
 
 ## U
 
-- **UCC-1** — Uniform Commercial Code financing statement; secured parties file these. Surfaced in the Slice 4 lead-detail panel as third-party-ownership clues for parcel-attached assets.
+- **UCC-1** — Uniform Commercial Code financing statement; secured parties file these. Surfaced in the Slice D+E lead-detail panel as third-party-ownership clues for parcel-attached assets.
 - **ULS** — Universal Licensing System (FCC). Six bulk data bands + meta. **Cellular (Part 22) + PCS (Part 24) + AWS / 700 MHz (Part 27) are in Phase 1 Slice A** for carrier identification ([ADR-053](./adr/0053-product-phase-shift.md) partially reverses ADR-013). Microwave, Ownership, Transfers, Leasing remain deferred.
 - **USDA ERS** — USDA Economic Research Service. Publishes persistent-poverty + county typology data.
 - **Username/password login** — the backend's sign-in front door: credentials in the app DB's `credential` table (PBKDF2 hashes, managed via `python -m app.users`), exchanged at `POST /api/auth/login` for an identity-only HS256 session JWT set in an httpOnly cookie; the credential table re-authorizes every request ([ADR-062](./adr/0062-username-password-replaces-magic-link.md) / [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md) / [ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md), PRDs #75 / #83 / #130). Replaced magic-link auth. Mechanics: [backend/README.md](../backend/README.md).
 - **USPVDB** — US Photovoltaic Database. USGS / Berkeley dataset of utility-scale solar facility polygons.
-- **usaddress** — pure-Python US-only address parser. Fallback if libpostal install is painful in Slice 4. Narrower coverage, no native dependencies.
+- **usaddress** — pure-Python US-only address parser. Fallback if libpostal install is painful in Slice D+E. Narrower coverage, no native dependencies.
 
 ## V
 

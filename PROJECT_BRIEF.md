@@ -1,6 +1,6 @@
 # PROJECT BRIEF — Infrastructure Lease-Optimization Prototype
 
-**Last updated:** 2026-05-26 (preamble updated for the 2026-05-25 product pivot; Sections 1–4 + 7–10 remain authoritative for business context; Sections 5 + 6 describe the original v1 Graham-County prototype and are now historical).
+**Last updated:** 2026-06-26 (preamble updated for the 2026-05-25 product pivot; Section 1 + Sections 7–10 remain authoritative for business context; Sections 2–6 describe the original v1 Graham-County prototype and are now historical. In particular, Section 2's non-goals no longer hold: the shipped product has a deployed FastAPI + SQLite backend with auth, carrier identification (Slice A), and four composed anchor states).
 
 > **Read this file for the *business case + market context*** — what we are building, why, and the strategic data sources we tap.
 >
@@ -11,7 +11,7 @@
 > - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the system fits together (replaces the Sections 5 + 6 description below)
 > - [docs/adr/0053-product-phase-shift.md](docs/adr/0053-product-phase-shift.md) — the 2026-05-25 reframe from "pitch demo" to "fleshed-out co-founder product" (ADRs 053+ in [docs/adr/](docs/adr/), indexed by [docs/DECISIONS.md](docs/DECISIONS.md), lock the resulting decisions)
 >
-> The v1 Graham-County one-shot referenced in Sections 5 + 6 has been superseded by the v3 framework and the 2026-05-25 product pivot. The business case (Sections 1–4, 7–10) remains authoritative.
+> The v1 Graham-County one-shot referenced in Sections 2–6 has been superseded by the v3 framework and the 2026-05-25 product pivot. The business case (Section 1, plus Sections 7–10) remains authoritative.
 
 ---
 
@@ -308,11 +308,11 @@ The analytical map app under `app/` — a Svelte 5 single-page app
 (MapLibre GL JS, PMTiles, DuckDB-WASM). It is catalog-driven: it reads
 the preprocess output (`composite/index.json` + per-state
 `catalog.json`), so any state that composes appears with no app
-changes. Currently serves Arkansas + Montana.
+changes. Currently serves Arkansas, Montana, Florida + West Virginia.
 
 **What it shows:**
 
-- Every parcel as PMTiles vector tiles (2.1 M AR / 920 K MT), with a
+- Every parcel as PMTiles vector tiles (11.4 M FL / 2.1 M AR / 1.39 M WV / 920 K MT), with a
   county economic-distress choropleth at low zoom.
 - Tower, distress-overlay and solar layers, plus the interestingness
   Views (top-1000, distressed-parcels-with-infrastructure, etc.) — all
@@ -320,7 +320,7 @@ changes. Currently serves Arkansas + Montana.
 
 **What it does:**
 
-- **Filter** 2 M+ parcels in-browser (DuckDB-WASM) by owner type,
+- **Filter** 14 M+ parcels in-browser (DuckDB-WASM) by owner type,
   distress tier, hosted infrastructure, assessed value, acreage,
   county and more — with a live match count and a map fade.
 - **Search** by owner name (autocomplete) or parcel APN.

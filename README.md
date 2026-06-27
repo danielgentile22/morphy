@@ -95,7 +95,7 @@ cd app && npm run check && npm run test:unit && npm run test:e2e
 
 - [docs/SCOPE.md](docs/SCOPE.md) — what's in / out of the current cut
 - [docs/STATUS.md](docs/STATUS.md) — what works today
-- [docs/GOALS.md](docs/GOALS.md) — success criteria
+- [docs/SCOPE.md §4](docs/SCOPE.md) — success criteria + per-slice shipped gates
 
 **Deep dives:**
 
@@ -128,7 +128,7 @@ cd app && npm run check && npm run test:unit && npm run test:e2e
 | West Virginia | 54 | ✅ Added 2026-05-29 (PR #44) — `wv_parcels` statewide layer (WVGISTC, SB 588); composed (1,389,855 parcels, all 55 counties) + live in the app. **Committed anchor** (ADR-060, 2026-05-29). See [STATUS §4.4](docs/STATUS.md) |
 | North Carolina | 37 | ⏸️ Deferred / Phase-1 stretch — raw data deleted 2026-05-20; re-fetch + normalize + compose deferred (NC OneMap re-fetch intermittently 504s). Not a committed anchor. |
 
-The four committed anchors are AR + MT + FL + WV (WV elevated 2026-05-29, ADR-060). See [docs/SCOPE.md §2](docs/SCOPE.md) for why these, and [docs/STATUS.md](docs/STATUS.md) for the live state.
+See [docs/SCOPE.md §2](docs/SCOPE.md) for why these anchors, and [docs/STATUS.md](docs/STATUS.md) for the live state.
 
 ---
 
@@ -174,6 +174,6 @@ This is a **Phase 1 internal product** for a 2-person team (dev + business co-fo
 4. **D + E** — Lease doc upload + LLM extraction + triage state / write layer / CSV exports — backend + triage **shipped**; **lease upload + LLM extraction is the next unbuilt work**
 5. **B** — Vendor (tower-co) inference — not started
 
-Per-slice "shipped" gates in [docs/GOALS.md §3](docs/GOALS.md). Overall outcome bar: co-founder uses the product as his primary daily triage tool for 4 consecutive weeks.
+Per-slice "shipped" gates in [docs/SCOPE.md §4](docs/SCOPE.md). Overall outcome bar: co-founder uses the product as his primary daily triage tool for 4 consecutive weeks.
 
 See [docs/STATUS.md](docs/STATUS.md) for the live snapshot.

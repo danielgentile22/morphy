@@ -38,7 +38,7 @@ Scope language follows: every "three committed anchors / 3 anchor states"
 reference becomes four, and WV moves from "candidate" to "anchor" in
 [SCOPE.md §2](../SCOPE.md), [STATUS.md](../STATUS.md), [README.md](../../README.md),
 [CLAUDE.md §7](../../CLAUDE.md), [ROADMAP.md](../ROADMAP.md), and
-[GOALS.md](../GOALS.md).
+[SCOPE.md](../SCOPE.md).
 
 ## Consequences
 

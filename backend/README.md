@@ -17,7 +17,7 @@ never imports the preprocess framework; it only *reads* its JSON output.
 backend/app/
   config.py                 env-driven settings (DATABASE_URL, OWNERS_INDEX_PATH, auth knobs)
   db.py                     SQLAlchemy engine/session (SQLite dev default, Postgres via env)
-  models.py                 ORM: lead, contact_attempt, app_user, owner_cluster_override (tenant_id on every table)
+  models.py                 ORM: 12 tables — lead, contact_attempt, owner_cluster_override, antenna_override, task, tenant_setting, user_setting, scoring_preset, ask_log, app_user, credential, tenant (tenant_id on every data table; credential/tenant are the tenant-determining exceptions)
   lead_status.py            status ladder + transition rules (parity w/ app/src/lib/lead-status.ts)
   lead_store.py             LeadStore — tenant-scoped CRUD + auto-logged status transitions
   owner_merge_service.py    OwnerMergeService — manual merge/split overrides (display_cluster_id = coalesce(override, raw))
@@ -30,17 +30,29 @@ backend/app/
   tenant_service.py         team → tenant resolution, registration-order (#86)
   login_throttle.py         in-process (ip, username) brute-force throttle (Slice 2 / #77)
   auth_service.py           login() (username/password) + user provisioning
+  ask_client.py             Ask Claude — streams answers from the Anthropic SDK (PRD #187; dormant w/o ANTHROPIC_API_KEY)
+  ask_log_store.py          writes each completed Ask Claude Q&A + context snapshot to the ask_log table
   main.py                   FastAPI routes
-backend/tests/              LeadStore + auth + tenant-isolation (testcontainers Postgres → SQLite fallback)
+backend/tests/              LeadStore + auth + tenant-isolation (SQLite default; opt-in testcontainers Postgres)
 ```
 
 ## Schema (tenant-shaped, ADR-055)
 
+`models.py` now defines **12 tables** (`tenant_id` on every data table;
+`credential` and `tenant` are the deliberate tenant-determining exceptions).
+`credential` is documented under **User management** and `user_setting` under
+**Per-user settings**; the rest:
+
 - `lead(tenant_id, display_cluster_id, status, notes, contact_name, contact_phone, contact_email, best_channel, created_at, updated_at)` — PK `(tenant_id, display_cluster_id)`. The `contact_*` columns (Slice 3 / #49) are the team's **editable** outreach record, distinct from the read-only mailing address served from source parcel data.
-- `contact_attempt(id, tenant_id, display_cluster_id, occurred_on, channel, outcome, note, created_at)` — manual outreach events **and** auto-logged status-transition rows (`channel='status'`) share this one activity stream.
-- `tenant(id, name UNIQUE, created_at)` — a **team** (#86, ADR-063). Teams ARE tenants; team isolation is the ADR-055 tenant isolation. Registered find-or-create in credentials-file order, so the first team in the file owns tenant 1 (the pre-teams board). Rows are never deleted.
-- `app_user(id, tenant_id, email UNIQUE, created_at)` — a person who can sign in (email = the username, stored opaquely). Synced to their current team's tenant on every login/request (#88).
+- `contact_attempt(id, tenant_id, display_cluster_id, occurred_on, channel, outcome, note, direction, logged_by_user_id, created_at)` — manual outreach events **and** auto-logged status-transition rows (`channel='status'`) share this one activity stream. `direction` is `outbound` (a touch we made) or `inbound` (a reply the owner sent, #106 / ADR-066); `logged_by_user_id` is the teammate who logged it (#112, nullable for auto-logged rows).
+- `tenant(id, name UNIQUE, created_at)` — a **team** (#86, ADR-063). Teams ARE tenants; team isolation is the ADR-055 tenant isolation. Registered find-or-create in credentials order, so the first team owns tenant 1 (the pre-teams board). Rows are never deleted.
+- `app_user(id, tenant_id, email UNIQUE, display_name, created_at)` — a person who can sign in (email = the username, stored opaquely). Synced to their current team's tenant on every login/request (#88). `display_name` (#110) is the friendly name for task assignment, falling back to the email when blank.
 - `owner_cluster_override(tenant_id, source_cluster_id, target_cluster_id, created_at)` — manual merge overrides (Slice 7 / #53). PK `(tenant_id, source_cluster_id)`. Keyed on **raw** cluster ids, so overrides survive an owners-index recompute (raw ids in the parquet are never mutated).
+- `antenna_override(tenant_id, asr, archived, address, owner_*, notes, created_at, updated_at)` — the team's **editable** layer over a single read-only antenna (keyed by ASR): archive a tower out of Explore, hand-enter an address, or capture owner details for an *unowned* tower that has no Lead to hang them on. PK `(tenant_id, asr)`, created lazily on first edit.
+- `task(id, tenant_id, title, description, status, priority, due_date, lead_cluster_id, tower_asr, assignee_user_id, labels, source, created_by_user_id, created_at, updated_at, completed_at)` — a unit of work (follow-up / business task / dev todo), tenant-scoped, optionally linked to a Lead and/or tower (#107, ADR-065).
+- `tenant_setting(tenant_id, key, value)` — generic per-tenant config (the auto-follow-up window + on/off now; more keys later). PK `(tenant_id, key)` (#116).
+- `scoring_preset(id, tenant_id, name, config, is_default, created_at)` — a named, tenant-shared scoring configuration; `config` is an opaque client-owned JSON blob, at most one `is_default` per tenant (#115, ADR-058 amended).
+- `ask_log(id, tenant_id, username, user_id, question, answer, route, selection, signal_ids, model, input_tokens, output_tokens, created_at)` — one stored **Ask Claude** Q&A with its on-screen catalog context snapshot (PRD #187). Storage only — written after each completed question; no read endpoint yet.
 
 ## Migrations (Alembic, PRD #134)
 
@@ -136,6 +148,19 @@ are rejected (HTTP 409).
 | POST | `/api/leads/{display_cluster_id}/attempts` | append a manual contact attempt (date · channel · outcome) |
 | POST | `/api/leads/{display_cluster_id}/merge` | merge another owner-cluster (`source_cluster_id`) into this Lead — the path id is the survivor (Slice 7 / #53) |
 | POST | `/api/leads/{display_cluster_id}/split` | split a merged-in cluster (`source_cluster_id`) back out to its own raw cluster |
+| POST | `/api/leads/{display_cluster_id}/pursue` | advance a New owner New → Researching from Explore and record the triggering antenna (a `channel='flag'` activity row); idempotent (#109, ADR-067) |
+| POST | `/api/audit/ask` | **Ask Claude** — the backend's first **SSE stream** (PRD #187): streams an answer over the data-audit catalog context and logs the Q&A to `ask_log`. **Dormant until the `ANTHROPIC_API_KEY` secret is set** (a clean 503 otherwise) |
+| GET · PUT | `/api/antennas/{asr}` | read / edit the tenant's per-antenna override (archive, hand-entered address, unowned-tower owner fields); `GET /api/antennas/archived` lists the archived ASRs |
+| GET · POST · PUT · DELETE | `/api/tasks` · `/api/tasks/{task_id}` | Tasks CRUD — follow-ups / business tasks / dev todos, optionally linked to a Lead and/or tower (#107, ADR-065) |
+| GET · POST | `/api/attention` · `/api/attention/dismiss` | unhandled inbound replies + overdue tasks (the Dashboard attention feed + nav badge, #111), and per-item dismissal |
+| GET · PUT | `/api/settings` | tenant settings (auto-follow-up window + on/off, #116) |
+| GET · POST · DELETE | `/api/scoring-presets` · `/api/scoring-presets/{id}` · `/api/scoring-presets/{id}/default` | tenant-shared scoring presets (#115, ADR-058 amended) |
+| GET | `/api/stats` | team outreach / activity stats over a date / state / member filter |
+| GET | `/api/activity` | the tenant-wide time-ordered activity stream (attempts + status/flag transitions), narrowed by lead / member / channel / date (#112) |
+| GET | `/api/users` | the tenant's teammates (for task assignment + member filters) |
+
+(`/api/me`, `/api/me/settings`, `/api/me/password` are documented in the
+**Per-user settings** and **User management** sections below.)
 
 The read half of the full Lead page (holdings / mailing / tallest tower) is
 served from the precomputed **owners index** (schema **v5** —

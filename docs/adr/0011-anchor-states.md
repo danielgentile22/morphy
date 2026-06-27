@@ -1,6 +1,6 @@
 # ADR-011: Anchor states locked: AR + NC + MT + UT (+ FL stretch)
 
-**Status:** UT dropped by [ADR-049](0049-utah-dropped.md) — anchor set is now AR + NC + MT + FL.
+**Status:** UT dropped by [ADR-049](0049-utah-dropped.md). Anchor set later re-cut by [ADR-060](0060-wv-committed-anchor.md) to the committed **AR + MT + FL + WV** (WV added; NC demoted to a deferred Phase-1 stretch).
 **Date:** 2026-05-19
 
 ## Context

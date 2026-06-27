@@ -1,13 +1,13 @@
 # DATA_FRESHNESS — Per-source cadence rules
 
-**Last updated:** 2026-05-25
+**Last updated:** 2026-06-26
 **Pairs with:** [DATA_SOURCES.md](./DATA_SOURCES.md) (per-source schema + license + status), [PULLER_UX.md](./PULLER_UX.md) (puller UX), [SCOPE.md §6](./SCOPE.md) (Phase 1 product freshness UX).
 
 This document codifies, per source, the rules the puller uses to decide
 whether data is **fresh**, **due soon**, or **stale**. These map
 directly onto the `update_cadence_days` field on each `DataSource`
-subclass (added in Section 3.1 of the work plan) and the
-`next_recommended_check_at` field on the manifest.
+subclass and the `next_recommended_check_at` field on the manifest
+(both implemented in `scripts/fetch/manifest.py`).
 
 ---
 
@@ -49,9 +49,9 @@ Sources with `update_cadence_days = None` show no badge but display
 | `hud_qct` | Annual | **365** | HUD republishes QCT designations annually |
 | `usda_persistent_poverty` | ~5–10 years | **None** | Tied to Census decennial poverty data; reissue is rare and announced |
 | `ar_parcels` | Annual (state aggregates from county CAMA) | **365** | Arkansas Geographic Information Office typically refreshes statewide layer annually |
-| `nc_onemap_parcels` | Per-county, varies (monthly–quarterly) | **90** | NC OneMap mirrors county exports; refresh quarterly to balance load |
 | `mt_cadastral_parcels` | Quarterly | **90** | MT Cadastral publishes a refresh quarterly |
-| `ut_parcels` | Annual | **365** | Deferred from the v1 anchor set (no owner data — ADR-049); cadence kept for if it is ever re-promoted |
+| `wv_parcels` | Annual | **365** | WV Property Tax Division / WVU GIS Technical Center (MapWV) refresh the statewide layer annually (committed anchor — ADR-060) |
+| `nc_onemap_parcels` | Per-county, varies (monthly–quarterly) | **90** | NC OneMap mirrors county exports; refresh quarterly to balance load |
 | `fdor_nal` | Annual (county-by-county certification each October) | **365** | FL DOR finalizes tax-roll certification by October; per-county downloads available shortly after |
 
 ---
@@ -60,19 +60,21 @@ Sources with `update_cadence_days = None` show no badge but display
 
 Deferred / retired sources appear in the puller for visibility but are not subject to freshness alerting. The canonical status list lives in [DATA_SOURCES.md §Status overrides](./DATA_SOURCES.md) (ADR-linked rationale per source).
 
+Deferred parcel sources keep a nominal `update_cadence_days` so they can be re-promoted by editing the active block alone — e.g. `ut_parcels` (cadence **365**) is deferred from the anchor set (no owner data — ADR-049), and `mn_parcels` / `in_parcels` are likewise in `DEFERRED_SOURCES`.
+
 ---
 
 ## 4. What "stale" means in practice
 
 When the puller marks a source **Stale**, the user should refresh
-**before** they re-run preprocess for a pitch demo or partner walkthrough.
+**before** they re-run preprocess for a material co-founder triage session.
 Specifically:
 
 - For **`fcc_asr`** and **`faa_oeaaa`**: stale = noise. A week-old ASR
-  is fine for general analysis; refresh before pitch.
+  is fine for general analysis; refresh before serious triage.
 - For **parcel sources** (annual cadence): stale data leads to false
   positives — owners may have sold, addresses changed. Refresh quarterly
-  if doing real outreach; minimum annually before pitch.
+  if doing real outreach; minimum annually.
 - For **distress overlays** (OZ, QCT, ARC, USDA): stale is rare and
   signaled by external events (annual republish, OZ 2.0 designation
   cycle). Manual refresh prompts triggered by news, not calendar.
@@ -81,16 +83,16 @@ Specifically:
 
 ---
 
-## 5. Refresh discipline at pitch time
+## 5. Refresh discipline before serious triage
 
-Before any partner walkthrough or material co-founder triage session, the user runs a refresh discipline pass in the puller:
+Before any material co-founder triage session, the user runs a refresh discipline pass in the puller:
 
 1. Click **Check for updates** — surfaces every source past `next_recommended_check_at`.
 2. Refresh stale sources (auto sources via puller; manual sources via walkthrough modal).
 3. Re-run preprocess on affected states.
 4. Verify [STATUS.md](./STATUS.md) matches reality (or update it).
 
-This checklist is mirrored in [PULLER_UX.md](./PULLER_UX.md) §6 as a discrete UI flow (the "What needs my attention" panel).
+This checklist is mirrored in [PULLER_UX.md](./PULLER_UX.md) §6 as a discrete UI flow; the standing "What needs my attention" panel that aggregates stale + missing sources is [PULLER_UX.md](./PULLER_UX.md) §3.
 
 ---
 
@@ -112,20 +114,23 @@ The puller's UI cannot detect these. Note any off-cadence refresh in the relevan
 
 ---
 
-## 7. Implementation hooks (for the Section 3 puller overhaul)
+## 7. Implementation hooks (shipped)
 
-This document drives concrete code changes in Section 3 of the work plan:
+The cadence model in this document is fully implemented; the Qt puller is
+now frozen (PRD #138), so this section is a map of where it lives rather
+than a work plan:
 
-- **3.1:** `update_cadence_days` field on `DataSource` + manifest
-  schema-version bump.
-- **3.3:** Freshness column in puller tree.
-- **3.3:** "What needs my attention" panel aggregating stale + missing.
-- **3.5:** Every active source populates `update_cadence_days` per
-  this table.
+- `update_cadence_days` on each `DataSource` + the manifest
+  `next_recommended_check_at` / `recompute` logic and the
+  `FRESHNESS_FRESH` / `DUE_SOON` / `STALE` states live in
+  `scripts/fetch/manifest.py`.
+- Freshness column + the "What needs my attention" panel (stale +
+  missing) are in the puller tree (see [PULLER_UX.md](./PULLER_UX.md) §3).
+- Every active source populates `update_cadence_days` per the table above.
 
 ---
 
-## 8. Phase 1 product UX for freshness (Slice 3 + Slice 4)
+## 8. Phase 1 product UX for freshness (Slice C + Slice D+E)
 
 The puller surfaces freshness to the dev (the operator). The Phase 1 product surfaces freshness to the **co-founder** (the user) so he can judge confidence on a specific lead. See [SCOPE.md §6](./SCOPE.md) for the product-side policy.
 
@@ -133,9 +138,9 @@ The puller surfaces freshness to the dev (the operator). The Phase 1 product sur
 
 | Surface | What's shown | Where it lands |
 |---|---|---|
-| Top of triage list | "Last full data refresh: AR 12d, MT 9d, FL 47d, NC 21d" | Slice 3 UI (map app) |
-| Per-lead detail panel | "Parcel data from {date}; tower data from {date}; lease comp data from {date}" | Slice 3 / Slice 4 lead-detail panel |
-| Per-source admin view (gated) | Per-source freshness table + refresh-trigger button | Slice 4 backend admin; refresh-trigger is Phase 2 |
+| Top of triage list | "Last full data refresh: AR 12d, MT 9d, FL 47d, WV 21d" | Slice C UI (map app) |
+| Per-lead detail panel | "Parcel data from {date}; tower data from {date}; lease comp data from {date}" | Slice C / D+E lead-detail panel |
+| Per-source admin view (gated) | Per-source freshness table + refresh-trigger button | D+E backend admin (the write-layer backend is live in production; this admin surface is unbuilt); refresh-trigger is Phase 2 |
 
 ### Staleness policy
 

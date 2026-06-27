@@ -4,11 +4,12 @@ Orientation for Claude Code sessions working in this repo. Read this
 first; then dip into the relevant doc under [docs/](docs/) when you
 need depth.
 
-**Current state:** [docs/STATUS.md](docs/STATUS.md) is the live status — what
-works today, the slice plan, and the milestone trail. The product is deployed in
-production; Slices F and A have shipped (and most of C); the rest of **D+E**
-(lease-doc upload + LLM extraction) is the next unbuilt slice. (Last doc sweep:
-2026-06-13.)
+**Current state:** [docs/STATUS.md](docs/STATUS.md) is the live status (what works
+today); the slice plan + scope live in [docs/SCOPE.md](docs/SCOPE.md); the
+milestone trail in [docs/CHANGELOG.md](docs/CHANGELOG.md). The product is deployed
+in production; Slices F, A, and C have shipped (and most of **D+E**); the rest of
+D+E (lease-doc upload + LLM extraction) is the next unbuilt slice. (Last doc sweep:
+2026-06-26.)
 
 > **🔀 Phase shift (2026-05-25):** this went from "v1 pitch demo" to **Phase 1 of
 > a co-founder-facing product** — freestanding towers across AR + MT + FL + WV,
@@ -21,53 +22,23 @@ production; Slices F and A have shipped (and most of C); the rest of **D+E**
 ## 0. Working with the user
 
 These rules apply to every action you take in this repo, override
-session defaults, and should not be relaxed without explicit
-instruction.
+session defaults, and should not be relaxed without explicit instruction.
 
-### Explanation & communication
-
-- After completing any task, provide a clear summary of what you did
-  and why.
-- When you create or modify files, list each file changed with a
-  one-line description of the change.
-- Explain any non-obvious decisions or trade-offs you made.
-- If you chose a particular approach over alternatives, briefly say why.
-- Flag anything you were uncertain about or assumptions you had to make.
-
-### Running & reproducing
-
-- Whenever you create something runnable (script, app, service, test),
-  include exact commands to run it.
-- Specify any prerequisites: dependencies to install, environment
-  variables, required versions, services that must be running.
-- Give the commands as copy-pasteable blocks, in the order they should
-  be run.
-- If there's a build step, state it explicitly and separately from the
-  run step.
-- Mention how to verify it worked (expected output, how to test, what
-  success looks like).
-
-### Code changes
-
-- Before making large or structural changes, briefly outline the plan first.
-- Make minimal, targeted changes unless asked to refactor.
-- Don't delete or rewrite working code without explaining why.
-- Preserve existing style and conventions in the codebase.
-
-### Safety & caution
-
-- Ask before running destructive commands (deleting files, dropping
-  data, force-pushing, etc.).
-- Don't install new dependencies without mentioning it and explaining
-  why it's needed.
-- If a command could affect things outside the project directory, call
-  it out first.
-
-### When stuck or blocked
-
-- If you hit an error you can't resolve, stop and explain what failed,
-  what you tried, and what you'd need to proceed.
-- Don't silently work around problems in ways that hide them.
+- **Explain.** After a task, summarize what you did and why; list each changed
+  file with a one-line note; flag non-obvious decisions, trade-offs, assumptions,
+  and why you chose an approach over the alternatives.
+- **Make it runnable.** For anything runnable (script/app/service/test), give exact
+  copy-pasteable commands in order, the prerequisites (deps, env vars, versions,
+  running services), a build step stated separately if there is one, and how to
+  verify success.
+- **Code changes.** Outline a plan before large or structural changes; keep changes
+  minimal and targeted unless asked to refactor; don't delete or rewrite working
+  code without explaining why; preserve existing style and conventions.
+- **Safety.** Ask before destructive commands (deleting files, dropping data,
+  force-pushing) or anything that reaches outside the project directory; don't
+  install new dependencies without saying so and why.
+- **When stuck.** Stop and explain what failed, what you tried, and what you'd need
+  to proceed — don't silently work around problems in ways that hide them.
 
 ---
 
@@ -81,9 +52,9 @@ ARC / USDA distress overlays, then layer carrier identification + lease
 document storage + LLM-based extraction + triage workflow on top.
 
 - **Business case:** [PROJECT_BRIEF.md](PROJECT_BRIEF.md)
-- **Current scope (what's in/out right now):** [docs/SCOPE.md](docs/SCOPE.md)
-- **Goals + outcome bar:** [docs/GOALS.md](docs/GOALS.md)
+- **Current scope + goals + outcome bar + slice plan:** [docs/SCOPE.md](docs/SCOPE.md)
 - **Today's state:** [docs/STATUS.md](docs/STATUS.md)
+- **What shipped when:** [docs/CHANGELOG.md](docs/CHANGELOG.md)
 
 Hard non-goals (do not scope-creep): paid LLC unmasking / skip-trace
 ([ADR-041](docs/adr/0041-no-llc-unmasking.md) as narrowed by
@@ -153,11 +124,9 @@ Global invariants (apply across all subsystems) live in §8 below.
 
 ## 3. The current work plan
 
-Phase 1 slice plan (untimed, goal-driven): **F → A → C → D+E → B**. After Slice B, the **4-week outcome-bar clock** starts (cofounder uses the product as his primary daily triage tool for 4 consecutive weeks).
-
-[docs/STATUS.md](docs/STATUS.md) owns what's shipped, what's next, and the
-milestone trail — **always read it before starting a task.** Per-slice "shipped"
-gates are in [docs/GOALS.md §3](docs/GOALS.md).
+The canonical slice plan (**F → A → C → D+E → B**), per-slice gates, and outcome bar
+live in [docs/SCOPE.md §3–§4](docs/SCOPE.md). What's shipped / next is in
+[docs/STATUS.md](docs/STATUS.md) — **always read it before starting a task.**
 
 ---
 
@@ -241,7 +210,10 @@ confirming the publisher's terms have changed.**
 
 ## 7. Pilot geography reference
 
-State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). FIPS codes: committed anchors `05` (AR), `12` (FL), `30` (MT), `54` (WV); deferred stretch `37` (NC); dropped `18` (IN), `49` (UT). The why-these set + per-state status are owned by [docs/SCOPE.md §2](docs/SCOPE.md) (anchors) and [docs/STATUS.md](docs/STATUS.md) (live per-state state).
+State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). Committed
+anchors `05` (AR), `12` (FL), `30` (MT), `54` (WV); deferred stretch `37` (NC); dropped
+`18` (IN), `49` (UT), `27` (MN). The canonical anchor list + per-state status are owned by
+[docs/SCOPE.md §2](docs/SCOPE.md) and [docs/STATUS.md](docs/STATUS.md).
 
 ---
 
@@ -277,16 +249,17 @@ State-level scope ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)). FI
 | Question | File |
 |---|---|
 | What does this project do? | [PROJECT_BRIEF.md](PROJECT_BRIEF.md) |
-| What's in scope right now? | [docs/SCOPE.md](docs/SCOPE.md) |
-| What does success look like? | [docs/GOALS.md](docs/GOALS.md) |
+| What's in scope + what does success look like? | [docs/SCOPE.md](docs/SCOPE.md) |
 | What works today? | [docs/STATUS.md](docs/STATUS.md) |
+| What shipped when? | [docs/CHANGELOG.md](docs/CHANGELOG.md) |
 | How does the system fit together? | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Per-source schema / license / policy | [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) |
 | When does each source need a refresh? | [docs/DATA_FRESHNESS.md](docs/DATA_FRESHNESS.md) |
 | Caveats + pre-commercial blockers | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) |
 | PII / data-handling | [docs/SECURITY.md](docs/SECURITY.md) |
-| Glossary of terms | [docs/GLOSSARY.md](docs/GLOSSARY.md) + [CONTEXT.md](CONTEXT.md) |
-| Past / future of the project | [docs/ROADMAP.md](docs/ROADMAP.md) |
+| Glossary of terms (A–Z) | [docs/GLOSSARY.md](docs/GLOSSARY.md) |
+| Product language + mental model | [CONTEXT.md](CONTEXT.md) |
+| What's next (Phase 2/3) | [docs/ROADMAP.md](docs/ROADMAP.md) |
 | Locked design choices | [docs/DECISIONS.md](docs/DECISIONS.md) (index of all ADRs) + [docs/adr/](docs/adr/) (per-ADR files) |
 | How to deploy / share outputs | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | Testing strategy | [docs/TESTING.md](docs/TESTING.md) |

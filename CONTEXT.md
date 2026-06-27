@@ -1,13 +1,16 @@
 # CONTEXT
 
-Domain language and mental model for this repo. Read this before exploring the codebase.
+The mental model + canonical product language for this repo. Read this before exploring the
+codebase. This file is the authority for the **product-language slice** (Lead / Candidate /
+Trigger / Vendor / Carrier / Registrant / Freestanding / Triage / Explore / …); for the full
+A–Z reference, see [docs/GLOSSARY.md](docs/GLOSSARY.md).
 
-This file is intentionally a stub — the `/grill-with-docs` skill fills it in lazily as domain terms get resolved during real conversations. Until then, the canonical sources of domain language are:
+Related canonical sources:
 
 - [PROJECT_BRIEF.md](PROJECT_BRIEF.md) — what the business does and the data problem it solves
-- [docs/SCOPE.md](docs/SCOPE.md) — what's in/out right now (anchor states, source list)
-- [docs/GLOSSARY.md](docs/GLOSSARY.md) — defined terms
-- [docs/DECISIONS.md](docs/DECISIONS.md) — locked design choices (legacy ADRs ADR-001..051; new ADRs go in `docs/adr/`)
+- [docs/SCOPE.md](docs/SCOPE.md) — what's in/out right now (anchor states, source list, slice plan)
+- [docs/GLOSSARY.md](docs/GLOSSARY.md) — the A–Z glossary of defined terms
+- [docs/DECISIONS.md](docs/DECISIONS.md) — the ADR index; all ADR bodies live in `docs/adr/`
 
 ## Core concepts (one-line)
 
@@ -15,10 +18,10 @@ This file is intentionally a stub — the `/grill-with-docs` skill fills it in l
 - **Landowner** — the party who owns the parcel under an asset; identified by joining ASR coordinates → state parcel data.
 - **Ground lease** — the contract between landowner and infrastructure operator; the business helps landowners renegotiate these.
 - **Distress overlay** — HUD OZ/QCT, USDA distress, ARC distress; used to prioritize outreach to landowners likely to renegotiate.
-- **Anchor states** — the pilot's geographic cut: AR (`05`), NC (`37`), MT (`30`), and FL (`12`) as a stretch.
+- **Anchor states** — the committed Phase-1 cut: AR (`05`), MT (`30`), FL (`12`), WV (`54`); NC (`37`) is a deferred Phase-1 stretch. See [docs/SCOPE.md §2](docs/SCOPE.md).
 - **Normalizer / Join / View** — the three-stage preprocess framework (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
 
-Expand this file when a real conversation surfaces a term that wasn't obvious.
+This file's Language section grows as real conversations surface terms that weren't obvious.
 
 ## Language
 

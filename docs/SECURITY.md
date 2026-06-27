@@ -1,6 +1,6 @@
 # SECURITY — Data Handling Posture
 
-**Last updated:** 2026-05-25
+**Last updated:** 2026-06-26
 **Owner:** project lead (single dev today).
 
 This document records how we handle data that contains personally identifying information (PII), what we treat as sensitive, and the guardrails we maintain. Linked from ADR-040 + ADR-041 (narrowed by ADR-057) in [DECISIONS.md](./DECISIONS.md).
@@ -15,15 +15,15 @@ This is **not** a comprehensive infosec policy. It's the project-specific postur
 |---|---|---|
 | **Parcel-owner PII** | Owner name + mailing address combined per parcel | Each field is public record individually; the *combination* (name + tied to a specific property + valuation + GPS location) meets most PII definitions |
 | **Composite outputs** | `data/processed/composite/<fips>/parcels.*` | Contain parcel-owner PII at scale; aggregating amplifies sensitivity |
-| **Uploaded lease documents** (Slice 4) | PDFs in S3-compatible object store | Contain owner identity + rent terms + carrier identity; landowner-signed contracts |
-| **LLM-extracted lease fields** (Slice 4) | `lease.extracted_fields_json` + denormalized rent/escalation/expiry | Same sensitivity as the underlying PDF |
-| **Lead state + activity log** (Slice 4) | `lead.*`, `activity.*` | Reveals which landowners the co-founder is targeting + the negotiation status |
-| **Free SoS officer disclosure surfaces** (Slice 4) | Cached LLC-officer lookups in the lead-detail panel | Public records but cached / aggregated alongside lead state |
+| **Uploaded lease documents** (Slice D+E, unbuilt) | PDFs in S3-compatible object store | Contain owner identity + rent terms + carrier identity; landowner-signed contracts |
+| **LLM-extracted lease fields** (Slice D+E, unbuilt) | `lease.extracted_fields_json` + denormalized rent/escalation/expiry | Same sensitivity as the underlying PDF |
+| **Lead state + activity log** | `lead.*`, `contact_attempt.*`, `task.*`, `ask_log.*` | Reveals which landowners the co-founder is targeting + the negotiation status |
+| **Free SoS officer disclosure surfaces** (Slice D+E, unbuilt) | Cached LLC-officer lookups in the lead-detail panel | Public records but cached / aggregated alongside lead state |
 | **Pitch / demo screenshots** | `docs/pitch-assets/*` | May show real owner names depending on capture context |
-| **Anthropic API key** | `ANTHROPIC_API_KEY` (preprocess `diagnose.py` + Slice 4 lease extraction) | Standard secret hygiene |
-| **AWS / S3-compatible / hosting credentials** | Slice 4 backend + (future) paid Regrid | Standard secret hygiene |
+| **Anthropic API key** | `ANTHROPIC_API_KEY` (`scripts/diagnose.py` + Ask Claude SSE `POST /api/audit/ask` — deployed but DORMANT until the Fly secret is set; + future D+E lease extraction) | Standard secret hygiene |
+| **AWS / S3-compatible / hosting credentials** | live backend hosting (Fly / R2 / Cloudflare) + (future) lease-PDF object store + (future) paid Regrid | Standard secret hygiene |
 | **Login credentials + session JWTs** | `credential`-table password hashes in the app DB (never committed; commit-guard test) + HS256 session tokens in httpOnly cookies ([ADR-062](./adr/0062-username-password-replaces-magic-link.md) / [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md) / [ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md)) | Auth surface — leakage = account takeover |
-| **Tenant boundary** (Slice 4) | `tenant_id` column on every backend table | Single-tenant today, but the boundary must hold from Day 1 for when a second tenant joins |
+| **Tenant boundary** | `tenant_id` column on every backend table; every route filters by it | Teams ARE tenants (resolved per request — no `tenant_id=1` stub); the boundary must hold so no tenant sees another's leads |
 | **Outputs shared with partners** | ZIP bundles per [DEPLOYMENT.md §5.2](./DEPLOYMENT.md) | Reduplicates PII outside our environment |
 
 Public-record information that is **not** sensitive in isolation: parcel APN, geometry, assessed value, FCC ASR records, EIA plant data, distress-overlay polygons.
@@ -34,10 +34,10 @@ Public-record information that is **not** sensitive in isolation: parcel APN, ge
 
 1. **Never commit raw or composite data to git.** `data/` is git-ignored. Verify `.gitignore` includes `data/` and `data/processed/` before every push.
 2. **Never commit uploaded lease PDFs.** They live in S3-compatible storage only.
-3. **Never publicly host composite outputs or the Slice 4 backend.** Hosted-private only ([ADR-055](./adr/0055-hosted-private-backend.md)) — access controls enforced.
+3. **Never publicly host composite outputs or the backend.** Hosted-private only ([ADR-055](./adr/0055-hosted-private-backend.md)) — access controls enforced; the data plane (`/data/processed/*`) is edge-gated through the same auth ([ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md)).
 4. **Never share unencrypted ZIPs of composite data.** When shipping to a partner ([DEPLOYMENT.md §5.2](./DEPLOYMENT.md)), encrypt at rest and share via a secure channel.
 5. **Never attempt paid LLC unmasking / shell-piercing / identity resolution.** Permanent non-goal per ADR-041 (narrowed by [ADR-057](./adr/0057-budget-posture-reframed.md)). **In scope:** free public-records officer disclosure (SoS business-entity lookups, UCC-1 filings) — these surface officers the entity *itself* publicly discloses; not identity resolution.
-6. **Never store secrets in source code.** `.env` (git-ignored) or the OS keychain only. In the Slice 4 backend: environment variables in the host platform's secret store.
+6. **Never store secrets in source code.** `.env` (git-ignored) or the OS keychain only. In the backend: environment variables in the host platform's secret store (Fly secrets).
 7. **Never serve uploaded lease PDFs from a public URL.** S3-compatible storage with **signed download URLs only**, scoped to the requesting user's tenant.
 8. **Never leak cross-tenant data.** Every backend route must filter by `tenant_id`; multi-tenancy isolation tests run on every PR (see [TESTING.md](./TESTING.md)).
 9. **Never log full owner records, lease terms, or extracted fields beyond aggregate counts** in app logs.
@@ -46,7 +46,7 @@ Public-record information that is **not** sensitive in isolation: parcel APN, ge
 
 ## 3. What we do today
 
-### 3.1 Data layer (current; pre-Slice-4)
+### 3.1 Data layer (current)
 
 | Control | Status | Where |
 |---|---|---|
@@ -55,22 +55,24 @@ Public-record information that is **not** sensitive in isolation: parcel APN, ge
 | Composite outputs encrypted at rest on disk | ❌ Not yet | macOS FileVault is the only protection today |
 | Pitch / demo screenshots audited for PII before sharing | ⚠ Manual | Prefer LLC-heavy AR for demo captures |
 | Anthropic key in env, not source | ✅ enforced | `.env` |
-| No public hosted instance | ✅ enforced today | Slice 4 changes this to hosted-private |
+| Composite data plane gated behind auth | ✅ live in prod | `/data/processed/*` edge-gated via `forward_auth` ([ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md)) — the app is hosted-private, not public |
 | No LLC unmasking pipeline | ✅ enforced | ADR-041 / ADR-057 |
 
-### 3.2 Backend layer (Slice 4 — design)
+### 3.2 Backend layer (live in production)
+
+The backend is deployed in production ([ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md)) — auth, multi-tenancy, hosting, and the audit stream below have **shipped**. Only lease-PDF storage + LLM lease extraction (the rest of D+E, [ADR-059](./adr/0059-llm-lease-extraction.md)) remain unbuilt; those rows are marked accordingly.
 
 | Control | Posture |
 |---|---|
 | Auth | Username/password against the `credential` table in the app DB (PBKDF2 hashes, managed via `python -m app.users`); identity-only HS256 session JWTs in an httpOnly `pilot_session` cookie; **the credential table is authoritative on every request** — removal / re-teaming applies on the next click, and the edge gates `/data/processed/*` through the same check ([ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md) as amended by [ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md)) |
-| Multi-tenancy | `tenant_id` column on every table; every route filters by it; isolation tests gate PRs |
-| Lease-PDF storage | S3-compatible bucket; **encrypted at rest** (SSE-S3 or KMS); private bucket; signed download URLs only |
+| Multi-tenancy | `tenant_id` column on every table; every route filters by it; teams ARE tenants (no `tenant_id=1` stub); isolation tests gate PRs |
+| Lease-PDF storage *(unbuilt — rest of D+E)* | S3-compatible bucket; **encrypted at rest** (SSE-S3 or KMS); private bucket; signed download URLs only |
 | Database | SQLite-on-volume in prod, replicated to R2 via Litestream ([ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md)); DB-agnostic ORM (Postgres-ready). TLS in transit; continuous backup |
-| API transport | HTTPS only (HSTS); HTTP redirects to HTTPS |
-| LLM calls | Anthropic API only; no provider-side training opt-in; minimum data sent (we send the lease PDF + an extraction schema, not lead state) |
-| Audit log | `activity` table records who did what when, including extraction runs |
-| Secrets | Host platform secret manager (Fly secrets / Render env vars / Hetzner vault). Never in repo. |
-| Pre-deploy review | Manual security-review skill on every Slice 4 PR that touches auth, multi-tenancy, or PII handling |
+| API transport | HTTPS only (HSTS); HTTP redirects to HTTPS (Cloudflare orange / Full-strict) |
+| LLM calls | Anthropic API only; no provider-side training opt-in; minimum data sent. Ask Claude (catalog helper, `POST /api/audit/ask`) sends only catalog context; lease extraction *(unbuilt)* will send the lease PDF + an extraction schema, not lead state |
+| Audit log | `contact_attempt` + `task` + `ask_log` tables record who did what when (outreach attempts, tasks, LLM-helper calls) |
+| Secrets | Host platform secret manager (Fly secrets). Never in repo. |
+| Pre-deploy review | Manual security-review skill on every PR that touches auth, multi-tenancy, or PII handling |
 
 ---
 
@@ -112,7 +114,7 @@ If a sensitive output or backend session is exposed:
 4. **Rotate** any credential that was exposed alongside (API keys, login passwords — `python -m app.users set-password` — and the `AUTH_JWT_SECRET` signing secret).
 5. **Post-mortem** — what failure mode allowed this; what control would have prevented it.
 
-The audience for this is *very* small today (just the project lead + the co-founder once Slice 4 lands), but documenting the muscle now means it's already in place when the team grows.
+The audience for this is *very* small today (the project lead + the co-founder), but documenting the muscle now means it's already in place when the team grows.
 
 ---
 

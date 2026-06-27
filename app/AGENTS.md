@@ -14,7 +14,9 @@ data production (that's `scripts/preprocess/`).
   (runtime predicate). Both the map's tower layer and the Candidates list read it.
 - `src/lib/schema.ts` — pins the v3 composite field names (the data contract).
 - `src/lib/*.svelte.ts` — runes stores (auth, leads, filter-model, stores).
-- `src/lib/leads-api.ts`, `auth-token.ts` — the only bridge to `backend/`.
+- `src/lib/leads-api.ts` (auth via `auth-store.svelte.ts` → `login`/`logout`/`fetchMe`),
+  `tasks-api.ts`, `activity-store.svelte.ts`, `user-settings-store.svelte.ts` — the
+  bridges to `backend/` (everything that calls `/api`).
 
 ## Contracts & invariants
 - **Schema-completeness is enforced**: `tests/unit/schema-completeness.test.ts`
@@ -26,13 +28,11 @@ data production (that's `scripts/preprocess/`).
   `CarrierList.svelte` on both tower surfaces. An empty carrier list is the common
   case (~6–17% coverage) — render the empty state, don't treat it as an error.
 - Filter logic lives in `filter-model.ts` only; don't fork per-surface filtering.
-- **`src/lib/api-types.ts` is generated — never hand-edit it** (PRD #133). It is
-  produced from `backend/openapi.json` by `npm run generate:api`; the client
-  modules (`leads-api.ts`, `tasks-api.ts`, Stats/SettingsAutomations) derive their
-  API types from its `components['schemas']`, narrowing only where the schema
-  can't express client semantics (status ladders, tuple coordinates). Backend
-  model changed? Regenerate both artifacts (see `backend/AGENTS.md`) — the
-  `api-types` CI workflow fails on drift.
+- **`src/lib/api-types.ts` is generated — never hand-edit it** (PRD #133): produced
+  from `backend/openapi.json` by `npm run generate:api`, and the API clients derive
+  their types from its `components['schemas']`. Backend model changed? Regenerate
+  both artifacts (mechanics in `backend/AGENTS.md`) — the `api-types` CI workflow
+  fails on drift.
 
 ## Patterns
 - New filter field: add to the `FILTER_FIELDS` registry — both the SQL projection

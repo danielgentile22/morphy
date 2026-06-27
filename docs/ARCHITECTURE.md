@@ -1,50 +1,61 @@
 # ARCHITECTURE — How the system fits together
 
-**Last updated:** 2026-05-25
+**Last updated:** 2026-06-26
 **Audience:** engineers (human or AI) who need to understand or extend the code without reading every file.
 
-This doc describes what's *implemented today* plus the Phase 1 Slice 4 backend, which is a **locked design that is UNIMPLEMENTED** (no `backend/` code exists on disk as of 2026-05-29). Future-state designs live in [ROADMAP.md](./ROADMAP.md). Design decisions are locked under [docs/adr/](./adr/) — [DECISIONS.md](./DECISIONS.md) is the cross-doc index.
+This doc describes what's *implemented today*. The backend has shipped and is **live in
+production** (Fly app `morphy-consulting`); only lease-doc upload + LLM extraction (the rest
+of D+E, [ADR-059](./adr/0059-llm-lease-extraction.md)) remain unbuilt. Future-state designs
+live in [ROADMAP.md](./ROADMAP.md). Design decisions are locked under [docs/adr/](./adr/) —
+[DECISIONS.md](./DECISIONS.md) is the cross-doc index.
 
 ---
 
 ## 1. System overview
 
-**Three loosely-coupled subsystems today, plus a Slice 4 backend in design** for write-layer features (lead state, lease docs, auth):
+**Four subsystems today** — the data puller, the preprocess pipeline, the map app, and the
+live write-layer backend (lead state, tasks, auth). The map app + the standalone
+**data-audit catalog** (`audit-site/`, served at `/audit/`) are static SPAs; the backend
+serves write-layer state + the **Ask Claude** SSE stream and edge-gates `/data/processed/*`.
 
 ```
 ┌──────────────────────┐    raw/   ┌──────────────────────┐  normalized/  ┌──────────────────────┐
 │  app_puller/         │──────────▶│  scripts/preprocess/ │──────────────▶│  app/  (map browser) │
 │   PySide6 desktop UI │           │   Normalize → Join → │  composite/   │   Svelte + MapLibre  │
 │   data fetcher       │           │   View → Compose     │               │   PMTiles + DuckDB   │
+│   (frozen, PRD #138) │           │   (DuckDB engine)    │               │                      │
 └──────────────────────┘           └──────────────────────┘               └─────────┬────────────┘
-        │                                    │                                      │ thin API
+        │                                    │                                      │ thin API (cookie auth)
         ▼                                    ▼                                      ▼
    data/raw/<src>/current/            data/processed/                  ┌──────────────────────────┐
-   data/manifest.json                  ├── normalized/<src>/           │  backend/  (Slice 4)     │
-                                       │   ├── <type>.parquet          │   FastAPI + Postgres +   │
-                                       │   ├── <type>/*.parquet        │   S3 + Claude API        │
-                                       │   ├── raw.parquet | raw/      │   username/password auth │
-                                       │   └── quality_report.json     │   tenant-shaped Day 1    │
+   data/manifest.json                  ├── normalized/<src>/           │  backend/  (live in prod) │
+                                       │   ├── <type>.parquet          │   FastAPI + SQLAlchemy    │
+                                       │   ├── <type>/*.parquet        │   SQLite + Litestream→R2  │
+                                       │   ├── raw.parquet | raw/      │   username/password auth  │
+                                       │   └── quality_report.json     │   tenant-scoped (teams)   │
                                        ├── composite/<fips>/           └──────────┬───────────────┘
                                        │   ├── catalog.json                       │
                                        │   ├── summary.json                       ▼
-                                       │   ├── parcels.parquet (+ geojson)   Postgres + S3
-                                       │   ├── towers.parquet (+ geojson)    (uploaded lease PDFs,
-                                       │   ├── solar_facilities.parquet …   lead state, activity log,
-                                       │   ├── distress_overlays.parquet …  scoring profiles, lease
-                                       │   ├── county_scores.parquet        comps, owner_cluster_override)
+                                       │   ├── parcels.parquet (+ geojson)   SQLite-on-volume + R2
+                                       │   ├── towers.parquet (+ geojson)    (lead/contact_attempt/task/
+                                       │   ├── solar_facilities.parquet …   owner_cluster_override/
+                                       │   ├── distress_overlays.parquet …  scoring_preset/ask_log/…;
+                                       │   ├── county_scores.parquet        lease-PDF storage planned)
                                        │   └── views/<name>.parquet (+ geojson)
                                        └── preprocess_manifest.json
 ```
 
-Each subsystem is independently runnable: the puller doesn't need preprocess installed; preprocess doesn't need the map app; the map app reads static files written by preprocess and (in Slice 4) hits the backend over a thin API for write-layer state.
+Each subsystem is independently runnable: the puller doesn't need preprocess installed;
+preprocess doesn't need the map app; the map app reads static files written by preprocess and
+hits the backend over a thin API (httpOnly-cookie auth) for write-layer state.
 
 ---
 
 ## 2. Subsystem 1 — The data puller (`app_puller/`, `scripts/fetch/`)
 
-A PySide6 desktop application that fetches ~28 raw data sources into
-`data/raw/<source_id>/current/`.
+A PySide6 desktop application (now **frozen** — bug-fix-only, PRD #138) that fetches the
+registered data sources into `data/raw/<source_id>/current/` — 16 active sources, plus
+deferred ones split out via the `_ACTIVE` / `_DEFERRED` registry blocks (ADR-045).
 
 ### 2.1 Source contract
 
@@ -150,13 +161,13 @@ Defined in `scripts/preprocess/base.py` (`CURRENT_SCHEMA_VERSIONS`):
 
 **Tabular (data pipeline):** `county_score`, `license`, `location`, `entity`, `transfer`, `lease`, `distributed_pv`, `aggregation`, `model_prediction`.
 
-**Backend tables (Slice 4 — new):** `lead`, `lease` (product-side, with PDFs + extracted fields), `activity`, `owner_cluster_override`, `lease_comp`, `scoring_profile`, `tenant`, `user`, `user_tenant`. Schema details in §5.1.
+**Backend tables (shipped, 12):** `lead`, `contact_attempt`, `owner_cluster_override`, `antenna_override`, `credential`, `tenant`, `task`, `tenant_setting`, `user_setting`, `scoring_preset`, `ask_log`, `app_user`. The lease-PDF + extracted-fields tables are still unbuilt (rest of D+E). [`backend/README.md`](../backend/README.md) is authoritative for the live schema.
 
-> NB: there are **two** entities called `lease` in the codebase — the *data-pipeline* tabular canonical type (placeholder for normalized recorded-lease data, deferred to Phase 2) and the *backend* `lease` table (Slice 4, holds uploaded PDF references + LLM-extracted fields per (tower × carrier)). They will reconcile in Phase 2 when recorded-lease automation lands.
+> NB: the *data-pipeline* `lease` canonical type (placeholder for normalized recorded-lease data, deferred to Phase 2) is distinct from the planned *backend* lease-document table (rest of D+E — uploaded PDF references + LLM-extracted fields per (tower × carrier), not yet on disk). They reconcile in Phase 2 when recorded-lease automation lands.
 
 Every record (data-pipeline side) gets system columns: `_source`, `_processed_at`, `_schema_version`, `_tenant_id`, `_quality_score`, `valid_from`, `valid_to`.
 
-Every backend row has `tenant_id` (Day 1 = `1`; multi-tenant from row-add — [ADR-055](./adr/0055-hosted-private-backend.md)).
+Every backend row has `tenant_id`, and every route filters by it. **Teams ARE tenants** — `tenant_id` is resolved from the user's current team on every request ([ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md)); there is no `tenant_id = 1` stub. A second team is a row-add, not a refactor ([ADR-055](./adr/0055-hosted-private-backend.md)).
 
 ### 3.3 Full-fidelity raw preservation
 
@@ -195,6 +206,11 @@ Every point record gets:
   clustering / density / proximity queries (when `h3` package present)
 
 ### 3.5 Composer
+
+The compose stage runs **chunked** (per-county streaming, ADR-051 — the only compose path)
+and uses **DuckDB as the heavy-lift engine** (PRD #135; `scripts/preprocess/duck.py` owns the
+connections, equivalence pinned by `tests/test_duckdb_equivalence.py`), which keeps peak
+memory bounded so large states (FL's 11.4M parcels) fit on a 16 GB dev machine.
 
 `scripts/preprocess/compose.py`. For one state FIPS:
 
@@ -301,9 +317,14 @@ The v1 Leaflet prototype is retired (preserved in git history). The realized des
 
 ---
 
-## 5. Subsystem 4 — The backend (Slice 4 — in design, `backend/`)
+## 5. Subsystem 4 — The backend (`backend/`, live in production)
 
-> **NOTE:** This section is the original Slice 4 **design**. A substantial part of it is now **implemented** in `backend/` (the lead write-layer + username/password auth + owner merge/split — Slices #47–#53 + PRD #75); lease upload, LLM extraction, and S3 storage remain unbuilt. Where the implemented backend differs from the sketch below, [`backend/README.md`](../backend/README.md) is authoritative for what's on disk.
+> **NOTE:** The backend is **shipped and live in production** (lead write-layer + Tasks +
+> username/password auth + owner merge/split + per-user settings + scoring presets + the Ask
+> Claude SSE stream). Only lease-PDF upload + LLM extraction remain unbuilt (rest of D+E). The
+> sketch below is the original design; where it differs from disk,
+> [`backend/README.md`](../backend/README.md) is authoritative for the live 12-table schema +
+> routes.
 
 A FastAPI + SQLAlchemy service, **live in production**, that holds the **write-layer features** the static map app can't: lead + task state, contact attempts, activity log, per-user scoring presets/settings, manual owner-cluster merge/split overrides (lease-PDF upload + LLM extraction are the next unbuilt slice). Lives **alongside** the static map app — the map app reads parquet + PMTiles via HTTP range requests for analytical layers, and hits the backend over a thin API for the write-layer state. (Auth + schema + migration mechanics are canonical in [`backend/README.md`](../backend/README.md).)
 
@@ -315,7 +336,7 @@ Locked architectural decisions:
 - **S3-compatible** object store (R2) for lease PDFs — planned with D+E; encrypted at rest, signed download URLs only.
 - **Claude API** for lease extraction — planned with D+E ([ADR-059](./adr/0059-llm-lease-extraction.md)).
 
-### 5.1 Tables (Slice 4 baseline)
+### 5.1 Tables (original design sketch — see backend/README.md for the live schema)
 
 ```
 tenant(id, name, created_at)
@@ -375,7 +396,7 @@ The backend **reads** static composite outputs over HTTP (it doesn't import the 
 - `composite/<fips>/views/<name>.parquet` — for view-driven triage queries.
 - `composite/index.json` + per-state `catalog.json` — for what's available.
 
-The backend **writes nothing** to `data/processed/` — it owns its own Postgres + S3 universe. The boundary stays clean: re-running the pipeline never collides with backend state.
+The backend **writes nothing** to `data/processed/` — it owns its own store (SQLite-on-volume + R2 object storage). The boundary stays clean: re-running the pipeline never collides with backend state.
 
 ### 5.4 LLM extraction loop
 
@@ -392,7 +413,7 @@ Per [ADR-059](./adr/0059-llm-lease-extraction.md):
 - Username/password login (`POST /api/auth/login`) → backend verifies against the app DB's `credential` table (PBKDF2 hashes) → mints an **identity-only** HS256 session JWT, set in an httpOnly cookie ([ADR-062](./adr/0062-username-password-replaces-magic-link.md) / [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md) / [ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md)).
 - Every request re-authorizes the session's username against the `credential` table and resolves their *current* team → `tenant_id`; teams ARE tenants. Removing a user or changing their team applies on their next request — including the edge-gated `/data/processed/*`. Multi-tenancy isolation tests gate every PR (see [TESTING.md §11.2](./TESTING.md)). Full mechanics: [`backend/README.md`](../backend/README.md).
 
-### 5.6 What's not in Slice 4
+### 5.6 What's not in the backend yet
 
 - **Self-serve refresh from the product** — Phase 2. The puller stays a dev-side desktop app for Phase 1.
 - **Mass email + response tracking** — Phase 2. Requires email infra (Postmark / SES), webhook handling, CAN-SPAM compliance.
@@ -491,8 +512,8 @@ at preprocess time produces a new toggle in the UI with zero JS changes.
 - **Sparse comments.** Comments where the *why* is non-obvious; not
   where the code self-documents.
 - **No new normalize-time filtering.** Per ADR (full-fidelity raw preservation): keep all rows; add status / validity columns; let Joins and Views filter.
-- **Backend (Slice 4) — `tenant_id` everywhere.** Every table has it; every route filters by it; multi-tenancy isolation tests gate PRs.
-- **Backend — no direct writes to `data/processed/`.** Backend owns Postgres + S3; pipeline owns `data/processed/`. Boundary stays clean.
+- **Backend — `tenant_id` everywhere.** Every table has it; every route filters by it; multi-tenancy isolation tests gate PRs.
+- **Backend — no direct writes to `data/processed/`.** Backend owns its store (SQLite + R2); pipeline owns `data/processed/`. Boundary stays clean.
 
 ---
 
@@ -502,7 +523,7 @@ at preprocess time produces a new toggle in the UI with zero JS changes.
 |---|---|
 | What is the project? | [PROJECT_BRIEF.md](../PROJECT_BRIEF.md) |
 | What's in scope right now? | [SCOPE.md](./SCOPE.md) |
-| What does success look like? | [GOALS.md](./GOALS.md) |
+| What does success look like? | [SCOPE.md](./SCOPE.md) |
 | What works today? | [STATUS.md](./STATUS.md) |
 | Past / future arc? | [ROADMAP.md](./ROADMAP.md) |
 | Locked design choices? | [DECISIONS.md](./DECISIONS.md) |

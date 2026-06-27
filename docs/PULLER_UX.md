@@ -1,18 +1,24 @@
-# PULLER_UX — Design Spec for the Section 3 Overhaul
+# PULLER_UX — Design Spec for the Puller Overhaul
 
-**Last updated:** 2026-05-25
-**Status:** Implemented — Section 3 of the legacy plan is complete. This
-document remains the design reference for the puller's behaviour.
+**Last updated:** 2026-06-26
+**Status:** Implemented — the puller overhaul is complete, and
+`app_puller/` is now **FROZEN (bug-fix-only) per PRD #138**. This
+document is the historical design reference for the now-frozen Qt
+puller; no new features land here. The forward path is a thin
+Textual-TUI successor over the unchanged headless libraries (see
+[`app_puller/AGENTS.md`](../app_puller/AGENTS.md) + PRD #138).
 
 > **Phase 1 product (2026-05-25):** the puller stays a dev-side tool
 > in Phase 1 — the co-founder sees freshness state inside the product
 > (per [DATA_FRESHNESS.md §8](./DATA_FRESHNESS.md)) but does not trigger
-> refreshes himself. **Phase 2 candidate:** wire the puller into the
-> Slice 4 backend so the co-founder can self-serve a refresh from the
-> product. Real work — the puller is currently a Qt desktop app and not
-> easily backend-driven. A separate Phase 2 candidate: a guided
-> checklist UI for MANUAL_ONLY sources like FDOR NAL (67 Florida
-> counties, click-through each) to compress the per-refresh effort.
+> refreshes himself. **Phase 2 candidate:** the forward path for the
+> puller is a thin Textual-TUI successor over the unchanged headless
+> libraries (PRD #138) — the Qt desktop app is frozen and not easily
+> backend-driven, so any self-serve in-product refresh would build on
+> that successor rather than the current Qt app. A separate Phase 2
+> candidate: a guided checklist UI for MANUAL_ONLY sources like FDOR
+> NAL (67 Florida counties, click-through each) to compress the
+> per-refresh effort.
 
 This document is the design spec for the data puller upgrade. The
 puller is the **single tool the user interacts with most often** to
@@ -20,8 +26,8 @@ keep the system healthy; user comment: *"data puller is going to need
 a lot of work in my opinion from a functionality stand point and UI as
 well to make my life easier moving forward."*
 
-This spec is what Section 3 of `/.claude/plans/cached-wobbling-token.md`
-executes against.
+This spec described the puller-overhaul work, which has since shipped.
+(The original legacy plan file is no longer in the repo.)
 
 ---
 
@@ -116,9 +122,9 @@ basis as the map app).
 Aggregates the top of the window. Surfaces, in priority order:
 
 1. **Endpoint-dead sources with walkthroughs available** (HUD OZ /
-   QCT / NC OneMap / USDA after Section 4.1).
+   QCT / NC OneMap / USDA).
 2. **Stale sources** (past cadence).
-3. **Missing sources** for anchor states (NC, MT, FL counties).
+3. **Missing sources** for anchor states (AR, MT, FL, WV counties).
 4. **Sources past `next_recommended_check_at`** but otherwise OK.
 
 Each item is one-click-actionable from the panel:
@@ -165,15 +171,23 @@ text with a guided flow.
 
 ### 4.2 Step contents
 
-Each `ManualStep`:
+Each `ManualStep` (`scripts/fetch/walkthroughs.py`):
 
 - `title: str` — short, action-oriented ("Click Graham on the map").
 - `body: str` — Markdown; rendered inline.
+- `deep_link: str | None` — opens in OS browser.
 - `screenshot: Path | None` — optional, under
   `app_puller/assets/walkthroughs/<source_id>/`.
-- `deep_link: str | None` — opens in OS browser.
-- `expected_files: list[str] | None` — final filenames the user
-  should see; checked in the post-walkthrough validate step.
+
+The enclosing `ManualWalkthrough` carries the source-level fields
+(`expected_files` is **not** a per-step field):
+
+- `landing_page_url: str` — the "just open the page" fallback.
+- `steps: list[ManualStep]` — the ordered steps above.
+- `expected_files: list[str]` — final filenames the user should see;
+  checked in the post-walkthrough validate step.
+- `notes_on_failure: str | None` — markdown shown when an earlier
+  auto-fetch attempt failed (e.g. how to find an older snapshot).
 
 ### 4.3 Modal closing
 
@@ -259,12 +273,12 @@ When clicked:
 
 1. Triggers `Check for updates` (parallel HEAD).
 2. Identifies stale-but-needed sources for active anchor states (read
-   from `docs/SCOPE.md` — or hardcode in registry: AR/NC/MT/UT/FL).
+   from `docs/SCOPE.md` — or hardcode in registry: AR/MT/FL/WV).
 3. Surfaces a focused checklist:
    - [ ] AR — fresh
-   - [ ] NC — STALE — refresh now (auto-fetch, MapServer pagination)
    - [ ] MT — MISSING — walkthrough
    - [ ] FL — MISSING — walkthrough (67-county FDOR NAL)
+   - [ ] WV — STALE — walkthrough (MANUAL_ONLY; statewide File GDB)
    - [ ] HUD OZ — endpoint dead — walkthrough
 4. After each item completes, the row checks itself.
 5. Bottom button: "Re-run preprocess for affected states" launches
@@ -291,7 +305,7 @@ Loaded on launch; saved on close.
 
 ## 8. Activity log improvements
 
-Today's log is monolithic. After Section 3:
+Today's log is monolithic. After the overhaul:
 
 - **Filter dropdown**: All / Errors only / This session.
 - **Per-source filter**: clicking a source in the tree filters the
@@ -325,9 +339,9 @@ Today's log is monolithic. After Section 3:
 
 ---
 
-## 11. Acceptance criteria (Section 3.6 verification)
+## 11. Acceptance criteria
 
-The Section 3 work is **done** when:
+This overhaul has shipped; it was considered **done** when:
 
 - [ ] Puller launches; freshness column populated for every installed
       source.

@@ -1,6 +1,6 @@
 # DATA_SOURCES
 
-**Last updated:** 2026-05-25 (Phase 1 product pivot — reverses several deferrals; adds Steel-in-the-Air + SoS + UCC-1 entries).
+**Last updated:** 2026-06-26 (docs sweep — committed anchors reconciled to AR/MT/FL/WV with NC as a deferred Phase-1 stretch; letter-based slice naming).
 
 Reference for every data feed the puller knows about. Serves two audiences:
 
@@ -22,29 +22,29 @@ For higher-level context:
 > 🟡 Automated download tolerated (no explicit endpoint; pulled politely)
 > 🚫 Manual download required (terms of service, click-through, captcha, or no stable URL)
 > 🔒 Credentialed / paid source
-> ⊘ **Retired or deferred** — source not active in v1 cut; see [DECISIONS.md](./DECISIONS.md)
+> ⊘ **Retired or deferred** — source not active in the Phase 1 cut; see [DECISIONS.md](./DECISIONS.md)
 
-**Status overrides** (current as of 2026-05-25; reconcile with the per-source table below):
+**Status overrides** (current as of 2026-06-26; reconcile with the per-source table below):
 
 - **`hifld_towers`** is **RETIRED** (DHS removed the public layer in 2024 — ADR-015).
 - **`regrid_parcels`** is **Phase 2+ unlock** (paid; ADR-010 reframed by [ADR-057](./adr/0057-budget-posture-reframed.md) — was "out of scope," now "current-budget posture").
 - **`lbnl_tts`** is **DROPPED** from active registry (superseded — ADR-016).
 - **`fcc_uls_cellular`** (Part 22, the `l_cell` bulk file) + the **PCS / AWS / 700 MHz radio-service-code subset of `fcc_uls_market`** (the `l_market` Market-Based Services bulk file) are **Phase 1 Slice A** (carrier identification — [ADR-053](./adr/0053-product-phase-shift.md) partially reverses ADR-013). The FCC does **not** ship `fcc_uls_pcs` / `_aws` / `_700mhz` as separate downloads — those bands are carved out of the single `l_market` file by `radio_service_code` (see §2–7).
 - The rest of `fcc_uls_market` (WCS code `WS`, 600 MHz `WT`, Narrowband PCS, paging, BRS/EBS, …) and **`fcc_uls_micro`** (Microwave, point-to-point backhaul) remain **DEFERRED** — not one of the four Phase-1 carrier bands.
-- **`fdot_billboards`, `ncdot_billboards`** are **Phase 1 Slice C as parcel enrichment** (ADR-014 partially reversed for FL + NC). `txdot_billboards` stays deferred (TX not in anchor states).
+- **`fdot_billboards`, `ncdot_billboards`** are tagged **Phase 1 Slice C parcel enrichment** (ADR-014 partially reversed for FL; the NCDOT extract rides with the deferred NC stretch) but **both remain in the registry `_DEFERRED` block — not yet wired active**. `txdot_billboards` stays deferred (TX not an anchor state).
 - **`fl_fgdl_parcels`** is **REPLACED** by `fdor_nal` (ADR-019).
 - **`in_parcels`** is **MOTHBALLED** (no owner data — ADR-017).
 - **`mn_parcels`** is **DEFERRED** (license ambiguity — ADR-018).
 - **`ut_parcels`** is **DEFERRED** (no owner data — ADR-049).
 - **`hud_oz`, `hud_qct`, `usda_persistent_poverty`** — endpoints confirmed live 2026-05-21; pulled and normalized into the AR + MT composites.
-- **`nc_onemap_parcels`** fetch deleted 2026-05-20; needs full re-fetch (Slice F).
-- **NEW Phase 1 additions** (see source entries 30–32 below): Steel-in-the-Air free county-level lease benchmarks (`steel_in_the_air_free`), Secretary of State business-entity lookups (`sos_business_<state>`), UCC-1 filings (`ucc1_<state>`) — all bake into the Slice 4 lead-detail panel per [ADR-057](./adr/0057-budget-posture-reframed.md).
+- **`nc_onemap_parcels`** fetch deleted 2026-05-20; re-fetch + normalize + compose **deferred to a Phase-1 stretch** — NC (37) is not a committed anchor and does **not** gate Slice F. (The source object stays in registry `_ACTIVE`, so it is "active" in code.)
+- **NEW Phase 1 additions** (see source entries 30–32 below): Steel-in-the-Air free county-level lease benchmarks (`steel_in_the_air_free`), Secretary of State business-entity lookups (`sos_business_<state>`), UCC-1 filings (`ucc1_<state>`) — all bake into the Slice D+E lead-detail panel per [ADR-057](./adr/0057-budget-posture-reframed.md).
 
 ---
 
 ## Index
 
-| # | Source | Category | Coverage | Automation | v1 status | Commercial use |
+| # | Source | Category | Coverage | Automation | Phase 1 status | Commercial use |
 |---|---|---|---|---|---|---|
 | 1 | FCC ASR | Towers | National | ✅ | ✓ active | ✅ Yes (public domain) |
 | 2 | FCC ULS — Cellular (`fcc_uls_cellular`, Part 22, `l_cell`) | Towers | National | ✅ | **Phase 1 Slice A** | ✅ Yes (public domain) |
@@ -59,10 +59,10 @@ For higher-level context:
 | 11 | EIA Form 860M (monthly) | Solar | National | ✅ | ✓ active | ✅ Yes (public domain) |
 | 12 | USGS USPVDB | Solar | National | ✅ | ✓ active | ✅ Yes (public domain) |
 | 13 | LBNL Tracking the Sun | Solar | National | 🟡 | ⊘ deferred | ✅ Yes, with attribution |
-| 14 | FDOT Outdoor Advertising permits | Billboards | Florida | ✅ | **Phase 1 Slice C** (parcel enrichment) | ✅ Yes (public records) |
-| 15 | NCDOT Outdoor Advertising permits | Billboards | North Carolina | 🚫 | **Phase 1 Slice C** (parcel enrichment) | ✅ Yes (public records) |
+| 14 | FDOT Outdoor Advertising permits | Billboards | Florida | ✅ | ⊘ deferred — planned Phase 1 Slice C | ✅ Yes (public records) |
+| 15 | NCDOT Outdoor Advertising permits | Billboards | North Carolina | 🚫 | ⊘ deferred — planned Phase 1 Slice C | ✅ Yes (public records) |
 | 16 | TxDOT Outdoor Advertising permits | Billboards | Texas | 🚫 | ⊘ deferred (TX not anchor) | ✅ Yes (public records) |
-| 17 | NC OneMap statewide parcels | Parcels | NC (100 counties) | ✅ | ✓ active — raw deleted 2026-05-20; needs re-fetch | ✅ Yes, with attribution |
+| 17 | NC OneMap statewide parcels | Parcels | NC (100 counties) | ✅ | ⊘ deferred Phase-1 stretch — in registry but raw deleted 2026-05-20; re-fetch not gating Slice F | ✅ Yes, with attribution |
 | 18 | FL FGDL DSL parcels | Parcels | Florida | 🚫 | ⊘ deferred (wrong dataset; replaced by #29) | ✅ Yes, with attribution |
 | 19 | Montana Cadastral parcels | Parcels | Montana | 🚫 | ✓ active | ✅ Yes, with attribution |
 | 20 | Minnesota statewide parcels (MnGeo) | Parcels | Minnesota | 🚫 | ⊘ deferred (license ambiguity) | ✅ Yes, with attribution |
@@ -74,7 +74,7 @@ For higher-level context:
 | 26 | HUD Qualified Census Tracts | Distress | National | ✅ | ✓ active | ✅ Yes (public domain) |
 | 27 | ARC County Economic Status | Distress | Appalachia (13 states) | ✅ | ✓ active | ✅ Yes (public domain) |
 | 28 | USDA ERS Persistent Poverty Counties | Distress | National | 🟡 | ✓ active | ✅ Yes (public domain) |
-| 29 | **FL FDOR NAL** (per-county tax roll) | Parcels | FL (all 67 counties) | 🚫 | ✓ active — raw intact; normalized + composite deleted 2026-05-20, needs re-run (Slice F) | ✅ Yes, with attribution |
+| 29 | **FL FDOR NAL** (per-county tax roll) | Parcels | FL (all 67 counties) | 🚫 | ✓ active — raw intact; normalized (11.18M parcels) + composed (recomposed 2026-05-29); live in app | ✅ Yes, with attribution |
 | 30 | **Steel-in-the-Air** (free county-level lease benchmarks) — NEW | Lease comps | National (counties) | 🟡 | **Phase 1 Slice D** (bootstrap `lease_comp`) | ✅ Yes, with attribution |
 | 31 | **Secretary of State business-entity lookups** — NEW | Officer disclosure | Per anchor state | 🚫 | **Phase 1 Slice D** (one-click in lead-detail panel) | ✅ Yes (public records) |
 | 32 | **UCC-1 filings** — NEW | Third-party-ownership clues | Per anchor state | 🚫 | **Phase 1 Slice D** (surfaced in lead-detail panel) | ✅ Yes (public records) |
@@ -366,7 +366,7 @@ Single Excel workbook (XLSX). Each row is a permitted sign. Key fields:
 `Status`, `Status Date`, `Issued Date`.
 
 ### Joins
-Spatial join (Lat/Long) into a Florida parcel layer (source #18, FGDL).
+Spatial join (Lat/Long) into a Florida parcel layer (source #29, FDOR NAL — #18 FGDL was the wrong dataset, replaced per ADR-019).
 
 ### Notes
 The single best public billboard dataset in the US. FDOT may
@@ -532,14 +532,14 @@ Statewide shapefile with normalised owner, mailing, value, acreage.
 - **Automation:** 🚫 Manual only · **Registry:** ⊘ deferred
 - **Commercial:** ✅ With attribution.
 
-**Deferred from the v1 anchor set (ADR-049).** UGRC's parcel layers —
+**Deferred from the Phase 1 anchor set (ADR-049).** UGRC's parcel layers —
 the statewide aggregate, the per-county basic parcels, and the
 per-county LIR parcels (all 29 counties) — carry value, acreage,
 property class, year built, and situs address but **no owner name**.
 UGRC's Land Information Record standard omits owner name; the only
 owner-adjacent field is `OWN_TYPE` (a private/government category).
 Owner data lives behind per-county assessor portals with no bulk
-download. Same blocker as Indiana (#22). Kept in the registry's
+download. Same blocker as Indiana (#21). Kept in the registry's
 deferred block so it can be re-promoted if a Utah owner-data source
 ever materialises.
 
@@ -694,7 +694,7 @@ County FIPS.
 FGDL DSL covers state-owned land, not private parcels — wrong dataset
 for landowner outreach. FDOR's per-county PAR shapefiles are the
 canonical Florida private-parcel landowner data (every county's
-parcel polygons joined with the current-year NAL tax-roll). v1 ships
+parcel polygons joined with the current-year NAL tax-roll). Phase 1 ships
 all 67 Florida counties (ADR-047).
 
 ### PIN vs PAR (per FDOR's Parcel Shapefiles Readme)
@@ -705,7 +705,7 @@ The standalone NAL/SDF text files in FDOR's Tax Roll Data File
 directory are the same attributes minus geometry — not needed because
 PAR has them merged.
 
-### v1 county set
+### Phase 1 county set
 **All 67 Florida counties** (per ADR-047). FDOR publishes one PAR ZIP
 per county on the Map Data directory; the walkthrough lists every
 county alphabetically as a download checklist. **Miami-Dade and
@@ -763,7 +763,7 @@ FAA / HUD overlays via point-in-polygon spatial join.
 
 ### Purpose
 
-Bootstraps the `lease_comp` table in the Slice 4 backend. ~3000 US counties with rent-mean / rent-percentile estimates. UI surfaces *"this tower's rent is in the Nth percentile vs {county/region}."* **Note (2026-05-26):** data-source research found that no free Steel-in-the-Air county-level lease-rate dataset exists — see [STATUS.md §7](./STATUS.md) for the Slice D rescope.
+Bootstraps the `lease_comp` table in the Slice D+E backend. ~3000 US counties with rent-mean / rent-percentile estimates. UI surfaces *"this tower's rent is in the Nth percentile vs {county/region}."* **Note (2026-05-26):** data-source research found that no free Steel-in-the-Air county-level lease-rate dataset exists — see [STATUS.md §7](./STATUS.md) for the Slice D rescope.
 
 ### Open at Slice D kickoff
 
@@ -779,30 +779,30 @@ Steel-in-the-Air **paid tier** has finer-than-county granularity. Phase 2 conver
 
 ## 31. Secretary of State business-entity lookups (per anchor state)
 
-- **IDs:** `sos_business_ar`, `sos_business_mt`, `sos_business_fl`, `sos_business_nc` · **Cadence:** Live (lookup on-demand) · **Size:** N/A (no bulk download)
+- **IDs:** `sos_business_ar`, `sos_business_mt`, `sos_business_fl`, `sos_business_wv` (one per committed anchor) · **Cadence:** Live (lookup on-demand) · **Size:** N/A (no bulk download)
 - **Source pages:**
   - AR: <https://www.sos.arkansas.gov/corps/search_corps.php>
   - MT: <https://biz.sosmt.gov/search/business>
   - FL: <https://search.sunbiz.org/>
-  - NC: <https://www.sosnc.gov/online_services/search>
+  - WV: <https://apps.sos.wv.gov/business/corporations/>
 - **License:** Public records (per-state public-information statutes)
 - **Automation:** Per-state UX varies — some allow direct URL queries; others require search form posts. Backend wraps each per-state quirk.
 - **Commercial use:** ✅ Yes.
 
 ### Purpose
 
-Slice 4 lead-detail panel surfaces a **one-click "look up LLC officers"** button per lead. Returns publicly-disclosed managers / officers / registered-agent details for the LLC named on the parcel. **Not** identity resolution — these are officers the entity itself publicly registered ([ADR-057](./adr/0057-budget-posture-reframed.md) narrowing of ADR-041).
+The Slice D+E lead-detail panel surfaces a **one-click "look up LLC officers"** button per lead. Returns publicly-disclosed managers / officers / registered-agent details for the LLC named on the parcel. **Not** identity resolution — these are officers the entity itself publicly registered ([ADR-057](./adr/0057-budget-posture-reframed.md) narrowing of ADR-041).
 
 ### Implementation notes
 
 - Backend caches lookups per `tenant_id`-scoped `(state, entity_name)` for a TTL (~30 days) to avoid hammering SoS endpoints.
-- Each state's UX is bespoke (FL's Sunbiz is well-structured; NC's portal needs more parsing). Expect a per-state adapter per anchor state.
+- Each state's UX is bespoke (FL's Sunbiz is well-structured; other states' portals need more parsing). Expect a per-state adapter per anchor state.
 
 ---
 
 ## 32. UCC-1 filings (per anchor state)
 
-- **IDs:** `ucc1_ar`, `ucc1_mt`, `ucc1_fl`, `ucc1_nc` · **Cadence:** Live (lookup on-demand) · **Size:** N/A (no bulk download)
+- **IDs:** `ucc1_ar`, `ucc1_mt`, `ucc1_fl`, `ucc1_wv` (one per committed anchor) · **Cadence:** Live (lookup on-demand) · **Size:** N/A (no bulk download)
 - **Source pages:** each state SoS's UCC search (same SoS portals as #31 above, separate UCC tab)
 - **License:** Public records.
 - **Automation:** Per-state lookup; bespoke adapters.
@@ -810,7 +810,7 @@ Slice 4 lead-detail panel surfaces a **one-click "look up LLC officers"** button
 
 ### Purpose
 
-Surfaced in the Slice 4 lead-detail panel as **third-party-ownership clues**. UCC-1 financing statements name secured parties — useful for confirming whether an asset (often solar systems, occasionally tower equipment) is third-party-owned and therefore on a renegotiable contract.
+Surfaced in the Slice D+E lead-detail panel as **third-party-ownership clues**. UCC-1 financing statements name secured parties — useful for confirming whether an asset (often solar systems, occasionally tower equipment) is third-party-owned and therefore on a renegotiable contract.
 
 ### Caveat
 
@@ -869,7 +869,7 @@ consuming, (b) fail fast if a required source is missing.
 1. Add `scripts/fetch/sources/<your_source>.py` defining a subclass of
    `DataSource` exported as `SOURCE` (or `SOURCES` for a list).
 2. Import it in `scripts/fetch/registry.py` and append to `_ACTIVE`
-   (or `_DEFERRED` if not part of the v1 pitch scope — see ADR-045).
+   (or `_DEFERRED` if not part of the Phase 1 scope — see ADR-045).
 3. Document it here with the same headings (Cadence / Size / Source /
    Direct URL / License / Automation / Commercial / Structure / Joins).
 4. Restart the Puller — the new source appears in its category group.

@@ -37,7 +37,7 @@ The project transitions from "pitch cut" to **Phase 1 of a co-founder-facing pro
 
 - SCOPE.md, GOALS.md, ROADMAP.md, STATUS.md, CLAUDE.md all rewrite (this ADR drives the rewrites).
 - ADR-006 (static-site) superseded by ADR-055; ADR-010 + ADR-041 revised by ADR-057.
-- Pitch-cut KPIs in GOALS.md retire; new product per-slice gates ([GOALS.md §3](../GOALS.md)) replace them.
+- Pitch-cut KPIs retire; new product per-slice gates ([SCOPE.md §4](../SCOPE.md)) replace them.
 - Plan-of-work becomes Slices F → A → C → D+E → B in defined order.
 
 ## Alternatives considered

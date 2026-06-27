@@ -1,6 +1,6 @@
 # LIMITATIONS
 
-**Last updated:** 2026-05-25
+**Last updated:** 2026-06-26
 
 Open issues, data caveats, licensing constraints, and known gaps —
 things a reader must know before trusting any output of this system
@@ -41,14 +41,14 @@ How to mitigate: Phase 2 rooftop data is mostly paid (CoStar / LoopNet / mortgag
 
 **Added 2026-05-25.**
 
-Slice 4 (D + E) ships LLM-based structured extraction from uploaded lease PDFs ([ADR-059](./adr/0059-llm-lease-extraction.md)). The per-slice gate is **≥ 85% field accuracy on a 20-lease hand-labelled gold-set**. Until that gold-set is built and the eval runs, **field-level accuracy is unknown** and the co-founder must treat extracted values as drafts requiring verification.
+Slice D+E ships LLM-based structured extraction from uploaded lease PDFs ([ADR-059](./adr/0059-llm-lease-extraction.md)). The per-slice gate is **≥ 85% field accuracy on a 20-lease hand-labelled gold-set**. Until that gold-set is built and the eval runs, **field-level accuracy is unknown** and the co-founder must treat extracted values as drafts requiring verification.
 
 Implication:
 - Pre-gold-set: every extracted lease field gets a "needs verification" tag in the UI. Co-founder cross-checks against the source PDF every time.
 - Post-gold-set: confidence-tagged fields (verbatim citation vs inferred — per ADR-059) calibrate co-founder trust per-field.
 
 How to mitigate:
-1. Build the 20-lease gold-set as the **first deliverable in Slice 4**, before any extraction code is shipped to the co-founder.
+1. Build the 20-lease gold-set as the **first deliverable in Slice D+E**, before any extraction code is shipped to the co-founder.
 2. Re-run the gold-set eval on every prompt or model change. Gating PR check per [TESTING.md §11.3](./TESTING.md).
 
 ---
@@ -65,7 +65,7 @@ Implication:
 - Paid skip-trace (Whitepages Pro / Cole / IDI / Pipl) is a Phase 2+ unlock; integrating it brings FCRA-adjacent custody implications (see [SECURITY.md §7](./SECURITY.md)).
 
 How to mitigate:
-- Slice 4 lead-detail panel includes the SoS lookup links + a snail-mail letter template generator to compress per-lead research time.
+- The Slice D+E lead-detail panel includes the SoS lookup links + a snail-mail letter template generator to compress per-lead research time.
 - Phase 2 evaluation: paid skip-trace integration vs cofounder-side research scaling.
 
 ---
@@ -109,7 +109,7 @@ How to mitigate:
 The comparables feature was originally planned to bootstrap from Steel-in-the-Air's free county-level lease-rent benchmarks. **2026-05-26 data-source research confirms that free dataset doesn't exist** — see [STATUS.md §7](./STATUS.md) for the open Slice D rescope. Per-tower comparables grow from the co-founder's uploaded leases over time — slow either way.
 
 Implication:
-- **At Slice 4 launch:** "rent vs county average" works Day 1 for every county; "outliers within X-mile radius" is empty until ~20 leases land in any radius.
+- **At Slice D+E launch:** "rent vs county average" works Day 1 for every county; "outliers within X-mile radius" is empty until ~20 leases land in any radius.
 - **After ~6 months of cofounder uploads:** smaller radii start populating.
 - **After ~12+ months:** the private comp DB starts dominating the public bootstrap.
 
@@ -158,32 +158,24 @@ How to mitigate:
 
 ---
 
-## 🚫 Large-state composites exceed the 16 GB dev machine
+## ~~🚫 Large-state composites exceed the 16 GB dev machine~~ ✅ RESOLVED
 
-**Added 2026-05-20.**
+**Added 2026-05-20. RESOLVED 2026-06-13 (chunked DuckDB compose, PRD #135).**
 
-The Composer's `_load_state_data` loads every county parquet for a
-state into memory and `pd.concat`s them — measured at ~1,710
+Originally the Composer's `_load_state_data` loaded every county parquet
+for a state into memory and `pd.concat`'d them — measured at ~1,710
 bytes/parcel, so **~19.5 GB peak** for Florida's 11.18M parcels on a
-16 GB machine. A local FL compose this session ran through the load
-and **all 9 joins** (macOS swaps rather than OOM-killing) but died
-writing `parcels.parquet`: the ~13 GB output exhausted the disk, which
-was only 11 GB free with swap competing for the same disk.
+16 GB machine. A local FL compose swapped through the load and then
+exhausted the disk writing the ~13 GB `parcels.parquet`.
 
-Implication:
-
-- **FL cannot be composed locally**, and NC (~5.9M parcels) will hit
-  the same wall.
-- Two-sided constraint — RAM (~19.5 GB working set) and disk (~16–20
-  GB composite output on a disk that runs 93%+ full).
-
-How to mitigate:
-
-1. **Chunked compose** (approved — ADR-051): refactor the Composer to
-   process parcels county-by-county so peak memory stays bounded. Not
-   yet implemented.
-2. Free disk before any large compose (~32 GB free after this
-   session's cleanup; FL's composite needs ~16–20 GB).
+**Fixed:** chunked compose shipped (approved — ADR-051; implemented in
+PRD #135). `scripts/preprocess/compose.py` is now a per-chunk loop over
+parcel shards backed by DuckDB (`iter_state_parcel_shards` +
+`duck.session`), so peak memory stays bounded regardless of state size;
+equivalence with the old pandas path is pinned by
+`tests/test_duckdb_equivalence.py`. FL composites were built and
+deployed to production 2026-06-13. The peak-RAM / disk wall no longer
+holds.
 
 ---
 
@@ -225,8 +217,8 @@ Implication:
 
 - NC cannot be normalized or composed until the remaining ~80 pages
   land. Since NC was demoted to a deferred Phase-1 stretch (2026-05-29),
-  this no longer blocks the committed-anchor set (AR + MT + FL) — it is
-  deferred work, not a Slice-F gate.
+  this no longer blocks the committed-anchor set (AR + MT + FL + WV) —
+  it is deferred work, not a Slice-F gate.
 - NC compose (~5.9M parcels) will also hit the memory wall above.
 
 How to mitigate:
@@ -283,33 +275,28 @@ Implication:
 
 How to mitigate:
 
-- Document the gap as a known limitation in INVESTOR_BRIEF.md.
+- Document the gap as a known limitation in PROJECT_BRIEF.md.
 - Treat ASR + FAA OEAAA as the joint tower-location truth.
 
 ---
 
-## 🚫 FL parcel data on disk is the wrong dataset
+## ~~🚫 FL parcel data on disk is the wrong dataset~~ ✅ RESOLVED
 
-**Added 2026-05-19.**
+**Added 2026-05-19. RESOLVED — `fdor_nal` shipped + composed.**
 
-The current `fl_fgdl_parcels` source pulls Florida's FGDL **DSL**
-(Department of State Lands) parcels — publicly-owned state land only.
-It is **not** the FDOR NAL (Name, Address, Legal) tax-roll dataset
-with private owner attribution that we actually want.
+Originally the `fl_fgdl_parcels` source pulled Florida's FGDL **DSL**
+(Department of State Lands) parcels — publicly-owned state land only —
+**not** the FDOR NAL (Name, Address, Legal) tax-roll dataset with
+private owner attribution that we actually want, so the FL composite
+(`composite/12/`) showed ~0 owner names and the LLC views were empty.
 
-Implication:
-
-- Current FL composite (`composite/12/`) shows ~0 owner names; LLC
-  views are empty; demo scenarios don't land.
-- FL is a stretch anchor state for the pitch — included only if we
-  pull FDOR NAL during Section 4.2 (new `fdor_nal` source).
-
-How to mitigate:
-
-- New source `scripts/fetch/sources/fdor_nal.py` shipped in Section 4.2.
-- FDOR NAL is per-county; user pulls all 67 counties via the puller's
-  walkthrough (ADR-047).
-- The FGDL DSL source is dropped from the active registry.
+**Fixed:** the new `scripts/fetch/sources/fdor_nal.py` source shipped
+and normalized all 67 counties / 11.18M parcels (see the RESOLVED FDOR
+entry above), so FL composites now carry owner names. FDOR NAL is
+per-county; the user pulls all 67 counties via the puller's walkthrough
+(ADR-047), and the FGDL DSL source is dropped from the active registry.
+FL is a **committed Phase-1 anchor** (AR + MT + FL + WV per
+[ADR-060](./adr/0060-wv-committed-anchor.md)), not a stretch.
 
 ---
 
@@ -412,28 +399,22 @@ How to mitigate:
 
 ---
 
-## ⚠ FCC ULS data downloaded but not yet normalized
+## ~~⚠ FCC ULS data downloaded but not yet normalized~~ ✅ RESOLVED
 
-**Added 2026-05-19.**
+**Added 2026-05-19. RESOLVED 2026-05-30 (Slice A).**
 
-~5 GB of raw FCC ULS data is on disk across six bands (cellular,
-market-based, microwave, ownership, transfers, leasing) plus
-metadata. None of it is currently processed into canonical types.
-Carrier presence per tower — single biggest driver of lease value —
-is therefore not in our outputs.
+Originally ~5 GB of raw FCC ULS data sat on disk across six bands
+(cellular, market-based, microwave, ownership, transfers, leasing)
+plus metadata, unprocessed — so carrier presence per tower, the single
+biggest driver of lease value, was not in our outputs.
 
-Implication:
-
-- Pitch narrative can mention carrier/tenant data as a "we have the
-  raw, normalize is a v2 build."
-- Lease-economic modeling (per-tower revenue, sub-lease
-  relationships) is unavailable until ULS normalizers ship.
-
-How to mitigate:
-
-- Documented as a deferred workstream in ROADMAP.md.
-- Raw data on disk stays — when ULS normalizers land, they read from
-  current files, no re-fetch needed.
+**Fixed:** the ULS normalizer (`scripts/preprocess/normalizers/fcc_uls.py`)
+shipped as part of Slice A (landed 2026-05-30). It emits `asr_number`
+with a verified ASR cross-reference plus a spatial-proximity fallback,
+so carrier-per-tower is now in the composite — see the *"Carrier
+identification has spatial-fallback false positives"* entry above for
+the live caveats. Lease-economic modeling (per-tower revenue, sub-lease
+relationships) remains future work.
 
 ---
 
@@ -447,7 +428,7 @@ The data pipeline is batch-only. Re-running `python scripts/preprocess.py` overw
 
 Implication:
 - The data pipeline still requires the dev to run the puller manually (Phase 1).
-- Slice 4 backend gives the co-founder a real workflow surface (auth, persistent lead state, lease uploads, CSV exports) rather than ad-hoc spreadsheets.
+- The live D+E backend gives the co-founder a real workflow surface (auth, persistent lead state, and — once the rest of D+E lands — lease uploads + CSV exports) rather than ad-hoc spreadsheets.
 - Self-serve refresh from the product is a Phase 2 candidate (wire the puller into the backend).
 
 How to mitigate:
@@ -486,7 +467,7 @@ How to mitigate:
 
 When an LLC, trust, or shell entity owns a parcel, we display the raw entity string. **Paid skip-trace and shell-piercing remain permanent non-goals** per ADR-041 as narrowed by [ADR-057](./adr/0057-budget-posture-reframed.md).
 
-**What's now in scope for Phase 1** (the narrowing): free public-records officer disclosure. The Slice 4 lead-detail panel surfaces one-click Secretary of State business-entity lookups (LLC managers / officers are publicly disclosed by the entity itself) and UCC-1 filings. These are *not* shell-piercing — they show what the entity itself has publicly registered.
+**What's now in scope for Phase 1** (the narrowing): free public-records officer disclosure. The Slice D+E lead-detail panel surfaces one-click Secretary of State business-entity lookups (LLC managers / officers are publicly disclosed by the entity itself) and UCC-1 filings. These are *not* shell-piercing — they show what the entity itself has publicly registered.
 
 Implication:
 - For LLCs that publicly disclose officers via SoS: the cofounder gets the officer names + can call them.
@@ -575,11 +556,11 @@ The exposure: the static analytical data (parcel parquet, PMTiles, county GeoJSO
 
 **Added 2026-05-19. Updated 2026-05-25.**
 
-Original Section 6 of the legacy work plan never shipped before the 2026-05-25 pivot. **Per-slice test-coverage bar** ([GOALS.md §3](./GOALS.md), [TESTING.md §11.5](./TESTING.md)): ≥ 70% line coverage of new code added in each Phase 1 slice. Plus:
+Original Section 6 of the legacy work plan never shipped before the 2026-05-25 pivot. **Per-slice test-coverage bar** ([SCOPE.md §4](./SCOPE.md), [TESTING.md §11.5](./TESTING.md)): ≥ 70% line coverage of new code added in each Phase 1 slice. Plus:
 
-- Backend HTTP API tests via `testcontainers-postgres` (Slice 4).
-- Multi-tenancy isolation tests from Day 1 (Slice 4).
-- LLM extraction eval as a gating CI check on a 20-lease gold-set (Slice 4).
+- Backend HTTP API tests (Slice D+E).
+- Multi-tenancy isolation tests from Day 1 (Slice D+E).
+- LLM extraction eval as a gating CI check on a 20-lease gold-set (Slice D+E).
 - Data audits as CI (post-compose gate).
 
 Implication: as of 2026-05-25, much of this is still pre-implementation. Pre-Slice-1 work has no tests; Slice F starts shipping them.
