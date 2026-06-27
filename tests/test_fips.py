@@ -76,6 +76,22 @@ def test_canon_county_fips_slices_geoid_to_five_digits():
     assert canon_county_fips("010010001001") == "01001"  # Autauga, AL (leading-zero state)
 
 
+def test_canon_county_fips_rejects_cross_state_result_when_hint_given():
+    """Regression: a few FL fdor_nal parcels carry a malformed CENSUS_BK that
+    parses as a bare 5-digit number (e.g. '27876'), which would otherwise read
+    as a county in 'state 27'. With the source's state_fips hint, an
+    out-of-state result is rejected (None) so the row falls back to FL with a
+    null county — instead of poisoning states_covered and aborting compose
+    with 'no state with FIPS 43'."""
+    assert canon_county_fips("27876", state_fips="12") is None
+    assert canon_county_fips("43010", state_fips="12") is None
+    # Valid in-state values still pass, with or without the matching hint.
+    assert canon_county_fips("12001", state_fips="12") == "12001"
+    assert canon_county_fips("120010001001", state_fips="12") == "12001"
+    # No hint → no cross-state check (unchanged behavior).
+    assert canon_county_fips("27876") == "27876"
+
+
 def test_canon_county_fips_via_state_abbreviation_arg():
     """state_fips arg accepts an abbreviation too (canon_state_fips
     runs on it first)."""

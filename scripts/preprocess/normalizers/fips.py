@@ -42,6 +42,24 @@ def canon_state_fips(value) -> str | None:
     return None
 
 
+def _reject_cross_state(county_fips: str, state_fips: str | None) -> str | None:
+    """Drop a parsed county FIPS whose state prefix contradicts a known hint.
+
+    A single-state parcel source (e.g. FL ``fdor_nal``) must never yield an
+    out-of-state county; when it does — malformed ``CENSUS_BK`` values that
+    parse as a bare 5-digit number, e.g. ``27876`` → "state 27" — the value is
+    garbage. Returning None lets the caller fall back to the source's known
+    state and leave the county null, rather than inventing a bogus county that
+    poisons ``states_covered`` and aborts compose (``no state with FIPS '43'``).
+    """
+    if state_fips is None:
+        return county_fips
+    hint = canon_state_fips(state_fips)
+    if hint is not None and county_fips[:2] != hint:
+        return None
+    return county_fips
+
+
 def canon_county_fips(value, *, state_fips: str | None = None) -> str | None:
     """Normalize a county FIPS to a 5-digit string (state + county).
 
@@ -52,6 +70,10 @@ def canon_county_fips(value, *, state_fips: str | None = None) -> str | None:
       - census tract / block GEOID (≥10 digits, e.g. '120010019081') —
         the county FIPS is positions 0-4. Used by FDOR PAR shapefiles,
         whose only county identifier is the CENSUS_BK field.
+
+    When ``state_fips`` is given, a result whose state prefix disagrees with it
+    is rejected (returns None) — a single-state source can't have out-of-state
+    counties, so a mismatch means the raw value was unparseable garbage.
     """
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
@@ -61,14 +83,14 @@ def canon_county_fips(value, *, state_fips: str | None = None) -> str | None:
     # Census GEOID: slice rather than int-parse so a leading-zero state
     # code (e.g. Alabama '01...') isn't lost.
     if s.isdigit() and len(s) >= 10:
-        return s[:5]
+        return _reject_cross_state(s[:5], state_fips)
     try:
         n = int(float(s))
     except (TypeError, ValueError):
         return None
 
     if 1000 <= n <= 99999:
-        return f"{n:05d}"
+        return _reject_cross_state(f"{n:05d}", state_fips)
     if 0 <= n <= 999:
         if state_fips is None:
             return None
