@@ -1,4 +1,4 @@
-"""Data TUI slice 1 (#234): badge logic, attention ranking, pilot tests.
+"""Data TUI slices 1+2 (#234/#236): badges, attention, pulls, failure pane.
 
 The pure freshness/attention matrix is exercised directly; the app itself
 is driven through Textual's pilot (headless) — the repo's first UI tests.
@@ -11,9 +11,10 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
-from data_tui.app import DataTuiApp
+from data_tui.app import ActivityEvent, DataTuiApp, filter_activity
 from data_tui.freshness import (
     SEV_DEAD,
     SEV_MISSING,
@@ -21,15 +22,27 @@ from data_tui.freshness import (
     attention_items,
     badge_for,
 )
+from fetch import storage as storage_mod
+from fetch.base import FetchResult
 from fetch.legal import AutomationPolicy, CommercialUse, LegalInfo
 from fetch.manifest import Manifest, SourceEntry
 from textual.widgets import DataTable
+
+FAIL_URL = "https://example.com/data.zip"
 
 
 @pytest.fixture(autouse=True)
 def _no_fetch_log(monkeypatch):
     """Keep test sweeps out of the real data/fetch.log."""
     monkeypatch.setattr("fetch.puller.log_event", lambda *a, **k: None)
+
+
+@pytest.fixture(autouse=True)
+def _notifications(monkeypatch):
+    """Capture desktop notifications instead of running osascript."""
+    sent: list[tuple] = []
+    monkeypatch.setattr("data_tui.app.notify_send", lambda *a: sent.append(a))
+    return sent
 
 
 def _legal(automation: AutomationPolicy) -> LegalInfo:
@@ -45,7 +58,7 @@ def _legal(automation: AutomationPolicy) -> LegalInfo:
 
 @dataclass
 class FakeSource:
-    """Duck-typed DataSource — just what badges, attention, and check_one read."""
+    """Duck-typed DataSource — what badges, attention, check_one, fetch_one read."""
 
     id: str = "fake"
     name: str = "Fake"
@@ -54,6 +67,9 @@ class FakeSource:
     update_cadence_days: int | None = 30
     legal: LegalInfo = field(default_factory=lambda: _legal(AutomationPolicy.ALLOWED))
     remote: str = "v1"
+    fail_check: bool = False
+    fail_fetch: bool = False
+    fetch_calls: int = 0
 
     @property
     def is_manual_only(self) -> bool:
@@ -67,7 +83,22 @@ class FakeSource:
         return True
 
     def remote_version(self) -> str:
+        if self.fail_check:
+            raise RuntimeError(f"HEAD {FAIL_URL} → HTTP 500")
         return self.remote
+
+    def fetch(self, dest_dir: Path, progress) -> FetchResult:
+        self.fetch_calls += 1
+        if self.fail_fetch:
+            raise RuntimeError(f"download {FAIL_URL} failed after retries: HTTP 500")
+        p = dest_dir / "data.bin"
+        p.write_bytes(b"x" * 100)
+        progress(10, 100, "data.bin")
+        progress(100, 100, "data.bin")
+        return FetchResult(files=[p], remote_version=self.remote, total_bytes=100)
+
+    def validate(self, files: list[Path]) -> None:
+        pass
 
     def manual_walkthrough(self):
         return None
@@ -287,5 +318,113 @@ def test_real_registry_renders_every_active_source():
             table = app.query_one(DataTable)
             for s in sources:
                 assert str(table.get_cell(s.id, "status")) != ""
+
+    asyncio.run(scenario())
+
+
+# ── slice 2 (#236): pull flow, failure pane, activity log ────────────────
+
+
+def test_filter_activity_modes():
+    events = [
+        ActivityEvent("10:00:00", "a", "check ok", False),
+        ActivityEvent("10:00:01", "b", "fetch failed — boom", True),
+        ActivityEvent("10:00:02", "a", "fetch ok", False),
+    ]
+    assert filter_activity(events, "all") == events
+    assert [e.source_id for e in filter_activity(events, "errors")] == ["b"]
+    assert [e.message for e in filter_activity(events, "source", "a")] == ["check ok", "fetch ok"]
+
+
+def test_pull_now_advances_progress_and_flips_fresh(monkeypatch, tmp_path, _notifications):
+    monkeypatch.setattr(storage_mod, "RAW_ROOT", tmp_path)
+    s = FakeSource(id="pullme", name="Pull Me")
+    app = DataTuiApp(sources=[s], deferred=[], manifest=_manifest({}))
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            app.query_one(DataTable).move_cursor(row=1)  # row 0 is the category header
+            await pilot.pause()
+            await pilot.press("p")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            # The progress line advanced through byte counts to completion.
+            assert any("10 B / 100 B" in line for line in app.job_lines), app.job_lines
+            assert any("100 B / 100 B" in line for line in app.job_lines), app.job_lines
+            assert any("pull finished" in line for line in app.job_lines)
+            assert "FRESH" in _status_cell(app, "pullme")
+            assert app.manifest.entry("pullme").status == "ok"
+            assert (tmp_path / "pullme" / "current" / "data.bin").exists()
+
+    asyncio.run(scenario())
+    assert _notifications and "complete" in _notifications[-1][0]
+
+
+def test_failed_pull_populates_failure_pane(monkeypatch, tmp_path, _notifications):
+    monkeypatch.setattr(storage_mod, "RAW_ROOT", tmp_path)
+    s = FakeSource(id="failing", name="Failing Src", fail_fetch=True)
+    app = DataTuiApp(sources=[s], deferred=[], manifest=_manifest({}))
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            app.query_one(DataTable).move_cursor(row=1)
+            await pilot.pause()
+            await pilot.press("p")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert "DEAD" in _status_cell(app, "failing")
+            # Pane shows the exact URL, error, and last-worked date.
+            assert any(FAIL_URL in line for line in app.detail_lines), app.detail_lines
+            assert any("HTTP 500" in line for line in app.detail_lines)
+            assert any("Last successful fetch: never" in line for line in app.detail_lines)
+            le = app.manifest.entry("failing").last_error
+            assert le["url"] == FAIL_URL
+
+    asyncio.run(scenario())
+    assert _notifications and "failed" in _notifications[-1][0]
+
+
+def test_pull_stale_targets_only_stale_and_missing_auto_sources(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage_mod, "RAW_ROOT", tmp_path)
+    stale = FakeSource(id="stale1", name="Stale One", update_cadence_days=7)
+    fresh = FakeSource(id="fresh1", name="Fresh One")
+    missing = FakeSource(id="miss1", name="Missing One")
+    manual = FakeSource(id="man1", name="Manual One", legal=_legal(AutomationPolicy.MANUAL_ONLY))
+    app = DataTuiApp(
+        sources=[stale, fresh, missing, manual],
+        deferred=[],
+        manifest=_manifest({"stale1": _past_cadence_entry(), "fresh1": _fresh_entry()}),
+    )
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            await pilot.press("P")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert stale.fetch_calls == 1
+            assert missing.fetch_calls == 1
+            assert fresh.fetch_calls == 0
+            assert manual.fetch_calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_activity_log_toggles_and_filters_errors():
+    ok = FakeSource(id="ok_src", name="OK Src")
+    bad = FakeSource(id="bad_src", name="Bad Src", fail_check=True)
+    app = DataTuiApp(sources=[ok, bad], deferred=[], manifest=_manifest({}))
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            await pilot.press("c")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.press("l")
+            await pilot.pause()
+            assert app.log_lines[0].startswith("Activity (all) — 2 events")
+            await pilot.press("f")
+            await pilot.pause()
+            assert app.log_lines[0].startswith("Activity (errors) — 1 events")
+            assert any("bad_src" in line and "check failed" in line for line in app.log_lines)
 
     asyncio.run(scenario())

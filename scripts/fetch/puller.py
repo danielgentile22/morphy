@@ -9,6 +9,8 @@ is staged + promoted atomically, errors are logged, and legal policy
 from __future__ import annotations
 
 import json
+import re
+import time
 import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -39,6 +41,20 @@ def log_event(event: str, **fields: Any) -> None:
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(LOG_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
+
+
+_URL_RE = re.compile(r"https?://[^\s'\"<>]+")
+
+
+def _error_url(msg: str, source: DataSource) -> str:
+    """Best-effort 'URL tried' for the manifest's structured last_error.
+
+    The http helpers embed the exact URL in every error message
+    (``HEAD <url> → …``, ``download <url> failed …``); fall back to the
+    source's manual landing page when a non-HTTP error carries none.
+    """
+    m = _URL_RE.search(msg)
+    return m.group(0).rstrip(".,)") if m else source.legal.manual_url
 
 
 @dataclass
@@ -77,12 +93,15 @@ def check_one(source: DataSource, manifest: Manifest) -> CheckOutcome:
             log_event("check_skipped", source=source.id, reason="no_credentials")
             return CheckOutcome(source.id, ok=True, remote_version=None)
 
+    started = time.monotonic()
     try:
         rv = source.remote_version()
     except Exception as e:  # noqa: BLE001 — sources can raise anything
+        elapsed = round(time.monotonic() - started, 1)
         msg = f"{type(e).__name__}: {e}"
-        manifest.mark_check_failed(source.id, msg)
-        log_event("check_failed", source=source.id, error=msg)
+        url = _error_url(msg, source)
+        manifest.mark_check_failed(source.id, msg, url=url, elapsed=elapsed)
+        log_event("check_failed", source=source.id, error=msg, url=url, elapsed=elapsed)
         return CheckOutcome(source.id, ok=False, error=msg)
 
     manifest.mark_check(source.id, rv)
@@ -128,6 +147,7 @@ def fetch_one(
                 skip_reason="Credentials not configured (paid source).",
             )
 
+    started = time.monotonic()
     try:
         # Resumable sources (e.g. NC OneMap's 1,186-page fetch) preserve
         # the previous run's .partial/ so a stall can pick up where it
@@ -171,8 +191,10 @@ def fetch_one(
         return FetchOutcome(sid, ok=True, bytes=total_bytes, remote_version=result.remote_version)
 
     except Exception as e:  # broad: never let one source kill the whole UI
+        elapsed = round(time.monotonic() - started, 1)
         tb = traceback.format_exc(limit=2)
         msg = f"{type(e).__name__}: {e}"
-        manifest.mark_fetch_failed(sid, msg)
-        log_event("fetch_failed", source=sid, error=msg, traceback=tb)
+        url = _error_url(msg, source)
+        manifest.mark_fetch_failed(sid, msg, url=url, elapsed=elapsed)
+        log_event("fetch_failed", source=sid, error=msg, url=url, elapsed=elapsed, traceback=tb)
         return FetchOutcome(sid, ok=False, error=msg)
