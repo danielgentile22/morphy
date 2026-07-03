@@ -25,12 +25,18 @@ CLAUDE.md §5 (step 7 — adding a normalizer), §8 (code conventions).
 - **No new normalize-time filtering** — full-fidelity raw preservation. Keep all rows;
   add status/validity columns; let Joins and Views filter.
 - **Use `safe_merge`** (ADR-020) when a Join adds columns a Normalizer placeholdered.
-- **Owners index is schema-versioned (currently v5)** — `owners_index.py` owns the
-  contract; its module header is the canonical per-version changelog (v2–v5). **Extending it:**
+- **Owners index is schema-versioned (currently v10)** — `owners_index.py` owns the
+  contract; its module header is the canonical per-version changelog (v2–v10). **Extending it:**
   bump `OWNERS_INDEX_SCHEMA_VERSION`, give new fields safe
   defaults (a stale index must still serve downstream), and mirror any field the backend
   serves onto its `Structure`/`OwnerSummary` model (an undeclared field is silently
   dropped by `response_model` — see [`../../backend/AGENTS.md`](../../backend/AGENTS.md)).
+- **Changing the `display_cluster_id` *recipe* (not just adding a field) orphans lead
+  state** — every id changes, so `Lead`/`ContactAttempt`/`OwnerClusterOverride` (all keyed
+  by it) must be remapped. The v10 change (name-only → name+state, ADR-075) emits
+  `owner_key_migration.json` (old→new); `backend/app/remap_owner_clusters.py` repoints those
+  tables once at deploy. Do this for any future recipe change; never assume ids are stable
+  across a recipe change the way they are across a normal recompute.
 - **Never bake owner merge/split overrides into the parquet.** Raw cluster ids stay
   untouched; overrides are a backend read-time concern.
 - Clustering stays conservative: a false merge is a wrong-person call.

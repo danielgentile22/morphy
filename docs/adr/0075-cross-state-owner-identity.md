@@ -1,6 +1,6 @@
 # ADR-075: Cross-state owner identity — name+state key plus a curated multi-state alias table
 
-**Status:** Accepted — implementation pending ([#221](https://github.com/danielgentile22/infra-lease-analytics/issues/221), audit **MACRO-6**).
+**Status:** Accepted — **implemented** ([#221](https://github.com/danielgentile22/infra-lease-analytics/issues/221), audit **MACRO-6**); the migration executes at the user-supervised batched deploy (see *As implemented*).
 **Date:** 2026-07-03
 **Refines:** [ADR-024](0024-owner-clustering-sha1.md) (clustering normalization) + [ADR-056](0056-lead-equals-owner-cluster.md) (Lead = owner cluster, merge/split UI).
 
@@ -25,6 +25,13 @@ The two failures pull opposite ways: false merges want a *tighter* key, fragment
 - Known false merges (Jacksonville AR+FL) split; known fragmentation (towercos) improved — both demonstrated before/after.
 - Schema-version bump + backend mirror + a migration that must preserve every existing override.
 - Composite + owners index regen; clustering covered by tests.
+
+## As implemented (#221)
+
+- **Key = name + state, alias-aware.** `cluster.cross_state_owner_key(name_norm, state_fips)` hashes `name|state`; a curated `_MULTISTATE_ALIASES` table (Crown Castle / American Tower / SBA-with-a-towerco-qualifier / Vertical Bridge) keys on the canonical alias with no state. Matching is **token-subset** (the normalizer token-sorts, so ordered substrings would miss) and singular-stemmed (TOWER/TOWERS). The owners-index resolver keys on name+state; schema bumped **v9→v10**.
+- **Migration scope widened beyond the ADR's literal "overrides."** `Lead` (status/notes/contact) and `ContactAttempt` are *also* keyed by `display_cluster_id`, so the recipe change would orphan the team's whole triage history, not just merges. The build emits `owner_key_migration.json` (old→new map, at parcel-row grain so every name variant is captured); `backend/app/remap_owner_clusters.py` consumes it once at deploy to repoint all three tables. Policy: one→one repoints; one→many (a same-name owner that now splits per state) **duplicates** to each sub-cluster; many→one (aliased fragments merging) **merges** keeping the most-advanced status + concatenated notes; unmapped ids are left untouched. Idempotent (new keys are never map keys).
+- **Preservation strategy is the co-founder's call at deploy.** The one-shot remap above is the recommended default and what shipped; the deploy checkpoint re-confirms it vs. a read-time alias fallback or overrides-only. Nothing runs until then (the batched deploy already needs the user).
+- **Backend mirror:** no new owner *field*, so no Pydantic change; the version bump + the remap CLI are the backend-side declaration.
 
 ## Alternatives considered
 

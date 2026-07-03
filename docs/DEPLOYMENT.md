@@ -348,6 +348,18 @@ after (Cloudflare won't cache the SPA shell, but your browser may hold old JS).
 fly apps restart morphy-consulting                  # REQUIRED — reload the owners index (see gotchas)
 ```
 
+> **One-time after the ADR-075 owners-index v10 sync (#221):** the cross-state key
+> recipe changed (name-only → name+state), so every `display_cluster_id` changed and
+> existing lead state + merge overrides must be repointed once. After the data sync,
+> before/with the restart, run the idempotent remap on the machine (it reads the
+> `owner_key_migration.json` sidecar shipped in the composite):
+> ```bash
+> fly ssh console --app morphy-consulting
+>   cd /srv/backend && python -m app.remap_owner_clusters --dry-run   # report first
+>   cd /srv/backend && python -m app.remap_owner_clusters            # apply
+> ```
+> Safe to re-run (new keys are never map keys → no-op). Only needed for the v10 cutover.
+
 **Manage users (add / remove / re-team) — no redeploy:**
 
 ```bash

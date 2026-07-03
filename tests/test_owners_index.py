@@ -1,9 +1,9 @@
-"""CrossStateOwnerResolver — cross-state Lead identity + rollups (ADR-061/056).
+"""CrossStateOwnerResolver — cross-state Lead identity + rollups (ADR-075/061/056).
 
-Asserts external behavior on synthetic owner/parcel rows: a national owner
-resolves to one stable ``display_cluster_id``; rollups (states, counts,
-assessed, score) are correct; conservative exact-name matching does not
-over-merge distinct owners. No real parcel-owner names (TESTING.md §4).
+Asserts external behavior on synthetic owner/parcel rows: the cross-state key is
+**name + state** (ADR-075), so a same-name owner in two states is two Leads;
+rollups (states, counts, assessed, score) are correct; a curated alias table
+re-merges known multi-state towercos. No real parcel-owner names (TESTING.md §4).
 """
 
 from __future__ import annotations
@@ -14,11 +14,11 @@ import math
 
 import pandas as pd
 import pytest
+from preprocess.cluster import cross_state_owner_key
 from preprocess.owners_index import (
     OWNERS_INDEX_SCHEMA_VERSION,
     CrossStateOwnerResolver,
     build_owners_index,
-    display_cluster_id,
 )
 
 # Resolve FIPS → abbr without depending on the geographies table.
@@ -61,32 +61,55 @@ def _resolve(rows):
 
 
 def _row_for(index_df, owner_norm):
-    cid = display_cluster_id(owner_norm)
-    matches = index_df[index_df.display_cluster_id == cid]
+    # Look up by the normalized-name column, not by re-hashing — the cluster id
+    # now depends on state (ADR-075), so a name alone can't reproduce the key.
+    matches = index_df[index_df.owner_name_norm == owner_norm]
     assert len(matches) == 1, f"expected exactly one cluster for {owner_norm!r}"
     return matches.iloc[0]
 
 
-def test_national_owner_resolves_to_one_cluster_across_states():
-    # Same owner, two anchor states, *different* mailing situations implied
-    # — name-anchored merge must collapse them to ONE Lead.
+def test_same_name_different_states_split_into_separate_leads():
+    # ADR-075: the name+state key splits a same-name owner across states into
+    # TWO Leads — the err-toward-not-merging default that fixes the false
+    # "City of Jacksonville" (AR+FL) merge.
     idx = _resolve(
         [
             _parcel("WEYERHAEUSER CO", "05", score=0.9, towers=2, assessed=100.0),
             _parcel("WEYERHAEUSER CO", "54", score=0.8, towers=3, assessed=50.0),
         ]
     )
-    row = _row_for(idx, "WEYERHAEUSER")
-    assert row.states == ["AR", "WV"]
+    rows = idx[idx.owner_name_norm == "WEYERHAEUSER"]
+    assert len(rows) == 2
+    assert {s for st in rows["states"] for s in st} == {"AR", "WV"}
+    assert all(r.n_states == 1 for _, r in rows.iterrows())
+    assert all(bool(r.cross_state) is False for _, r in rows.iterrows())
+
+
+def test_curated_towerco_merges_across_states():
+    # ADR-075: the curated alias table is the deliberate exception — a
+    # multi-state towerco's per-state fragments (even different name variants)
+    # re-merge into ONE national Lead.
+    idx = _resolve(
+        [
+            _parcel("CROWN CASTLE TOWERS LLC", "05", score=0.7, towers=1),
+            _parcel("CROWN CASTLE GT CO LLC", "54", score=0.6, towers=2),
+        ]
+    )
+    assert len(idx) == 1  # both variants collapse to the CROWN CASTLE alias
+    row = idx.iloc[0]
+    assert set(row.states) == {"AR", "WV"}
     assert row.n_states == 2
     assert bool(row.cross_state) is True
+    assert row.tower_count == 3
 
 
 def test_score_rollup_is_max_plus_alpha_log_count():
+    # Same state so the two parcels cluster (name+state key) and the portfolio
+    # bonus is exercised with n=2.
     idx = _resolve(
         [
             _parcel("ACME TOWERS LLC", "05", score=0.9),
-            _parcel("ACME TOWERS LLC", "54", score=0.7),
+            _parcel("ACME TOWERS LLC", "05", score=0.7),
         ]
     )
     row = _row_for(idx, "ACME TOWERS")
@@ -119,10 +142,12 @@ def test_rollups_sum_counts_and_value():
 
 
 def test_distress_rollup_takes_max_tier_and_any_flags():
+    # Same state so the two parcels cluster; the rollup takes the max tier + any
+    # flags across them.
     idx = _resolve(
         [
             _parcel("DELTA AG CO", "05", score=0.5, tier="transitional", oz=True, qct=False),
-            _parcel("DELTA AG CO", "12", score=0.5, tier="distressed", oz=False, qct=True),
+            _parcel("DELTA AG CO", "05", score=0.5, tier="distressed", oz=False, qct=True),
         ]
     )
     row = _row_for(idx, "AG DELTA")
@@ -137,13 +162,15 @@ def test_conservative_matching_does_not_over_merge_distinct_owners():
         [
             _parcel("SMITH JOHN", "05", score=0.5, kind="individual"),
             _parcel("SMITH JANE", "54", score=0.5, kind="individual"),
-            # Same surname, different mailing — must stay two Leads.
+            # Different surnames — must stay two Leads.
         ]
     )
     assert len(idx) == 2
-    assert {display_cluster_id("JOHN SMITH"), display_cluster_id("JANE SMITH")} == set(
-        idx.display_cluster_id
-    )
+    assert set(idx.owner_name_norm) == {"JOHN SMITH", "JANE SMITH"}
+    assert {
+        cross_state_owner_key("JOHN SMITH", "05"),
+        cross_state_owner_key("JANE SMITH", "54"),
+    } == set(idx.display_cluster_id)
 
 
 def test_suffix_variants_that_normalize_apart_stay_separate():
@@ -158,9 +185,24 @@ def test_suffix_variants_that_normalize_apart_stay_separate():
     assert len(idx) == 2
 
 
-def test_display_cluster_id_is_stable_sha1_of_normalized_name():
-    assert display_cluster_id("WEYERHAEUSER") == hashlib.sha1(b"WEYERHAEUSER").hexdigest()[:12]
-    assert display_cluster_id("") == ""
+def test_cross_state_owner_key_is_name_plus_state_sha1():
+    # ADR-075: name+state recipe. Same name, different state → different key.
+    assert (
+        cross_state_owner_key("WEYERHAEUSER", "05")
+        == hashlib.sha1(b"WEYERHAEUSER|05").hexdigest()[:12]
+    )
+    assert cross_state_owner_key("WEYERHAEUSER", "05") != cross_state_owner_key(
+        "WEYERHAEUSER", "54"
+    )
+    assert cross_state_owner_key("", "05") == ""
+
+
+def test_curated_alias_key_drops_state():
+    # An aliased towerco keys on the canonical alias with NO state, so its
+    # per-state (and per-variant) fragments hash identically.
+    expected = hashlib.sha1(b"CROWN CASTLE").hexdigest()[:12]
+    assert cross_state_owner_key("CASTLE CROWN TOWERS", "05") == expected
+    assert cross_state_owner_key("CASTLE CROWN GT", "54") == expected
 
 
 def test_blank_owner_rows_are_dropped():
@@ -191,6 +233,43 @@ def test_empty_input_yields_empty_index():
     assert idx.empty
     # the column contract still holds for an empty frame
     assert "display_cluster_id" in idx.columns and "score" in idx.columns
+
+
+def test_migration_map_records_old_name_only_to_new_name_state_keys():
+    # ADR-075: resolve() stashes the old(name-only)→new(name+state) map so the
+    # deploy remap can repoint existing lead state. A same-name owner across two
+    # states → one old key → two new (per-state) keys.
+    from preprocess.cluster import cross_state_owner_key, legacy_cross_state_owner_key
+
+    resolver = CrossStateOwnerResolver(fips_to_abbr=ABBR)
+    resolver.resolve(
+        pd.DataFrame(
+            [_parcel("SPLIT OWNER", "05", score=0.5), _parcel("SPLIT OWNER", "54", score=0.5)]
+        )
+    )
+    old = legacy_cross_state_owner_key("OWNER SPLIT")  # normalized: tokens sorted
+    assert old in resolver._last_migration
+    news = {e["new"] for e in resolver._last_migration[old]}
+    assert news == {
+        cross_state_owner_key("OWNER SPLIT", "05"),
+        cross_state_owner_key("OWNER SPLIT", "54"),
+    }
+
+
+def test_write_owners_index_emits_migration_sidecar(tmp_path):
+    # The sidecar is written next to the index, carries the schema version + map,
+    # and the served owners_index.json never leaks the map.
+    from preprocess.owners_index import OWNERS_KEY_MIGRATION_FILENAME, write_owners_index
+
+    idx_path = write_owners_index(
+        composite_root=tmp_path, index_path=tmp_path / "owners_index.json"
+    )
+    sidecar = idx_path.parent / OWNERS_KEY_MIGRATION_FILENAME
+    assert sidecar.exists()
+    payload = json.loads(sidecar.read_text())
+    assert payload["schema_version"] == OWNERS_INDEX_SCHEMA_VERSION
+    assert payload["map"] == {}  # empty composite → empty map
+    assert "key_migration" not in json.loads(idx_path.read_text())
 
 
 def test_build_owners_index_on_missing_root_is_empty(tmp_path):
@@ -360,7 +439,7 @@ def test_counties_rollup_is_distinct_sorted_across_holdings():
                     "DELTA LAND LLC", "05", score=0.5, parcel_id="P1", county_fips="05119"
                 ),
                 _parcel_with_holding(
-                    "DELTA LAND LLC", "12", score=0.5, parcel_id="P2", county_fips="12099"
+                    "DELTA LAND LLC", "05", score=0.5, parcel_id="P2", county_fips="05123"
                 ),
                 # a duplicate county must collapse; a blank one must be dropped
                 _parcel_with_holding(
@@ -372,7 +451,7 @@ def test_counties_rollup_is_distinct_sorted_across_holdings():
             ]
         )
     )
-    assert _row_for(idx, "DELTA LAND").counties == ["05119", "12099"]
+    assert _row_for(idx, "DELTA LAND").counties == ["05119", "05123"]
 
 
 def test_structure_count_and_types_roll_up_towers_and_solar():
@@ -406,8 +485,9 @@ def test_active_tower_count_counts_only_active_towers():
                 _parcel_with_holding(
                     "GRID TOWERS LLC", "05", score=0.6, parcel_id="P1", towers_asr=("A1", "A2")
                 ),
+                # Same state so the two parcels cluster (name+state key).
                 _parcel_with_holding(
-                    "GRID TOWERS LLC", "54", score=0.6, parcel_id="P2", towers_asr=("A3", "A4")
+                    "GRID TOWERS LLC", "05", score=0.6, parcel_id="P2", towers_asr=("A3", "A4")
                 ),
             ]
         ),

@@ -10,9 +10,16 @@ This module owns *all* owner-key derivation so callers never re-derive it:
     * ``cluster_id(name_norm, addr_norm)`` — **within-state**: name *and*
       mailing address. Conservative — two parcels join only if both match, so
       different people who share a name don't merge (ADR-024).
-    * ``cross_state_owner_key(name_norm)`` — **cross-state / national**: name
-      *only*. The address is dropped so a national portfolio owner filing
-      under many regional addresses collapses to one Lead (ADR-061 / ADR-056).
+    * ``cross_state_owner_key(name_norm, state_fips)`` — **cross-state**:
+      **name + state** (ADR-075). Same-name owners in different states get
+      different keys, so "CITY OF JACKSONVILLE" in AR and FL are two Leads —
+      the err-toward-not-merging default. A curated multi-state alias table
+      (``_MULTISTATE_ALIASES`` — towercos: Crown Castle / American Tower / SBA /
+      Vertical Bridge) is the deliberate exception: a matching name keys on the
+      canonical alias with **no state**, re-merging that entity's per-state
+      fragments into one national Lead. The mailing address stays dropped.
+      ``legacy_cross_state_owner_key(name_norm)`` reproduces the pre-ADR-075
+      name-only recipe — used *only* to emit the old→new migration map.
   The two grains are intentionally different and must stay that way — do not
   add the address to the cross-state key or remove it from the within-state
   key.
@@ -109,17 +116,91 @@ def cluster_id(owner_norm: str, addr_norm: str) -> str:
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
 
 
-def cross_state_owner_key(owner_name_norm: str) -> str:
-    """Cross-state (national) Lead key: SHA1 of the normalized name (12 hex).
+# Curated multi-state entities that SHOULD merge across state lines (ADR-075) —
+# the targeted exception to the state-scoped key. These are the towercos whose
+# name variants would otherwise fragment one real owner into many per-state
+# Leads. A hit keys on the canonical alias with NO state, collapsing every
+# variant across every state to one Lead.
+#
+# Matched by *token subset* against the normalized name, because
+# ``normalize_owner_name`` sorts tokens ("CROWN CASTLE" → "CASTLE CROWN") — so an
+# ordered substring match would fail. Tokens are singular-stemmed (one trailing
+# "S" dropped) so TOWER/TOWERS, STRUCTURE/STRUCTURES match either way. Public
+# corporate names only — NOT unmasking (ADR-041/057). Keep it short + documented;
+# add a utility/landowner here only when its multi-state fragmentation is
+# confirmed in the data.
+#
+# Each rule: (required tokens all present) AND (one of the qualifier tokens, or
+# no qualifier). ``SBA`` carries a required towerco qualifier so the Small
+# Business Administration (a gov entity, no such qualifier) never matches.
+_MULTISTATE_ALIASES: list[tuple[frozenset[str], frozenset[str], str]] = [
+    (frozenset({"CROWN", "CASTLE"}), frozenset(), "CROWN CASTLE"),
+    (frozenset({"AMERICAN", "TOWER"}), frozenset(), "AMERICAN TOWER"),
+    (frozenset({"VERTICAL", "BRIDGE"}), frozenset(), "VERTICAL BRIDGE"),
+    (
+        frozenset({"SBA"}),
+        frozenset({"COMMUNICATION", "TOWER", "NETWORK", "STRUCTURE", "MONARCH", "INFRASTRUCTURE"}),
+        "SBA",
+    ),
+]
 
-    Name-anchored *only* — the mailing address is deliberately dropped so a
-    national portfolio owner filing parcels under different regional mailing
-    addresses collapses to ONE Lead instead of splitting per address / per
-    state (ADR-061 / ADR-056 / CONTEXT.md "Lead"). This is the *other* grain
-    from ``cluster_id`` (within-state, name+address): same recipe, one fewer
-    input. Deterministic across recomputes (no address, no randomness), so a
-    landowner keeps the same Lead key every rebuild. Empty for a blank name.
+
+def _singular_tokens(owner_name_norm: str) -> frozenset[str]:
+    """The name's token set, each token with a single trailing 'S' dropped so
+    plural/singular company-type words match either way."""
+    return frozenset(
+        t[:-1] if t.endswith("S") and len(t) > 1 else t for t in owner_name_norm.split()
+    )
+
+
+def _multistate_alias(owner_name_norm: str) -> str | None:
+    """The canonical alias for a known multi-state entity, or None. Order-
+    independent (token subset), so it survives the normalizer's token sort."""
+    toks = _singular_tokens(owner_name_norm)
+    for required, qualifiers, alias in _MULTISTATE_ALIASES:
+        if required <= toks and (not qualifiers or (qualifiers & toks)):
+            return alias
+    return None
+
+
+def cross_state_owner_key(owner_name_norm: str, state_fips: str = "") -> str:
+    """Cross-state Lead key: SHA1 of ``name_norm + '|' + state`` (12 hex), an
+    alias-aware **name + state** grain (ADR-075).
+
+    Same-name owners in different states get different keys — so "CITY OF
+    JACKSONVILLE" in AR (05) and FL (12) are two Leads, not one false merge.
+    The mailing address stays dropped (a national portfolio owner still
+    collapses *within* a state). A name matching the curated
+    ``_MULTISTATE_ALIASES`` table (towercos) keys on the canonical alias with
+    **no state**, deliberately re-merging its per-state fragments into one
+    national Lead. Deterministic (no randomness), so a landowner keeps the same
+    key every rebuild. Empty for a blank name.
     """
+    if not owner_name_norm:
+        return ""
+    alias = _multistate_alias(owner_name_norm)
+    key_input = alias if alias is not None else f"{owner_name_norm}|{state_fips}"
+    return hashlib.sha1(key_input.encode("utf-8")).hexdigest()[:12]
+
+
+def cross_state_owner_keys(name_norm: pd.Series, state_fips: pd.Series) -> pd.Series:
+    """Vectorized :func:`cross_state_owner_key` over two aligned Series — the
+    owners-index build path (millions of parcel rows). ``state_fips`` is
+    zero-padded to 2 chars so "5" and "05" key identically. Blank name → blank
+    key (un-clusterable)."""
+    names = name_norm.astype("string").fillna("").str.strip()
+    states = state_fips.astype("string").fillna("").str.strip().str.zfill(2)
+    alias = names.map(_multistate_alias)
+    key_input = alias.where(alias.notna(), names.str.cat(states, sep="|"))
+    keyed = key_input.map(lambda s: hashlib.sha1(s.encode("utf-8")).hexdigest()[:12])
+    return keyed.where(names != "", "").astype("string")
+
+
+def legacy_cross_state_owner_key(owner_name_norm: str) -> str:
+    """The **pre-ADR-075** cross-state key: SHA1 of the normalized name only
+    (12 hex). Used *only* to emit the old→new migration map that repoints
+    existing tenant lead state + merge overrides when the recipe changes — the
+    live index never uses it. Deterministic; empty for a blank name."""
     if not owner_name_norm:
         return ""
     return hashlib.sha1(owner_name_norm.encode("utf-8")).hexdigest()[:12]

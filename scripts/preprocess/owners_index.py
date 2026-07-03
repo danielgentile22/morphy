@@ -6,13 +6,20 @@ mailing address into the hash, so a national owner (AMERICAN TOWERS LLC,
 WEYERHAEUSER, "UNITED STATES OF AMERICA") splits across its regional
 mailing addresses — and always across state lines — into many clusters.
 
-A **Lead is national**: one owner-cluster spanning every anchor state
-(ADR-061). The cross-state merge key is therefore *name-anchored only* —
-the address is dropped. We reuse the existing conservative owner-name
-normaliser (``cluster.normalize_owner_name``: suffix strip + token sort)
-and hash the normalised name into a stable ``display_cluster_id``. Exact
-normalised-name match only — libpostal-grade normalisation is deferred
-(ADR-056); the matcher errs toward *not* merging.
+The cross-state merge key drops the address (so an owner's regional filings
+collapse) but is keyed on **name + state** (ADR-075): same-name owners in
+different states stay separate Leads — "CITY OF JACKSONVILLE" in AR and FL no
+longer false-merge — the err-toward-not-merging default. A curated multi-state
+alias table (``cluster._MULTISTATE_ALIASES``: Crown Castle / American Tower /
+SBA / Vertical Bridge) is the deliberate exception, re-merging a towerco's
+per-state fragments into one national Lead. We reuse the conservative owner-name
+normaliser (``cluster.normalize_owner_name``: suffix strip + token sort) and
+hash ``name|state`` (or the alias) into a stable ``display_cluster_id``. Exact
+normalised-name match only — libpostal-grade normalisation is deferred (ADR-056).
+
+Because the recipe changed from the pre-ADR-075 name-only key, this build also
+emits ``owner_key_migration.json`` — the old→new key map the backend consumes
+once to repoint existing tenant lead state + merge overrides (schema v10).
 
 This is a read-only, cross-state tail step (a sibling of ``app_assets``):
 it reads the per-state ``parcels_attr.parquet`` the facets step already
@@ -33,7 +40,11 @@ import pandas as pd
 
 from . import COMPOSITE_ROOT, duck
 from .app_assets import iter_composed_states
-from .cluster import cross_state_owner_key, normalized_owner_cols
+from .cluster import (
+    cross_state_owner_keys,
+    legacy_cross_state_owner_key,
+    normalized_owner_cols,
+)
 
 OWNERS_INDEX_FILENAME = "owners_index.json"
 
@@ -74,9 +85,23 @@ OWNERS_INDEX_FILENAME = "owners_index.json"
 # ``faa_corroborated`` — True when a co-located FAA obstacle (within 50 m)
 # confirms the ASR tower, after the towers layer is deduped. A stale (pre-v9)
 # index or composite omits it; readers default it to False.
-OWNERS_INDEX_SCHEMA_VERSION = 9
+# v10 (audit MACRO-6 / #221, ADR-075): the ``display_cluster_id`` recipe changed
+# from name-only to **name + state** (alias-aware for the curated multi-state
+# towercos) — same-name owners in different states no longer false-merge, and
+# towerco fragments re-merge via the alias table. No per-owner *field* changed,
+# but every cluster id is different, so the version bump signals the recipe
+# change and gates the one-time old→new lead-state / override remap emitted to
+# ``owner_key_migration.json``.
+OWNERS_INDEX_SCHEMA_VERSION = 10
 
 OWNERS_FILTER_FILENAME = "owners_filter.json"
+
+# Old(name-only)→new(name+state/alias) cluster-key map (ADR-075 / #221). A
+# one-time sidecar consumed by the backend remap that repoints existing tenant
+# lead state + merge overrides when the key recipe changes. Not served to the
+# client; not part of owners_index.json (kept separate so the served index stays
+# lean). Absent on a pre-#221 build → the remap is simply a no-op.
+OWNERS_KEY_MIGRATION_FILENAME = "owner_key_migration.json"
 
 # Best-parcel-anchored cluster score, with a modest portfolio-size bonus
 # (ADR-056): score = max(parcel_scores) + ALPHA * ln(parcel_count).
@@ -175,13 +200,6 @@ def _normalize_carriers(raw) -> list[dict]:
 _MAILING_JUNK = {"", "0", "0.0", "none", "null", "n/a", "unknown"}
 
 
-# Back-compat alias. The cross-state Lead key now lives in ``cluster.py`` as
-# ``cross_state_owner_key`` — the grain made explicit alongside the within-state
-# ``cluster_id``. Re-exported here under its original name so existing importers
-# (and the ``display_cluster_id`` *column* it stamps on the index) are unchanged.
-display_cluster_id = cross_state_owner_key
-
-
 def _mode_or_empty(s: pd.Series) -> str:
     s = s.dropna().astype(str)
     s = s[s.str.strip() != ""]
@@ -242,6 +260,30 @@ def _parse_bbox(raw) -> list[float] | None:
     return [round(v, 6) for v in out]  # type: ignore[arg-type]
 
 
+def _build_key_migration(df: pd.DataFrame) -> dict[str, list[dict]]:
+    """Distinct old(name-only)→new(name+state/alias) cluster-key pairs, at the
+    **parcel-row grain** so every name variant's old key is captured — an aliased
+    towerco has many old keys (one per name variant) all mapping to one new key.
+
+    Shape ``{old_key: [{"new": new_key, "state": state_fips}, ...]}`` — a *list*
+    because a name-only key that spanned states now SPLITS into one new key per
+    state (the false-merge fix). Feeds the deploy-time remap (ADR-075). Empty in
+    → empty out. Deterministic ordering for a stable sidecar across runs."""
+    if df.empty or "_legacy_cluster" not in df.columns:
+        return {}
+    pairs = df[["_legacy_cluster", "_cluster", "state_fips"]].copy()
+    pairs["state_fips"] = pairs["state_fips"].astype(str).str.zfill(2)
+    pairs = pairs[(pairs["_legacy_cluster"] != "") & (pairs["_cluster"] != "")]
+    pairs = pairs.drop_duplicates()
+    out: dict[str, list[dict]] = {}
+    for old, new, st in zip(pairs["_legacy_cluster"], pairs["_cluster"], pairs["state_fips"]):
+        entries = out.setdefault(str(old), [])
+        rec = {"new": str(new), "state": str(st)}
+        if rec not in entries:
+            entries.append(rec)
+    return {k: sorted(v, key=lambda r: (r["new"], r["state"])) for k, v in sorted(out.items())}
+
+
 class CrossStateOwnerResolver:
     """Resolve per-state owner+parcel rows into cross-state Leads.
 
@@ -259,6 +301,10 @@ class CrossStateOwnerResolver:
     ) -> None:
         self.alpha = alpha
         self._fips_to_abbr = fips_to_abbr
+        # old(name-only)→new(name+state/alias) key map, populated by resolve()
+        # so the driver can emit the migration that repoints existing lead state
+        # + merge overrides when the recipe changes (ADR-075). {} when nothing ran.
+        self._last_migration: dict[str, list[dict]] = {}
 
     def _abbr(self, fips: str) -> str:
         f = str(fips).zfill(2)
@@ -294,18 +340,26 @@ class CrossStateOwnerResolver:
         if df.empty:
             return self._empty_index()
 
-        # The cross-state Lead grain is name-anchored only. Take the normalized
-        # owner name (precomputed column where present, else re-normalized raw —
-        # the shared cluster.normalized_owner_cols fallback) and key it with
-        # cross_state_owner_key: name only, no address (ADR-061 / ADR-056). The
-        # address column the helper also returns is intentionally unused here.
+        # The cross-state Lead grain is name + state (ADR-075), alias-aware for
+        # the curated multi-state towercos. Take the normalized owner name
+        # (precomputed column where present, else re-normalized raw — the shared
+        # cluster.normalized_owner_cols fallback); the address it also returns is
+        # intentionally unused here.
         name_norm, _ = normalized_owner_cols(df)
         df["_norm"] = name_norm.astype(str).str.strip()
         df = df[df["_norm"] != ""]
         if df.empty:
             return self._empty_index()
 
-        df["_cluster"] = df["_norm"].map(cross_state_owner_key)
+        # state_fips is contractual; guard so a malformed input degrades (a blank
+        # state just omits the state from the key) instead of raising.
+        if "state_fips" not in df.columns:
+            df["state_fips"] = ""
+        df["_cluster"] = cross_state_owner_keys(df["_norm"], df["state_fips"]).astype(str)
+        # The pre-ADR-075 name-only key rides along at row grain so the tail step
+        # can emit the old→new map that repoints existing lead state / merges.
+        df["_legacy_cluster"] = df["_norm"].map(legacy_cross_state_owner_key)
+        self._last_migration = _build_key_migration(df)
 
         # Numeric/boolean coercions — nulls never reach the rollup. ``_col``
         # tolerates a column being absent entirely (returns an aligned
@@ -337,10 +391,9 @@ class CrossStateOwnerResolver:
         for col in ("in_oz", "in_qct", "persistent_poverty"):
             df[f"_{col}"] = _col(col, False).fillna(False).astype(bool)
 
-        # state_fips + owner_kind are contractual, but guard anyway so a
-        # malformed input degrades to empty values rather than a KeyError.
-        if "state_fips" not in df.columns:
-            df["state_fips"] = ""
+        # owner_kind is contractual, but guard anyway so a malformed input
+        # degrades to empty values rather than a KeyError. (state_fips is
+        # guarded above, before the cluster key needs it.)
         if "owner_kind" not in df.columns:
             df["owner_kind"] = ""
         # county_fips backs the (long-tail) county filter rollup; optional.
@@ -656,6 +709,9 @@ def build_owners_index(composite_root: Path | None = None, alpha: float = DEFAUL
         "states": sorted(states_used),
         "count": len(owners),
         "owners": owners,
+        # Old→new key map (ADR-075) — popped off + written to its own sidecar by
+        # write_owners_index; never part of the served owners_index.json.
+        "key_migration": resolver._last_migration,
     }
 
 
@@ -764,8 +820,15 @@ def write_owners_index(
     if index_path is None:
         index_path = root / OWNERS_INDEX_FILENAME
     index = build_owners_index(root, alpha=alpha)
+    # The key-migration map rides out of build in the dict but is its own sidecar
+    # (not part of the served index) — pop before writing owners_index.json.
+    key_migration = index.pop("key_migration", {})
     _atomic_write_json(index_path, index)
     _atomic_write_json(index_path.parent / OWNERS_FILTER_FILENAME, build_owners_filter_index(index))
+    _atomic_write_json(
+        index_path.parent / OWNERS_KEY_MIGRATION_FILENAME,
+        {"schema_version": OWNERS_INDEX_SCHEMA_VERSION, "map": key_migration},
+    )
     return index_path
 
 

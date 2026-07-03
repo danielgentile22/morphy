@@ -8,8 +8,9 @@ grain distinction is explicit:
 
   - within-state ``cluster_id`` folds the mailing address into the key
     (conservative — ADR-024);
-  - cross-state ``cross_state_owner_key`` is name-only, so a national owner
-    collapses to one Lead across regional addresses (ADR-061 / ADR-056).
+  - cross-state ``cross_state_owner_key`` drops the address but keys on
+    **name + state** (ADR-075), so a same-name owner in two states is two
+    Leads; a curated alias table re-merges known multi-state towercos.
 
 No real parcel-owner names (TESTING.md §4) — synthetic strings only.
 """
@@ -100,18 +101,39 @@ def test_missing_columns_yield_empty_series_not_crash():
 
 
 def test_within_state_and_cross_state_keys_differ_by_grain():
-    # Same owner, two different mailing addresses:
+    # Same owner, two different mailing addresses in ONE state:
     #   within-state (name + address) → TWO distinct cluster ids,
-    #   cross-state  (name only)      → ONE national Lead key.
-    owner = normalize_owner_name("AMERICAN TOWERS LLC")
+    #   cross-state  (name + state)   → ONE key (address dropped).
+    owner = normalize_owner_name("SUNRISE HOLDINGS LLC")  # not an aliased towerco
     a1 = normalize_address("1 Mailing Rd")
     a2 = normalize_address("999 Other Ave")
     within_1 = cluster_id(owner, a1)
     within_2 = cluster_id(owner, a2)
     assert within_1 != within_2  # address splits the within-state grain
-    assert cross_state_owner_key(owner) == cross_state_owner_key(owner)  # stable
-    assert within_2 != cross_state_owner_key(owner)  # name-only collapses them
-    assert within_1 != cross_state_owner_key(owner)  # the two grains differ
+    assert cross_state_owner_key(owner, "05") == cross_state_owner_key(owner, "05")  # stable
+    assert within_2 != cross_state_owner_key(owner, "05")  # address dropped cross-state
+    assert within_1 != cross_state_owner_key(owner, "05")  # the two grains differ
+
+
+def test_cross_state_key_splits_by_state():
+    # ADR-075: the same normalized name in two states yields two distinct keys
+    # (the err-toward-not-merging default that fixes false same-name merges).
+    owner = normalize_owner_name("CITY OF JACKSONVILLE")
+    assert cross_state_owner_key(owner, "05") != cross_state_owner_key(owner, "12")
+
+
+def test_multistate_alias_merges_across_states_and_variants():
+    # ADR-075 exception: a curated towerco keys on the canonical alias with NO
+    # state, so per-state fragments AND name variants collapse to one key.
+    # (normalize_owner_name token-sorts, so the alias match is order-independent.)
+    crown_a = normalize_owner_name("CROWN CASTLE TOWERS LLC")  # → "CASTLE CROWN TOWERS"
+    crown_b = normalize_owner_name("CROWN CASTLE GT CO LLC")  # → "CASTLE CROWN GT"
+    assert cross_state_owner_key(crown_a, "05") == cross_state_owner_key(crown_b, "54")
+    # SBA needs a towerco qualifier so the Small Business Administration never merges.
+    sba = normalize_owner_name("SBA TOWERS LLC")
+    plain_sba = normalize_owner_name("SBA")  # no qualifier → NOT aliased
+    assert cross_state_owner_key(sba, "05") == cross_state_owner_key(sba, "12")
+    assert cross_state_owner_key(plain_sba, "05") != cross_state_owner_key(plain_sba, "12")
 
 
 def test_empty_string_handling_on_both_grains():
@@ -119,4 +141,4 @@ def test_empty_string_handling_on_both_grains():
     # address alone still clusters. cross-state: empty whenever the name is.
     assert cluster_id("", "") == ""
     assert cluster_id("", "1 main st") != ""
-    assert cross_state_owner_key("") == ""
+    assert cross_state_owner_key("", "05") == ""
