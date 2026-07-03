@@ -62,6 +62,9 @@ def _make_towers_parquet(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     table = pa.table(
         {
+            # The union-wide antenna key (M-i / #215): registration number on
+            # FCC-style rows, obstacle number on FAA-style ones.
+            "_source_row_id": pa.array([r.get("_source_row_id") for r in rows], pa.string()),
             "asr_number": pa.array([r.get("asr_number") for r in rows], pa.string()),
             "parcel_owner": pa.array([r.get("parcel_owner") for r in rows], pa.string()),
             "height_m": pa.array([r.get("height_m") for r in rows], pa.float64()),
@@ -102,7 +105,7 @@ def _reference_union(paths: list[Path]) -> list[tuple]:
             owner = _s(r, "parcel_owner")
             out.append(
                 (
-                    _s(r, "asr_number"),
+                    _s(r, "_source_row_id"),
                     owner,
                     _cid(owner),
                     None if r.get("height_m") is None else float(r["height_m"]),
@@ -146,6 +149,7 @@ def _row_tuple(t: dict) -> tuple:
 # flag, and a coordinate-less row that must be dropped.
 _AR_TOWERS = [
     {
+        "_source_row_id": "080946",
         "asr_number": "080946",
         "parcel_owner": "MITCHELL VICKI",
         "height_m": 79.248,
@@ -166,6 +170,7 @@ _AR_TOWERS = [
         "carriers": '["VERIZON"]',
     },
     {
+        "_source_row_id": "080947",
         "asr_number": "080947",
         "parcel_owner": None,  # un-clusterable landowner → '' on the client
         "height_m": 50.0,
@@ -177,6 +182,7 @@ _AR_TOWERS = [
         "carriers": None,
     },
     {
+        "_source_row_id": "080948",
         "asr_number": "080948",  # no coordinates → dropped by the lat/lon filter
         "parcel_owner": "GHOST TOWER LLC",
         "height_m": 60.0,
@@ -187,9 +193,24 @@ _AR_TOWERS = [
         "desc": "GUYED",
         "carriers": None,
     },
+    {
+        # FAA-style row (M-i / #215): asr_number is null — the obstacle number
+        # rides only _source_row_id, which must still become the row's `asr` key.
+        "_source_row_id": "123456",
+        "asr_number": None,
+        "parcel_owner": "FAA HOST FARMS LLC",
+        "height_m": 45.0,
+        "state": "AR",
+        "is_active": True,
+        "lat": 35.2,
+        "lon": -92.7,
+        "desc": "WINDMILL",
+        "carriers": None,
+    },
 ]
 _FL_TOWERS = [
     {
+        "_source_row_id": "120001",
         "asr_number": "120001",
         "parcel_owner": "WEYERHAEUSER COMPANY",
         "height_m": 120.0,
@@ -217,10 +238,10 @@ def test_build_writes_schema_versioned_envelope(tmp_path: Path) -> None:
     assert data["schema_version"] == TOWERS_SCHEMA_VERSION
     assert "generated_at" in data
     assert data["states"] == ["05", "12"]
-    # One AR tower dropped for missing coordinates → 3 of 4 survive.
-    assert data["count"] == 3
+    # One AR tower dropped for missing coordinates → 4 of 5 survive.
+    assert data["count"] == 4
     assert data["count"] == len(data["towers"])
-    assert result["count"] == 3
+    assert result["count"] == 4
     assert result["path"] == str(tmp_path / TOWERS_FILENAME)
 
 
@@ -253,6 +274,10 @@ def test_equivalent_to_per_state_union(tmp_path: Path) -> None:
     assert by_asr["080947"]["owner"] is None  # null landowner preserved
     assert by_asr["120001"]["active"] is None  # null status preserved
     assert "080948" not in by_asr  # coordinate-less row dropped
+
+    # M-i / #215: an FAA-style row (asr_number null) still keys by its
+    # obstacle number — `asr` comes from _source_row_id on every row.
+    assert by_asr["123456"]["owner"] == "FAA HOST FARMS LLC"
 
     # Baked cid == the canonical recipe; an un-clusterable owner → ''.
     assert by_asr["080946"]["cid"] == _cid("MITCHELL VICKI")

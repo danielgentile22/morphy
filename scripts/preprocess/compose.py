@@ -397,7 +397,11 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
         tower_lookup,
         infra=ctx.get("tower"),
         kind="tower",
-        id_col="asr_number",
+        # The union-wide structure identity: the FCC registration number on
+        # fcc_asr rows, the FAA obstacle number on faa_oeaaa rows. asr_number
+        # is FCC-only since the M-i namespace split (#215); values here are
+        # unchanged (the mixed asr_number used to carry exactly these ids).
+        id_col="_source_row_id",
         owner_col="owner_name",
     )
     solar_counts, solar_summary = _reverse_index(

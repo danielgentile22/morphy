@@ -12,8 +12,13 @@ The fields mirror the frontend ``TowerRow`` and the aliases today's
 client tower query emits, so the loader can feed rows straight into the
 existing pure ``rowsToFeatureCollection``:
 
-    asr_number → asr, parcel_owner → owner, height_m, state,
+    _source_row_id → asr, parcel_owner → owner, height_m, state,
     is_active → active, lat, lon
+
+``asr`` is the union-wide per-antenna KEY (FCC registration number on
+fcc_asr rows, FAA obstacle number on faa_oeaaa rows) — since the M-i
+namespace split (#215) that identity is ``_source_row_id``; the values
+are unchanged from when the mixed ``asr_number`` carried them.
 
 plus (v2, audit M-b/M-c) ``date_built`` and the ASR registrant contact
 block, aliased ``owner_* → tower_owner_*`` so the towerco/carrier (the
@@ -105,7 +110,7 @@ def build_national_towers(composite_root: Path | None = None) -> dict:
         with duck.session() as con:
             rows = con.execute(
                 f"""
-                SELECT CAST(asr_number AS VARCHAR) AS asr,
+                SELECT CAST(_source_row_id AS VARCHAR) AS asr,
                        CAST(parcel_owner AS VARCHAR) AS owner,
                        CAST(height_m AS DOUBLE) AS height_m,
                        CAST(state AS VARCHAR) AS state,

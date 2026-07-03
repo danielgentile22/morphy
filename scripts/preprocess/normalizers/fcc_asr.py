@@ -300,6 +300,9 @@ class FccAsrNormalizer(Normalizer):
             rows.append(
                 {
                     "asr_number": safe_get(r, "registration_number"),
+                    # FAA obstacle numbers live in their own column (M-i / #215);
+                    # an FCC ASR row has none.
+                    "obstacle_number": None,
                     "owner_name": safe_get(r, "owner_name"),
                     "height_m": to_float(r.get("overall_height_above_ground")),
                     "structure_type": structure_type,

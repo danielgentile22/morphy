@@ -59,7 +59,12 @@ for (const fips of ['05', '30']) {
       if (!schema) continue;
       const catalogLayer = catalog.layers.find((l) => l.name === src.layer);
       const fc = readJson(`${fips}/${src.geojson}`) as { features: Feature[] };
-      const sample = fc.features.slice(0, 600);
+      // The whole file, not a head-slice: source-gated fields (e.g. the
+      // FCC-only "ASR number" after the M-i split, #215) can be null across
+      // any contiguous run of one source's rows — FAA rows lead the towers
+      // layer. The render check below is a short-circuiting some(), so the
+      // full scan stays cheap.
+      const sample = fc.features;
       const fields = schema.sections.flatMap((s) => s.fields);
 
       if (src.layer) {

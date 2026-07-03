@@ -54,6 +54,7 @@ class HifldTowersNormalizer(Normalizer):
                     "asr_number": safe_str(
                         r.get("TowReg") or r.get("Tower_ID") or r.get("OBJECTID")
                     ),
+                    "obstacle_number": None,  # FAA-only column (M-i / #215)
                     "owner_name": safe_str(r.get("Licensee") or r.get("Owner")),
                     "height_m": (to_float(r.get("AllStruc") or r.get("Height_ft")) or 0) * 0.3048
                     or None,

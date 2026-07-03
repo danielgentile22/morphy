@@ -116,7 +116,10 @@ class DuckDbEngine {
         }
         await db.registerFileURL(file, absolute, duckdb.DuckDBDataProtocol.HTTP, false);
         selects.push(
-          `SELECT CAST(asr_number AS VARCHAR) AS asr, ` +
+          // asr = the union-wide per-antenna key (_source_row_id): the FCC
+          // registration number on FCC rows, the FAA obstacle number on FAA
+          // rows — asr_number is FCC-only since the M-i split (#215).
+          `SELECT CAST(_source_row_id AS VARCHAR) AS asr, ` +
             `CAST(parcel_owner AS VARCHAR) AS owner, ` +
             `CAST(height_m AS DOUBLE) AS height_m, ` +
             `CAST(state AS VARCHAR) AS state, ` +
