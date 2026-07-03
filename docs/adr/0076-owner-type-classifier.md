@@ -1,6 +1,6 @@
 # ADR-076: Owner-type classifier — expanded regex first, LLM for the ambiguous residual
 
-**Status:** Accepted — implementation pending ([#222](https://github.com/danielgentile22/infra-lease-analytics/issues/222), audit **MACRO-7**).
+**Status:** Accepted — **stage 1 implemented** (#222): expanded regex + curated towerco list (`towerco`/`utility`/`nonprofit` added, ordered before the generic legal suffixes) + a labeled-sample regression fixture. Stage 3 (LLM residual) stays deferred — evidence-gated on the residual size, per the decision below.
 **Date:** 2026-07-03
 **Budget posture:** [ADR-057](0057-budget-posture-reframed.md).
 

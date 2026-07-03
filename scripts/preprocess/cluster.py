@@ -195,7 +195,31 @@ _GOV_STRONG = re.compile(
 # is handled separately by _GOV_STRONG (above) and this weak fallback,
 # whose tokens (USA, GOVERNMENT) also turn up inside private business
 # names — so it runs *after* LLC/trust/corp/partnership.
+# MACRO-7 (#222, ADR-076) — expanded classifier. Order matters (first match
+# wins): a named tower company or a utility usually *also* carries LLC/CORP, so
+# the more specific tag must run before the generic legal-suffix ones.
 _OWNER_KIND_PATTERNS = [
+    (
+        "towerco",
+        re.compile(
+            r"\bAMERICAN TOWER\b|\bCROWN CASTLE\b|"
+            r"\bSBA (?:COMMUNICATIONS|TOWERS|NETWORK|MONARCH|STRUCTURES)\b|"
+            r"\bVERTICAL BRIDGE\b|\bGLOBAL SIGNAL\b|\bTOWERCO\b|\bTOWER CO\b|"
+            r"\bTILLMAN INFRASTRUCTURE\b|\bINSITE (?:TOWER|WIRELESS)\b|"
+            r"\bDIAMOND COMMUNICATIONS\b|\bTARPON TOWERS\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "utility",
+        re.compile(
+            r"\bELECTRIC (?:CO\b|COOP|COMPANY|MEMBERSHIP|POWER|UTILITY|ASSN|ASSOCIATION)|"
+            r"\bPOWER (?:&|AND) LIGHT\b|\bPOWER COMPANY\b|\b(?:ELECTRIC|GAS) COOPERATIVE\b|"
+            r"\bRURAL ELECTRIC\b|\bELECTRIC MEMBERSHIP\b|\bUTILITIES?\b|\bENERGY\b|"
+            r"\bGAS (?:CO\b|COMPANY)|\bWATER (?:DISTRICT|AUTHORITY|WORKS|CO\b|COMPANY)|\bEMC\b",
+            re.IGNORECASE,
+        ),
+    ),
     ("llc", re.compile(r"\bLLC\b|\bL\.?L\.?C\.?\b", re.IGNORECASE)),
     ("trust", re.compile(r"\bTRUST\b|\bTRUSTEES?\b", re.IGNORECASE)),
     (
@@ -211,8 +235,16 @@ _OWNER_KIND_PATTERNS = [
             re.IGNORECASE,
         ),
     ),
-    ("church", re.compile(r"\bCHURCH\b|\bMINISTRIES\b|\bPARISH\b", re.IGNORECASE)),
+    ("church", re.compile(r"\bCHURCH\b|\bMINISTRIES\b|\bPARISH\b|\bDIOCESE\b", re.IGNORECASE)),
     ("school", re.compile(r"\bSCHOOLS?\b|\bUNIVERSITY\b|\bCOLLEGE\b|\bACADEMY\b", re.IGNORECASE)),
+    (
+        "nonprofit",
+        re.compile(
+            r"\bFOUNDATION\b|\bNON-?PROFIT\b|\bASSOCIATION\b|\bSOCIETY\b|\bCHARIT|"
+            r"\bCONSERVANCY\b|\bHABITAT FOR HUMANITY\b",
+            re.IGNORECASE,
+        ),
+    ),
 ]
 
 
@@ -229,8 +261,8 @@ def _looks_like_person(part: str) -> bool:
 
 def infer_owner_kind(name) -> str:
     """Tag an owner name as one of:
-    'llc', 'trust', 'corporation', 'partnership', 'gov', 'church', 'school',
-    'individual', 'unknown'.
+    'towerco', 'utility', 'llc', 'trust', 'corporation', 'partnership', 'gov',
+    'church', 'school', 'nonprofit', 'individual', 'unknown' (MACRO-7 / #222).
     """
     if name is None or (isinstance(name, float) and pd.isna(name)):
         return "unknown"
