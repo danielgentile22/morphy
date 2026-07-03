@@ -19,27 +19,41 @@ This source replaces the FL FGDL DSL state-land parcel layer that was
 previously in the registry (DSL covers state-owned land, not the
 private parcels we care about).
 
-The portal requires per-county selection + license click-through, so
-this source is MANUAL_ONLY with a walkthrough that covers all 67
-Florida counties.
+Auto-fetch (flipped from MANUAL_ONLY 2026-07-03): the Map Data
+"directory" is a SharePoint document library whose anonymous REST API
+(``/_api/web/GetFolderByServerRelativeUrl(...)``) lists vintages and
+files, and every PAR zip is a direct anonymous HTTPS download — no
+click-through, no license interstitial (the earlier MANUAL_ONLY
+classification assumed one that does not exist). robots.txt permits
+crawling the data portal. FDOR pre-creates next year's folder months
+before populating it (2026F existed empty while 2025F held the live
+rolls), so vintage discovery walks newest-first until files appear.
 
-V1 coverage: **all 67 Florida counties** (per docs/SCOPE.md). FDOR
-publishes one PAR ZIP per county on the Map Data directory; the user
-downloads them in one batch and uploads via the puller.
-
-Miami-Dade and St. Johns maintain condo records in separate files
-(per the FDOR shapefile readme) — the walkthrough flags grabbing
-those condo extras alongside the main per-county PAR ZIPs.
+V1 coverage: **all 67 Florida counties** (per docs/SCOPE.md), one PAR
+ZIP per county per vintage (~4.1 GB total), plus the Miami-Dade and
+St. Johns condo extras that live in the same PAR folder. Filenames are
+inconsistent (``par.zip`` / ``Ppar.zip`` / ``par.shp.zip``), so the
+fetcher downloads by each file's listed ServerRelativeUrl instead of
+constructing names. The walkthrough is retained as the fallback.
 """
 
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
+from urllib.parse import quote
+
 from ..base import (
     CATEGORY_PARCELS,
-    ManualOnlySource,
+    DataSource,
+    FetchResult,
+    ProgressCallback,
 )
+from ..http import HttpError, fetch_text
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ..walkthroughs import ManualStep, ManualWalkthrough
+from ._helpers import fetch_zip_extracted
 
 # All 67 Florida counties — FDOR publishes one PAR ZIP per county on
 # the Map Data directory. Listed alphabetically to match the directory
@@ -124,15 +138,59 @@ MAP_DATA_README = (
     "PTO%20Data%20Portal/Map%20Data/Parcel%20Shapefiles%20Readme.pdf"
 )
 
+SP_HOST = "https://floridarevenue.com"
+# Server-relative path of the Map Data document library folder.
+MAP_DATA_PATH = "/property/dataportal/Documents/PTO Data Portal/Map Data"
+# SharePoint's REST API returns Atom XML unless Accept asks for JSON.
+_SP_JSON = {"Accept": "application/json;odata=nometadata"}
 
-class FdorNal(ManualOnlySource):
+
+def _sp_list(server_relative_path: str, kind: str, select: str) -> list[dict]:
+    """List ``Folders`` or ``Files`` of a SharePoint folder anonymously."""
+    url = (
+        f"{SP_HOST}/property/dataportal/_api/web/"
+        f"GetFolderByServerRelativeUrl('{quote(server_relative_path)}')/{kind}"
+        f"?$select={select}&$top=500"
+    )
+    try:
+        return json.loads(fetch_text(url, headers=_SP_JSON))["value"]
+    except (json.JSONDecodeError, KeyError) as e:
+        raise HttpError(f"unexpected SharePoint listing response for {server_relative_path}: {e}")
+
+
+def _latest_par_listing() -> tuple[str, list[dict]]:
+    """Return (vintage, PAR file listing) for the newest populated vintage."""
+    folders = _sp_list(MAP_DATA_PATH, "Folders", "Name")
+    vintages = sorted(
+        (f["Name"] for f in folders if re.fullmatch(r"\d{4}F", f["Name"])),
+        reverse=True,
+    )
+    for vintage in vintages:
+        try:
+            files = _sp_list(
+                f"{MAP_DATA_PATH}/{vintage}/{vintage} PAR",
+                "Files",
+                "Name,ServerRelativeUrl,Length,TimeLastModified",
+            )
+        except HttpError:
+            continue  # vintage folder without a PAR subfolder yet
+        files = [f for f in files if f["Name"].lower().endswith(".zip")]
+        if files:
+            return vintage, files
+    raise HttpError("no populated <year>F PAR folder found under FDOR Map Data")
+
+
+class FdorNal(DataSource):
     id = "fdor_nal"
     name = "FL FDOR — Name/Address/Legal (per-county tax roll)"
     category = CATEGORY_PARCELS
     coverage = "State: Florida (all 67 counties)"
     cadence = "Annual (mid-year release)"
-    estimated_size_mb = 3500.0  # 67 counties × ~30-100 MB PAR ZIP each
+    estimated_size_mb = 4200.0  # 69 PAR zips (67 counties + 2 condo extras), 4.14 GB in 2025F
     update_cadence_days = 365
+    # 69 sequential zip downloads (~4 GB): an interrupted run keeps its
+    # already-extracted per-county dirs and skips them on the next run.
+    supports_resume = True
     description = (
         "Florida Department of Revenue per-county PAR parcel shapefiles — "
         "parcel polygons joined with NAL (Name-Address-Legal) tax-roll "
@@ -145,7 +203,7 @@ class FdorNal(ManualOnlySource):
         publisher="Florida Department of Revenue (FDOR)",
         license="Florida public records (Ch. 119, F.S.) — commercial reuse permitted with attribution",
         license_url=LANDING_PAGE,
-        automation=AutomationPolicy.MANUAL_ONLY,
+        automation=AutomationPolicy.ALLOWED,
         commercial_use=CommercialUse.ALLOWED_WITH_ATTRIBUTION,
         manual_url=LANDING_PAGE,
         attribution=(
@@ -153,6 +211,13 @@ class FdorNal(ManualOnlySource):
             "per-county PAR shapefile (PIN + NAL joined)."
         ),
         notes=(
+            "Auto-fetch flipped from MANUAL_ONLY 2026-07-03: every PAR zip "
+            "is a direct anonymous HTTPS download from the Map Data "
+            "SharePoint library (listed via its anonymous REST API); no "
+            "click-through or license interstitial exists, and robots.txt "
+            "permits the data portal. The walkthrough is retained as the "
+            "fallback.\n"
+            "\n"
             "Two shapefile flavors are published: PIN (geometry only) and "
             "PAR (PIN joined with current-year NAL). We use PAR. Join key "
             "inside the file is PARCELNO. Some polygons won't have NAL "
@@ -167,6 +232,43 @@ class FdorNal(ManualOnlySource):
             "User's Guide for Department Property Tax Data Files."
         ),
     )
+
+    def remote_version(self) -> str:
+        vintage, files = _latest_par_listing()
+        newest = max(f["TimeLastModified"] for f in files)
+        return f"{vintage}:{newest[:10]}"
+
+    def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
+        vintage, listing = _latest_par_listing()
+        rv = f"{vintage}:{max(f['TimeLastModified'] for f in listing)[:10]}"
+        listing = sorted(listing, key=lambda f: f["Name"].lower())
+        total = sum(int(f["Length"]) for f in listing)
+
+        done = 0
+        written: list[Path] = []
+        for item in listing:
+            name = item["Name"]
+            county_dir = dest_dir / name[:-4]  # matches the manual-upload layout
+            # Resume: a non-empty per-county dir means that zip already
+            # downloaded + extracted on a previous interrupted run.
+            if county_dir.is_dir() and any(county_dir.iterdir()):
+                written.extend(p for p in county_dir.rglob("*") if p.is_file())
+            else:
+                url = SP_HOST + quote(item["ServerRelativeUrl"])
+                files, _ = fetch_zip_extracted(
+                    url,
+                    dest_dir,
+                    progress,
+                    zip_name=name,
+                    extract_to=county_dir,
+                    expected_min_bytes=100_000,
+                    progress_offset=done,
+                    progress_total=total,
+                )
+                written.extend(files)
+            done += int(item["Length"])
+            progress(done, total, name)
+        return FetchResult(files=written, remote_version=rv, total_bytes=done)
 
     def manual_walkthrough(self) -> ManualWalkthrough:
         # Format as a 3-column checklist so 67 names don't dominate the modal.

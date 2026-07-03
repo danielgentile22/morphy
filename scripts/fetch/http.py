@@ -113,9 +113,15 @@ def _head_via_get(url: str) -> dict[str, str | None]:
         raise HttpError(f"GET-as-HEAD {url} → {e}") from e
 
 
-def fetch_text(url: str, max_bytes: int = 5 * 1024 * 1024) -> str:
-    """Small GET returning decoded text. For listing pages and JSON metadata."""
-    req = urllib.request.Request(url, headers=dict(BASE_HEADERS))
+def fetch_text(
+    url: str, max_bytes: int = 5 * 1024 * 1024, headers: dict[str, str] | None = None
+) -> str:
+    """Small GET returning decoded text. For listing pages and JSON metadata.
+
+    ``headers`` overlays BASE_HEADERS — e.g. SharePoint's REST API only
+    returns JSON when Accept asks for it.
+    """
+    req = urllib.request.Request(url, headers={**BASE_HEADERS, **(headers or {})})
     try:
         with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT) as resp:
             data = resp.read(max_bytes + 1)

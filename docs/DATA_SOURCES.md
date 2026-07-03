@@ -64,7 +64,7 @@ For higher-level context:
 | 16 | TxDOT Outdoor Advertising permits | Billboards | Texas | 🚫 | ⊘ deferred (TX not anchor) | ✅ Yes (public records) |
 | 17 | NC OneMap statewide parcels | Parcels | NC (100 counties) | ✅ | ⊘ deferred Phase-1 stretch — in registry but raw deleted 2026-05-20; re-fetch not gating Slice F | ✅ Yes, with attribution |
 | 18 | FL FGDL DSL parcels | Parcels | Florida | 🚫 | ⊘ deferred (wrong dataset; replaced by #29) | ✅ Yes, with attribution |
-| 19 | Montana Cadastral parcels | Parcels | Montana | 🚫 | ✓ active | ✅ Yes, with attribution |
+| 19 | Montana Cadastral parcels | Parcels | Montana | ✅ (auto since 2026-07-03) | ✓ active | ✅ Yes, with attribution |
 | 20 | Minnesota statewide parcels (MnGeo) | Parcels | Minnesota | 🚫 | ⊘ deferred (license ambiguity) | ✅ Yes, with attribution |
 | 21 | Indiana statewide parcels (IGIO) | Parcels | Indiana | 🚫 | ⊘ deferred (no owner data) | ✅ Yes, with attribution |
 | 22 | Arkansas statewide parcels | Parcels | Arkansas | 🚫 | ✓ active | ✅ Yes, with attribution |
@@ -74,11 +74,11 @@ For higher-level context:
 | 26 | HUD Qualified Census Tracts | Distress | National | ✅ | ✓ active | ✅ Yes (public domain) |
 | 27 | ARC County Economic Status | Distress | Appalachia (13 states) | ✅ | ✓ active | ✅ Yes (public domain) |
 | 28 | USDA ERS Persistent Poverty Counties | Distress | National | 🟡 | ✓ active | ✅ Yes (public domain) |
-| 29 | **FL FDOR NAL** (per-county tax roll) | Parcels | FL (all 67 counties) | 🚫 | ✓ active — raw intact; normalized (11.18M parcels) + composed (recomposed 2026-05-29); live in app | ✅ Yes, with attribution |
+| 29 | **FL FDOR NAL** (per-county tax roll) | Parcels | FL (all 67 counties) | ✅ (auto since 2026-07-03) | ✓ active — raw intact; normalized (11.18M parcels) + composed (recomposed 2026-05-29); live in app | ✅ Yes, with attribution |
 | 30 | **Steel-in-the-Air** (free county-level lease benchmarks) — NEW | Lease comps | National (counties) | 🟡 | **Phase 1 Slice D** (bootstrap `lease_comp`) | ✅ Yes, with attribution |
 | 31 | **Secretary of State business-entity lookups** — NEW | Officer disclosure | Per anchor state | 🚫 | **Phase 1 Slice D** (one-click in lead-detail panel) | ✅ Yes (public records) |
 | 32 | **UCC-1 filings** — NEW | Third-party-ownership clues | Per anchor state | 🚫 | **Phase 1 Slice D** (surfaced in lead-detail panel) | ✅ Yes (public records) |
-| 33 | **WV statewide parcels** (WVGISTC / SB 588) — NEW | Parcels | WV (all 55 counties) | 🚫 | ✓ active | ✅ Yes, with attribution |
+| 33 | **WV statewide parcels** (WVGISTC / SB 588) — NEW | Parcels | WV (all 55 counties) | ✅ (auto since 2026-07-03) | ✓ active | ✅ Yes, with attribution |
 
 ---
 
@@ -486,7 +486,7 @@ use code, sale history.
 - **ID:** `mt_cadastral_parcels` · **Cadence:** Quarterly · **Size:** ~600 MB
 - **Source page:** <https://geoinfo.msl.mt.gov/Home/msdi/cadastral>
 - **License:** Montana public records
-- **Automation:** 🚫 Manual only
+- **Automation:** ✅ Auto-fetch (flipped from manual 2026-07-03) — the statewide SHP zip is a direct anonymous HTTPS download from the MSL mirror (`ftpgeoinfo.msl.mt.gov`); no click-through, no login, no robots.txt published. Walkthrough retained as fallback. Use-side caveats (MT §2-6-1017) unchanged — see `docs/research/reports-2026-05-26/state-MT-montana.md`.
 - **Commercial:** ✅ With attribution.
 
 ### Structure
@@ -584,7 +584,7 @@ when you license the Premium / Property Tax tier.
 - **ID:** `wv_parcels` · **Cadence:** Annual (summer/fall publish) · **Size:** ~527 MB (zipped File Geodatabase)
 - **Source page:** <https://wvgis.wvu.edu/data/dataset.php?ID=371> (record) · **Direct bulk:** `https://data.wvgis.wvu.edu/pub/Clearinghouse/planningLanduseCadastres/Parcels/WVGISTC_<year>/WV_WVGISTC_Tax_<year>.gdb.zip`
 - **License:** Free public service under WV SB 588 (2017); MapWV terms (<https://www.mapwv.gov/terms.html>) — copy/distribute "without obligation … unless otherwise stated"; provided "as is," not a survey.
-- **Automation:** 🚫 Manual only — but the bulk `.gdb.zip` is an anonymous direct HTTPS download (no login/click-through). The walkthrough includes the `curl` command; could be promoted to auto-fetch later (the annual `WVGISTC_<year>` path segment is the only moving part).
+- **Automation:** ✅ Auto-fetch (flipped from manual 2026-07-03) — the bulk `.gdb.zip` is an anonymous direct HTTPS download (no login/click-through); the fetcher discovers the newest `WVGISTC_<year>/` vintage from the open directory listing. Walkthrough retained as fallback.
 - **Commercial:** ✅ With attribution. ToS reviewed and permissive (no commercial bar, no strict attribution requirement); attribution to the custodians retained as prudent practice. Residual: embedded `.gdb` FGDC metadata not exhaustively read.
 
 ### Structure
@@ -687,7 +687,7 @@ County FIPS.
 - **Source page:** <https://floridarevenue.com/property/Pages/DataPortal_RequestAssessmentRollGISData.aspx>
 - **Map Data directory:** linked from the FDOR page (where the PAR shapefiles live)
 - **License:** Florida public records (Ch. 119, F.S.) — commercial reuse with attribution
-- **Automation:** 🚫 Manual only — per-county selection + redistribution-terms click-through.
+- **Automation:** ✅ Auto-fetch (flipped from manual 2026-07-03) — the Map Data "directory" is a SharePoint document library whose anonymous REST API lists vintages/files, and every PAR zip is a direct anonymous HTTPS download. The presumed license click-through does not exist; robots.txt permits the data portal. Vintage discovery walks newest-first past FDOR's pre-created empty folders (e.g. `2026F`). Resumable (per-county dirs skip on re-run). Walkthrough retained as fallback.
 - **Commercial:** ✅ With attribution.
 
 ### Why this and not FGDL DSL (source #18)

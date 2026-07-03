@@ -1,29 +1,47 @@
 """Other free statewide parcel feeds.
 
 States that publish a single statewide parcel layer with owner attributes
-under permissive public-records terms but whose download portals require
-a click-through, captcha, or interactive selection step. Each is exposed
-as MANUAL_ONLY so the UI shows the official URL and the user fetches
-once, then drops the file into ``data/raw/<id>/current/``.
-
-When/if any of these states begins publishing a stable bulk URL, the
-matching class can be promoted to AutomationPolicy.ALLOWED with a
-``fetch()`` implementation.
+under permissive public-records terms. MT and WV auto-fetch (flipped from
+MANUAL_ONLY 2026-07-03 after per-source terms verification — direct
+anonymous HTTPS downloads, no click-through, no robots.txt restriction;
+their walkthroughs are retained as fallbacks for when the endpoints rot).
+AR remains MANUAL_ONLY: the AGIO portal may require email registration
+before download, and the alternative ArcGIS REST layer caps at 200
+rows/request (~12k requests for the statewide extract) while also
+changing the raw format the AR adapter expects — revisit at the next AR
+refresh (~2027-05).
 """
 
 from __future__ import annotations
 
-from ..base import CATEGORY_PARCELS, ManualOnlySource
+import re
+from pathlib import Path
+
+from ..base import (
+    CATEGORY_PARCELS,
+    DataSource,
+    FetchResult,
+    ManualOnlySource,
+    ProgressCallback,
+)
+from ..http import HttpError, fetch_text
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
 from ..walkthroughs import ManualStep, ManualWalkthrough
+from ._helpers import fetch_zip_extracted, version_from_head
 
 
-def _make_legal(publisher: str, manual_url: str, attribution: str, notes: str) -> LegalInfo:
+def _make_legal(
+    publisher: str,
+    manual_url: str,
+    attribution: str,
+    notes: str,
+    automation: AutomationPolicy = AutomationPolicy.MANUAL_ONLY,
+) -> LegalInfo:
     return LegalInfo(
         publisher=publisher,
         license="State public-records / open data (varies by state)",
         license_url=manual_url,
-        automation=AutomationPolicy.MANUAL_ONLY,
+        automation=automation,
         commercial_use=CommercialUse.ALLOWED_WITH_ATTRIBUTION,
         manual_url=manual_url,
         attribution=attribution,
@@ -32,7 +50,14 @@ def _make_legal(publisher: str, manual_url: str, attribution: str, notes: str) -
 
 
 # ── Montana Cadastral ─────────────────────────────────────────────────────
-class MtCadastralParcels(ManualOnlySource):
+
+# Direct statewide SHP zip on the MSL public mirror (~1 GB, quarterly).
+MT_SHP_ZIP_URL = (
+    "https://ftpgeoinfo.msl.mt.gov/Data/Spatial/MSDI/Cadastral/MontanaCadastral_SHP.zip"
+)
+
+
+class MtCadastralParcels(DataSource):
     id = "mt_cadastral_parcels"
     name = "Montana Cadastral (statewide parcels)"
     category = CATEGORY_PARCELS
@@ -50,13 +75,33 @@ class MtCadastralParcels(ManualOnlySource):
         "Montana State Library / MT Dept. of Administration",
         "https://geoinfo.msl.mt.gov/",
         "Source: Montana Cadastral Framework, MT State Library.",
+        automation=AutomationPolicy.ALLOWED,
         notes=(
-            "Walkthrough: see manual_walkthrough() on this source — the "
-            "puller's 'Walk me through' button surfaces the steps. The "
+            "Auto-fetch flipped from MANUAL_ONLY 2026-07-03: the statewide "
+            "SHP zip is a direct anonymous HTTPS download from the MSL "
+            "mirror — no click-through, no login, no robots.txt published. "
+            "The walkthrough is retained as the fallback if the endpoint "
+            "rots. Use-side caveats (MT §2-6-1017 on distribution lists) "
+            "are unchanged by automation — see "
+            "docs/research/reports-2026-05-26/state-MT-montana.md. The "
             "cadastral file has normalised owner name, mailing address, "
             "value, acreage, and parcel ID."
         ),
     )
+
+    def remote_version(self) -> str:
+        return version_from_head(MT_SHP_ZIP_URL, label=self.id)
+
+    def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
+        rv = self.remote_version()
+        files, n = fetch_zip_extracted(
+            MT_SHP_ZIP_URL,
+            dest_dir,
+            progress,
+            zip_name="MontanaCadastral_SHP.zip",
+            expected_min_bytes=200_000_000,
+        )
+        return FetchResult(files=files, remote_version=rv, total_bytes=n)
 
     def manual_walkthrough(self) -> ManualWalkthrough:
         return ManualWalkthrough(
@@ -123,7 +168,12 @@ class MtCadastralParcels(ManualOnlySource):
 
 
 # ── West Virginia statewide parcels (MapWV / WVGISTC, SB 588) ─────────────
-class WvParcelsManual(ManualOnlySource):
+
+# Open directory of annual vintages; each holds WV_WVGISTC_Tax_<year>.gdb.zip.
+WV_PARCELS_DIR = "https://data.wvgis.wvu.edu/pub/Clearinghouse/planningLanduseCadastres/Parcels/"
+
+
+class WvParcels(DataSource):
     id = "wv_parcels"
     name = "West Virginia statewide parcels"
     category = CATEGORY_PARCELS
@@ -144,7 +194,15 @@ class WvParcelsManual(ManualOnlySource):
         "WV Property Tax Division / WVU GIS Technical Center (WVGISTC)",
         "https://wvgis.wvu.edu/data/dataset.php?ID=371",
         "Source: WV Property Tax Division / WVU GIS Technical Center.",
+        automation=AutomationPolicy.ALLOWED,
         notes=(
+            "Auto-fetch flipped from MANUAL_ONLY 2026-07-03: the statewide "
+            ".gdb.zip is a direct anonymous HTTPS download from the open "
+            "WVGISTC clearinghouse directory — no click-through, no login, "
+            "no robots.txt published; the fetcher discovers the newest "
+            "WVGISTC_<year>/ vintage from the directory listing. The "
+            "walkthrough is retained as the fallback.\n"
+            "\n"
             "SB 588 (2017) mandates a free statewide bulk parcel download. "
             "MapWV terms-of-use (mapwv.gov/terms.html) were reviewed and are "
             "permissive: the data is provided 'as a free public service' and "
@@ -159,6 +217,32 @@ class WvParcelsManual(ManualOnlySource):
             "owner only; do not conflate with mineral ownership."
         ),
     )
+
+    def _latest_zip(self) -> tuple[str, int]:
+        """Discover the newest vintage's .gdb.zip URL from the open listing."""
+        listing = fetch_text(WV_PARCELS_DIR)
+        years = {int(y) for y in re.findall(r"WVGISTC_(\d{4})/", listing)}
+        if not years:
+            raise HttpError(f"no WVGISTC_<year>/ vintages found at {WV_PARCELS_DIR}")
+        year = max(years)
+        url = f"{WV_PARCELS_DIR}WVGISTC_{year}/WV_WVGISTC_Tax_{year}.gdb.zip"
+        return url, year
+
+    def remote_version(self) -> str:
+        url, year = self._latest_zip()
+        return f"{year}:{version_from_head(url, label=self.id)}"
+
+    def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
+        url, year = self._latest_zip()
+        rv = f"{year}:{version_from_head(url, label=self.id)}"
+        files, n = fetch_zip_extracted(
+            url,
+            dest_dir,
+            progress,
+            zip_name=url.rsplit("/", 1)[1],
+            expected_min_bytes=100_000_000,
+        )
+        return FetchResult(files=files, remote_version=rv, total_bytes=n)
 
     def manual_walkthrough(self) -> ManualWalkthrough:
         return ManualWalkthrough(
@@ -498,7 +582,7 @@ class UtParcelsManual(ManualOnlySource):
 SOURCES = [
     MtCadastralParcels(),
     ArParcelsManual(),
-    WvParcelsManual(),
+    WvParcels(),
 ]
 
 DEFERRED_SOURCES = [
