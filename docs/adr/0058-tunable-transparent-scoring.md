@@ -1,6 +1,6 @@
 # ADR-058: Tunable + transparent interestingness scoring
 
-**Status:** Accepted
+**Status:** Accepted — default weights reweighted by [ADR-073](0073-interestingness-reweight.md) (the framework stands).
 **Date:** 2026-05-25
 **Pairs with:** ADR-053, ADR-056
 

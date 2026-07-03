@@ -1,6 +1,6 @@
 # DECISIONS — Architecture Decision Records (index)
 
-**Last updated:** 2026-07-03 (Qt-puller retirement, #240). Latest changes: ADR-007 (PySide6 pin) retired — the dependency left the tree with the Qt puller; ADR-069 (credentials in DB + cookie sessions + edge-gated data plane, PRD #130) remains the newest decision. (No ADRs added since ADR-069; the data TUI shipped under PRDs #233/#138, not an ADR.)
+**Last updated:** 2026-07-03 (data-audit follow-through). Latest changes: ADR-070–076 added — the seven HITL decisions from the 2026-06 data audit (assessed value, solar dedup, FAA↔ASR, score reweight, carrier rearchitecture, owner identity, owner-type classifier), all Accepted with implementation pending; ADR-073 amends ADR-058's default weights. Earlier this day: ADR-007 (PySide6 pin) retired with the Qt puller (#240); ADR-069 (PRD #130) was the prior newest.
 
 Index of every locked-in design choice in the repo. Per-ADR content lives under [`docs/adr/`](./adr/). New ADRs go straight there ([CLAUDE.md §9](../CLAUDE.md)).
 
@@ -86,6 +86,20 @@ The currently-binding decisions.
 |---|---|
 | [ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md) | Credentials move to the app DB; httpOnly-cookie sessions; `/data/processed/*` gated at the edge via `forward_auth` (PRD #130 — amends ADR-063's storage; its authority invariants stand) |
 
+### Data-audit follow-through (2026-07-03)
+
+The seven HITL decisions from the 2026-06 data audit. Accepted; implementation pending (see the linked issues).
+
+| # | Title |
+|---|---|
+| [ADR-070](./adr/0070-statutory-assessed-value.md) | Surface statutory assessed value alongside market/appraised (M-k, #213) |
+| [ADR-071](./adr/0071-solar-feed-dedup.md) | Solar feed dedup — EIA-860 as the base of record (MACRO-3, #217) |
+| [ADR-072](./adr/0072-faa-asr-corroboration.md) | FAA↔ASR co-location match dedups the towers layer (MACRO-2, #219) |
+| [ADR-073](./adr/0073-interestingness-reweight.md) | Reweight interestingness → small-portfolio / low-value / high-carrier (MACRO-5, #218; amends ADR-058) |
+| [ADR-074](./adr/0074-uls-carrier-rearchitecture.md) | Rearchitect ULS→carrier — all modern spectrum, authorization-not-tenancy semantics (MACRO-1, #220) |
+| [ADR-075](./adr/0075-cross-state-owner-identity.md) | Cross-state owner identity — name+state key + curated multi-state alias table (MACRO-6, #221) |
+| [ADR-076](./adr/0076-owner-type-classifier.md) | Owner-type classifier — expanded regex first, LLM for the ambiguous residual (MACRO-7, #222) |
+
 ---
 
 ## Realized
@@ -108,6 +122,7 @@ Earlier decisions still partially in force, modified by a later ADR.
 |---|---|---|
 | [ADR-003](./adr/0003-dual-geoparquet-geojson.md) | Dual GeoParquet + GeoJSON output | Narrowed by [ADR-052](./adr/0052-no-geojson-threshold.md) (parquet-only above 250K rows) |
 | [ADR-010](./adr/0010-free-only-budget.md) | Strict free-only data budget | Revised by [ADR-057](./adr/0057-budget-posture-reframed.md) — "permanent" → "current Phase 1 posture" |
+| [ADR-058](./adr/0058-tunable-transparent-scoring.md) | Tunable + transparent interestingness scoring | Default weights + owner rollup reweighted by [ADR-073](./adr/0073-interestingness-reweight.md) (small-portfolio / low-value / high-carrier); the tunable/transparent framework stands |
 | [ADR-011](./adr/0011-anchor-states.md) | Anchor states AR + NC + MT + UT (+ FL stretch) | UT dropped by [ADR-049](./adr/0049-utah-dropped.md); committed set re-cut to **AR + MT + FL + WV** by [ADR-060](./adr/0060-wv-committed-anchor.md) (WV added, NC demoted to a deferred stretch) |
 | [ADR-013](./adr/0013-fcc-uls-deferred.md) | FCC ULS normalizers deferred | Partially reversed by [ADR-053](./adr/0053-product-phase-shift.md) Slice A — Cellular/PCS/AWS/700 MHz back in |
 | [ADR-014](./adr/0014-billboards-deferred.md) | Billboards deferred | Partially reversed by [ADR-053](./adr/0053-product-phase-shift.md) Slice C — billboards return as parcel enrichment |
