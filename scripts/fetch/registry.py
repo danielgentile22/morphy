@@ -145,6 +145,11 @@ def all_sources() -> list[DataSource]:
     return ordered
 
 
+def deferred_sources() -> list[DataSource]:
+    """Return the deferred (parked) sources, ordered by name."""
+    return sorted(_DEFERRED, key=lambda s: s.name.lower())
+
+
 def get_source(source_id: str) -> DataSource:
     """Look up by ID across both active AND deferred blocks.
 

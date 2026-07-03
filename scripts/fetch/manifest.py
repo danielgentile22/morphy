@@ -2,11 +2,10 @@
 
 Single JSON file at ``data/manifest.json``. The puller is the only writer.
 
-Schema (``schema_version = 2``, current — bumped from v1 in Section 3
-of the production-readiness plan):
+Schema (``schema_version = 3``, current):
 
     {
-      "schema_version": 2,
+      "schema_version": 3,
       "last_full_check": "<ISO8601>" | null,
       "sources": {
         "<source_id>": {
@@ -21,14 +20,24 @@ of the production-readiness plan):
 
           # ── added in schema_version 2 ─────────────────────────────────
           "update_cadence_days":      null | <int>,   # snapshotted from the source
-          "next_recommended_check_at": "<ISO8601>" | null
+          "next_recommended_check_at": "<ISO8601>" | null,
+
+          # ── added in schema_version 3 (PRD #233 / #236) ───────────────
+          # Structured detail of the most recent check/fetch failure.
+          # Persists until the next failure overwrites it.
+          "last_error": null | {
+            "url":     "<url tried>",
+            "error":   "<message>",
+            "elapsed": <float seconds>,
+            "at":      "<ISO8601>"
+          }
         }
       }
     }
 
-V1 → V2 migration: when the manifest loads with ``schema_version == 1``,
-the new fields default to ``None``. They populate on the next fetch /
-check via the source's declared cadence.
+Migrations are additive: older manifests simply lack the newer fields,
+which dataclass defaults supply on load (v1 → v2 cadence fields, v2 → v3
+``last_error``). Every save re-stamps the current schema_version.
 """
 
 from __future__ import annotations
@@ -42,7 +51,7 @@ from pathlib import Path
 
 from . import MANIFEST_PATH
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # ── freshness states ────────────────────────────────────────────────────
 # Returned by SourceEntry.freshness() — drives the puller UI badges.
@@ -87,6 +96,10 @@ class SourceEntry:
     # v2 additions ────────────────────────────────────────────────────
     update_cadence_days: int | None = None
     next_recommended_check_at: str | None = None
+    # v3 addition — {"url", "error", "elapsed", "at"} of the most recent
+    # check/fetch failure; kept after recovery so "what broke last time"
+    # stays answerable.
+    last_error: dict | None = None
 
     def is_installed(self) -> bool:
         return self.local_version is not None and self.status in {"ok", "stale"}
@@ -205,11 +218,18 @@ class Manifest:
         else:
             e.status = "ok"
 
-    def mark_check_failed(self, source_id: str, error: str) -> None:
+    def mark_check_failed(
+        self,
+        source_id: str,
+        error: str,
+        url: str | None = None,
+        elapsed: float | None = None,
+    ) -> None:
         e = self.entry(source_id)
         e.checked_at = _now_iso()
         e.status = "check_failed"
         e.error = error
+        e.last_error = {"url": url, "error": error, "elapsed": elapsed, "at": e.checked_at}
 
     def mark_fetch_ok(
         self,
@@ -246,11 +266,18 @@ class Manifest:
         else:
             e.next_recommended_check_at = None
 
-    def mark_fetch_failed(self, source_id: str, error: str) -> None:
+    def mark_fetch_failed(
+        self,
+        source_id: str,
+        error: str,
+        url: str | None = None,
+        elapsed: float | None = None,
+    ) -> None:
         e = self.entry(source_id)
         e.checked_at = _now_iso()
         e.status = "fetch_failed"
         e.error = error
+        e.last_error = {"url": url, "error": error, "elapsed": elapsed, "at": e.checked_at}
 
     def update_cadence(self, source_id: str, update_cadence_days: int | None) -> None:
         """Reflect a source's declared cadence into the manifest without
