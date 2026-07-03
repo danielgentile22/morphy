@@ -1,9 +1,12 @@
-"""Data TUI slices 1+2 (#234/#236): badges, attention, pulls, failure pane.
+"""Data TUI slices 1+2+4 (#234/#236/#238): badges, attention, pulls,
+failure pane, preprocess stage.
 
 The pure freshness/attention matrix is exercised directly; the app itself
 is driven through Textual's pilot (headless) — the repo's first UI tests.
 Pilot tests wrap their async body in ``asyncio.run`` so no async test
-plugin is needed (PRD #233: Textual is the one new dependency).
+plugin is needed (PRD #233: Textual is the one new dependency). The
+refresh planner behind the preprocess preselection has its own unit
+suite in ``test_refresh_planner.py``.
 """
 
 from __future__ import annotations
@@ -586,6 +589,161 @@ def test_install_from_file_updates_table(monkeypatch, tmp_path):
             assert app.manifest.entry("man1").local_version == "manual"
             assert "FRESH" in _status_cell(app, "man1")
             assert any("manual install ok" in e.message for e in app.activity)
+
+    asyncio.run(scenario())
+
+
+# ── slice 4 (#238): preprocess stage ─────────────────────────────────────
+
+
+def _wv_source(**kw) -> FakeSource:
+    kw.setdefault("id", "wv_parcels")
+    kw.setdefault("name", "WV Parcels")
+    kw.setdefault("coverage", "State: West Virginia")
+    return FakeSource(**kw)
+
+
+def _outcome(**kw):
+    from types import SimpleNamespace
+
+    base = dict(
+        normalized_ok=["wv_parcels"],
+        normalized_failed=[],
+        normalized_skipped=[],
+        normalized_unavailable=[],
+        composed_ok=["54"],
+        composed_failed=[],
+        failed_steps=[],
+        duration_seconds=1.0,
+    )
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_completed_pull_preselects_state_in_preprocess_screen(monkeypatch, tmp_path):
+    """Acceptance pilot: pull WV parcels → open preprocess → WV preselected."""
+    from data_tui.preprocess_ui import PreprocessScreen
+    from preprocess.manifest import PreprocessManifest
+    from textual.widgets import SelectionList
+
+    monkeypatch.setattr(storage_mod, "RAW_ROOT", tmp_path)
+    s = _wv_source()
+    app = DataTuiApp(
+        sources=[s], deferred=[], manifest=_manifest({}), pre_manifest=PreprocessManifest()
+    )
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            app.query_one(DataTable).move_cursor(row=1)
+            await pilot.pause()
+            await pilot.press("p")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert "FRESH" in _status_cell(app, "wv_parcels")
+            await pilot.press("r")
+            await pilot.pause()
+            scr = app.screen
+            assert isinstance(scr, PreprocessScreen)
+            assert list(scr.query_one(SelectionList).selected) == ["54"]
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen, PreprocessScreen)
+            assert not app._preprocess_running
+
+    asyncio.run(scenario())
+
+
+def test_preprocess_runs_in_background_with_progress_and_notifies(monkeypatch, _notifications):
+    from preprocess.manifest import PreprocessManifest
+
+    ran_states: list[list[str]] = []
+
+    def fake_pipeline(states, progress_callback):
+        ran_states.append(states)
+        progress_callback("normalize_start", "wv_parcels", {})
+        progress_callback("normalize_ok", "wv_parcels", {"rows": 12345, "bytes": 1})
+        progress_callback("compose_start", "54", {"name": "West Virginia"})
+        progress_callback("compose_ok", "54", {"counts": {"parcels": 10}})
+        progress_callback("step_ok", "app_assets", {})
+        return _outcome()
+
+    monkeypatch.setattr("data_tui.app.run_preprocess_pipeline", fake_pipeline)
+    s = _wv_source()
+    app = DataTuiApp(
+        sources=[s],
+        deferred=[],
+        manifest=_manifest({"wv_parcels": _fresh_entry()}),
+        pre_manifest=PreprocessManifest(),
+    )
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            await pilot.press("s")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert ran_states == [["54"]]
+            # Per-source and per-state progress lines advanced the job pane.
+            assert any("normalize wv_parcels" in line for line in app.job_lines)
+            assert any("12,345 rows" in line for line in app.job_lines)
+            assert any("compose state 54" in line for line in app.job_lines)
+            assert any(
+                "✓ preprocess finished — 1 normalized, 1 composed" in line for line in app.job_lines
+            )
+
+    asyncio.run(scenario())
+    assert _notifications and "complete" in _notifications[-1][0]
+
+
+def test_preprocess_failure_notifies_and_logs_error(monkeypatch, _notifications):
+    from preprocess.manifest import PreprocessManifest
+
+    def fake_pipeline(states, progress_callback):
+        progress_callback("compose_fail", "54", {"error": "boom"})
+        return _outcome(composed_ok=[], composed_failed=["54"])
+
+    monkeypatch.setattr("data_tui.app.run_preprocess_pipeline", fake_pipeline)
+    app = DataTuiApp(
+        sources=[_wv_source()],
+        deferred=[],
+        manifest=_manifest({"wv_parcels": _fresh_entry()}),
+        pre_manifest=PreprocessManifest(),
+    )
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            await pilot.press("s")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert any("✗ compose state 54: boom" in line for line in app.job_lines)
+            assert any("preprocess finished" in line and "failed" in line for line in app.job_lines)
+            assert any(e.error and "compose state 54" in e.message for e in app.activity)
+            assert not app._preprocess_running
+
+    asyncio.run(scenario())
+    assert _notifications and "failed" in _notifications[-1][0]
+
+
+def test_preprocess_with_no_data_shows_hint():
+    from data_tui.preprocess_ui import PreprocessScreen
+    from preprocess.manifest import PreprocessManifest
+
+    app = DataTuiApp(
+        sources=[_wv_source()],
+        deferred=[],
+        manifest=_manifest({}),
+        pre_manifest=PreprocessManifest(),
+    )
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            assert not isinstance(app.screen, PreprocessScreen)
+            assert any("No states with data to preprocess" in line for line in app.job_lines)
 
     asyncio.run(scenario())
 
