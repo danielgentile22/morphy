@@ -25,8 +25,25 @@ from preprocess.national_towers import (
 )
 
 # The fields the frontend TowerRow / rowsToFeatureCollection consume — the 7
-# slim columns plus the baked owner Lead key `cid` (#166).
-ROW_FIELDS = {"asr", "owner", "cid", "height_m", "state", "active", "lat", "lon"}
+# slim columns plus the baked owner Lead key `cid` (#166), plus (v2, audit
+# M-b/M-c) date_built and the ASR tower-owner contact block.
+ROW_FIELDS = {
+    "asr",
+    "owner",
+    "cid",
+    "height_m",
+    "state",
+    "active",
+    "lat",
+    "lon",
+    "date_built",
+    "tower_owner",
+    "tower_owner_street",
+    "tower_owner_city",
+    "tower_owner_state",
+    "tower_owner_zip",
+    "tower_owner_phone",
+}
 
 
 def _cid(owner: str | None) -> str:
@@ -52,6 +69,14 @@ def _make_towers_parquet(path: Path, rows: list[dict]) -> None:
             "is_active": pa.array([r.get("is_active") for r in rows], pa.bool_()),
             "lat": pa.array([r.get("lat") for r in rows], pa.float64()),
             "lon": pa.array([r.get("lon") for r in rows], pa.float64()),
+            # v2 (audit M-b/M-c): build date + the ASR registrant contact block.
+            "date_built": pa.array([r.get("date_built") for r in rows], pa.string()),
+            "owner_name": pa.array([r.get("owner_name") for r in rows], pa.string()),
+            "owner_street": pa.array([r.get("owner_street") for r in rows], pa.string()),
+            "owner_city": pa.array([r.get("owner_city") for r in rows], pa.string()),
+            "owner_state": pa.array([r.get("owner_state") for r in rows], pa.string()),
+            "owner_zip": pa.array([r.get("owner_zip") for r in rows], pa.string()),
+            "owner_phone": pa.array([r.get("owner_phone") for r in rows], pa.string()),
             # Columns the slim projection drops:
             "structure_type_desc": pa.array([r.get("desc") for r in rows], pa.string()),
             "carriers": pa.array([r.get("carriers") for r in rows], pa.string()),
@@ -65,22 +90,33 @@ def _reference_union(paths: list[Path]) -> list[tuple]:
     DuckDB: read each towers.parquet, rename the slim columns to the
     TowerRow aliases, drop coordinate-less rows. Returns hashable row
     tuples for a multiset comparison."""
+
+    def _s(row: dict, key: str) -> str | None:
+        return None if row.get(key) is None else str(row[key])
+
     out: list[tuple] = []
     for p in paths:
         for r in pq.read_table(p).to_pylist():
             if r.get("lat") is None or r.get("lon") is None:
                 continue
-            owner = None if r.get("parcel_owner") is None else str(r["parcel_owner"])
+            owner = _s(r, "parcel_owner")
             out.append(
                 (
-                    None if r.get("asr_number") is None else str(r["asr_number"]),
+                    _s(r, "asr_number"),
                     owner,
                     _cid(owner),
                     None if r.get("height_m") is None else float(r["height_m"]),
-                    None if r.get("state") is None else str(r["state"]),
+                    _s(r, "state"),
                     None if r.get("is_active") is None else bool(r["is_active"]),
                     float(r["lat"]),
                     float(r["lon"]),
+                    _s(r, "date_built"),
+                    _s(r, "owner_name"),
+                    _s(r, "owner_street"),
+                    _s(r, "owner_city"),
+                    _s(r, "owner_state"),
+                    _s(r, "owner_zip"),
+                    _s(r, "owner_phone"),
                 )
             )
     return out
@@ -96,6 +132,13 @@ def _row_tuple(t: dict) -> tuple:
         t["active"],
         t["lat"],
         t["lon"],
+        t["date_built"],
+        t["tower_owner"],
+        t["tower_owner_street"],
+        t["tower_owner_city"],
+        t["tower_owner_state"],
+        t["tower_owner_zip"],
+        t["tower_owner_phone"],
     )
 
 
@@ -110,6 +153,15 @@ _AR_TOWERS = [
         "is_active": True,
         "lat": 33.0,
         "lon": -91.3,
+        # FCC-sourced row: carries the build date + ASR registrant contact
+        # block (v2 fields — the second AR row leaves them null, FAA-style).
+        "date_built": "1990-06-14",
+        "owner_name": "SBA TOWERS II LLC",
+        "owner_street": "8051 CONGRESS AVE",
+        "owner_city": "BOCA RATON",
+        "owner_state": "FL",
+        "owner_zip": "33487",
+        "owner_phone": "(561) 995-7670",
         "desc": "LATTICE TOWER",
         "carriers": '["VERIZON"]',
     },
@@ -172,7 +224,7 @@ def test_build_writes_schema_versioned_envelope(tmp_path: Path) -> None:
     assert result["path"] == str(tmp_path / TOWERS_FILENAME)
 
 
-def test_every_row_has_exactly_the_seven_towerrow_fields(tmp_path: Path) -> None:
+def test_every_row_has_exactly_the_towerrow_fields(tmp_path: Path) -> None:
     _build_two_state_fixture(tmp_path)
     build_national_towers(composite_root=tmp_path)
 
@@ -206,6 +258,14 @@ def test_equivalent_to_per_state_union(tmp_path: Path) -> None:
     assert by_asr["080946"]["cid"] == _cid("MITCHELL VICKI")
     assert by_asr["080946"]["cid"] != ""
     assert by_asr["080947"]["cid"] == ""  # null landowner → no Lead key
+
+    # v2: the ASR registrant contact block + build date ride the FCC-style
+    # row and stay null on the FAA-style one (audit M-b/M-c).
+    assert by_asr["080946"]["tower_owner"] == "SBA TOWERS II LLC"
+    assert by_asr["080946"]["tower_owner_phone"] == "(561) 995-7670"
+    assert by_asr["080946"]["date_built"] == "1990-06-14"
+    assert by_asr["080947"]["tower_owner"] is None
+    assert by_asr["080947"]["date_built"] is None
 
 
 def test_state_without_towers_parquet_is_skipped(tmp_path: Path) -> None:

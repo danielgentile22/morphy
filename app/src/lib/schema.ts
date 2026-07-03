@@ -220,6 +220,18 @@ export const TOWER_SCHEMA: EntitySchema = {
           keys: ['owner_name'],
           value: (p) => fmtText(p.owner_name),
         },
+        {
+          // The registrant's contact block (audit M-b / #208) — rides ~99%
+          // of FCC rows; blank on FAA-sourced towers.
+          label: 'Tower owner address',
+          keys: ['owner_street', 'owner_city', 'owner_state', 'owner_zip'],
+          value: (p) => joinNonEmpty([p.owner_street, p.owner_city, p.owner_state, p.owner_zip]),
+        },
+        {
+          label: 'Tower owner phone',
+          keys: ['owner_phone'],
+          value: (p) => fmtText(p.owner_phone),
+        },
       ],
     },
     {

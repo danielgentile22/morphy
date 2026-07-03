@@ -15,6 +15,10 @@ existing pure ``rowsToFeatureCollection``:
     asr_number → asr, parcel_owner → owner, height_m, state,
     is_active → active, lat, lon
 
+plus (v2, audit M-b/M-c) ``date_built`` and the ASR registrant contact
+block, aliased ``owner_* → tower_owner_*`` so the towerco/carrier (the
+lease counterparty) can never be confused with ``owner`` (the landowner).
+
 The same SQL the client runs is used here (same casts, same
 ``lat/lon IS NOT NULL`` drop), so the combined file is equivalent to the
 per-state union the frontend produces today (pinned by
@@ -51,7 +55,11 @@ TOWERS_FILENAME = "towers.json"
 TOWERS_PARQUET = "towers.parquet"
 # towers.json shape version — bump when the row schema changes so the app
 # can default missing fields instead of mis-reading an old file.
-TOWERS_SCHEMA_VERSION = 1
+# v2 (audit M-b/M-c, #208): + date_built and the ASR tower-owner contact
+# block (tower_owner, tower_owner_street/city/state/zip/phone) — the lease
+# counterparty's name, address and phone, distinct from `owner` (the
+# landowner). Additive + optional: the client defaults them when absent.
+TOWERS_SCHEMA_VERSION = 2
 
 
 def _state_has_towers(state_dir: Path) -> bool:
@@ -103,13 +111,35 @@ def build_national_towers(composite_root: Path | None = None) -> dict:
                        CAST(state AS VARCHAR) AS state,
                        CAST(is_active AS BOOLEAN) AS active,
                        CAST(lat AS DOUBLE) AS lat,
-                       CAST(lon AS DOUBLE) AS lon
+                       CAST(lon AS DOUBLE) AS lon,
+                       CAST(date_built AS VARCHAR) AS date_built,
+                       CAST(owner_name AS VARCHAR) AS tower_owner,
+                       CAST(owner_street AS VARCHAR) AS tower_owner_street,
+                       CAST(owner_city AS VARCHAR) AS tower_owner_city,
+                       CAST(owner_state AS VARCHAR) AS tower_owner_state,
+                       CAST(owner_zip AS VARCHAR) AS tower_owner_zip,
+                       CAST(owner_phone AS VARCHAR) AS tower_owner_phone
                 FROM read_parquet([{paths_sql}], union_by_name=true)
                 WHERE lat IS NOT NULL AND lon IS NOT NULL
                 ORDER BY state, asr, lat, lon
                 """
             ).fetchall()
-        for asr, owner, height_m, state, active, lat, lon in rows:
+        for (
+            asr,
+            owner,
+            height_m,
+            state,
+            active,
+            lat,
+            lon,
+            date_built,
+            t_owner,
+            t_street,
+            t_city,
+            t_state,
+            t_zip,
+            t_phone,
+        ) in rows:
             towers.append(
                 {
                     "asr": asr,
@@ -122,6 +152,16 @@ def build_national_towers(composite_root: Path | None = None) -> dict:
                     "active": active,
                     "lat": lat,
                     "lon": lon,
+                    # v2: build date + the ASR registrant (towerco/carrier) —
+                    # the lease counterparty's contact block (audit M-b/M-c).
+                    # Null on FAA-sourced rows; ~99% populated on FCC rows.
+                    "date_built": date_built,
+                    "tower_owner": t_owner,
+                    "tower_owner_street": t_street,
+                    "tower_owner_city": t_city,
+                    "tower_owner_state": t_state,
+                    "tower_owner_zip": t_zip,
+                    "tower_owner_phone": t_phone,
                 }
             )
 

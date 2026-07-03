@@ -27,7 +27,9 @@ const DUCKDB_BUNDLES = {
 };
 
 /** One slim tower row read off a state's `towers.parquet` for the
- *  structures-first map. `owner` is the landowner (`parcel_owner`). */
+ *  structures-first map. `owner` is the landowner (`parcel_owner`);
+ *  `tower_owner*` is the ASR registrant — the towerco/carrier lease
+ *  counterparty — a different party entirely (audit M-b/M-c, #208). */
 export interface TowerRow {
   asr: string;
   owner: string | null;
@@ -41,6 +43,14 @@ export interface TowerRow {
    *  on the tower load (#166). Absent on the per-state DuckDB path (and a
    *  stale file) — `rowsToFeatureCollection` then recomputes it. */
   cid?: string;
+  /** Construction date — null when granted-but-not-built (~18% of ASR). */
+  date_built?: string | null;
+  tower_owner?: string | null;
+  tower_owner_street?: string | null;
+  tower_owner_city?: string | null;
+  tower_owner_state?: string | null;
+  tower_owner_zip?: string | null;
+  tower_owner_phone?: string | null;
 }
 
 /** A source state's `towers.parquet` URL, keyed by FIPS for a stable
@@ -111,7 +121,14 @@ class DuckDbEngine {
             `CAST(height_m AS DOUBLE) AS height_m, ` +
             `CAST(state AS VARCHAR) AS state, ` +
             `CAST(is_active AS BOOLEAN) AS active, ` +
-            `CAST(lat AS DOUBLE) AS lat, CAST(lon AS DOUBLE) AS lon ` +
+            `CAST(lat AS DOUBLE) AS lat, CAST(lon AS DOUBLE) AS lon, ` +
+            `CAST(date_built AS VARCHAR) AS date_built, ` +
+            `CAST(owner_name AS VARCHAR) AS tower_owner, ` +
+            `CAST(owner_street AS VARCHAR) AS tower_owner_street, ` +
+            `CAST(owner_city AS VARCHAR) AS tower_owner_city, ` +
+            `CAST(owner_state AS VARCHAR) AS tower_owner_state, ` +
+            `CAST(owner_zip AS VARCHAR) AS tower_owner_zip, ` +
+            `CAST(owner_phone AS VARCHAR) AS tower_owner_phone ` +
             `FROM parquet_scan('${file}') WHERE lat IS NOT NULL AND lon IS NOT NULL`,
         );
       }

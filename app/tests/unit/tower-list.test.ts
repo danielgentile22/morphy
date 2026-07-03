@@ -13,6 +13,13 @@ function tower(asr: string, cid: string, opts: Partial<TowerFeature['properties'
       height_m: opts.height_m ?? null,
       state: opts.state ?? 'AR',
       active: opts.active ?? true,
+      date_built: opts.date_built ?? null,
+      tower_owner: opts.tower_owner ?? null,
+      tower_owner_street: opts.tower_owner_street ?? null,
+      tower_owner_city: opts.tower_owner_city ?? null,
+      tower_owner_state: opts.tower_owner_state ?? null,
+      tower_owner_zip: opts.tower_owner_zip ?? null,
+      tower_owner_phone: opts.tower_owner_phone ?? null,
     },
   };
 }
