@@ -78,11 +78,10 @@ pilot/
 │   ├── agents/               Skill-system configuration
 │   └── research/             Data-source legal/license research
 ├── app/                      Svelte 5 + MapLibre map app (see app/ARCHITECTURE.md)
-├── app_puller/               PySide6 desktop puller (frozen — bug-fix-only, PRD #138)
 ├── backend/                  FastAPI + SQLAlchemy lead-triage write-layer — tenant-scoped Lead state + Tasks, username/password auth, owners-index read path. Deployed in production. Auth + schema mechanics canonical in backend/README.md; invariants in §8.
 ├── scripts/
 │   ├── fetch/                Headless puller library
-│   ├── data_tui/             Textual data TUI — Qt-puller successor (PRD #233; slice 1 shipped)
+│   ├── data_tui/             Textual data TUI — *the* puller (PRD #233; pull → preprocess → verify → deploy)
 │   ├── preprocess/           Normalizer/Join/View framework + Composer
 │   ├── serve.py              Range-capable static server (for the map app)
 │   └── *.py                  Top-level CLI scripts
@@ -105,19 +104,13 @@ its children.
 |---|---|---|---|
 | Map app (frontend) | [`app/AGENTS.md`](app/AGENTS.md) | Svelte 5 + MapLibre read-layer triage UI | Schema-completeness contract; structures-first map |
 | Write-layer backend | [`backend/AGENTS.md`](backend/AGENTS.md) | FastAPI Lead status/notes/attempts + Tasks | `tenant_id` everywhere; `credential`-table per-request authority; identity-only JWT |
-| Headless puller | [`scripts/fetch/AGENTS.md`](scripts/fetch/AGENTS.md) | `DataSource` fetchers + manifest | No Qt imports; never add scraping to a MANUAL_ONLY source |
+| Headless puller | [`scripts/fetch/AGENTS.md`](scripts/fetch/AGENTS.md) | `DataSource` fetchers + manifest | No UI imports; never add scraping to a MANUAL_ONLY source |
 | Preprocess pipeline | [`scripts/preprocess/AGENTS.md`](scripts/preprocess/AGENTS.md) | Normalizer→Join→View→Compose ETL | EPSG:4326 output; no normalize-time filtering; owners-index schema versioning |
-| Desktop puller | [`app_puller/AGENTS.md`](app_puller/AGENTS.md) | PySide6 UI over the headless puller | Qt lives only here; **frozen — bug-fix-only** (PRD #138) |
+| Data TUI (the puller) | [`scripts/data_tui/AGENTS.md`](scripts/data_tui/AGENTS.md) | Textual pull→preprocess→verify→deploy lifecycle | Thin shell — headless libs stay unchanged; deploy confirm-gated |
 
-> **⛔ The desktop Qt puller is frozen (PRD #138):** bug-fix-only — keep-the-lights-on
-> fixes are allowed, but **no new features.** Route puller feature requests to the
-> Textual TUI successor scope in
-> [PRD #138](https://github.com/danielgentile22/infra-lease-analytics/issues/138) or
-> defer them; do not deepen the untested Qt surface by default. The successor builds
-> on trigger — *any of:* a feature the team needs, the PySide6 pin breaking on a
-> platform in use, or the dependency blocking other work — as a thin, CI-testable UI
-> over the unchanged headless libraries. Full policy + successor spec in
-> [`app_puller/AGENTS.md`](app_puller/AGENTS.md) and PRD #138.
+> **Historical:** the PySide6 desktop puller (`app_puller/`) was frozen by PRD #138
+> and retired in #240 (2026-07-03) once the tested Textual successor (PRD #233)
+> covered its scope — package and PySide6 pin deleted in the same change.
 
 Global invariants (apply across all subsystems) live in §8 below.
 
@@ -138,8 +131,7 @@ Full details in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Quick reference:
 ```bash
 uv sync                                         # once: .venv from uv.lock (all groups + editable fetch/preprocess)
 source .venv/bin/activate
-python -m app_puller                            # raw data fetcher (desktop UI)
-python -m data_tui                              # data TUI — freshness table + check-for-updates (PRD #233)
+python -m data_tui                              # data TUI — pull → preprocess → verify → deploy (PRD #233)
 python scripts/preprocess.py                    # all sources + all states
 python scripts/preprocess.py --state 05         # one state
 python scripts/preprocess.py --app-assets       # index.json + per-state facets / slim parquet / county boundaries
@@ -221,8 +213,8 @@ anchors `05` (AR), `12` (FL), `30` (MT), `54` (WV); deferred stretch `37` (NC); 
 
 ## 8. Conventions for code edits
 
-- **Headless `scripts/fetch/`.** No PySide6 imports inside it. Qt
-  lives only in `app_puller/`.
+- **Headless `scripts/fetch/`.** No UI imports inside it. Textual
+  lives only in `scripts/data_tui/`.
 - **Atomic writes everywhere.** Download to `.partial`, rename to
   `current/`. Manifest writes go through `Manifest.save()` (temp +
   rename).
@@ -235,7 +227,7 @@ anchors `05` (AR), `12` (FL), `30` (MT), `54` (WV); deferred stretch `37` (NC); 
   add status / validity columns; let Joins and Views filter.
 - **Use `safe_merge`** when a Join adds columns that a Normalizer
   initializes as placeholders ([ADR-020](docs/adr/0020-safe-merge-helper.md)).
-- **Frozen desktop puller** (PRD #138): `app_puller/` is bug-fix-only — no new features; route them to the Textual-TUI successor (see [`app_puller/AGENTS.md`](app_puller/AGENTS.md)).
+- **The data TUI is the only puller UI** (PRD #233/#240): the Qt desktop puller is retired and deleted — do not resurrect it or reintroduce PySide6; puller features go to `scripts/data_tui/` (see [`scripts/data_tui/AGENTS.md`](scripts/data_tui/AGENTS.md)).
 
 **Backend invariants** (do not relax — full mechanics in [`backend/README.md`](backend/README.md), do-not-relax list in [`backend/AGENTS.md`](backend/AGENTS.md)):
 

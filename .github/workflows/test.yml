@@ -14,8 +14,8 @@ jobs:
   pytest:
     name: pytest (full suite)
     runs-on: ubuntu-latest
-    # 10 min (not 5): a cold uv cache downloads the GIS stack + PySide6
-    # before the ~1 min suite; warm-cache runs finish well under 5.
+    # 10 min (not 5): a cold uv cache downloads the GIS stack before the
+    # ~1 min suite; warm-cache runs finish well under 5.
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6

@@ -31,13 +31,11 @@ pipeline = [
     "duckdb>=1.5.3",
     "duckdb-extension-spatial>=1.5.3",
 ]
-# Desktop puller. PySide6 6.7.x is the LTS branch that works reliably on
-# macOS arm64; 6.11.x had a cocoa-plugin load issue on this machine.
-# boto3 is only exercised when the paid Regrid source is licensed;
-# anthropic only when the user clicks "Diagnose this failure" (needs
-# ANTHROPIC_API_KEY).
+# Headless fetch-layer extras. boto3 is only exercised when the paid
+# Regrid source is licensed; anthropic only by the "Diagnose this
+# failure" action (needs ANTHROPIC_API_KEY). PySide6 left with the Qt
+# puller's retirement (#240) — the data TUI (`tui` group) is the puller.
 puller = [
-    "PySide6==6.7.3",
     "boto3>=1.34",
     "anthropic>=0.40",
 ]
@@ -73,8 +71,8 @@ dev = [
     "testcontainers[postgres]>=4.0",
     "pyright>=1.1.390",
 ]
-# Data TUI (PRD #233) — the Textual successor to the frozen Qt puller.
-# Pure-Python; replaces the ~700 MB PySide6 pin at retirement (#240).
+# Data TUI (PRD #233) — the puller since the Qt app's retirement (#240).
+# Pure-Python; replaced the ~700 MB PySide6 pin.
 tui = [
     "textual>=1.0",
 ]
@@ -90,7 +88,7 @@ build-backend = "hatchling.build"
 
 # The import contract (PRD #132): scripts/ is the source root. fetch and
 # preprocess are real packages; serve/verify_raw/diagnose are the top-level
-# modules app_puller and the tests import. The editable install puts
+# modules the data TUI and the tests import. The editable install puts
 # scripts/ on the path via .pth — same import names as before, no code
 # needed to bootstrap them.
 [tool.hatch.build.targets.wheel]
@@ -110,11 +108,11 @@ sources = ["scripts"]
 # isolation), is already type-annotated, and is small enough to check at zero
 # diagnostics — so it gets the compile-time defense the frontend already has.
 #
-# scripts/, the preprocess pipeline, and app_puller/ are DELIBERATELY excluded:
+# scripts/ and the preprocess pipeline are DELIBERATELY excluded:
 # pandas/geopandas/shapely-heavy code drowns a type checker in noise that makes
 # the gate ignorable, and the pipeline's test suite carries that weight instead.
-# That boundary is the decision — do NOT "helpfully" widen `include` to scripts/
-# or app_puller/. A per-module strict ratchet inside backend/ is allowed later.
+# That boundary is the decision — do NOT "helpfully" widen `include` to
+# scripts/. A per-module strict ratchet inside backend/ is allowed later.
 #
 # Pinned via the dev group in uv.lock so local == CI; venv below points pyright
 # at the same locked deps. Run locally with: uv run pyright

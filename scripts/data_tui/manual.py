@@ -1,7 +1,6 @@
 """Manual-path screens: guided walkthrough + install-from-file (#237).
 
-Both are thin shells over the headless ``fetch.install`` engine — the
-same one the frozen Qt puller's upload button now calls. The walkthrough
+Both are thin shells over the headless ``fetch.install`` engine. The walkthrough
 renders a source's ``ManualWalkthrough`` steps (deep links open in the
 OS browser); install-from-file accepts typed or terminal-dragged paths,
 including ZIPs, and produces the manual-upload layout the normalizers

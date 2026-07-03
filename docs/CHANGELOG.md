@@ -1,6 +1,6 @@
 # CHANGELOG — Milestone history
 
-**Last updated:** 2026-06-26
+**Last updated:** 2026-07-03
 
 The newest-first record of what shipped when. [STATUS.md](./STATUS.md) owns *current* state;
 this doc owns the trail. Finer detail than this lives in git.
@@ -10,6 +10,21 @@ For why each decision was made, see the ADRs ([DECISIONS.md](./DECISIONS.md)).
 ---
 
 ## Phase 1 — the product cut (2026-05-25 → present)
+
+### 2026-07 — data TUI, auto-fetch flips, Qt puller retired
+
+- **2026-07-03 — data TUI shipped; Qt puller retired (PRD #233, slices #234–#240).**
+  Root-caused "the puller no longer works" to the FCC bot filter stalling urllib
+  requests without browser-like `Accept-Encoding` (fixed in `fetch/http.py`); flipped
+  MT + WV + FL FDOR parcels MANUAL_ONLY→auto after per-source terms recon (15/16 active
+  sources now auto-fetch; AR stays manual until ~2027-05). Shipped the **Textual data
+  TUI** (`scripts/data_tui/`, `python -m data_tui`) covering the full lifecycle — pull
+  (background jobs, progress, resume, desktop notifications, structured failure detail
+  via manifest schema v3 `last_error`) → preprocess (pure refresh planner,
+  affected-state preselection) → composite verify (vs the last deploy receipt) →
+  confirm-gated `deploy.sh data` + smoke. Product freshness read-out for the co-founder
+  shipped as #235. With the successor tested, the **Qt puller + PySide6 pin were
+  deleted** (#240, PRD #138 retirement clause; ADR-007 retired).
 
 ### 2026-06 — internal tooling, Ask Claude, hardening, Halo re-skin
 
