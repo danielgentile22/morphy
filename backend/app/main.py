@@ -110,13 +110,14 @@ from .scoring_preset_store import ScoringPresetStore
 from .settings_store import (
     AUTO_FOLLOWUP_ENABLED,
     AUTO_FOLLOWUP_WINDOW_DAYS,
+    KNOWN_KEYS,
     SettingsStore,
+    UserSettingsStore,
 )
 from .stats_service import ActivityRow, LeadRow, StatsService
 from .task_store import InvalidTaskPriority, InvalidTaskStatus, TaskStore, label_list
 from .tenant_scoped_store import TenantScopedStore
 from .tenant_service import TenantService
-from .user_settings_store import KNOWN_KEYS, UserSettingsStore
 from .user_store import UserStore
 from .users import ChangePasswordOutcome
 from .users import change_password as users_change_password

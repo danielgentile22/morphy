@@ -1,7 +1,5 @@
-"""Per-user settings store (PRD #121) — the first per-user persisted prefs.
-
-Mirrors the ``SettingsStore`` tests but for the ``(tenant_id, user_id, key)``
-table: baked-in defaults before any write, set→get round-trip, type coercion,
+"""Per-user settings via the merged KV store (PRD #121, PRD #253 W1 part 3):
+the ``(tenant_id, user_id, key)``-scoped accessor over ``KeyValueSettings``: baked-in defaults before any write, set→get round-trip, type coercion,
 and — most importantly — that one user's value never leaks to another user or
 another tenant.
 """
@@ -11,7 +9,7 @@ from __future__ import annotations
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from backend.app.user_settings_store import (
+from backend.app.settings_store import (
     BASEMAP,
     COLORBLIND,
     FILTER_DEFAULT,
