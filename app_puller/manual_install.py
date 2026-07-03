@@ -1,30 +1,19 @@
-"""Manual-install support: pick-files-and-copy + manifest stamping.
+"""Manual-install support: Qt shell over the headless ``fetch.install``.
 
-Two related pieces of the same workflow:
-
-* ``pick_and_upload(source, parent)`` opens a file picker and copies (or
-  extracts ZIPs) into ``data/raw/<id>/current/``. Used by both the
-  details-pane button and the walkthrough modal so the user doesn't
-  have to navigate to ``current/`` by hand after a manual download.
-* ``mark_manual_install(source, manifest)`` is the side effect: stamps
-  the manifest entry as a successful manual install and resets cadence
-  bookkeeping so the freshness timer starts now.
-
-ZIP archives are auto-extractable. Overwrites are confirmed once at the
-top to keep the flow non-modal-heavy.
+The copy/extract/stamp engine lives in ``fetch.install`` (PRD #233
+slice 3) so the data TUI shares it. This module keeps only the Qt
+parts: the file picker and the auto-extract / overwrite confirmation
+dialogs, then delegates to the headless functions. User-visible
+behavior is unchanged from the pre-extraction version.
 """
 
 from __future__ import annotations
 
-import shutil
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from fetch import RAW_ROOT
+from fetch import install as headless
 from fetch.base import DataSource
 from fetch.manifest import Manifest
-from fetch.sources._helpers import safe_extract_zip
-from fetch.storage import current_dir, directory_bytes
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 
@@ -62,11 +51,7 @@ def _move_into_current(
     source: DataSource,
     parent: QWidget,
 ) -> tuple[int, int, list[str]]:
-    cur = current_dir(source.id)
-    cur.mkdir(parents=True, exist_ok=True)
-
     zips = [p for p in paths if p.suffix.lower() == ".zip"]
-    non_zips = [p for p in paths if p.suffix.lower() != ".zip"]
 
     extract_zips = False
     if zips:
@@ -86,18 +71,7 @@ def _move_into_current(
             return (0, 0, [])
         extract_zips = result == QMessageBox.Yes
 
-    # Pre-check destination overwrites for the copy path. For extracted
-    # ZIPs we can't easily predict contents — let safe_extract_zip
-    # silently overwrite (matches the fetch pipeline's behavior).
-    will_overwrite: list[str] = []
-    for src in non_zips:
-        if (cur / src.name).exists():
-            will_overwrite.append(src.name)
-    if not extract_zips:
-        for src in zips:
-            if (cur / src.name).exists():
-                will_overwrite.append(src.name)
-
+    will_overwrite = headless.overwrite_conflicts(source.id, paths, extract_zips=extract_zips)
     if will_overwrite:
         names = ", ".join(will_overwrite[:5])
         if len(will_overwrite) > 5:
@@ -111,63 +85,15 @@ def _move_into_current(
         if ok != QMessageBox.Yes:
             return (0, 0, [])
 
-    copied = 0
-    extracted = 0
-    errors: list[str] = []
-
-    for src in non_zips:
-        try:
-            shutil.copy2(src, cur / src.name)
-            copied += 1
-        except OSError as e:
-            errors.append(f"{src.name}: {type(e).__name__}: {e}")
-
-    for zp in zips:
-        try:
-            if extract_zips:
-                # Extract into a same-named subfolder so multi-zip sources
-                # like fcc_asr land in current/r_tower/ + current/d_tower/
-                # (matching the fetch pipeline's layout). Parcel sources'
-                # normalizers use rglob, so subfolders are harmless there.
-                sub = cur / zp.stem
-                sub.mkdir(parents=True, exist_ok=True)
-                files = safe_extract_zip(zp, sub)
-                extracted += len(files)
-            else:
-                shutil.copy2(zp, cur / zp.name)
-                copied += 1
-        except Exception as e:
-            errors.append(f"{zp.name}: {type(e).__name__}: {e}")
-
-    return (copied, extracted, errors)
+    return headless.install_files(source.id, paths, extract_zips=extract_zips)
 
 
 def mark_manual_install(source: DataSource, manifest: Manifest) -> None:
-    """Stamp the manifest entry to reflect a successful manual install.
+    """Stamp the manifest as a successful manual install and save it.
 
-    Resets ``status`` to ``"ok"``, clears any prior ``fetch_failed`` /
-    ``check_failed`` error, refreshes the file list and byte count from
-    disk, and recomputes ``next_recommended_check_at`` from the source's
-    declared cadence. Called from both the upload button and the
-    walkthrough finalize step.
+    Thin wrapper over ``fetch.install.mark_manual_install`` that keeps
+    the pre-extraction contract (stamp + save in one call) for the two
+    Qt call sites.
     """
-    cur = current_dir(source.id)
-    files = [p for p in cur.rglob("*") if p.is_file() and not p.is_symlink()]
-    entry = manifest.entry(source.id)
-    now = datetime.now(UTC)
-    entry.local_version = "manual"
-    entry.status = "ok"
-    entry.bytes = directory_bytes(cur)
-    entry.files = [str(p.relative_to(RAW_ROOT)) for p in files]
-    entry.error = None
-    entry.fetched_at = now.isoformat(timespec="seconds")
-    entry.checked_at = entry.fetched_at
-    cadence = source.update_cadence_days
-    entry.update_cadence_days = cadence
-    if cadence is not None:
-        entry.next_recommended_check_at = (now + timedelta(days=cadence)).isoformat(
-            timespec="seconds"
-        )
-    else:
-        entry.next_recommended_check_at = None
+    headless.mark_manual_install(source, manifest)
     manifest.save()

@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from data_tui import manual as manual_mod
 from data_tui.app import ActivityEvent, DataTuiApp, filter_activity
 from data_tui.freshness import (
     SEV_DEAD,
@@ -22,11 +23,13 @@ from data_tui.freshness import (
     attention_items,
     badge_for,
 )
+from data_tui.manual import InstallScreen, WalkthroughScreen
 from fetch import storage as storage_mod
 from fetch.base import FetchResult
 from fetch.legal import AutomationPolicy, CommercialUse, LegalInfo
 from fetch.manifest import Manifest, SourceEntry
-from textual.widgets import DataTable
+from fetch.walkthroughs import ManualStep, ManualWalkthrough
+from textual.widgets import DataTable, Input
 
 FAIL_URL = "https://example.com/data.zip"
 
@@ -70,6 +73,7 @@ class FakeSource:
     fail_check: bool = False
     fail_fetch: bool = False
     fetch_calls: int = 0
+    walkthrough: ManualWalkthrough | None = None
 
     @property
     def is_manual_only(self) -> bool:
@@ -101,7 +105,7 @@ class FakeSource:
         pass
 
     def manual_walkthrough(self):
-        return None
+        return self.walkthrough
 
 
 def _entry(**kw) -> SourceEntry:
@@ -426,5 +430,185 @@ def test_activity_log_toggles_and_filters_errors():
             await pilot.pause()
             assert app.log_lines[0].startswith("Activity (errors) — 1 events")
             assert any("bad_src" in line and "check failed" in line for line in app.log_lines)
+
+    asyncio.run(scenario())
+
+
+# ── slice 3 (#237): walkthrough screen + install-from-file ───────────────
+
+
+def _walkthrough() -> ManualWalkthrough:
+    return ManualWalkthrough(
+        landing_page_url="https://example.com/landing",
+        steps=[
+            ManualStep(
+                title="Open portal",
+                body="Go to the parcel portal",
+                deep_link="https://example.com/step1",
+            ),
+            ManualStep(title="Request export", body="Click 'Export statewide'"),
+            ManualStep(title="Install", body="Install the downloaded files"),
+        ],
+        expected_files=["data.bin"],
+    )
+
+
+def _manual_source(**kw) -> FakeSource:
+    kw.setdefault("id", "ar")
+    kw.setdefault("name", "AR Parcels")
+    kw.setdefault("legal", _legal(AutomationPolicy.MANUAL_ONLY))
+    kw.setdefault("walkthrough", _walkthrough())
+    return FakeSource(**kw)
+
+
+def test_walkthrough_advances_steps_and_opens_deep_link(monkeypatch):
+    opened: list[str] = []
+    monkeypatch.setattr(manual_mod.webbrowser, "open", opened.append)
+    s = _manual_source()
+    app = DataTuiApp(sources=[s], deferred=[], manifest=_manifest({}))
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            app.query_one(DataTable).move_cursor(row=1)
+            await pilot.pause()
+            await pilot.press("w")
+            await pilot.pause()
+            scr = app.screen
+            assert isinstance(scr, WalkthroughScreen)
+            assert any("Step 1 of 3: Open portal" in line for line in scr.lines)
+            await pilot.press("o")
+            assert opened == ["https://example.com/step1"]
+            await pilot.press("n")
+            assert any("Step 2 of 3: Request export" in line for line in scr.lines)
+            await pilot.press("b")
+            assert any("Step 1 of 3" in line for line in scr.lines)
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen, WalkthroughScreen)
+
+    asyncio.run(scenario())
+
+
+def test_walkthrough_finish_verifies_and_flips_table(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage_mod, "RAW_ROOT", tmp_path)
+    s = _manual_source()
+    app = DataTuiApp(sources=[s], deferred=[], manifest=_manifest({}))
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            app.query_one(DataTable).move_cursor(row=1)
+            await pilot.pause()
+            await pilot.press("w")
+            await pilot.pause()
+            await pilot.press("n")
+            await pilot.press("n")
+            # Finishing with an empty current/ stays in-screen with an error.
+            await pilot.press("n")
+            await pilot.pause()
+            assert isinstance(app.screen, WalkthroughScreen)
+            assert any("No files found" in line for line in app.screen.lines)
+            cur = tmp_path / "ar" / "current"
+            cur.mkdir(parents=True, exist_ok=True)
+            (cur / "data.bin").write_bytes(b"x")
+            await pilot.press("n")
+            await pilot.pause()
+            assert not isinstance(app.screen, WalkthroughScreen)
+            assert app.manifest.entry("ar").local_version == "manual"
+            assert "FRESH" in _status_cell(app, "ar")
+
+    asyncio.run(scenario())
+
+
+def test_walkthrough_reachable_after_failed_auto_fetch(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage_mod, "RAW_ROOT", tmp_path)
+    s = FakeSource(id="rotted", name="Rotted Src", fail_fetch=True, walkthrough=_walkthrough())
+    app = DataTuiApp(sources=[s], deferred=[], manifest=_manifest({}))
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            app.query_one(DataTable).move_cursor(row=1)
+            await pilot.pause()
+            await pilot.press("p")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert "DEAD" in _status_cell(app, "rotted")
+            await pilot.press("w")
+            await pilot.pause()
+            assert isinstance(app.screen, WalkthroughScreen)
+
+    asyncio.run(scenario())
+
+
+def test_walkthrough_unavailable_without_steps():
+    s = FakeSource(id="auto", name="Auto Src")  # no walkthrough
+    app = DataTuiApp(sources=[s], deferred=[], manifest=_manifest({}))
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            app.query_one(DataTable).move_cursor(row=1)
+            await pilot.pause()
+            await pilot.press("w")
+            await pilot.pause()
+            assert not isinstance(app.screen, WalkthroughScreen)
+            assert any("no manual walkthrough" in line for line in app.job_lines)
+
+    asyncio.run(scenario())
+
+
+def test_install_from_file_updates_table(monkeypatch, tmp_path):
+    import zipfile
+
+    monkeypatch.setattr(storage_mod, "RAW_ROOT", tmp_path / "raw")
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    csv = downloads / "My data.csv"  # space exercises dragged-path quoting
+    csv.write_text("a,b")
+    zp = downloads / "bundle.zip"
+    with zipfile.ZipFile(zp, "w") as z:
+        z.writestr("inner/one.txt", b"1")
+
+    s = _manual_source(id="man1", name="Manual One")
+    app = DataTuiApp(sources=[s], deferred=[], manifest=_manifest({}))
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            app.query_one(DataTable).move_cursor(row=1)
+            await pilot.pause()
+            await pilot.press("i")
+            await pilot.pause()
+            assert isinstance(app.screen, InstallScreen)
+            app.screen.query_one(Input).value = f'"{csv}" {zp}'
+            await pilot.press("enter")
+            await pilot.pause()
+            cur = tmp_path / "raw" / "man1" / "current"
+            assert (cur / "My data.csv").read_text() == "a,b"
+            assert (cur / "bundle" / "inner" / "one.txt").exists()
+            assert app.manifest.entry("man1").local_version == "manual"
+            assert "FRESH" in _status_cell(app, "man1")
+            assert any("manual install ok" in e.message for e in app.activity)
+
+    asyncio.run(scenario())
+
+
+def test_install_from_file_rejects_missing_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage_mod, "RAW_ROOT", tmp_path)
+    s = _manual_source()
+    app = DataTuiApp(sources=[s], deferred=[], manifest=_manifest({}))
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            app.query_one(DataTable).move_cursor(row=1)
+            await pilot.pause()
+            await pilot.press("i")
+            await pilot.pause()
+            app.screen.query_one(Input).value = "/nope/missing.zip"
+            await pilot.press("enter")
+            await pilot.pause()
+            # Stays open with the error shown; manifest untouched.
+            assert isinstance(app.screen, InstallScreen)
+            assert app.manifest.entry("ar").local_version is None
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen, InstallScreen)
 
     asyncio.run(scenario())

@@ -16,9 +16,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fetch import registry
 from fetch.base import CATEGORY_ORDER, DataSource
+from fetch.install import install_files, mark_manual_install
 from fetch.manifest import Manifest, SourceEntry
 from fetch.puller import CheckOutcome, FetchOutcome, check_one, fetch_one
 from fetch.storage import human_bytes
@@ -27,6 +29,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Footer, Header, Static
 
 from .freshness import Badge, attention_items, badge_for
+from .manual import InstallScreen, WalkthroughScreen
 from .notify import send as notify_send
 
 BADGE_STYLES = {
@@ -80,6 +83,8 @@ class DataTuiApp(App):
         ("l", "toggle_log", "Log"),
         ("f", "cycle_log_filter", "Log filter"),
         ("d", "diagnose", "Diagnose"),
+        ("w", "walkthrough", "Walkthrough"),
+        ("i", "install_file", "Install file"),
         ("q", "quit", "Quit"),
     ]
     CSS = """
@@ -450,6 +455,62 @@ class DataTuiApp(App):
             notify_send("Pilot Data — pull complete", f"{pulled} source(s) pulled.")
         self._job_update(summary)
         self.sub_title = summary
+
+    # ── manual path: walkthrough + install-from-file (#237) ─────────────
+
+    def _selected_source(self) -> DataSource | None:
+        sid = self._selected_source_id
+        return self._by_id.get(sid) if sid else None
+
+    def action_walkthrough(self) -> None:
+        source = self._selected_source()
+        if source is None:
+            return
+        if source.manual_walkthrough() is None:
+            self._job_update(f"{source.name} has no manual walkthrough.")
+            return
+        self.push_screen(
+            WalkthroughScreen(source, self.manifest),
+            lambda done: self._walkthrough_done(source, bool(done)),
+        )
+
+    def _walkthrough_done(self, source: DataSource, completed: bool) -> None:
+        if not completed:
+            return
+        if self._persist:
+            self.manifest.save()
+        self._log_activity(source.id, "manual install ok — walkthrough completed")
+        self._job_update(f"✓ {source.name} installed manually.")
+        self._refresh_source_row(source, deferred=source.id in self._deferred_ids)
+        self._refresh_detail()
+
+    def action_install_file(self) -> None:
+        source = self._selected_source()
+        if source is None:
+            return
+        self.push_screen(InstallScreen(source), lambda paths: self._install_done(source, paths))
+
+    def _install_done(self, source: DataSource, paths: list[Path] | None) -> None:
+        if not paths:
+            return
+        # ponytail: sync copy on the app thread — local-disk copies are
+        # fast enough; move to a worker if multi-GB installs stall the UI.
+        copied, extracted, errors = install_files(source.id, paths)
+        for err in errors:
+            self._log_activity(source.id, f"install error — {err}", error=True)
+        if (copied or extracted) and not errors:
+            mark_manual_install(source, self.manifest)
+            if self._persist:
+                self.manifest.save()
+            self._log_activity(
+                source.id, f"manual install ok — {copied} copied, {extracted} extracted"
+            )
+        self._job_update(
+            f"Install for {source.name}: {copied} copied, "
+            f"{extracted} extracted, {len(errors)} error(s)"
+        )
+        self._refresh_source_row(source, deferred=source.id in self._deferred_ids)
+        self._refresh_detail()
 
     # ── diagnose-with-AI ────────────────────────────────────────────────
 
