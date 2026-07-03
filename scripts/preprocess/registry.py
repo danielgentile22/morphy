@@ -25,7 +25,6 @@ from .normalizers import (  # noqa: F401
     faa_oeaaa,
     fcc_asr,
     fcc_uls,
-    hifld_towers,
     hud_overlays,
     state_billboards,
     state_parcels,

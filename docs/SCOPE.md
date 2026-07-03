@@ -130,7 +130,7 @@ Where we deliberately under-invest. (Permanent non-goals are flagged.)
 | **Multi-tenant traffic** | One tenant today, but the schema is tenant-shaped from Day 1 ([ADR-055](./adr/0055-hosted-private-backend.md)) |
 | **Performance optimization beyond "fast enough"** | Phase 1 means usable, not benchmarked |
 | ULS Microwave / Ownership / Transfers / Leasing | Deferred to Slice B or Phase 2 — backhaul / vendor-inference signal, not carrier presence |
-| `hifld_towers` | Retired ([ADR-015](./adr/0015-hifld-towers-retired.md)) — DHS retired the layer in 2024 |
+| `hifld_towers` | Removed from the repo 2026-07-03 ([ADR-015](./adr/0015-hifld-towers-retired.md)) — DHS retired the layer in 2024; dead code deleted |
 
 ---
 

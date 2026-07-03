@@ -26,13 +26,13 @@ For higher-level context:
 
 **Status overrides** (current as of 2026-06-26; reconcile with the per-source table below):
 
-- **`hifld_towers`** is **RETIRED** (DHS removed the public layer in 2024 — ADR-015).
+- **`hifld_towers`** is **REMOVED from the repo** (2026-07-03) — DHS retired the public layer in 2024 (ADR-015), so the dead fetcher + normalizer were deleted rather than kept parked. Index row 9 kept as a tombstone for numbering.
 - **`regrid_parcels`** is **Phase 2+ unlock** (paid; ADR-010 reframed by [ADR-057](./adr/0057-budget-posture-reframed.md) — was "out of scope," now "current-budget posture").
 - **`lbnl_tts`** is **DROPPED** from active registry (superseded — ADR-016).
 - **`fcc_uls_cellular`** (Part 22, the `l_cell` bulk file) + the **PCS / AWS / 700 MHz radio-service-code subset of `fcc_uls_market`** (the `l_market` Market-Based Services bulk file) are **Phase 1 Slice A** (carrier identification — [ADR-053](./adr/0053-product-phase-shift.md) partially reverses ADR-013). The FCC does **not** ship `fcc_uls_pcs` / `_aws` / `_700mhz` as separate downloads — those bands are carved out of the single `l_market` file by `radio_service_code` (see §2–7).
 - The rest of `fcc_uls_market` (WCS code `WS`, 600 MHz `WT`, Narrowband PCS, paging, BRS/EBS, …) and **`fcc_uls_micro`** (Microwave, point-to-point backhaul) remain **DEFERRED** — not one of the four Phase-1 carrier bands.
 - **`fdot_billboards`, `ncdot_billboards`** are tagged **Phase 1 Slice C parcel enrichment** (ADR-014 partially reversed for FL; the NCDOT extract rides with the deferred NC stretch) but **both remain in the registry `_DEFERRED` block — not yet wired active**. `txdot_billboards` stays deferred (TX not an anchor state).
-- **`fl_fgdl_parcels`** is **REPLACED** by `fdor_nal` (ADR-019).
+- **`fl_fgdl_parcels`** was **replaced as FL's primary parcel source** by `fdor_nal` (ADR-019) — but it is **not dead weight**: it's the DSL *state-owned land* composite (Division of State Land), a distinct parcel class from NAL's private tax rolls, and its ~241K parcels are in the live FL composite. Fetch stays deferred; the normalized layer still composes.
 - **`in_parcels`** is **MOTHBALLED** (no owner data — ADR-017).
 - **`mn_parcels`** is **DEFERRED** (license ambiguity — ADR-018).
 - **`ut_parcels`** is **DEFERRED** (no owner data — ADR-049).
@@ -54,7 +54,7 @@ For higher-level context:
 | 6 | FCC ULS — Market-Based: WCS + other market services (`l_market` code `WS`, etc.) | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
 | 7 | FCC ULS — Microwave (`fcc_uls_micro`, Part 101) | Towers | National | ✅ | ⊘ deferred | ✅ Yes (public domain) |
 | 8 | FAA Digital Obstacle File (DOF) | Towers | National | ✅ | ✓ active | ✅ Yes (public domain) |
-| 9 | HIFLD Cellular Towers | Towers | National | 🚫 | ⊘ retired (2024) | ✅ Yes (open data) |
+| 9 | ~~HIFLD Cellular Towers~~ | Towers | National | — | ✂ removed 2026-07-03 (upstream dead since 2024) | — |
 | 10 | EIA Form 860 (annual) | Solar | National | ✅ | ✓ active | ✅ Yes (public domain) |
 | 11 | EIA Form 860M (monthly) | Solar | National | ✅ | ✓ active | ✅ Yes (public domain) |
 | 12 | USGS USPVDB | Solar | National | ✅ | ✓ active | ✅ Yes (public domain) |
@@ -239,19 +239,13 @@ catalogues *any* obstacle; ASR is only the FCC-registered subset).
 
 ---
 
-## 9. HIFLD — Cellular Towers
+## 9. HIFLD — Cellular Towers (removed)
 
-- **ID:** `hifld_towers` · **Cadence:** Irregular (~monthly) · **Size:** ~35 MB
-- **Source page:** <https://hifld-geoplatform.hub.arcgis.com/datasets/geoplatform::cellular-towers/>
-- **Direct bulk:** ArcGIS REST query endpoint, returns GeoJSON.
-- **License:** Open data / public domain (per HIFLD Open terms)
-- **Automation:** ✅ · **Commercial:** ✅
-
-### Structure
-GeoJSON FeatureCollection. Point features. Common fields include:
-`Tower_ID`, `Owner`, `Latitude`, `Longitude`, `LicenseNum`, `Height_ft`,
-`Tower_Type`, `Source`. Use as cross-check against FCC ASR for towers
-under ~60 m that ASR doesn't catalogue.
+**Removed from the repo 2026-07-03.** DHS retired the public HIFLD
+Cellular Towers layer in 2024 (ADR-015); the fetcher + normalizer were
+deleted since the upstream can never come back as-is. It was a
+GeoJSON point layer used as a cross-check against FCC ASR for towers
+under ~60 m. Number kept so index rows 10+ stay stable.
 
 ---
 
@@ -821,7 +815,7 @@ UCC-1 lookups by debtor name return many irrelevant filings (any UCC filing the 
 ## Per-source on-disk layout
 
 All sources land at `data/raw/<source_id>/current/`. Example after a
-pull of FCC ASR + HUD OZ + HIFLD:
+pull of FCC ASR + HUD OZ:
 
 ```
 data/raw/
@@ -834,9 +828,6 @@ data/raw/
 │       │   └── …
 │       └── d_tower/
 │           └── …
-├── hifld_towers/
-│   └── current/
-│       └── cellular_towers.geojson
 └── hud_oz/
     └── current/
         └── opportunity_zones.geojson

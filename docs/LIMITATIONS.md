@@ -249,7 +249,7 @@ distress overlays / county scores. No fetch-code change was needed.
 | ~~`hud_qct`~~ | ~~HTTP 400~~ | ✅ RESOLVED 2026-05-21 — endpoint live; pulled + normalized |
 | ~~`usda_persistent_poverty`~~ | ~~HTTP 404~~ | ✅ RESOLVED 2026-05-21 — ERS county-typology CSV live |
 | ~~`nc_onemap_parcels`~~ | ~~HTTP 500~~ | RESOLVED 2026-05-19 — rewired to MapServer pagination (ADR-048) |
-| `hifld_towers` | HTTP 400 | Retired — DHS pulled the public layer in 2024 |
+| `hifld_towers` | HTTP 400 | Retired — DHS pulled the public layer in 2024; fetcher + normalizer removed from the repo 2026-07-03 |
 
 NB: the NC *fetch* is resolved as a code path but the pull itself is
 still incomplete — see the NC entry above.
@@ -258,7 +258,7 @@ still incomplete — see the NC entry above.
 
 ## 🚫 HIFLD Cellular Towers layer is permanently retired
 
-**Added 2026-05-19.**
+**Added 2026-05-19; fetcher + normalizer removed from the repo 2026-07-03.**
 
 DHS removed the public HIFLD cellular-towers layer in its 2024
 infrastructure-data security review. The REST endpoint is a zombie

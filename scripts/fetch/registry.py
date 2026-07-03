@@ -46,9 +46,6 @@ from .sources.fdor_nal import SOURCE as FDOR_NAL
 from .sources.fdot_billboards import SOURCE as FDOT_BILLBOARDS
 from .sources.fl_fgdl_parcels import SOURCE as FL_FGDL_PARCELS
 
-# Towers (retired — DHS removed the public layer in 2024, see source notes)
-from .sources.hifld_towers import SOURCE as HIFLD_TOWERS
-
 # Distress overlays (active)
 from .sources.hud_oz import SOURCE as HUD_OZ
 from .sources.hud_qct import SOURCE as HUD_QCT
@@ -99,8 +96,6 @@ _ACTIVE: list[DataSource] = [
 # to the puller or preprocess pipeline. See docs/DECISIONS.md for the
 # rationale behind each deferral. To reactivate, move into _ACTIVE.
 _DEFERRED: list[DataSource] = [
-    # Retired — DHS removed the public HIFLD Cellular Towers layer in 2024.
-    HIFLD_TOWERS,
     # FCC ULS — Microwave (point-to-point backhaul) + the cross-service
     # ownership / transfers / leasing files. Cellular + Market-Based moved to
     # _ACTIVE for Slice A (ADR-053 partially reverses ADR-013).
