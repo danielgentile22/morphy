@@ -9,10 +9,13 @@ so ``STATE_PARCEL_ID`` → ``STATE_PAR_`` etc.
 from __future__ import annotations
 
 import geopandas as gpd
+import pandas as pd
 
 from ..fdor_use_codes import land_use_desc
 from ..pandas_coerce import safe_str
 from ..state_parcels import ParcelAdapter
+
+SQFT_PER_ACRE = 43_560.0
 
 
 def _decode_land_use(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -25,6 +28,21 @@ def _decode_land_use(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     gdf = gdf.copy()
     gdf["land_use_desc"] = [land_use_desc(c) or safe_str(c) for c in gdf["land_use_code"]]
     return gdf
+
+
+def _derive_acreage(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """M-m (#212): NAL ships land area as ``LND_SQFOOT`` (square feet), not
+    acres — the field_map routes it into ``acreage`` and this converts
+    (÷ 43,560). Nonpositive / missing square footage → null: FDOR uses 0 for
+    "not recorded", which must not surface as a genuine 0-acre parcel."""
+    gdf = gdf.copy()
+    sqft = pd.to_numeric(gdf["acreage"], errors="coerce")
+    gdf["acreage"] = (sqft / SQFT_PER_ACRE).where(sqft > 0)
+    return gdf
+
+
+def _fl_post_map(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    return _derive_acreage(_decode_land_use(gdf))
 
 
 FDOR_NAL_ADAPTER = ParcelAdapter(
@@ -44,9 +62,10 @@ FDOR_NAL_ADAPTER = ParcelAdapter(
         # NAL has no physical-state column (FL parcels are all FL); PHY_ZIPCD
         # carries the situs zip (E9).
         "situs_zip": ["PHY_ZIPCD"],
-        # NAL ships LND_SQFOOT (square feet), not acres — left null
-        # rather than mislabel sqft as acreage.
-        "acreage": [],
+        # NAL ships LND_SQFOOT (square feet), not acres — routed here and
+        # converted to acres by the _derive_acreage post_map (M-m / #212;
+        # same pattern as MT's CityStateZ split).
+        "acreage": ["LND_SQFOOT"],
         "land_value": ["LND_VAL"],
         # NAL has no direct improvement value (JV = land + improvements);
         # left null rather than compute, to keep the field map declarative.
@@ -59,5 +78,5 @@ FDOR_NAL_ADAPTER = ParcelAdapter(
         # slices positions 0-4 for the county FIPS.
         "county_fips": ["CENSUS_BK"],
     },
-    post_map=_decode_land_use,
+    post_map=_fl_post_map,
 )

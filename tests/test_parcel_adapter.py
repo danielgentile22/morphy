@@ -262,6 +262,29 @@ def test_fdor_missing_census_bk_falls_back_to_state_fips():
     assert out["state_fips"].iloc[0] == "12"
 
 
+def test_fdor_acreage_derived_from_lnd_sqfoot():
+    """M-m (#212): FL acreage was 100% null (NAL ships LND_SQFOOT, square
+    feet). The field_map routes sqft into `acreage`; the post_map converts
+    (÷ 43,560). FDOR's 0 means "not recorded", never a genuine 0-acre parcel."""
+    import pandas as pd
+
+    g = _gdf(
+        [
+            {"PARCEL_ID": "F1", "OWN_NAME": "O", "LND_SQFOOT": 43560.0, "geometry": _square()},
+            {"PARCEL_ID": "F2", "OWN_NAME": "O", "LND_SQFOOT": 21780.0, "geometry": _square()},
+            {"PARCEL_ID": "F3", "OWN_NAME": "O", "LND_SQFOOT": 0.0, "geometry": _square()},
+            {"PARCEL_ID": "F4", "OWN_NAME": "O", "LND_SQFOOT": None, "geometry": _square()},
+        ]
+    )
+    mapped = map_layer_to_canonical(g, FDOR_NAL_ADAPTER)
+    out = FDOR_NAL_ADAPTER.post_map(mapped)
+    acres = out["acreage"]
+    assert acres.iloc[0] == 1.0
+    assert acres.iloc[1] == 0.5
+    assert pd.isna(acres.iloc[2])  # 0 sqft = unrecorded → null, not 0 acres
+    assert pd.isna(acres.iloc[3])
+
+
 # ── WV: county resolver (Mc collation), sidecar-join fields, full mailing ─
 
 
