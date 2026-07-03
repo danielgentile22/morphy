@@ -496,6 +496,28 @@ def test_portfolio_bonus_is_clamped():
     assert row.score == round(0.5 + 0.1 * math.log(_PORTFOLIO_LOG_CAP), 4)
 
 
+def test_structure_carries_faa_corroborated_flag():
+    """MACRO-2 (#219): a co-located FAA obstacle stamps faa_corroborated on the
+    ASR tower structure; a tower without the flag defaults to False."""
+    towers = {
+        "T1": {"height_m": 100.0, "is_active": True, "faa_corroborated": True},
+        "T2": {"height_m": 80.0, "is_active": True},  # no flag → False
+    }
+    idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(
+        pd.DataFrame(
+            [
+                _parcel_with_holding(
+                    "CORRO LLC", "05", score=0.5, parcel_id="P1", towers_asr=("T1", "T2")
+                )
+            ]
+        ),
+        towers_by_asr=towers,
+    )
+    structs = {s["asr"]: s for s in _row_for(idx, "CORRO").holdings[0]["structures"]}
+    assert structs["T1"]["faa_corroborated"] is True
+    assert structs["T2"]["faa_corroborated"] is False
+
+
 def test_tower_without_attr_match_has_empty_carriers():
     # No towers_by_asr at all → structures still list ASR ids, carriers [].
     idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(

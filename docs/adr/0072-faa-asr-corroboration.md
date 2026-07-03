@@ -1,6 +1,13 @@
 # ADR-072: FAA↔ASR co-location match dedups the towers layer
 
-**Status:** Accepted — implementation pending ([#219](https://github.com/danielgentile22/infra-lease-analytics/issues/219), audit **MACRO-2**; absorbs **M-j** and closes the **E8** `is_active` carve-out).
+**Status:** Accepted — **implemented** (#219): the towers layer is deduped by a 50 m FAA↔ASR match; `faa_corroborated` rides the tower structure (owners-index v9) + panel.
+
+## Amendment (2026-07-03) — no `is_active` derivation; M-j deferred
+
+Implementing this corrected two premises:
+
+- **`is_active` is left as-is (not "derived from FAA status").** The FAA DOF `verification_status` is only `O` (position-verified) / `U` (unverified) — it carries **no** active/inactive/decommissioned signal. A DOF obstacle simply *exists*, which is what the E8-era hard-coded `True` already says. On a matched pair the surviving **ASR** row keeps its own real `is_active` (from the FCC status codes); FAA-only survivors stay `True` (presence in the DOF). There is nothing truer to derive, so the E8 carve-out is **closed by documentation**, not a new derivation.
+- **M-j (`location` tail) → decided *drop*, removal deferred.** The unread ULS `location_*` columns are tangential to the *geometric* FAA↔ASR match (they're licensee-side data, not obstacle coordinates), so "exploit for corroboration" doesn't apply. They're confirmed unread → the call is to drop them, as a focused dead-column cleanup separate from this dedup (fixes.json M-j stays open until that lands).
 **Date:** 2026-07-03
 **Prerequisite (landed):** [#215](https://github.com/danielgentile22/infra-lease-analytics/issues/215) — the identity split (`asr_number` FCC-only, FAA rows carry `obstacle_number`, union identity = `_source_row_id`).
 

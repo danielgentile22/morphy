@@ -1401,6 +1401,11 @@
             "title": "Carriers",
             "type": "array"
           },
+          "faa_corroborated": {
+            "default": false,
+            "title": "Faa Corroborated",
+            "type": "boolean"
+          },
           "height_m": {
             "anyOf": [
               {

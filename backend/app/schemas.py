@@ -99,6 +99,9 @@ class Structure(BaseModel):
     # tower's underlying parcel's score, projected onto it. Declared so
     # response_model keeps it; None on a pre-v5 index (safe default).
     score: float | None = None
+    # FAA↔ASR corroboration (MACRO-2 / #219, index v9): a co-located FAA obstacle
+    # confirms this ASR tower. Defaulted so a pre-v9 index still validates.
+    faa_corroborated: bool = False
 
 
 class Holding(BaseModel):

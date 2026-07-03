@@ -800,6 +800,49 @@ def _dedup_solar_facility(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return gpd.GeoDataFrame(out, geometry="geometry", crs=gdf.crs)
 
 
+# FAA↔ASR co-location match (ADR-072 / MACRO-2): the towers layer unions FCC ASR
+# + FAA DOF with no dedup, double-counting the ~66% of ASR towers with a
+# co-located FAA obstacle. Match radius in metres — grounded in the audit's
+# "62.6% of ASR towers have an FAA obstacle within 50 m" + ASR's ~30 m grain.
+_FAA_ASR_MATCH_M = 50.0
+_METRIC_CRS = "EPSG:5070"  # CONUS Albers Equal Area (metres) — fine for AR/FL/MT/WV
+
+
+def _dedup_towers(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Dedup the towers layer by FAA↔ASR co-location (ADR-072 / MACRO-2).
+
+    FCC ASR rows carry owner/contact/carriers; FAA DOF rows carry only the
+    obstacle. A physical tower usually appears in both. For each FAA row we take
+    the nearest ASR row within ``_FAA_ASR_MATCH_M``: on a match the **ASR row
+    survives** (stamped ``faa_corroborated = True``) and the FAA duplicate is
+    dropped; unmatched FAA rows survive on their own (``faa_corroborated =
+    False``). Every ASR row survives. FAA ``is_active`` is left as-is: the DOF
+    verification status is position-verified vs not (``O``/``U``), never
+    active/inactive, so there is nothing truer to derive (ADR-072 amendment).
+    Rows without usable geometry can't be matched and pass through untouched.
+    """
+    if len(gdf) == 0 or "_source" not in gdf.columns:
+        return gdf
+    gdf = gdf.copy()
+    gdf["faa_corroborated"] = False
+    is_faa = gdf["_source"] == "faa_oeaaa"
+    usable = gdf.geometry.notna() & ~gdf.geometry.is_empty
+    faa = gdf[is_faa & usable]
+    fcc = gdf[~is_faa & usable]
+    if len(faa) == 0 or len(fcc) == 0:
+        return gdf  # nothing to match against — keep the union as-is
+
+    faa_m = faa.to_crs(_METRIC_CRS)[["geometry"]].reset_index(names="_faa_idx")
+    fcc_m = fcc.to_crs(_METRIC_CRS)[["geometry"]].reset_index(names="_fcc_idx")
+    j = gpd.sjoin_nearest(faa_m, fcc_m, max_distance=_FAA_ASR_MATCH_M, distance_col="_d")
+    if len(j) == 0:
+        return gdf  # no co-locations within the radius
+    # One match per FAA row: nearest, ties → lowest _fcc_idx (deterministic).
+    j = j.sort_values(["_faa_idx", "_d", "_fcc_idx"]).drop_duplicates("_faa_idx", keep="first")
+    gdf.loc[j["_fcc_idx"].tolist(), "faa_corroborated"] = True
+    return gdf.drop(index=j["_faa_idx"].tolist())
+
+
 def _load_state_data(ctx: ComposeContext) -> list[str]:
     """Load every non-parcel canonical type for one state into ``ctx``.
 
@@ -835,6 +878,10 @@ def _load_state_data(ctx: ComposeContext) -> list[str]:
             n_before = len(combined)
             combined = _dedup_solar_facility(combined)
             log.info("  solar dedup (MACRO-3): %d → %d rows", n_before, len(combined))
+        if ct == "tower":
+            n_before = len(combined)
+            combined = _dedup_towers(combined)
+            log.info("  FAA↔ASR dedup (MACRO-2): %d → %d rows", n_before, len(combined))
         ctx.set(ct, combined)
         log.info("  %s: %d rows (%d sources)", ct, len(combined), len(frames))
     # The parcel "source" itself: which parcel normalizers contributed

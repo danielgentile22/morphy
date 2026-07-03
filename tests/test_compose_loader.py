@@ -402,3 +402,54 @@ def test_dedup_solar_facility_passes_through_when_empty_or_keyless():
         crs="EPSG:4326",
     )
     assert len(_dedup_solar_facility(keyless)) == 2
+
+
+# ── MACRO-2 (#219, ADR-072): FAA↔ASR co-location dedup of the towers layer ──
+
+
+def test_dedup_towers_collapses_faa_onto_co_located_asr():
+    """A FAA obstacle within 50 m of an ASR tower is the same structure: the ASR
+    row survives (stamped faa_corroborated), the FAA duplicate is dropped. A far
+    FAA row survives on its own; an ASR row with no FAA nearby is uncorroborated."""
+    from preprocess.compose import _dedup_towers
+    from shapely.geometry import Point
+
+    def _t(source, id_, lon, lat):
+        return {"_source": source, "_source_row_id": id_, "geometry": Point(lon, lat)}
+
+    gdf = gpd.GeoDataFrame(
+        [
+            _t("fcc_asr", "A1", -92.0, 34.0),
+            _t("faa_oeaaa", "B1", -92.0, 34.0),  # ~0 m from A1 → matched, dropped
+            _t("faa_oeaaa", "C1", -93.0, 35.0),  # far → survives on its own
+            _t("fcc_asr", "D1", -91.0, 33.0),  # no FAA nearby → survives, uncorroborated
+        ],
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+    out = _dedup_towers(gdf)
+    assert set(out["_source_row_id"]) == {"A1", "C1", "D1"}  # B1 (FAA dup) dropped
+    corr = dict(zip(out["_source_row_id"], out["faa_corroborated"]))
+    assert bool(corr["A1"]) is True  # ASR survivor corroborated by the FAA match
+    assert bool(corr["C1"]) is False  # unmatched FAA row
+    assert bool(corr["D1"]) is False  # ASR with no co-located FAA
+
+
+def test_dedup_towers_passes_through_single_source():
+    """With only ASR (or only FAA) rows there is nothing to match — every row
+    survives, all uncorroborated."""
+    from preprocess.compose import _dedup_towers
+    from shapely.geometry import Point
+
+    only_fcc = gpd.GeoDataFrame(
+        [
+            {"_source": "fcc_asr", "_source_row_id": "A", "geometry": Point(-92.0, 34.0)},
+            {"_source": "fcc_asr", "_source_row_id": "B", "geometry": Point(-92.001, 34.001)},
+        ],
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    out = _dedup_towers(only_fcc)
+    assert len(out) == 2
+    assert not out["faa_corroborated"].any()

@@ -189,6 +189,8 @@
           <dt>Height</dt><dd>{feet(t.height_m ?? null)}</dd>
           <dt>Structure</dt><dd>{t.structure_kind || '—'}</dd>
           <dt>Active</dt><dd>{t.active == null ? '—' : t.active ? 'yes' : 'no'}</dd>
+          <dt>FAA-corroborated</dt>
+          <dd>{t.faa_corroborated ? 'yes — co-located FAA obstacle' : 'no'}</dd>
           <dt>Built</dt><dd data-testid="tower-date-built">{staticProps?.date_built ?? '—'}</dd>
           <dt>Coordinates</dt>
           <dd>{t.lat != null && t.lon != null ? `${t.lat.toFixed(5)}, ${t.lon.toFixed(5)}` : '—'}</dd>

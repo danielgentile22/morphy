@@ -70,7 +70,11 @@ OWNERS_INDEX_FILENAME = "owners_index.json"
 # max carriers on any one of the owner's towers — feeding the carrier reward in
 # the reweighted default score preset. A stale (pre-v8) index omits it; readers
 # default it to 0.
-OWNERS_INDEX_SCHEMA_VERSION = 8
+# v9 (audit MACRO-2 / #219, ADR-072): each tower structure gains
+# ``faa_corroborated`` — True when a co-located FAA obstacle (within 50 m)
+# confirms the ASR tower, after the towers layer is deduped. A stale (pre-v9)
+# index or composite omits it; readers default it to False.
+OWNERS_INDEX_SCHEMA_VERSION = 9
 
 OWNERS_FILTER_FILENAME = "owners_filter.json"
 
@@ -135,6 +139,9 @@ TOWER_ATTR_COLUMNS = (
     # ULS spectrum licensee(s) on the tower (Slice A / #28). Stored on the
     # composite as a JSON-array string; parsed onto each tower structure.
     "carriers",
+    # FAA↔ASR co-location match (MACRO-2 / #219): True on an ASR tower with a
+    # co-located FAA obstacle — two federal sources agree it's real.
+    "faa_corroborated",
 )
 
 # Fields kept from a raw ULS carrier entry (drop anything #24 adds later that
@@ -467,6 +474,10 @@ class CrossStateOwnerResolver:
                         # ULS licensee(s) on the tower (Slice A / #28); [] when
                         # the tower has no tower-attr match or no carriers.
                         "carriers": _normalize_carriers(t.get("carriers")),
+                        # FAA↔ASR corroboration (MACRO-2 / #219): a co-located FAA
+                        # obstacle confirms this ASR tower. Defaults False on a
+                        # pre-v9 composite / an unmatched FAA-only tower.
+                        "faa_corroborated": bool(t.get("faa_corroborated")),
                         # Per-tower interestingness = the parcel's score (#105);
                         # None when the parcel had no score (a stale index).
                         "score": (None if parcel_score is None else round(parcel_score, 4)),

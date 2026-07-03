@@ -1371,6 +1371,11 @@ export interface components {
             asr?: string | null;
             /** Carriers */
             carriers?: components["schemas"]["CarrierOut"][];
+            /**
+             * Faa Corroborated
+             * @default false
+             */
+            faa_corroborated: boolean;
             /** Height M */
             height_m?: number | null;
             /** Id */
