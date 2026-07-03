@@ -32,6 +32,7 @@ import logging
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from datetime import date
+from typing import TypeVar
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
@@ -113,6 +114,7 @@ from .settings_store import (
 )
 from .stats_service import ActivityRow, LeadRow, StatsService
 from .task_store import InvalidTaskPriority, InvalidTaskStatus, TaskStore, label_list
+from .tenant_scoped_store import TenantScopedStore
 from .tenant_service import TenantService
 from .user_settings_store import KNOWN_KEYS, UserSettingsStore
 from .users import ChangePasswordOutcome
@@ -210,58 +212,34 @@ def get_ask_streamer() -> AnthropicStreamer:
     )
 
 
-def get_ask_log(
-    tenant_id: int = Depends(current_tenant_id),
-    db: Session = Depends(get_db),
-) -> AskLogStore:
-    """The tenant-scoped Q&A log store (#190). The session lives until the
-    streaming response finishes (FastAPI closes ``yield``-dependencies after the
-    body is fully sent), so the route can persist *after* the stream completes."""
-    return AskLogStore(db, tenant_id)
+_StoreT = TypeVar("_StoreT", bound=TenantScopedStore)
 
 
-def get_store(
-    tenant_id: int = Depends(current_tenant_id),
-    db: Session = Depends(get_db),
-) -> Iterator[LeadStore]:
-    yield LeadStore(db, tenant_id)
+def tenant_store(cls: type[_StoreT]) -> Callable[..., _StoreT]:
+    """Dependency factory for tenant-scoped stores: the one definition of the
+    (session, tenant_id) wiring instead of a copied provider per store."""
+
+    def dep(
+        tenant_id: int = Depends(current_tenant_id),
+        db: Session = Depends(get_db),
+    ) -> _StoreT:
+        return cls(db, tenant_id)
+
+    return dep
 
 
-def get_merges(
-    tenant_id: int = Depends(current_tenant_id),
-    db: Session = Depends(get_db),
-) -> OwnerMergeService:
-    # Shares the request-scoped session with get_store (FastAPI caches the
-    # get_db dependency per request), so a write + its read are one transaction.
-    return OwnerMergeService(db, tenant_id)
-
-
-def get_tasks(
-    tenant_id: int = Depends(current_tenant_id),
-    db: Session = Depends(get_db),
-) -> TaskStore:
-    return TaskStore(db, tenant_id)
-
-
-def get_antennas(
-    tenant_id: int = Depends(current_tenant_id),
-    db: Session = Depends(get_db),
-) -> AntennaStore:
-    return AntennaStore(db, tenant_id)
-
-
-def get_presets(
-    tenant_id: int = Depends(current_tenant_id),
-    db: Session = Depends(get_db),
-) -> ScoringPresetStore:
-    return ScoringPresetStore(db, tenant_id)
-
-
-def get_settings(
-    tenant_id: int = Depends(current_tenant_id),
-    db: Session = Depends(get_db),
-) -> SettingsStore:
-    return SettingsStore(db, tenant_id)
+# One provider per store, all built by the same factory. FastAPI caches the
+# get_db dependency per request, so every store in a request shares one
+# session/transaction (a write + its read are one transaction), and the
+# session outlives a streaming body — get_ask_log's routes can persist
+# *after* the stream completes (#190).
+get_ask_log = tenant_store(AskLogStore)
+get_store = tenant_store(LeadStore)
+get_merges = tenant_store(OwnerMergeService)
+get_tasks = tenant_store(TaskStore)
+get_antennas = tenant_store(AntennaStore)
+get_presets = tenant_store(ScoringPresetStore)
+get_settings = tenant_store(SettingsStore)
 
 
 def get_user_settings(

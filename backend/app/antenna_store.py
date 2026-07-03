@@ -9,31 +9,24 @@ lazily on first edit, so an antenna with no row is simply unedited.
 from __future__ import annotations
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from .models import AntennaOverride
+from .tenant_scoped_store import TenantScopedStore
 
 
-class AntennaStore:
+class AntennaStore(TenantScopedStore):
     # The free-text fields a PUT may set (partial). ``archived`` is handled
     # separately because it's a bool, not a string.
     EDITABLE = ("address", "owner_name", "owner_phone", "owner_email", "notes")
 
-    def __init__(self, session: Session, tenant_id: int) -> None:
-        self.session = session
-        self.tenant_id = tenant_id
-
     # ── reads ──────────────────────────────────────────────────────────────
     def get(self, asr: str) -> AntennaOverride | None:
-        return self.session.get(AntennaOverride, (self.tenant_id, asr))
+        return self.get_scoped(AntennaOverride, asr)
 
     def archived_asrs(self) -> set[str]:
         """The set of archived ASRs for this tenant — the map + list exclude
         these unless the user opts into showing archived antennas."""
-        stmt = select(AntennaOverride.asr).where(
-            AntennaOverride.tenant_id == self.tenant_id,
-            AntennaOverride.archived.is_(True),
-        )
+        stmt = self.scoped(select(AntennaOverride.asr).where(AntennaOverride.archived.is_(True)))
         return set(self.session.scalars(stmt))
 
     # ── writes ─────────────────────────────────────────────────────────────

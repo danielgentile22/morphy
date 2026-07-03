@@ -8,27 +8,18 @@ it. At most one default per tenant (set_default clears the others).
 from __future__ import annotations
 
 from sqlalchemy import select, update
-from sqlalchemy.orm import Session
 
 from .models import ScoringPreset
+from .tenant_scoped_store import TenantScopedStore
 
 
-class ScoringPresetStore:
-    def __init__(self, session: Session, tenant_id: int) -> None:
-        self.session = session
-        self.tenant_id = tenant_id
-
+class ScoringPresetStore(TenantScopedStore):
     def list(self) -> list[ScoringPreset]:
-        stmt = (
-            select(ScoringPreset)
-            .where(ScoringPreset.tenant_id == self.tenant_id)
-            .order_by(ScoringPreset.name)
-        )
+        stmt = self.scoped(select(ScoringPreset)).order_by(ScoringPreset.name)
         return list(self.session.scalars(stmt))
 
     def get(self, preset_id: int) -> ScoringPreset | None:
-        p = self.session.get(ScoringPreset, preset_id)
-        return p if p is not None and p.tenant_id == self.tenant_id else None
+        return self.get_scoped(ScoringPreset, preset_id)
 
     def create(self, *, name: str, config: str, is_default: bool = False) -> ScoringPreset:
         preset = ScoringPreset(
@@ -66,11 +57,11 @@ class ScoringPresetStore:
         # already-loaded preset in this session too, so the identity map stays
         # consistent without an extra fetch.
         self.session.execute(
-            update(ScoringPreset)
-            .where(
-                ScoringPreset.tenant_id == self.tenant_id,
-                ScoringPreset.id != keep_id,
-                ScoringPreset.is_default.is_(True),
+            self.scoped(
+                update(ScoringPreset).where(
+                    ScoringPreset.id != keep_id,
+                    ScoringPreset.is_default.is_(True),
+                )
             )
             .values(is_default=False)
             .execution_options(synchronize_session="evaluate"),

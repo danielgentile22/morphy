@@ -28,16 +28,16 @@ from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.orm import Session
 
 from .models import OwnerClusterOverride
+from .tenant_scoped_store import TenantScopedStore
 
 
 class MergeError(ValueError):
     """Raised when a merge is illegal (self-merge / already merged / cycle)."""
 
 
-class OwnerMergeService:
+class OwnerMergeService(TenantScopedStore):
     def __init__(self, session: Session, tenant_id: int) -> None:
-        self.session = session
-        self.tenant_id = tenant_id
+        super().__init__(session, tenant_id)
         self._map: dict[str, str] | None = None  # cached per request; see _invalidate
 
     # ── reads ────────────────────────────────────────────────────────────────
@@ -48,9 +48,7 @@ class OwnerMergeService:
         don't re-query; ``merge`` / ``split`` invalidate it.
         """
         if self._map is None:
-            rows = self.session.scalars(
-                select(OwnerClusterOverride).where(OwnerClusterOverride.tenant_id == self.tenant_id)
-            )
+            rows = self.session.scalars(self.scoped(select(OwnerClusterOverride)))
             self._map = {r.source_cluster_id: r.target_cluster_id for r in rows}
         return self._map
 
@@ -99,7 +97,7 @@ class OwnerMergeService:
         tgt_root = self.resolve(target)
         if src_root == tgt_root:
             raise MergeError(f"{source!r} already resolves to {tgt_root!r}; nothing to merge")
-        existing = self.session.get(OwnerClusterOverride, (self.tenant_id, src_root))
+        existing = self.get_scoped(OwnerClusterOverride, src_root)
         if existing is not None:  # src_root was itself a source — re-point it
             existing.target_cluster_id = tgt_root
         else:
@@ -117,9 +115,8 @@ class OwnerMergeService:
         """Detach ``source`` — delete its override row so it returns to its raw
         cluster as an independent Lead. Returns True if a row was removed."""
         result = self.session.execute(
-            delete(OwnerClusterOverride).where(
-                OwnerClusterOverride.tenant_id == self.tenant_id,
-                OwnerClusterOverride.source_cluster_id == source,
+            self.scoped(
+                delete(OwnerClusterOverride).where(OwnerClusterOverride.source_cluster_id == source)
             )
         )
         self.session.commit()

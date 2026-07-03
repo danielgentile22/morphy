@@ -14,9 +14,9 @@ from datetime import UTC, date, datetime
 from typing import cast
 
 from sqlalchemy import CursorResult, delete, func, or_, select
-from sqlalchemy.orm import Session
 
 from .models import Task
+from .tenant_scoped_store import TenantScopedStore
 
 
 class _Sentinel(enum.Enum):
@@ -69,24 +69,14 @@ def label_list(labels: str) -> list[str]:
     return [x for x in labels.split(",") if x]
 
 
-class TaskStore:
-    def __init__(self, session: Session, tenant_id: int) -> None:
-        self.session = session
-        self.tenant_id = tenant_id
-
+class TaskStore(TenantScopedStore):
     # ── reads ────────────────────────────────────────────────────────────────
     def get(self, task_id: int) -> Task | None:
-        task = self.session.get(Task, task_id)
-        # Tenant isolation: a row from another tenant is invisible.
-        return task if task is not None and task.tenant_id == self.tenant_id else None
+        return self.get_scoped(Task, task_id)
 
     def list(self) -> list[Task]:
         """This tenant's tasks, newest first."""
-        stmt = (
-            select(Task)
-            .where(Task.tenant_id == self.tenant_id)
-            .order_by(Task.created_at.desc(), Task.id.desc())
-        )
+        stmt = self.scoped(select(Task)).order_by(Task.created_at.desc(), Task.id.desc())
         return list(self.session.scalars(stmt))
 
     def has_open(self, lead_cluster_id: str, source: str) -> bool:
@@ -95,16 +85,16 @@ class TaskStore:
         A status-filtered EXISTS/COUNT (PERF-023) — the auto-follow-up rule's
         'is there already an open chase?' test, instead of hydrating every auto
         task for the lead and filtering in Python."""
-        stmt = (
+        stmt = self.scoped(
             select(func.count())
             .select_from(Task)
             .where(
-                Task.tenant_id == self.tenant_id,
                 Task.lead_cluster_id == lead_cluster_id,
                 Task.source == source,
                 Task.status != DONE_STATUS,
             )
-            .limit(1)
+            .limit(1),
+            Task,  # aggregate select — no mapped entity to infer from
         )
         return bool(self.session.scalar(stmt))
 
@@ -114,11 +104,12 @@ class TaskStore:
         One tenant+lead+source+status DELETE (PERF-023) — the cancel-on-reply
         path, instead of loading then deleting row-by-row."""
         result = self.session.execute(
-            delete(Task).where(
-                Task.tenant_id == self.tenant_id,
-                Task.lead_cluster_id == lead_cluster_id,
-                Task.source == source,
-                Task.status != DONE_STATUS,
+            self.scoped(
+                delete(Task).where(
+                    Task.lead_cluster_id == lead_cluster_id,
+                    Task.source == source,
+                    Task.status != DONE_STATUS,
+                )
             )
         )
         self.session.commit()
@@ -238,7 +229,7 @@ class TaskStore:
         """Tenant's tasks narrowed by any subset of fields (#110). Mirrors the
         client task-filter registry's semantics. Free-text ``q`` matches
         title/description (case-insensitive contains)."""
-        stmt = select(Task).where(Task.tenant_id == self.tenant_id)
+        stmt = self.scoped(select(Task))
         if status:
             stmt = stmt.where(Task.status == status)
         if priority:

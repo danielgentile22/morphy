@@ -17,6 +17,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from .models import UserSetting
+from .tenant_scoped_store import TenantScopedStore
 
 # ── known keys ────────────────────────────────────────────────────────────────
 THEME = "theme"  # light | dark | system
@@ -51,21 +52,20 @@ KNOWN_KEYS: tuple[str, ...] = (
 )
 
 
-class UserSettingsStore:
+class UserSettingsStore(TenantScopedStore):
     def __init__(self, session: Session, tenant_id: int, user_id: int) -> None:
-        self.session = session
-        self.tenant_id = tenant_id
+        super().__init__(session, tenant_id)
         self.user_id = user_id
 
     def get(self, key: str) -> str:
-        row = self.session.get(UserSetting, (self.tenant_id, self.user_id, key))
+        row = self.get_scoped(UserSetting, (self.user_id, key))
         return row.value if row is not None else _DEFAULTS.get(key, "")
 
     def get_bool(self, key: str) -> bool:
         return self.get(key) == "1"
 
     def set(self, key: str, value: str) -> None:
-        row = self.session.get(UserSetting, (self.tenant_id, self.user_id, key))
+        row = self.get_scoped(UserSetting, (self.user_id, key))
         if row is None:
             row = UserSetting(tenant_id=self.tenant_id, user_id=self.user_id, key=key, value=value)
             self.session.add(row)

@@ -8,9 +8,8 @@ rules slot in as new keys without a schema change.
 
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
-
 from .models import TenantSetting
+from .tenant_scoped_store import TenantScopedStore
 
 AUTO_FOLLOWUP_ENABLED = "auto_followup_enabled"
 AUTO_FOLLOWUP_WINDOW_DAYS = "auto_followup_window_days"
@@ -21,13 +20,9 @@ _DEFAULTS: dict[str, str] = {
 }
 
 
-class SettingsStore:
-    def __init__(self, session: Session, tenant_id: int) -> None:
-        self.session = session
-        self.tenant_id = tenant_id
-
+class SettingsStore(TenantScopedStore):
     def get(self, key: str) -> str:
-        row = self.session.get(TenantSetting, (self.tenant_id, key))
+        row = self.get_scoped(TenantSetting, key)
         return row.value if row is not None else _DEFAULTS.get(key, "")
 
     def get_bool(self, key: str) -> bool:
@@ -40,7 +35,7 @@ class SettingsStore:
             return fallback
 
     def set(self, key: str, value: str) -> None:
-        row = self.session.get(TenantSetting, (self.tenant_id, key))
+        row = self.get_scoped(TenantSetting, key)
         if row is None:
             row = TenantSetting(tenant_id=self.tenant_id, key=key, value=value)
             self.session.add(row)

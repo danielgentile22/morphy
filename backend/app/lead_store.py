@@ -1,8 +1,8 @@
 """Tenant-scoped persistence for Lead state.
 
-Every method filters by ``self.tenant_id`` — the single chokepoint that
-enforces multi-tenant isolation (ADR-055). A legal status change
-auto-logs a ``contact_attempt`` row (``channel='status'``) so a Lead's
+Every method is tenant-scoped through ``TenantScopedStore`` — the single
+chokepoint that enforces multi-tenant isolation (ADR-055). A legal status
+change auto-logs a ``contact_attempt`` row (``channel='status'``) so a Lead's
 history is complete without extra typing.
 """
 
@@ -11,23 +11,19 @@ from __future__ import annotations
 from datetime import date
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from .lead_status import INITIAL_STATUS, validate_transition
 from .models import ContactAttempt, Lead
+from .tenant_scoped_store import TenantScopedStore
 
 
-class LeadStore:
-    def __init__(self, session: Session, tenant_id: int) -> None:
-        self.session = session
-        self.tenant_id = tenant_id
-
+class LeadStore(TenantScopedStore):
     # ── reads ──────────────────────────────────────────────────────────────
     def get_lead(self, display_cluster_id: str) -> Lead | None:
-        return self.session.get(Lead, (self.tenant_id, display_cluster_id))
+        return self.get_scoped(Lead, display_cluster_id)
 
     def list_leads(self) -> list[Lead]:
-        stmt = select(Lead).where(Lead.tenant_id == self.tenant_id)
+        stmt = self.scoped(select(Lead))
         return list(self.session.scalars(stmt))
 
     def status_map(self) -> dict[str, str]:
@@ -39,14 +35,9 @@ class LeadStore:
         return {lead.display_cluster_id: lead.status for lead in self.list_leads()}
 
     def list_attempts(self, display_cluster_id: str) -> list[ContactAttempt]:
-        stmt = (
-            select(ContactAttempt)
-            .where(
-                ContactAttempt.tenant_id == self.tenant_id,
-                ContactAttempt.display_cluster_id == display_cluster_id,
-            )
-            .order_by(ContactAttempt.occurred_on.desc(), ContactAttempt.id.desc())
-        )
+        stmt = self.scoped(
+            select(ContactAttempt).where(ContactAttempt.display_cluster_id == display_cluster_id)
+        ).order_by(ContactAttempt.occurred_on.desc(), ContactAttempt.id.desc())
         return list(self.session.scalars(stmt))
 
     def tenant_attempts(
@@ -67,7 +58,7 @@ class LeadStore:
         SQL so a date/lead/member-scoped query returns weeks of rows, not the
         whole history. With no arguments this is the original tenant-wide stream.
         """
-        stmt = select(ContactAttempt).where(ContactAttempt.tenant_id == self.tenant_id)
+        stmt = self.scoped(select(ContactAttempt))
         if lead:
             stmt = stmt.where(ContactAttempt.display_cluster_id == lead)
         if member is not None:
@@ -90,14 +81,9 @@ class LeadStore:
         ``(tenant_id, display_cluster_id, occurred_on, id)`` composite index."""
         if not display_cluster_ids:
             return []
-        stmt = (
-            select(ContactAttempt)
-            .where(
-                ContactAttempt.tenant_id == self.tenant_id,
-                ContactAttempt.display_cluster_id.in_(display_cluster_ids),
-            )
-            .order_by(ContactAttempt.occurred_on.desc(), ContactAttempt.id.desc())
-        )
+        stmt = self.scoped(
+            select(ContactAttempt).where(ContactAttempt.display_cluster_id.in_(display_cluster_ids))
+        ).order_by(ContactAttempt.occurred_on.desc(), ContactAttempt.id.desc())
         return list(self.session.scalars(stmt))
 
     def latest_flags(self) -> dict[str, str]:
@@ -105,13 +91,8 @@ class LeadStore:
         ``channel='flag'`` activity row — the antenna that sparked pursuit
         (#109, ADR-067/D2). Latest flag per owner wins. One query for the
         whole worklist (no N+1)."""
-        stmt = (
-            select(ContactAttempt)
-            .where(
-                ContactAttempt.tenant_id == self.tenant_id,
-                ContactAttempt.channel == "flag",
-            )
-            .order_by(ContactAttempt.occurred_on.asc(), ContactAttempt.id.asc())
+        stmt = self.scoped(select(ContactAttempt).where(ContactAttempt.channel == "flag")).order_by(
+            ContactAttempt.occurred_on.asc(), ContactAttempt.id.asc()
         )
         # Iterate oldest→newest so the last write per cid is the latest flag.
         out: dict[str, str] = {}
@@ -123,15 +104,12 @@ class LeadStore:
     def list_replies(self, display_cluster_id: str) -> list[ContactAttempt]:
         """Inbound activity (replies) for a Lead — the events the Dashboard
         attention feed + auto follow-up rule key on (#106, ADR-066)."""
-        stmt = (
-            select(ContactAttempt)
-            .where(
-                ContactAttempt.tenant_id == self.tenant_id,
+        stmt = self.scoped(
+            select(ContactAttempt).where(
                 ContactAttempt.display_cluster_id == display_cluster_id,
                 ContactAttempt.direction == "inbound",
             )
-            .order_by(ContactAttempt.occurred_on.desc(), ContactAttempt.id.desc())
-        )
+        ).order_by(ContactAttempt.occurred_on.desc(), ContactAttempt.id.desc())
         return list(self.session.scalars(stmt))
 
     # ── writes ─────────────────────────────────────────────────────────────

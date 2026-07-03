@@ -12,9 +12,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from .models import AskLog
+from .tenant_scoped_store import TenantScopedStore
 
 
 def join_signal_ids(ids: Iterable[str] | None) -> str:
@@ -31,11 +31,7 @@ def split_signal_ids(stored: str) -> list[str]:
     return [s for s in stored.split(",") if s]
 
 
-class AskLogStore:
-    def __init__(self, session: Session, tenant_id: int) -> None:
-        self.session = session
-        self.tenant_id = tenant_id
-
+class AskLogStore(TenantScopedStore):
     # ── writes ───────────────────────────────────────────────────────────────
     def record(
         self,
@@ -76,15 +72,9 @@ class AskLogStore:
 
     # ── reads (no endpoint yet — tests + the future review path) ─────────────
     def get(self, ask_id: int) -> AskLog | None:
-        row = self.session.get(AskLog, ask_id)
-        # Tenant isolation: a row from another tenant is invisible.
-        return row if row is not None and row.tenant_id == self.tenant_id else None
+        return self.get_scoped(AskLog, ask_id)
 
     def list(self) -> list[AskLog]:
         """This tenant's stored Q&A, newest first."""
-        stmt = (
-            select(AskLog)
-            .where(AskLog.tenant_id == self.tenant_id)
-            .order_by(AskLog.created_at.desc(), AskLog.id.desc())
-        )
+        stmt = self.scoped(select(AskLog)).order_by(AskLog.created_at.desc(), AskLog.id.desc())
         return list(self.session.scalars(stmt))
