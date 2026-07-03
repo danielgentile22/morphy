@@ -1,10 +1,10 @@
 """Tests for the FCC ULS normalizer (#12, Slice A).
 
-Covers the band-scoped HD/EN/LO/FR join into canonical license/location/entity
-rows, the on-disk reality of two raw files (l_cell + the market bundle), the
-radio-service-code → band classification, DMS→decimal coordinates (including
-S/W signs + blank/zero handling), asr_number passthrough, and the per-band
-quality report.
+Covers the band-scoped HD/EN/LO/FR join into canonical license/location rows
+(the entity layer was dropped in #220 / audit M-e), the on-disk reality of two
+raw files (l_cell + the market bundle), the radio-service-code → band
+classification, DMS→decimal coordinates (including S/W signs + blank/zero
+handling), asr_number passthrough, and the per-band quality report.
 
 Fixtures are tiny inline pipe-delimited .dat tables written to tmp_path; no
 network or large raw data is touched.
@@ -322,19 +322,19 @@ def _read(path):
 # ── cellular: HD/EN/LO/FR join coherence ─────────────────────────────────────
 
 
-def test_cellular_join_produces_coherent_triple(tmp_path):
+def test_cellular_join_produces_coherent_pair(tmp_path):
     raw = _cellular_fixture(tmp_path / "raw")
     out = tmp_path / "out"
     result = FccUlsCellularNormalizer().normalize(raw, out)
 
     lic = _read(out / "license.parquet")
     loc = _read(out / "location.parquet")
-    ent = _read(out / "entity.parquet")
 
-    assert result.canonical_types_written == ["license", "location", "entity"]
+    # entity layer dropped (#220 / audit M-e) — its file is never written.
+    assert not (out / "entity.parquet").exists()
+    assert result.canonical_types_written == ["license", "location"]
     assert set(lic["band"]) == {"cellular"}
     assert set(loc["band"]) == {"cellular"}
-    assert set(ent["band"]) == {"cellular"}
 
     # license: two headers, dates parsed, status decoded, licensee + freq joined.
     assert sorted(lic["usi"]) == ["100", "101"]
@@ -357,10 +357,6 @@ def test_cellular_join_produces_coherent_triple(tmp_path):
     assert len(loc) == 3
     assert set(loc[loc["usi"] == "100"]["state_fips"]) == {"05"}
     assert set(loc[loc["usi"] == "101"]["state_fips"]) == {"30"}
-
-    # entity: licensee + contact rows both kept.
-    assert len(ent) == 3
-    assert set(ent["entity_type"]) == {"L", "CL"}
 
 
 # ── DMS → decimal, incl. signs + blank/zero handling ─────────────────────────
@@ -528,7 +524,7 @@ def test_cellular_quality_report(tmp_path):
     assert qr["source_id"] == "fcc_uls_cellular"
     assert qr["tables"]["license"]["rows"] == 2
     assert qr["tables"]["location"]["rows"] == 3
-    assert qr["tables"]["entity"]["rows"] == 3
+    assert "entity" not in qr["tables"]  # dropped (#220 / audit M-e)
 
     extras = qr["extras"]
     assert extras["band"] == "cellular"

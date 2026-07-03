@@ -1,12 +1,15 @@
 <script lang="ts">
-  // The carriers identified on a tower (Slice A / #28) — the shared renderer
+  // The carriers licensed on a tower (Slice A / #28) — the shared renderer
   // used by BOTH the LeadPage holdings (where a clicked tower lands) and the
   // schema-driven DetailsPanel. One row per ULS licensee: name + callsign,
   // with a confidence badge (colour + tooltip + the tag word in text/aria so
-  // colour is never the only signal). De-dup + ordering
-  // are done upstream in #24 — rendered as given. Empty is the COMMON case
-  // (most ASR towers have no matched ULS per-site license), so it reads as
-  // normal, not an error.
+  // colour is never the only signal). De-dup + ordering are done upstream in
+  // #24 — rendered as given. Empty is the COMMON case (most ASR towers have no
+  // overlapping FCC spectrum license), so it reads as normal, not an error.
+  //
+  // A ULS license is a spectrum AUTHORIZATION over an area, not proof of a
+  // rent-paying tenant (audit MACRO-1 / ADR-074) — a one-line disclaimer under
+  // the list keeps a badge from being misread as a confirmed tenant.
   import { confidenceMeta, isInactiveLicense, inactiveLicenseLabel, type Carrier } from '../lib/carrier';
 
   let { carriers, compact = false }: { carriers: Carrier[]; compact?: boolean } = $props();
@@ -23,8 +26,8 @@
 
 {#if carriers.length === 0}
   <div class="carriers empty" class:compact data-testid="carrier-list">
-    <span class="none">No carriers identified</span>
-    <span class="why">No ULS per-site license matched this tower — common; most towers have none.</span>
+    <span class="none">No carrier licensed here</span>
+    <span class="why">No FCC spectrum license overlaps this tower — common; most towers show none.</span>
   </div>
 {:else}
   <ul class="carriers" class:compact data-testid="carrier-list">
@@ -61,6 +64,14 @@
       </li>
     {/each}
   </ul>
+  <!-- Honest framing (audit MACRO-1 / ADR-074): a ULS license authorizes
+       spectrum over this tower's area — it is NOT proof of a rent-paying
+       tenant. Shown once per list (skipped in the dense compact holdings). -->
+  {#if !compact}
+    <p class="disclaimer" data-testid="carrier-disclaimer">
+      Licensed in this area — holds FCC spectrum overlapping this tower, not a confirmed tenant.
+    </p>
+  {/if}
 {/if}
 
 <style>
@@ -123,6 +134,16 @@
   .why {
     font-size: 11px;
     color: var(--muted);
+  }
+
+  /* The authorization-not-tenancy framing (ADR-074) — quiet, but always
+     present so a badge is never misread as a confirmed tenant. */
+  .disclaimer {
+    margin: 6px 0 0;
+    font-size: 11px;
+    font-style: italic;
+    color: var(--muted);
+    line-height: 1.35;
   }
 
   /* Compact variant for the dense LeadPage holdings list. */

@@ -109,14 +109,32 @@ describe('CarrierList — populated', () => {
 });
 
 describe('CarrierList — empty state', () => {
-  it('shows "No carriers identified" with a muted explanation (reads as normal)', () => {
+  it('shows "No carrier licensed here" with a muted explanation (reads as normal)', () => {
     const el = render([]);
     const list = el.querySelector('[data-testid="carrier-list"]')!;
     expect(list).toBeTruthy();
-    expect(list.textContent).toContain('No carriers identified');
+    expect(list.textContent).toContain('No carrier licensed here');
     // a one-line explanation so an empty tower does not read as an error
     expect(list.textContent?.toLowerCase()).toContain('common');
     // no badges in the empty state
     expect(el.querySelector('[data-confidence]')).toBeNull();
+  });
+});
+
+describe('CarrierList — authorization-not-tenancy disclaimer (ADR-074)', () => {
+  it('shows the "licensed in this area, not a confirmed tenant" note when carriers exist', () => {
+    const el = render(SAMPLE);
+    const note = el.querySelector('[data-testid="carrier-disclaimer"]');
+    expect(note?.textContent?.toLowerCase()).toContain('not a confirmed tenant');
+  });
+
+  it('omits the disclaimer in the empty state (nothing to disclaim)', () => {
+    const el = render([]);
+    expect(el.querySelector('[data-testid="carrier-disclaimer"]')).toBeNull();
+  });
+
+  it('omits the disclaimer in the dense compact holdings list', () => {
+    const el = render(SAMPLE, true);
+    expect(el.querySelector('[data-testid="carrier-disclaimer"]')).toBeNull();
   });
 });

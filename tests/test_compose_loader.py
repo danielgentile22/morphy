@@ -203,6 +203,41 @@ def test_default_loader_skips_parquet_lacking_state_fips(fake_normalized_root, c
     assert any("state_fips" in r.message for r in caplog.records)
 
 
+# ── override: ULS market bands live in per-band sub-dirs (#220 / MACRO-1) ──
+
+
+def test_uls_market_override_loads_nested_band_dirs(fake_normalized_root):
+    """THE audit MACRO-1 regression (#220): the market normalizer writes each
+    band to ``fcc_uls_market/<band>/location.parquet`` (nested), so the DEFAULT
+    single-dir loader sees zero rows and every PCS/AWS/700 MHz carrier drops.
+    The override must gather all band dirs and filter to the state."""
+    from preprocess.normalizers.fcc_uls import FccUlsMarketNormalizer
+
+    src = fake_normalized_root / "fcc_uls_market"
+    _write_scores_parquet(  # tabular writer — location is a TABULAR_TYPE
+        src / "pcs" / "location.parquet",
+        [
+            {"usi": "200", "asr_number": None, "state_fips": "05"},
+            {"usi": "201", "asr_number": None, "state_fips": "30"},
+        ],
+    )
+    _write_scores_parquet(
+        src / "aws" / "location.parquet",
+        [{"usi": "202", "asr_number": None, "state_fips": "05"}],
+    )
+    norm = FccUlsMarketNormalizer()
+
+    # The override picks up both AR (05) rows across the two band dirs...
+    out = norm.load_state_data("05")
+    assert set(out.keys()) == {"location"}
+    assert sorted(out["location"]["usi"]) == ["200", "202"]
+    assert all(out["location"]["state_fips"] == "05")
+
+    # ...where the DEFAULT (single-dir) loader — the pre-#220 behaviour — is blind
+    # to the nested layout and returns nothing.
+    assert Normalizer.load_state_data(norm, "05") == {}
+
+
 # ── Composer's _load_state_data wrapper ─────────────────────────────────
 
 

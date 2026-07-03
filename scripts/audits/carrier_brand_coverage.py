@@ -17,7 +17,10 @@ a table row). Answers the two questions #22 cares about:
   (2) TAIL — the top unmapped entities under each weighting; the audit's real
       product (what to add next via the ADD-A-CARRIER workflow).
 
-Reads the #12 normalized `entity` + `location` parquet only. No raw parsing.
+Reads the #12 normalized `license` + `location` parquet only. No raw parsing.
+(The licensee name comes from `license.licensee_name` — the EN entity_type 'L'
+name the normalizer merges onto each license — since the `entity` layer was
+dropped in #220 / audit M-e.)
 
 Run:
     source .venv/bin/activate
@@ -51,8 +54,11 @@ def _asr_populated(series: pd.Series) -> pd.Series:
 def _load() -> tuple[pd.DataFrame, set[str], set[str]]:
     ents, on_tower, anchor = [], set(), set()
     for band, base in BANDS.items():
-        e = pd.read_parquet(base / "entity.parquet", columns=["usi", "entity_type", "entity_name"])
-        e = e[e["entity_type"] == "L"].copy()
+        # license.parquet is one row per usi = the licensee (EN entity_type 'L'
+        # name merged in by the normalizer). Rename to entity_name so the rest
+        # of the audit (which speaks the EN vocabulary) is unchanged.
+        e = pd.read_parquet(base / "license.parquet", columns=["usi", "licensee_name"])
+        e = e.rename(columns={"licensee_name": "entity_name"})
         e["band"] = band
         ents.append(e)
         lo = pd.read_parquet(base / "location.parquet", columns=["usi", "asr_number", "state_fips"])

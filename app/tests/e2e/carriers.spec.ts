@@ -158,5 +158,5 @@ test('LeadPage shows the empty state for a tower with no carriers', async ({ pag
 
   await expect(page.getByTestId('lead-page')).toBeVisible();
   // The no-carrier tower reads as normal (it is the common case), not an error.
-  await expect(page.getByText('No carriers identified').first()).toBeVisible();
+  await expect(page.getByText('No carrier licensed here').first()).toBeVisible();
 });

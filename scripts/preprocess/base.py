@@ -212,29 +212,40 @@ class Normalizer(ABC):
                 paths = [single] if single.exists() else []
             if not paths:
                 continue
-
-            frames: list[Any] = []
-            for p in paths:
-                try:
-                    df = _read_parquet_typed(p, ct)
-                except Exception as e:
-                    log.warning("load_state_data: failed to read %s: %s", p, e)
-                    continue
-                if "state_fips" not in df.columns:
-                    log.warning(
-                        "load_state_data: %s lacks the contractual `state_fips` "
-                        "column; skipping (override Normalizer.load_state_data "
-                        "to filter another way)",
-                        p,
-                    )
-                    continue
-                filtered = df[df["state_fips"] == state_fips]
-                if len(filtered) > 0:
-                    frames.append(filtered.copy())
-
-            if frames:
-                out[ct] = _concat_typed(frames, ct)
+            frame = _read_state_paths(paths, ct, state_fips)
+            if frame is not None:
+                out[ct] = frame
         return out
+
+
+def _read_state_paths(paths: list[Path], canonical_type: str, state_fips: str):
+    """Read a list of parquets for one canonical type, filter each to
+    ``state_fips`` (the hard contract on every canonical output), and concat.
+    Returns the combined frame, or None when no path has rows for the state.
+
+    Shared by the default :meth:`Normalizer.load_state_data` and overrides
+    (e.g. the ULS market normalizer, whose bands live in per-band sub-dirs the
+    default single-dir probe can't see)."""
+    frames: list[Any] = []
+    for p in paths:
+        try:
+            df = _read_parquet_typed(p, canonical_type)
+        except Exception as e:
+            log.warning("load_state_data: failed to read %s: %s", p, e)
+            continue
+        if "state_fips" not in df.columns:
+            log.warning(
+                "load_state_data: %s lacks the contractual `state_fips` column; "
+                "skipping (override Normalizer.load_state_data to filter another way)",
+                p,
+            )
+            continue
+        filtered = df[df["state_fips"] == state_fips]
+        if len(filtered) > 0:
+            frames.append(filtered.copy())
+    if not frames:
+        return None
+    return _concat_typed(frames, canonical_type)
 
 
 def _read_parquet_typed(path: Path, canonical_type: str):

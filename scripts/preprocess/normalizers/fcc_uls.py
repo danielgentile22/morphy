@@ -1,5 +1,9 @@
-"""FCC ULS (Universal Licensing System) → canonical `license` / `location` /
-`entity` rows, for the Phase 1 carrier-identification bands.
+"""FCC ULS (Universal Licensing System) → canonical `license` / `location`
+rows, for the Phase 1 carrier-identification bands.
+
+The ``entity`` layer was dropped (audit M-e / #220): it was composed but
+consumed by nothing, and the only thing it carried — the licensee name + FRN —
+the ``license`` layer already merges from EN ``entity_type 'L'``.
 
 Slice A (#12) revives the ULS normalize layer that ADR-013 deferred, scoped
 to the four bands carriers actually use on cell towers — Cellular (Part 22),
@@ -46,8 +50,10 @@ from pathlib import Path
 import pandas as pd
 
 from ..base import (
+    OUTPUT_BASENAMES,
     Normalizer,
     NormalizeResult,
+    _read_state_paths,
     add_system_columns,
     quality_report,
     register_normalizer,
@@ -462,59 +468,7 @@ def _build_location(lo_band: pd.DataFrame, band: str) -> pd.DataFrame:
     return out
 
 
-def _build_entity(en_band: pd.DataFrame, band: str) -> pd.DataFrame:
-    """One row per EN record (licensee, contact, etc.), composed as-is.
-
-    NB: the #22 carrier-brand rollup does **not** read this layer — it reads
-    ``license.licensee_name`` (the EN entity_type 'L' name merged onto the
-    license layer in ``_build_license``). The full ``entity`` layer is composed
-    but currently consumed by nothing; its exploit-or-drop call is audit item
-    M-e (ledger ``uls_license_entity_location``)."""
-    if en_band.empty:
-        return pd.DataFrame(
-            columns=[
-                "usi",
-                "callsign",
-                "band",
-                "entity_type",
-                "entity_name",
-                "first_name",
-                "last_name",
-                "street_address",
-                "city",
-                "state",
-                "state_fips",
-                "zip_code",
-                "frn",
-                "phone",
-                "_source_row_id",
-            ]
-        )
-    en = en_band.copy()
-    out = pd.DataFrame(
-        {
-            "usi": en["unique_system_identifier"],
-            "callsign": en["call_sign"],
-            "band": band,
-            "entity_type": en["entity_type"].map(safe_str),
-            "entity_name": en["entity_name"].map(_blank_to_none),
-            "first_name": en["first_name"].map(_blank_to_none),
-            "last_name": en["last_name"].map(_blank_to_none),
-            "street_address": en["street_address"].map(_blank_to_none),
-            "city": en["city"].map(_blank_to_none),
-            "state": en["state"].map(_blank_to_none),
-            "zip_code": en["zip_code"].map(_blank_to_none),
-            "frn": en["frn"].map(_blank_to_none),
-            "phone": en["phone"].map(_blank_to_none),
-        }
-    )
-    out["state_fips"] = out["state"].map(canon_state_fips)
-    seq = out.groupby(["usi", "entity_type"]).cumcount().astype(str)
-    out["_source_row_id"] = out["usi"] + "-" + out["entity_type"] + "-" + seq
-    return out
-
-
-def _band_extras(band: str, codes, license_df, location_df, entity_df) -> dict:
+def _band_extras(band: str, codes, license_df, location_df) -> dict:
     """The per-band quality numbers #11/#24 care about — asr_number coverage
     and usable-coordinate rate — alongside row counts + the service codes that
     landed in this band."""
@@ -528,7 +482,6 @@ def _band_extras(band: str, codes, license_df, location_df, entity_df) -> dict:
         else sorted(set(license_df["radio_service_code"].map(safe_str))),
         "license_count": len(license_df),
         "location_count": n_loc,
-        "entity_count": len(entity_df),
         "asr_number_populated_rate": asr_rate,
         "coordinate_usable_rate": coord_rate,
     }
@@ -555,31 +508,33 @@ def _write_band(
     band: str,
     license_df: pd.DataFrame,
     location_df: pd.DataFrame,
-    entity_df: pd.DataFrame,
     hd_band: pd.DataFrame,
 ) -> tuple[object, list[Path], int]:
-    """Stamp system columns, atomically write the three canonical parquets +
-    a Stage-A raw.parquet + a per-band quality_report.json. Returns
-    (quality_report, files, bytes)."""
+    """Stamp system columns, atomically write the two canonical parquets
+    (license + location) + a Stage-A raw.parquet + a per-band
+    quality_report.json. Returns (quality_report, files, bytes).
+
+    The ``entity`` layer was dropped (audit M-e / #220): it was composed but
+    consumed by nothing, and the one thing it carried — the licensee name +
+    FRN — the ``license`` layer already merges from EN ``entity_type 'L'``."""
     band_dir.mkdir(parents=True, exist_ok=True)
 
     license_df = add_system_columns(license_df, source_id, "license")
     location_df = add_system_columns(location_df, source_id, "location")
-    entity_df = add_system_columns(entity_df, source_id, "entity")
 
     files: list[Path] = []
     total = 0
-    for name, df in (("license", license_df), ("location", location_df), ("entity", entity_df)):
+    for name, df in (("license", license_df), ("location", location_df)):
         path = band_dir / f"{name}.parquet"
         total += write_parquet(df, path)
         files.append(path)
     total += write_raw_parquet(hd_band, band_dir, name="raw.parquet")
     files.append(band_dir / "raw.parquet")
 
-    extras = _band_extras(band, MARKET_BANDS.get(band), license_df, location_df, entity_df)
+    extras = _band_extras(band, MARKET_BANDS.get(band), license_df, location_df)
     qr = quality_report(
         source_id,
-        {"license": license_df, "location": location_df, "entity": entity_df},
+        {"license": license_df, "location": location_df},
         warnings=_band_warnings(extras),
     )
     qr.extras.update(extras)
@@ -587,11 +542,10 @@ def _write_band(
     files.append(qr_path)
 
     log.info(
-        "fcc_uls[%s]: license=%d location=%d entity=%d (asr=%s, coords=%s)",
+        "fcc_uls[%s]: license=%d location=%d (asr=%s, coords=%s)",
         band,
         extras["license_count"],
         extras["location_count"],
-        extras["entity_count"],
         extras["asr_number_populated_rate"],
         extras["coordinate_usable_rate"],
     )
@@ -607,9 +561,9 @@ def _normalize(
     nest: bool,
 ) -> NormalizeResult:
     """Shared driver. Reads the five .dat tables once, then for each band
-    filters HD by radio-service-code, builds the license/location/entity
-    triple and writes it. ``nest`` puts each band in its own sub-directory
-    (the multi-band market file); a single-band source writes at the root."""
+    filters HD by radio-service-code, builds the license/location pair and
+    writes it. ``nest`` puts each band in its own sub-directory (the multi-band
+    market file); a single-band source writes at the root."""
     out_dir.mkdir(parents=True, exist_ok=True)
 
     hd = read_pipe_dat(dat_dir / "HD.dat", HD_COLS, "HD")
@@ -635,16 +589,14 @@ def _normalize(
     for band, codes in band_specs.items():
         hd_band = hd if codes is None else hd[hd["radio_service_code"].isin(codes)].copy()
         usi_set = set(hd_band["unique_system_identifier"])
-        en_band = en[en["unique_system_identifier"].isin(usi_set)]
         lo_band = lo[lo["unique_system_identifier"].isin(usi_set)]
 
         license_df = _build_license(hd_band, en, fr, band)
         location_df = _build_location(lo_band, band)
-        entity_df = _build_entity(en_band, band)
 
         band_dir = (out_dir / band) if nest else out_dir
         qr, band_files, band_bytes = _write_band(
-            band_dir, source_id, band, license_df, location_df, entity_df, hd_band
+            band_dir, source_id, band, license_df, location_df, hd_band
         )
         files.extend(band_files)
         total_bytes += band_bytes
@@ -653,7 +605,6 @@ def _normalize(
         band_frames[band] = {
             "license": license_df,
             "location": location_df,
-            "entity": entity_df,
         }
         band_reports[band] = qr
         all_warnings.extend(qr.warnings)
@@ -683,7 +634,7 @@ def _normalize(
         canonical_rows=canonical_rows,
         bytes=total_bytes,
         output_files=files,
-        canonical_types_written=["license", "location", "entity"],
+        canonical_types_written=["license", "location"],
         quality_report=report,
     )
 
@@ -693,7 +644,7 @@ class FccUlsCellularNormalizer(Normalizer):
     """Part 22 site-based Cellular (l_cell) → the single ``cellular`` band."""
 
     source_id = "fcc_uls_cellular"
-    canonical_types = ["license", "location", "entity"]
+    canonical_types = ["license", "location"]
 
     def is_available(self, raw_dir: Path) -> bool:
         return _find_dat_dir(raw_dir) is not None
@@ -711,7 +662,7 @@ class FccUlsMarketNormalizer(Normalizer):
     band per sub-directory. Every other market radio service is excluded."""
 
     source_id = "fcc_uls_market"
-    canonical_types = ["license", "location", "entity"]
+    canonical_types = ["license", "location"]
 
     def is_available(self, raw_dir: Path) -> bool:
         return _find_dat_dir(raw_dir) is not None
@@ -721,3 +672,33 @@ class FccUlsMarketNormalizer(Normalizer):
         if dat_dir is None:
             raise FileNotFoundError(f"fcc_uls_market: no HD.dat found under {raw_dir}")
         return _normalize(dat_dir, out_dir, self.source_id, MARKET_BANDS, nest=True)
+
+    def load_state_data(self, state_fips: str) -> dict:
+        """Read the market bands from their per-band sub-dirs.
+
+        THE audit MACRO-1 fix (#220): this source writes each band to a nested
+        ``<source>/<band>/<basename>.parquet`` (``pcs/`` / ``aws/`` /
+        ``700mhz/``), but the default loader only probes the flat
+        ``<source>/<basename>.parquet`` — so compose loaded **zero** market
+        locations and every PCS / AWS / 700 MHz carrier (Verizon-market,
+        T-Mobile, Dish) silently dropped before the ULS↔ASR join. Here we
+        gather each canonical type across all band dirs and filter to the state
+        through the shared reader. (Market locations are geographic-area — no
+        ``asr_number`` — so they attach via the join's proximity fallback:
+        ``likely`` / ``possible``, never ``verified``.)"""
+        from .. import NORMALIZED_ROOT
+
+        src_dir = NORMALIZED_ROOT / self.source_id
+        if not src_dir.exists():
+            return {}
+        out: dict = {}
+        for ct in self.canonical_types:
+            basename = OUTPUT_BASENAMES.get(ct, ct)
+            paths = [src_dir / band / f"{basename}.parquet" for band in MARKET_BANDS]
+            paths = [p for p in paths if p.exists()]
+            if not paths:
+                continue
+            frame = _read_state_paths(paths, ct, state_fips)
+            if frame is not None:
+                out[ct] = frame
+        return out
