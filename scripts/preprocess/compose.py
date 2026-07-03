@@ -45,7 +45,7 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 
-from . import COMPOSITE_ROOT, duck
+from . import COMPOSITE_ROOT, cluster, duck
 from .annotators import county_score, owner_cluster
 from .base import (
     OUTPUT_BASENAMES,
@@ -90,29 +90,20 @@ class ComposeConfig:
 # ── Owner-cluster pre-pass (DuckDB aggregation, PRD #135) ─────────────────
 
 
-def _blank_sql(col: str) -> str:
-    return f'(p."{col}" IS NULL OR trim(p."{col}") = \'\')'
-
-
-def _nonblank_sql(col: str) -> str:
-    return f'(p."{col}" IS NOT NULL AND trim(p."{col}") != \'\')'
-
-
 def _build_owner_cluster_lookup(state_fips: str) -> pd.DataFrame:
     """Whole-state owner_cluster_id → (size, value_total) aggregate — one
     DuckDB aggregation over the sharded parquet (PRD #135 stage 3; replaced
     the per-shard column-projection scan).
 
     The owner-key recipe stays in :mod:`preprocess.cluster` (its single
-    home). Rows whose stored ``owner_name_norm`` / ``mailing_addr_norm``
-    are usable verbatim — the overwhelming majority; normalizers compute
-    them for every row — are keyed in SQL with the exact ``cluster_id``
-    recipe over the stored norms (``substr(sha1(name || '|' || addr), 1,
-    12)``; sha1-of-UTF-8 matches hashlib). The rare rows that need the
-    re-normalization fallback (blank norm with a non-blank raw value) are
-    pulled into pandas and keyed through the live ``owner_cluster.prepare``
-    — the Python recipe is never re-implemented in SQL. Both partial
-    aggregates then combine.
+    home), which also *generates* the SQL expressions used here — nothing
+    in this function restates the recipe. Rows whose stored
+    ``owner_name_norm`` / ``mailing_addr_norm`` are usable verbatim — the
+    overwhelming majority; normalizers compute them for every row — are
+    keyed natively via ``cluster.cluster_id_sql``. The rare rows that need
+    the re-normalization fallback (blank norm with a non-blank raw value)
+    are pulled into pandas and keyed through the live
+    ``owner_cluster.prepare``. Both partial aggregates then combine.
 
     Semantics preserved from the streaming pre-pass (equivalence pinned by
     tests/test_duckdb_equivalence.py):
@@ -135,21 +126,12 @@ def _build_owner_cluster_lookup(state_fips: str) -> pd.DataFrame:
         if not eligible:
             return empty
         in_eligible = f"p.__shard_seq IN ({', '.join(str(q) for q in eligible)})"
-        name_val = (
-            f"CASE WHEN NOT {_blank_sql('owner_name_norm')} THEN p.\"owner_name_norm\" ELSE '' END"
+        name_val = cluster.prefer_norm_sql('p."owner_name_norm"')
+        addr_val = cluster.prefer_norm_sql('p."mailing_addr_norm"')
+        needs_python = cluster.needs_python_sql(
+            'p."owner_name_norm"', 'p."owner_name"', 'p."mailing_addr_norm"', 'p."mailing_addr"'
         )
-        addr_val = (
-            f"CASE WHEN NOT {_blank_sql('mailing_addr_norm')} "
-            f"THEN p.\"mailing_addr_norm\" ELSE '' END"
-        )
-        needs_python = (
-            f"(({_blank_sql('owner_name_norm')} AND {_nonblank_sql('owner_name')}) "
-            f"OR ({_blank_sql('mailing_addr_norm')} AND {_nonblank_sql('mailing_addr')}))"
-        )
-        key = (
-            f"CASE WHEN {name_val} = '' AND {addr_val} = '' THEN '' "
-            f"ELSE substr(sha1({name_val} || '|' || {addr_val}), 1, 12) END"
-        )
+        key = cluster.cluster_id_sql(name_val, addr_val)
         sql_agg = con.execute(
             f"""
             SELECT {key} AS owner_cluster_id,

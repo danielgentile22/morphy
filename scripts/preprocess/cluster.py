@@ -101,6 +101,13 @@ def normalize_address(addr) -> str:
     return s
 
 
+# The key's wire format: what gets hashed, how it's joined, how much survives.
+# Shared by the Python recipe below and the generated SQL form, so a grain
+# change edits these (and nothing in compose.py).
+KEY_SEPARATOR = "|"
+KEY_HEX_LEN = 12
+
+
 def cluster_id(owner_norm: str, addr_norm: str) -> str:
     """Within-state owner key: SHA1 of ``name_norm + '|' + addr_norm`` (12 hex).
 
@@ -112,8 +119,54 @@ def cluster_id(owner_norm: str, addr_norm: str) -> str:
     """
     if not owner_norm and not addr_norm:
         return ""
-    key = f"{owner_norm}|{addr_norm}"
-    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+    key = f"{owner_norm}{KEY_SEPARATOR}{addr_norm}"
+    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:KEY_HEX_LEN]
+
+
+# ── SQL forms of the recipe (PRD #135 compose pre-pass) ──────────────────────
+# The DuckDB pre-pass keys rows natively for speed; the SQL text is GENERATED
+# here so the recipe still has exactly one home (a UDF would put per-row
+# Python back into the 11M-row hot loop). DuckDB's sha1() over UTF-8 matches
+# hashlib, and trim() matches the strip-blank test because stored norms are
+# whitespace-collapsed at normalize time — both pinned by the equivalence
+# harness and tests/test_owner_key_sql.py.
+
+
+def blank_sql(col_expr: str) -> str:
+    """SQL for the blank test the prefer-precomputed-norm rule applies."""
+    return f"({col_expr} IS NULL OR trim({col_expr}) = '')"
+
+
+def nonblank_sql(col_expr: str) -> str:
+    return f"({col_expr} IS NOT NULL AND trim({col_expr}) != '')"
+
+
+def prefer_norm_sql(norm_expr: str) -> str:
+    """The stored norm when non-blank, else '' — the SQL half of
+    :func:`_prefer_precomputed_norm` (recoverable rows are routed to the
+    Python recipe by :func:`needs_python_sql`, never re-normalized in SQL)."""
+    return f"CASE WHEN NOT {blank_sql(norm_expr)} THEN {norm_expr} ELSE '' END"
+
+
+def needs_python_sql(
+    name_norm_expr: str, name_raw_expr: str, addr_norm_expr: str, addr_raw_expr: str
+) -> str:
+    """Rows the SQL path must NOT key: a blank stored norm alongside a
+    non-blank raw value — those re-normalize through the live Python recipe."""
+    return (
+        f"(({blank_sql(name_norm_expr)} AND {nonblank_sql(name_raw_expr)}) "
+        f"OR ({blank_sql(addr_norm_expr)} AND {nonblank_sql(addr_raw_expr)}))"
+    )
+
+
+def cluster_id_sql(name_expr: str, addr_expr: str) -> str:
+    """The SQL form of :func:`cluster_id`: both-empty → '' else
+    ``substr(sha1(name || '|' || addr), 1, 12)``."""
+    key = f"{name_expr} || '{KEY_SEPARATOR}' || {addr_expr}"
+    return (
+        f"CASE WHEN {name_expr} = '' AND {addr_expr} = '' THEN '' "
+        f"ELSE substr(sha1({key}), 1, {KEY_HEX_LEN}) END"
+    )
 
 
 # Curated multi-state entities that SHOULD merge across state lines (ADR-075) —
