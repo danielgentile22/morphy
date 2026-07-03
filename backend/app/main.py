@@ -117,6 +117,7 @@ from .task_store import InvalidTaskPriority, InvalidTaskStatus, TaskStore, label
 from .tenant_scoped_store import TenantScopedStore
 from .tenant_service import TenantService
 from .user_settings_store import KNOWN_KEYS, UserSettingsStore
+from .user_store import UserStore
 from .users import ChangePasswordOutcome
 from .users import change_password as users_change_password
 
@@ -240,6 +241,7 @@ get_tasks = tenant_store(TaskStore)
 get_antennas = tenant_store(AntennaStore)
 get_presets = tenant_store(ScoringPresetStore)
 get_settings = tenant_store(SettingsStore)
+get_users = tenant_store(UserStore)
 
 
 def get_user_settings(
@@ -347,10 +349,8 @@ def auth_check(token: str = Depends(session_token), db: Session = Depends(get_db
         )
 
 
-def _me_response(principal: Principal, db: Session) -> MeResponse:
-    from .models import User
-
-    user = db.get(User, principal.user_id)
+def _me_response(principal: Principal, db: Session, users: UserStore) -> MeResponse:
+    user = users.get(principal.user_id)
     return MeResponse(
         tenant_id=principal.tenant_id,
         email=principal.email,
@@ -365,8 +365,9 @@ def _me_response(principal: Principal, db: Session) -> MeResponse:
 def me(
     principal: Principal = Depends(current_principal),
     db: Session = Depends(get_db),
+    users: UserStore = Depends(get_users),
 ) -> MeResponse:
-    return _me_response(principal, db)
+    return _me_response(principal, db, users)
 
 
 @app.put("/api/me", response_model=MeResponse)
@@ -374,17 +375,13 @@ def update_me(
     body: MeUpdate,
     principal: Principal = Depends(current_principal),
     db: Session = Depends(get_db),
+    users: UserStore = Depends(get_users),
 ) -> MeResponse:
     """Edit the signed-in user's display name (PRD #121). A blank name is
     allowed — it falls back to the email at every render site."""
-    from .models import User
-
     if "display_name" in body.model_fields_set and body.display_name is not None:
-        user = db.get(User, principal.user_id)
-        if user is not None:
-            user.display_name = body.display_name.strip()
-            db.commit()
-    return _me_response(principal, db)
+        users.set_display_name(principal.user_id, body.display_name)
+    return _me_response(principal, db, users)
 
 
 def _user_settings_out(s: UserSettingsStore) -> UserSettingsResponse:
@@ -1059,8 +1056,7 @@ def delete_scoring_preset(
 def stats(
     store: LeadStore = Depends(get_store),
     merges: OwnerMergeService = Depends(get_merges),
-    tenant_id: int = Depends(current_tenant_id),
-    db: Session = Depends(get_db),
+    users: UserStore = Depends(get_users),
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
     state: str | None = Query(default=None),
@@ -1092,7 +1088,7 @@ def stats(
         )
         for a in store.tenant_attempts()
     ]
-    names = _tenant_user_names(db, tenant_id)
+    names = users.names_by_id()
     # Unknown / null author (e.g. legacy rows, or system-generated activity) →
     # "Unattributed" rather than the raw "user None"/"user 7".
     svc = StatsService(leads, attempts, member_name_of=lambda uid: names.get(uid, "Unattributed"))
@@ -1120,8 +1116,7 @@ def stats(
 def activity(
     store: LeadStore = Depends(get_store),
     merges: OwnerMergeService = Depends(get_merges),
-    tenant_id: int = Depends(current_tenant_id),
-    db: Session = Depends(get_db),
+    users: UserStore = Depends(get_users),
     lead: str | None = Query(default=None),
     member: int | None = Query(default=None),
     channel: str | None = Query(default=None),
@@ -1132,7 +1127,7 @@ def activity(
     activity, narrowed by lead / member / channel / date range. History renders
     it chronologically; Calendar buckets it by date. Includes the recent-
     activity digest (last contact + last reply)."""
-    names = _tenant_user_names(db, tenant_id)
+    names = users.names_by_id()
     # Resolve the effective index once per request (PERF-009) — the per-row
     # owner_name_of then does O(1) lookups instead of rebuilding the merged
     # index for every activity row.
@@ -1171,27 +1166,10 @@ def activity(
     )
 
 
-def _tenant_user_names(db: Session, tenant_id: int) -> dict[int, str]:
-    """``user_id → display name`` (display_name or email) for a tenant."""
-    from sqlalchemy import select as _select
-
-    from .models import User
-
-    rows = db.scalars(_select(User).where(User.tenant_id == tenant_id))
-    return {u.id: (u.display_name or u.email) for u in rows}
-
-
 @app.get("/api/users", response_model=UsersResponse)
-def list_users(
-    tenant_id: int = Depends(current_tenant_id),
-    db: Session = Depends(get_db),
-) -> UsersResponse:
+def list_users(users: UserStore = Depends(get_users)) -> UsersResponse:
     """The tenant's teammates for task assignment (#110)."""
-    from sqlalchemy import select as _select
-
-    from .models import User
-
-    rows = list(db.scalars(_select(User).where(User.tenant_id == tenant_id).order_by(User.email)))
+    rows = users.list_by_email()
     return UsersResponse(
         count=len(rows),
         users=[
