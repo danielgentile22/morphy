@@ -338,3 +338,67 @@ def test_arc_normalizer_adds_state_fips_column(tmp_path):
     assert by_state["05001"] == "05"
     assert by_state["30001"] == "30"
     assert by_state["12001"] == "12"
+
+
+# ── MACRO-3 (#217, ADR-071): solar feeds dedup by EIA plant code ──────────
+
+
+def test_dedup_solar_facility_collapses_feeds_by_eia_plant_code():
+    """Three solar feeds concatenate with no dedup; the EIA plant code
+    (facility_id on the EIA feeds, eia_id on USPVDB) collapses a farm present
+    in several to one row — 860 wins attributes, USPVDB contributes the
+    polygon footprint — while a keyless USPVDB row survives as its own farm."""
+    from preprocess.compose import _dedup_solar_facility
+    from shapely.geometry import Point, Polygon
+
+    def _row(source, facility_id, eia_id, geom, operator=""):
+        return {
+            "_source": source,
+            "facility_id": facility_id,
+            "eia_id": eia_id,
+            "operator": operator,
+            "geometry": geom,
+        }
+
+    poly = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
+    gdf = gpd.GeoDataFrame(
+        [
+            _row("eia_860", "2953", "", Point(0.5, 0.5), operator="SUN CO"),
+            _row("eia_860m", "2953", "", Point(0.5, 0.5), operator="MONTHLY OP"),
+            _row("uspvdb", "usp_1", "2953", poly),  # eia_id matches 2953 → footprint
+            _row("eia_860m", "5000", "", Point(2, 2), operator="NEW PLANT"),  # 860M-only
+            _row("uspvdb", "usp_9", "", Point(3, 3), operator="ORPHAN"),  # no eia_id → own farm
+        ],
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+    out = _dedup_solar_facility(gdf)
+
+    # 2953 collapses 3 feeds → 1; 5000 and the orphan survive → 3 rows.
+    assert len(out) == 3
+    row2953 = out[out["facility_id"] == "2953"].iloc[0]
+    assert row2953["operator"] == "SUN CO"  # 860 wins the surviving attributes
+    assert row2953.geometry.geom_type == "Polygon"  # upgraded to the USPVDB footprint
+    assert set(out["operator"]) == {"SUN CO", "NEW PLANT", "ORPHAN"}
+    assert (out["facility_id"] == "usp_9").any()  # keyless USPVDB row kept
+
+
+def test_dedup_solar_facility_passes_through_when_empty_or_keyless():
+    """No rows, or rows with neither facility_id nor eia_id, pass through
+    untouched (never crash, never silently drop)."""
+    from preprocess.compose import _dedup_solar_facility
+    from shapely.geometry import Point
+
+    empty = gpd.GeoDataFrame({"_source": [], "geometry": []}, geometry="geometry", crs="EPSG:4326")
+    assert len(_dedup_solar_facility(empty)) == 0
+
+    keyless = gpd.GeoDataFrame(
+        [
+            {"_source": "eia_860", "facility_id": "", "eia_id": "", "geometry": Point(0, 0)},
+            {"_source": "uspvdb", "facility_id": "", "eia_id": "", "geometry": Point(1, 1)},
+        ],
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    assert len(_dedup_solar_facility(keyless)) == 2

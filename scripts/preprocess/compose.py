@@ -745,6 +745,61 @@ def _build_view_aggregators():
     return out
 
 
+# Solar-feed precedence for the MACRO-3 dedup (ADR-071): EIA-860 (annual, the
+# only feed still carrying operator) is the base of record; 860M (monthly) fills
+# in plants too new for the annual bundle; USPVDB contributes the polygon
+# footprint. Lower value wins the surviving row's attributes.
+_SOLAR_SOURCE_PRIORITY = {"eia_860": 0, "eia_860m": 1, "uspvdb": 2}
+
+
+def _dedup_solar_facility(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Dedup the concatenated solar feeds by EIA plant code (ADR-071 / MACRO-3).
+
+    The three feeds (eia_860, eia_860m, uspvdb) concatenate with no dedup, so a
+    farm present in several triple-counts. The EIA plant code is the cross-feed
+    key: ``facility_id`` on the EIA feeds, ``eia_id`` on USPVDB (whose own
+    ``facility_id`` is a USPVDB id — a different namespace). Per plant code we
+    keep one row: attributes from the highest-precedence feed (860 > 860M >
+    USPVDB), geometry upgraded to a USPVDB polygon footprint when the group has
+    one. Rows with no plant code can't be keyed and pass through untouched.
+    """
+    if len(gdf) == 0 or "_source" not in gdf.columns:
+        return gdf
+
+    fac = gdf.get("facility_id", pd.Series("", index=gdf.index)).fillna("").astype(str).str.strip()
+    eia = gdf.get("eia_id", pd.Series("", index=gdf.index)).fillna("").astype(str).str.strip()
+    # USPVDB's eia_id where present, else the EIA feed's facility_id.
+    key = eia.where(eia != "", fac)
+    prio = gdf["_source"].map(_SOLAR_SOURCE_PRIORITY).fillna(99).astype(int)
+
+    keyed = key != ""
+    unkeyed = gdf[~keyed]  # no plant code → can't dedup, keep every one
+    work = gdf[keyed].copy()
+    if len(work) == 0:
+        return gdf
+    work["_key"] = key[keyed].to_numpy()
+    work["_prio"] = prio[keyed].to_numpy()
+    work["_is_poly"] = work.geometry.geom_type.isin(("Polygon", "MultiPolygon")).to_numpy()
+    work["_orig"] = range(len(work))
+
+    # Best polygon footprint per key (first one wins; USPVDB is the only polygon feed).
+    poly_geom: dict[str, object] = {}
+    for k, g, is_poly in zip(work["_key"], work.geometry, work["_is_poly"]):
+        if is_poly and k not in poly_geom:
+            poly_geom[k] = g
+
+    # Survivor per key = lowest precedence, stable by original order.
+    survivor = work.sort_values(["_key", "_prio", "_orig"]).drop_duplicates("_key", keep="first")
+    survivor["geometry"] = [
+        poly_geom[k] if (not is_poly and k in poly_geom) else geom
+        for k, geom, is_poly in zip(survivor["_key"], survivor.geometry, survivor["_is_poly"])
+    ]
+
+    keep_cols = [c for c in gdf.columns]
+    out = pd.concat([survivor[keep_cols], unkeyed[keep_cols]], ignore_index=True)
+    return gpd.GeoDataFrame(out, geometry="geometry", crs=gdf.crs)
+
+
 def _load_state_data(ctx: ComposeContext) -> list[str]:
     """Load every non-parcel canonical type for one state into ``ctx``.
 
@@ -776,6 +831,10 @@ def _load_state_data(ctx: ComposeContext) -> list[str]:
             )
         else:
             combined = pd.concat(frames, ignore_index=True)
+        if ct == "solar_facility":
+            n_before = len(combined)
+            combined = _dedup_solar_facility(combined)
+            log.info("  solar dedup (MACRO-3): %d → %d rows", n_before, len(combined))
         ctx.set(ct, combined)
         log.info("  %s: %d rows (%d sources)", ct, len(combined), len(frames))
     # The parcel "source" itself: which parcel normalizers contributed
