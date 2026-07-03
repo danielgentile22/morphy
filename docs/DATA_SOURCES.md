@@ -32,7 +32,7 @@ For higher-level context:
 - **`fcc_uls_cellular`** (Part 22, the `l_cell` bulk file) + the **PCS / AWS / 700 MHz radio-service-code subset of `fcc_uls_market`** (the `l_market` Market-Based Services bulk file) are **Phase 1 Slice A** (carrier identification — [ADR-053](./adr/0053-product-phase-shift.md) partially reverses ADR-013). The FCC does **not** ship `fcc_uls_pcs` / `_aws` / `_700mhz` as separate downloads — those bands are carved out of the single `l_market` file by `radio_service_code` (see §2–7).
 - The rest of `fcc_uls_market` (WCS code `WS`, 600 MHz `WT`, Narrowband PCS, paging, BRS/EBS, …) and **`fcc_uls_micro`** (Microwave, point-to-point backhaul) remain **DEFERRED** — not one of the four Phase-1 carrier bands.
 - **`fdot_billboards`, `ncdot_billboards`** are tagged **Phase 1 Slice C parcel enrichment** (ADR-014 partially reversed for FL; the NCDOT extract rides with the deferred NC stretch) but **both remain in the registry `_DEFERRED` block — not yet wired active**. `txdot_billboards` stays deferred (TX not an anchor state).
-- **`fl_fgdl_parcels`** was **replaced as FL's primary parcel source** by `fdor_nal` (ADR-019) — but it is **not dead weight**: it's the DSL *state-owned land* composite (Division of State Land), a distinct parcel class from NAL's private tax rolls, and its ~241K parcels are in the live FL composite. Fetch stays deferred; the normalized layer still composes.
+- **`fl_fgdl_parcels`** was replaced as FL's *primary* parcel source by `fdor_nal` (ADR-019), then **re-activated as a complement 2026-07-03**: it's the DSL *state-owned land* composite (Division of State Land), a distinct parcel class from NAL's private tax rolls, and its ~241K parcels are in the live FL composite. Auto-fetch (direct download; the fetcher discovers the newest release filename from the FGDL listing).
 - **`in_parcels`** is **MOTHBALLED** (no owner data — ADR-017).
 - **`mn_parcels`** is **DEFERRED** (license ambiguity — ADR-018).
 - **`ut_parcels`** is **DEFERRED** (no owner data — ADR-049).
@@ -63,7 +63,7 @@ For higher-level context:
 | 15 | NCDOT Outdoor Advertising permits | Billboards | North Carolina | 🚫 | ⊘ deferred — planned Phase 1 Slice C | ✅ Yes (public records) |
 | 16 | TxDOT Outdoor Advertising permits | Billboards | Texas | 🚫 | ⊘ deferred (TX not anchor) | ✅ Yes (public records) |
 | 17 | NC OneMap statewide parcels | Parcels | NC (100 counties) | ✅ | ⊘ deferred Phase-1 stretch — in registry but raw deleted 2026-05-20; re-fetch not gating Slice F | ✅ Yes, with attribution |
-| 18 | FL FGDL DSL parcels | Parcels | Florida | 🚫 | ⊘ deferred (wrong dataset; replaced by #29) | ✅ Yes, with attribution |
+| 18 | FL FGDL DSL parcels (state-owned land) | Parcels | Florida | ✅ (auto since 2026-07-03) | ✓ active — complements #29 | ✅ Yes, with attribution |
 | 19 | Montana Cadastral parcels | Parcels | Montana | ✅ (auto since 2026-07-03) | ✓ active | ✅ Yes, with attribution |
 | 20 | Minnesota statewide parcels (MnGeo) | Parcels | Minnesota | 🚫 | ⊘ deferred (license ambiguity) | ✅ Yes, with attribution |
 | 21 | Indiana statewide parcels (IGIO) | Parcels | Indiana | 🚫 | ⊘ deferred (no owner data) | ✅ Yes, with attribution |
@@ -455,23 +455,27 @@ casings for forward + back compat with legacy shapefile bulk downloads.
 
 ---
 
-## 18. Florida statewide parcels (FGDL / FDOR NAL)
+## 18. Florida state-owned land parcels (FGDL DSL composite)
 
-- **ID:** `fl_fgdl_parcels` · **Cadence:** Annual · **Size:** ~4.5 GB
-- **Source page:** <https://www.fgdl.org/metadataexplorer/explorer.jsp>
-- **License:** FGDL terms (free with attribution; click-through required)
-- **Automation:** 🚫 Manual only — portal requires click-through agreement.
+- **ID:** `fl_fgdl_parcels` · **Cadence:** Annual · **Size:** ~173 MB zip
+- **Source page:** <https://fgdl.org/zips/geospatial_data/current/>
+- **License:** FGDL terms of use (free, with attribution)
+- **Automation:** ✅ Auto-fetch (flipped from manual 2026-07-03) — the zip is a direct anonymous HTTPS download; no click-through, no login (the click-through only guards FGDL's *metadata explorer*, not the file directory); robots.txt disallows only `/wp-admin/`. The release filename embeds month/year (`dsl_parcel_composite_oct25.zip`), so the fetcher discovers the newest file from the browsable listing (same pattern as WV vintage discovery). Walkthrough retained as fallback.
 - **Commercial:** ✅ With attribution.
 
-### Workflow
-Accept FGDL terms on the metadata explorer, search for "PARCELS" for
-the current year, download the statewide shapefile or GDB, drop into
-`data/raw/fl_fgdl_parcels/current/`.
+### Role
+Florida's Division of State Lands parcel composite — **state-owned
+land**, a distinct parcel class from the FDOR NAL private tax rolls
+(source #29). Complement, not substitute: ~241K of the live FL
+composite's parcels come from this layer. A tower on state land is not
+a private-landowner lead — that's signal, not noise.
 
 ### Structure
-FL DOR NAL (Name-Address-Legal) attributes joined to parcel polygons.
-Owner name, mailing, "just value" (FL's term for assessed value), land
-use code, sale history.
+Zipped File Geodatabase (`dsl_parcel_composite_<mon><yy>.gdb/`).
+`FACILITY_NAME` (managing facility — not a private owner),
+`PLOT_ACREAGE_NBR`, `LAND_CATEGORY_NAME`, parcel keys
+(`BTLDS_PARCEL_KEY` / `DSL_PARCEL_COMPOSITE_KEY`). County comes as
+`COUNTY_NAME` only (no FIPS) — the adapter falls back to state FIPS 12.
 
 ---
 
@@ -684,12 +688,13 @@ County FIPS.
 - **Automation:** ✅ Auto-fetch (flipped from manual 2026-07-03) — the Map Data "directory" is a SharePoint document library whose anonymous REST API lists vintages/files, and every PAR zip is a direct anonymous HTTPS download. The presumed license click-through does not exist; robots.txt permits the data portal. Vintage discovery walks newest-first past FDOR's pre-created empty folders (e.g. `2026F`). Resumable (per-county dirs skip on re-run). Walkthrough retained as fallback.
 - **Commercial:** ✅ With attribution.
 
-### Why this and not FGDL DSL (source #18)
-FGDL DSL covers state-owned land, not private parcels — wrong dataset
-for landowner outreach. FDOR's per-county PAR shapefiles are the
+### Relationship to FGDL DSL (source #18)
+FGDL DSL covers state-owned land, not private parcels — so it can't be
+the landowner-outreach dataset. FDOR's per-county PAR shapefiles are the
 canonical Florida private-parcel landowner data (every county's
 parcel polygons joined with the current-year NAL tax-roll). Phase 1 ships
-all 67 Florida counties (ADR-047).
+all 67 Florida counties (ADR-047); the DSL layer composes alongside as
+the state-land complement.
 
 ### PIN vs PAR (per FDOR's Parcel Shapefiles Readme)
 - **PIN** = parcel geometry only (FID + Shape + PARCELNO). **Skip.**

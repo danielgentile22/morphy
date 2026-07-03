@@ -13,6 +13,13 @@ For why each decision was made, see the ADRs ([DECISIONS.md](./DECISIONS.md)).
 
 ### 2026-07 — data TUI, auto-fetch flips, Qt puller retired
 
+- **2026-07-03 — registry cleanup: HIFLD removed, FL FGDL DSL re-activated.** The dead
+  `hifld_towers` source (upstream retired by DHS in 2024, ADR-015) was deleted outright.
+  `fl_fgdl_parcels` — the FL *state-owned land* DSL composite, ~241K parcels in the live
+  FL composite — was recognized as a complement to FDOR NAL (not superseded dead weight),
+  moved to the active registry, and flipped to auto-fetch (direct download; the fetcher
+  discovers the newest release filename from the FGDL listing). 16/17 active sources
+  auto-fetch; AR remains the only manual source.
 - **2026-07-03 — data TUI shipped; Qt puller retired (PRD #233, slices #234–#240).**
   Root-caused "the puller no longer works" to the FCC bot filter stalling urllib
   requests without browser-like `Accept-Encoding` (fixed in `fetch/http.py`); flipped

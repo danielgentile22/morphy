@@ -61,10 +61,11 @@ disk) — then **Slice B** (vendor inference). The 4-week outcome-bar clock star
   `solar_count` on AR/MT/FL).
 - **The data TUI** (`python -m data_tui`, PRD #233; shipped 2026-07-03) — *the* puller:
   full lifecycle pull → preprocess → verify → confirm-gated data deploy from one terminal
-  app, over the unchanged headless `fetch`/`preprocess` libraries + `deploy.sh`. 15/16
+  app, over the unchanged headless `fetch`/`preprocess` libraries + `deploy.sh`. 16/17
   active sources auto-fetch (AR parcels manual until its ~2027-05 refresh; `w`/`i` cover
   the manual path). The Qt puller + PySide6 pin were deleted in #240 (PRD #138 retirement
-  clause).
+  clause); the dead HIFLD source was removed and FL FGDL DSL (state-owned land) was
+  re-activated as an auto-fetch complement to FDOR NAL (2026-07-03).
 - **Preprocess pipeline** — v3 Normalizer→Join→View→Compose framework over **DuckDB** as the
   heavy-lift engine (PRD #135; `scripts/preprocess/duck.py` owns connections), chunked
   compose (ADR-051, the only compose path), one annotator per parcel/infra concept.
