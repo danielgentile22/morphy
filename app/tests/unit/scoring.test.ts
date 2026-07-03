@@ -11,7 +11,13 @@ import {
   type ScoreExtents,
 } from '../../src/lib/scoring';
 
-const EXT: ScoreExtents = { assessedMax: 1000, portfolioMax: 10, towerMax: 20, heightMax: 100 };
+const EXT: ScoreExtents = {
+  assessedMax: 1000,
+  portfolioMax: 10,
+  towerMax: 20,
+  heightMax: 100,
+  carrierMax: 4,
+};
 
 function owner(over: Partial<ScorableOwner> = {}): ScorableOwner {
   return {
@@ -24,6 +30,7 @@ function owner(over: Partial<ScorableOwner> = {}): ScorableOwner {
     tower_count: 0,
     active_tower_count: 0,
     tallest_tower_height_m: null,
+    carrier_count: 0,
     ...over,
   };
 }
@@ -50,6 +57,33 @@ describe('scoring engine (UI overhaul P4 / #114)', () => {
     expect(f.towers).toBe(0.5);
     expect(f.height).toBe(0.5);
     expect(f.active).toBe(1);
+  });
+
+  it('ADR-073 thesis features invert portfolio/value and reward carriers', () => {
+    const f = features(
+      owner({ parcel_count: 5, total_assessed_value: 500, carrier_count: 2 }),
+      EXT,
+    );
+    // smallPortfolio / lowValue are the inverse of portfolio / assessedValue.
+    expect(f.portfolio).toBe(0.5);
+    expect(f.smallPortfolio).toBe(0.5);
+    expect(f.assessedValue).toBe(0.5);
+    expect(f.lowValue).toBe(0.5);
+    // carriers rewards more carriers on the best tower (2 / carrierMax 4).
+    expect(f.carriers).toBe(0.5);
+    // A tiny, cheap, well-tenanted owner scores high; a giant expensive one low.
+    const small = owner({ parcel_count: 1, total_assessed_value: 0, carrier_count: 4 });
+    const giant = owner({ parcel_count: 10, total_assessed_value: 1000, carrier_count: 0 });
+    expect(scoreOwner(small, DEFAULT_WEIGHTS, EXT)).toBeGreaterThan(
+      scoreOwner(giant, DEFAULT_WEIGHTS, EXT),
+    );
+  });
+
+  it('DEFAULT_WEIGHTS is a valid preset (all features present, sums to 1)', () => {
+    const keys = Object.keys(zeroWeights());
+    for (const k of keys) expect(DEFAULT_WEIGHTS).toHaveProperty(k);
+    const sum = Object.values(DEFAULT_WEIGHTS).reduce((a, b) => a + b, 0);
+    expect(sum).toBeCloseTo(1, 6);
   });
 
   it('weights × features sums to a score', () => {
@@ -122,7 +156,13 @@ describe('scoring engine (UI overhaul P4 / #114)', () => {
   });
 
   it('zero extents never divide-by-zero', () => {
-    const ext: ScoreExtents = { assessedMax: 0, portfolioMax: 0, towerMax: 0, heightMax: 0 };
+    const ext: ScoreExtents = {
+      assessedMax: 0,
+      portfolioMax: 0,
+      towerMax: 0,
+      heightMax: 0,
+      carrierMax: 0,
+    };
     expect(() => scoreOwner(owner({ total_assessed_value: 100 }), DEFAULT_WEIGHTS, ext)).not.toThrow();
     expect(scoreOwner(owner({ total_assessed_value: 100 }), { ...zeroWeights(), assessedValue: 1 }, ext)).toBe(0);
   });

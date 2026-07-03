@@ -52,6 +52,7 @@ function toRecord(o: Record<string, unknown>): OwnerFilterRecord {
     total_assessed_value: num(o.total_assessed_value),
     tallest_tower_height_m:
       o.tallest_tower_height_m == null ? null : num(o.tallest_tower_height_m, 0),
+    carrier_count: num(o.carrier_count),
   };
 }
 

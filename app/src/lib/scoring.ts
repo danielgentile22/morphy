@@ -35,31 +35,47 @@ export interface ScoreWeights {
   towers: number; // tower_count
   height: number; // tallest tower
   active: number; // has an active tower
+  // ADR-073 (MACRO-5): thesis features — the inverse direction of
+  // portfolio/assessedValue, plus a carrier reward — so the default preset
+  // favours small, low-value, well-tenanted owners. The originals stay in the
+  // menu for anyone who wants the opposite.
+  smallPortfolio: number; // fewer parcels (1 − portfolio)
+  lowValue: number; // lower market value (1 − assessedValue)
+  carriers: number; // more carriers on the owner's best-tenanted tower
 }
 
 export const SCORE_FEATURES: { key: keyof ScoreWeights; label: string }[] = [
+  { key: 'smallPortfolio', label: 'Small portfolio' },
+  { key: 'lowValue', label: 'Low market value' },
+  { key: 'carriers', label: 'Carriers on tower' },
   { key: 'distress', label: 'Distress tier' },
   { key: 'oz', label: 'Opportunity Zone' },
   { key: 'qct', label: 'Qualified Census Tract' },
   { key: 'poverty', label: 'Persistent poverty' },
-  { key: 'assessedValue', label: 'Assessed value' },
-  { key: 'portfolio', label: 'Portfolio size' },
+  { key: 'assessedValue', label: 'Market value (higher)' },
+  { key: 'portfolio', label: 'Portfolio size (larger)' },
   { key: 'towers', label: 'Tower count' },
   { key: 'height', label: 'Tallest tower' },
   { key: 'active', label: 'Active tower' },
 ];
 
-/** A sensible starting point when the user switches to custom weights. */
+/** The default preset (ADR-073 / MACRO-5): the co-founder's thesis — target
+ *  owners with FEW towers (avoid the giants), LOW value, and MORE carriers on
+ *  the tower. Distress is demoted to a minor tiebreaker; the "more portfolio /
+ *  higher value" features sit at 0, available for anyone who wants them. */
 export const DEFAULT_WEIGHTS: ScoreWeights = {
-  distress: 0.3,
-  oz: 0.15,
-  qct: 0.1,
-  poverty: 0.1,
-  assessedValue: 0.1,
-  portfolio: 0.1,
-  towers: 0.1,
-  height: 0.05,
+  smallPortfolio: 0.3,
+  lowValue: 0.25,
+  carriers: 0.25,
+  distress: 0.1,
   active: 0.05,
+  height: 0.05,
+  oz: 0,
+  qct: 0,
+  poverty: 0,
+  assessedValue: 0,
+  portfolio: 0,
+  towers: 0,
 };
 
 export function zeroWeights(): ScoreWeights {
@@ -73,6 +89,9 @@ export function zeroWeights(): ScoreWeights {
     towers: 0,
     height: 0,
     active: 0,
+    smallPortfolio: 0,
+    lowValue: 0,
+    carriers: 0,
   };
 }
 
@@ -82,6 +101,7 @@ export interface ScoreExtents {
   portfolioMax: number;
   towerMax: number;
   heightMax: number;
+  carrierMax: number;
 }
 
 /** The owner fields the scorer reads. */
@@ -95,6 +115,7 @@ export interface ScorableOwner {
   tower_count: number;
   active_tower_count: number;
   tallest_tower_height_m: number | null;
+  carrier_count: number;
 }
 
 function norm(value: number, max: number): number {
@@ -113,6 +134,11 @@ export function features(o: ScorableOwner, ext: ScoreExtents): ScoreWeights {
     towers: norm(o.tower_count, ext.towerMax),
     height: norm(o.tallest_tower_height_m ?? 0, ext.heightMax),
     active: o.active_tower_count > 0 ? 1 : 0,
+    // ADR-073: inverse of portfolio/value (fewer/lower ranks higher), and the
+    // carrier reward. An owner with no towers has carrier_count 0 → 0.
+    smallPortfolio: 1 - norm(o.parcel_count, ext.portfolioMax),
+    lowValue: 1 - norm(o.total_assessed_value, ext.assessedMax),
+    carriers: norm(o.carrier_count, ext.carrierMax),
   };
 }
 

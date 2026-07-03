@@ -30,6 +30,8 @@ class OwnerSummary(BaseModel):
     structure_types: list[str] = Field(default_factory=list)
     active_tower_count: int = 0
     tallest_tower_height_m: float | None = None
+    # Max carriers on any of the owner's towers (index schema v8, MACRO-5 / #218).
+    carrier_count: int = 0
     # The antenna that sparked pursuit (#109, ADR-067/D2) — '' until pursued.
     # Per-tenant (derived from the flag activity row), attached at read time.
     trigger_asr: str = ""

@@ -480,6 +480,20 @@ def test_tower_structures_carry_carriers():
     assert c[1]["license_status_desc"] == ""
     # a tower with no carriers column degrades to an empty list, not a crash
     assert by_asr["T2"]["carriers"] == []
+    # MACRO-5 (#218): owner carrier_count = max carriers on any one tower (T1=2).
+    assert _row_for(idx, "GRID TOWERS").carrier_count == 2
+
+
+def test_portfolio_bonus_is_clamped():
+    """ADR-073 (#218): the baked score's portfolio log-bonus is capped at
+    _PORTFOLIO_LOG_CAP so a giant portfolio can't dominate by breadth alone —
+    25 parcels (> cap 20) score with log(20), not log(25)."""
+    from preprocess.owners_index import _PORTFOLIO_LOG_CAP
+
+    rows = [_parcel("MEGA OWNER LLC", "05", score=0.5) for _ in range(25)]
+    row = _row_for(_resolve(rows), "MEGA OWNER")
+    assert row.parcel_count == 25
+    assert row.score == round(0.5 + 0.1 * math.log(_PORTFOLIO_LOG_CAP), 4)
 
 
 def test_tower_without_attr_match_has_empty_carriers():

@@ -1200,6 +1200,11 @@ export interface components {
              * @default 0
              */
             active_tower_count: number;
+            /**
+             * Carrier Count
+             * @default 0
+             */
+            carrier_count: number;
             /** Counties */
             counties?: string[];
             /** Cross State */

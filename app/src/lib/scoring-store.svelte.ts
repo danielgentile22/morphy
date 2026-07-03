@@ -39,14 +39,16 @@ class ScoringStore {
     let portfolioMax = 1;
     let towerMax = 1;
     let heightMax = 1;
+    let carrierMax = 1;
     for (const o of filterModel.owners) {
       if (o.total_assessed_value > assessedMax) assessedMax = o.total_assessed_value;
       if (o.parcel_count > portfolioMax) portfolioMax = o.parcel_count;
       if (o.tower_count > towerMax) towerMax = o.tower_count;
       const h = o.tallest_tower_height_m ?? 0;
       if (h > heightMax) heightMax = h;
+      if (o.carrier_count > carrierMax) carrierMax = o.carrier_count;
     }
-    return { assessedMax, portfolioMax, towerMax, heightMax };
+    return { assessedMax, portfolioMax, towerMax, heightMax, carrierMax };
   });
 
   /** cid → score under the active config (baked when default, else computed). */

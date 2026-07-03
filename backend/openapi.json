@@ -1015,6 +1015,11 @@
             "title": "Active Tower Count",
             "type": "integer"
           },
+          "carrier_count": {
+            "default": 0,
+            "title": "Carrier Count",
+            "type": "integer"
+          },
           "counties": {
             "items": {
               "type": "string"

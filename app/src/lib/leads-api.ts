@@ -48,6 +48,7 @@ export function ownerSummaryToFilterable(o: OwnerSummary): FilterableOwner {
       [...(o.tower_count > 0 ? ['tower'] : []), ...(o.solar_count > 0 ? ['solar'] : [])],
     active_tower_count: o.active_tower_count ?? 0,
     tallest_tower_height_m: o.tallest_tower_height_m ?? null,
+    carrier_count: o.carrier_count ?? 0,
   };
 }
 

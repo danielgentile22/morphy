@@ -48,6 +48,7 @@ export interface FilterableOwner {
   structure_types: string[];
   active_tower_count: number;
   tallest_tower_height_m: number | null;
+  carrier_count: number;
 }
 
 export interface FilterModel {

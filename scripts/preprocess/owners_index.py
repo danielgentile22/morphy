@@ -66,13 +66,21 @@ OWNERS_INDEX_FILENAME = "owners_index.json"
 # appraised), distinct from the market/appraised ``assessed_value``. Owner-level
 # rollups stay on market (cross-state comparable; MT ships no statutory value). A
 # stale (pre-v7) index or composite omits it; readers default it to 0 (shown "—").
-OWNERS_INDEX_SCHEMA_VERSION = 7
+# v8 (audit MACRO-5 / #218, ADR-073): each owner gains ``carrier_count`` — the
+# max carriers on any one of the owner's towers — feeding the carrier reward in
+# the reweighted default score preset. A stale (pre-v8) index omits it; readers
+# default it to 0.
+OWNERS_INDEX_SCHEMA_VERSION = 8
 
 OWNERS_FILTER_FILENAME = "owners_filter.json"
 
 # Best-parcel-anchored cluster score, with a modest portfolio-size bonus
 # (ADR-056): score = max(parcel_scores) + ALPHA * ln(parcel_count).
 DEFAULT_ALPHA = 0.1
+
+# ADR-073 (#218): cap the portfolio-size input to the baked score's log bonus,
+# so a 1000-tower towerco can't outrank a small owner on breadth alone.
+_PORTFOLIO_LOG_CAP = 20
 
 # Distress tier severity ordering (the county-score normalizers emit
 # exactly these strings, lowercased). Higher wins the cross-parcel rollup.
@@ -358,8 +366,11 @@ class CrossStateOwnerResolver:
         out["cross_state"] = out["n_states"] >= 2
         out["counties"] = out["_counties"]
         out["distress_tier"] = out["_tier_rank"].map(_RANK_TIER)
+        # ADR-073 (#218): clamp the portfolio bonus so a giant portfolio can't
+        # dominate the baked ranking by breadth alone (was an unclamped α·ln(n)).
         out["score"] = (
-            out["max_parcel_score"] + self.alpha * out["parcel_count"].map(lambda n: math.log(n))
+            out["max_parcel_score"]
+            + self.alpha * out["parcel_count"].map(lambda n: math.log(min(n, _PORTFOLIO_LOG_CAP)))
         ).round(4)
         out["max_parcel_score"] = out["max_parcel_score"].round(4)
         out["total_assessed_value"] = out["total_assessed_value"].round(2)
@@ -381,6 +392,7 @@ class CrossStateOwnerResolver:
         out["mailing_address"] = out["display_cluster_id"].map(lambda c: detail[c][1])
         out["tallest_tower_height_m"] = out["display_cluster_id"].map(lambda c: detail[c][2])
         out["active_tower_count"] = out["display_cluster_id"].map(lambda c: detail[c][3])
+        out["carrier_count"] = out["display_cluster_id"].map(lambda c: detail[c][4])
 
         out = out.drop(columns=["_fips", "_tier_rank", "_counties"])
         return out.sort_values("score", ascending=False, ignore_index=True)
@@ -388,9 +400,9 @@ class CrossStateOwnerResolver:
     # ── per-owner holdings detail ────────────────────────────────────────────
     def _build_detail(
         self, df: pd.DataFrame, towers_by_asr: dict[str, dict]
-    ) -> dict[str, tuple[list[dict], dict | None, float | None, int]]:
-        """``display_cluster_id`` → (holdings, mailing_address, tallest_m, active_towers)."""
-        detail: dict[str, tuple[list[dict], dict | None, float | None, int]] = {}
+    ) -> dict[str, tuple[list[dict], dict | None, float | None, int, int]]:
+        """``display_cluster_id`` → (holdings, mailing, tallest_m, active_towers, carriers)."""
+        detail: dict[str, tuple[list[dict], dict | None, float | None, int, int]] = {}
         for cid, group in df.groupby("_cluster", sort=False):
             recs = group.to_dict("records")
             holdings = [self._holding(r, towers_by_asr) for r in recs]
@@ -402,7 +414,10 @@ class CrossStateOwnerResolver:
             # Active towers drive the "active-only" filter; a tower with an
             # unknown active flag (no tower-attr match) is not counted active.
             active = sum(1 for s in towers if s.get("active") is True)
-            detail[str(cid)] = (holdings, self._pick_mailing(recs), tallest, active)
+            # ADR-073 (#218): the owner's best-tenanted tower — max carriers on
+            # any one tower. Feeds the carrier reward in the default score preset.
+            carriers = max((len(s.get("carriers") or []) for s in towers), default=0)
+            detail[str(cid)] = (holdings, self._pick_mailing(recs), tallest, active, carriers)
         return detail
 
     def _holding(self, rec: dict, towers_by_asr: dict[str, dict]) -> dict:
@@ -658,6 +673,8 @@ def _owner_to_json(row: dict) -> dict:
         "structure_count": int(row.get("structure_count") or 0),
         "structure_types": list(row.get("structure_types") or []),
         "active_tower_count": int(row.get("active_tower_count") or 0),
+        # v8 (audit MACRO-5 / #218) — max carriers on any of the owner's towers.
+        "carrier_count": int(row.get("carrier_count") or 0),
         # Slice 3 / #49 — full Lead page detail (schema v2).
         "holdings": list(row.get("holdings") or []),
         "mailing_address": row.get("mailing_address") or None,
@@ -688,6 +705,7 @@ FILTER_INDEX_FIELDS = (
     "structure_count",
     "structure_types",
     "active_tower_count",
+    "carrier_count",
     "total_assessed_value",
     "tallest_tower_height_m",
 )

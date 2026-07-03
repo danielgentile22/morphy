@@ -37,6 +37,7 @@ function owner(overrides: Partial<FilterableOwner> = {}): FilterableOwner {
     structure_types: ['tower', 'solar'],
     active_tower_count: 2,
     tallest_tower_height_m: 120,
+    carrier_count: 3,
     ...overrides,
   };
 }
