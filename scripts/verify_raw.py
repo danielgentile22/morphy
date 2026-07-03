@@ -88,12 +88,6 @@ SIGNATURES: dict[str, dict] = {
         "required_exts": [".dat"],
         "min_total_bytes": 1_000_000,
     },
-    "hifld_towers": {
-        "label": "HIFLD Cellular Towers (GeoJSON)",
-        "required_exts": [".geojson"],
-        "content_signature": ("*.geojson", '"FeatureCollection"'),
-        "min_total_bytes": 100_000,
-    },
     # ── Solar ─────────────────────────────────────────────────────────────
     "eia_860": {
         "label": "EIA Form 860 Excel bundle",
