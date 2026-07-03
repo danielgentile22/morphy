@@ -29,6 +29,7 @@
   import { basemapStyle, basemapSource, resolveInitialView } from '../lib/basemap';
   import { readLastView, writeLastView } from '../lib/map-view-cache';
   import { parcelLayerAppearance } from '../lib/parcel-layers';
+  import { countyLayerAppearance, COUNTIES_LAYER } from '../lib/county-layers';
 
   maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
@@ -63,6 +64,16 @@
   const SOLAR_SRC = 'solar-all';
   const SOLAR_LAYER = 'solar-point';
   let solarLayersAdded = false;
+
+  // County-distress choropleth (audit M-d / #209): display-only context under
+  // every other app layer, off by default (structures-first), toggled from the
+  // FilterPanel's Distress section. Hands off to the parcels' own tint on zoom.
+  const COUNTY_SRC = 'counties-all';
+  const CL_FILL = 'counties-fill';
+  const CL_LINE = 'counties-line';
+  const COUNTY_LAYER_IDS = [CL_FILL, CL_LINE];
+  let countyLayersAdded = false;
+  const COUNTY_APPEARANCE = countyLayerAppearance();
 
   // Parcel base layer — one PMTiles vector source PER anchor state (#119), so
   // parcels draw on zoom anywhere across AR/FL/MT/WV, not just a selected
@@ -165,6 +176,7 @@
       towerLayersAdded = false;
       towerHandlersAttached = false;
       solarLayersAdded = false;
+      countyLayersAdded = false;
       parcelStatesAdded.clear();
       m.remove();
       map = undefined;
@@ -329,6 +341,55 @@
       map.removeFeatureState({ source: highlightedParcel.source, sourceLayer: 'parcels', id: highlightedParcel.id });
     }
     highlightedParcel = null;
+  }
+
+  // ── counties: national distress choropleth, gated on its layer toggle ─────
+
+  function addCountyLayers(): void {
+    if (!map || countyLayersAdded || !app.countyBoundaries) return;
+    // Counties are pure context: insert directly above the basemap so parcels,
+    // solar and towers all draw over them. Non-interactive — no click/hover.
+    const beforeId = map.getStyle().layers.find((l) => l.id !== 'basemap')?.id;
+    const visibility = app.isLayerVisible(COUNTIES_LAYER) ? 'visible' : 'none';
+    map.addSource(COUNTY_SRC, { type: 'geojson', data: app.countyBoundaries });
+    map.addLayer(
+      {
+        id: CL_FILL,
+        type: 'fill',
+        source: COUNTY_SRC,
+        maxzoom: COUNTY_APPEARANCE.maxzoom,
+        paint: {
+          'fill-color': tierColorMatch('tier'),
+          'fill-opacity': COUNTY_APPEARANCE.fillOpacity,
+        },
+        layout: { visibility },
+      },
+      beforeId,
+    );
+    map.addLayer(
+      {
+        id: CL_LINE,
+        type: 'line',
+        source: COUNTY_SRC,
+        maxzoom: COUNTY_APPEARANCE.maxzoom,
+        paint: {
+          'line-color': '#5b6470',
+          'line-width': 0.8,
+          'line-opacity': COUNTY_APPEARANCE.lineOpacity,
+        },
+        layout: { visibility },
+      },
+      beforeId,
+    );
+    countyLayersAdded = true;
+  }
+
+  function applyCountyVisibility(): void {
+    if (!map || !countyLayersAdded) return;
+    const vis = app.isLayerVisible(COUNTIES_LAYER) ? 'visible' : 'none';
+    for (const id of COUNTY_LAYER_IDS) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+    }
   }
 
   // ── solar: one national context layer, gated on the structure-type filter ─
@@ -610,6 +671,20 @@
     void app.layerVisible;
     if (!map || !ready) return;
     untrack(() => applyTowerVisibility());
+  });
+
+  // County choropleth: fetched lazily the first time its toggle turns on
+  // (mirrors solar, PERF-014) — boot never downloads county polygons for a
+  // layer that's hidden by default. Visibility follows the `counties` flag.
+  $effect(() => {
+    void app.countyBoundaries;
+    void app.layerVisible;
+    if (!map || !ready) return;
+    untrack(() => {
+      if (app.isLayerVisible(COUNTIES_LAYER)) void app.loadCounties();
+      addCountyLayers();
+      applyCountyVisibility();
+    });
   });
 
   // One-shot fly to a tower matched by the FilterPanel ASR search.
