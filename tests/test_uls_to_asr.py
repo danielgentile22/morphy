@@ -60,15 +60,17 @@ _LOCATIONS = [
     ("F1", "KNKF006", "1000005", 35.10, -92.30),  # verified → unmapped tail (T_far)
 ]
 
-# usi → (licensee_name, expired_date)
+# usi → (licensee_name, expired_date, license_status, license_status_desc).
+# L1 is deliberately Cancelled: a dead license still matches + attaches (the
+# join communicates presence), but its status must ride along (M-l / #216).
 _LICENSE = {
-    "V1": ("New Cingular Wireless PCS, LLC", "2030-01-01"),
-    "L1": ("Cellco Partnership", None),
-    "P1": ("T-Mobile US, Inc.", "2031-06-30"),
-    "N1": ("Cellco Partnership", None),
-    "D1": ("Verizon Wireless", "2029-12-31"),
-    "D2": ("Cellco Partnership", None),
-    "F1": ("Podunk Rural Telephone Cooperative", "2028-01-01"),
+    "V1": ("New Cingular Wireless PCS, LLC", "2030-01-01", "A", "Active"),
+    "L1": ("Cellco Partnership", None, "C", "Cancelled"),
+    "P1": ("T-Mobile US, Inc.", "2031-06-30", "A", "Active"),
+    "N1": ("Cellco Partnership", None, "A", "Active"),
+    "D1": ("Verizon Wireless", "2029-12-31", "A", "Active"),
+    "D2": ("Cellco Partnership", None, "A", "Active"),
+    "F1": ("Podunk Rural Telephone Cooperative", "2028-01-01", "E", "Expired"),
 }
 
 
@@ -107,8 +109,14 @@ def _locations_df() -> pd.DataFrame:
 def _license_df() -> pd.DataFrame:
     return pd.DataFrame(
         [
-            {"usi": usi, "licensee_name": name, "expired_date": exp}
-            for usi, (name, exp) in _LICENSE.items()
+            {
+                "usi": usi,
+                "licensee_name": name,
+                "expired_date": exp,
+                "license_status": status,
+                "license_status_desc": desc,
+            }
+            for usi, (name, exp, status, desc) in _LICENSE.items()
         ]
     )
 
@@ -135,6 +143,32 @@ def test_verified_cross_ref_and_brand_rollup():
     assert e["callsign"] == "KNKA001"
     assert e["confidence_tag"] == "verified"
     assert e["license_expiry"] == "2030-01-01"
+    assert e["license_status"] == "A"  # status rides the struct (M-l / #216)
+    assert e["license_status_desc"] == "Active"
+
+
+def test_cancelled_license_status_rides_the_struct():
+    """A dead license still attaches (presence), but carries its status so the
+    badge can mark it — the M-l fix's contract."""
+    out = _run()
+    e = out.loc["T_likely", "carriers"][0]
+    assert e["carrier_name"] == "Verizon"
+    assert e["license_status"] == "C"
+    assert e["license_status_desc"] == "Cancelled"
+
+
+def test_legacy_license_table_without_status_columns_defaults_none():
+    """An injected pre-#216 license table (no status columns) must not crash;
+    status fields default to None → '' downstream."""
+    ctx = ComposeContext(state_fips="05", state_name="Arkansas", state_abbr="AR")
+    ctx.set("tower", _towers_gdf())
+    ctx.set("location", _locations_df())
+    legacy = _license_df().drop(columns=["license_status", "license_status_desc"])
+    ctx.set("license", legacy)
+    UlsToAsrJoin().apply(ctx)
+    e = ctx.get("tower").set_index("name").loc["T_verified", "carriers"][0]
+    assert e["license_status"] is None
+    assert e["license_status_desc"] is None
 
 
 def test_likely_spatial_within_100m():
@@ -311,6 +345,14 @@ def test_load_uls_licenses_reads_band_parquets(tmp_path, monkeypatch):
     monkeypatch.setattr(preprocess, "NORMALIZED_ROOT", tmp_path)
 
     lic = load_uls_licenses()
-    assert list(lic.columns) == ["usi", "licensee_name", "expired_date"]
+    assert list(lic.columns) == [
+        "usi",
+        "licensee_name",
+        "expired_date",
+        "license_status",
+        "license_status_desc",
+    ]
     assert len(lic) == 2  # deduped on usi
     assert set(lic["usi"]) == {"1", "2"}
+    # The fixture predates the status columns → tolerated, projected as null.
+    assert lic["license_status"].isna().all()

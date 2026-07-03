@@ -923,6 +923,16 @@ export interface components {
              * @default
              */
             license_expiry: string;
+            /**
+             * License Status
+             * @default
+             */
+            license_status: string;
+            /**
+             * License Status Desc
+             * @default
+             */
+            license_status_desc: string;
         };
         /**
          * ContactAttemptIn

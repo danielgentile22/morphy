@@ -56,7 +56,12 @@ OWNERS_INDEX_FILENAME = "owners_index.json"
 # ``interestingness_score``. Different towers sit on different parcels, so
 # same-owner towers can rank differently in Explore. A stale (pre-v5) index
 # omits the field; readers default it to None.
-OWNERS_INDEX_SCHEMA_VERSION = 5
+# v6 (audit M-l / #216): each carrier entry gains ``license_status`` (the ULS
+# HD code — A/C/E/T/…) + ``license_status_desc`` so the badge can distinguish
+# an active license from a cancelled/expired one. A stale (pre-v6) index (or
+# a pre-#216 composite behind a fresh index build) omits them; readers
+# default both to "".
+OWNERS_INDEX_SCHEMA_VERSION = 6
 
 OWNERS_FILTER_FILENAME = "owners_filter.json"
 
@@ -117,14 +122,23 @@ TOWER_ATTR_COLUMNS = (
 
 # Fields kept from a raw ULS carrier entry (drop anything #24 adds later that
 # the UI doesn't read, so the index stays lean + the contract is explicit).
-_CARRIER_FIELDS = ("carrier_name", "callsign", "license_expiry", "confidence_tag")
+# license_status/_desc (v6, audit M-l) default to "" on a pre-#216 composite.
+_CARRIER_FIELDS = (
+    "carrier_name",
+    "callsign",
+    "license_expiry",
+    "license_status",
+    "license_status_desc",
+    "confidence_tag",
+)
 
 
 def _normalize_carriers(raw) -> list[dict]:
     """Parse a tower's ``carriers`` (a JSON-array string on the composite) into
-    a clean list of ``{carrier_name, callsign, license_expiry, confidence_tag}``.
-    De-dup + ordering were already done in #24 — preserved as-is. Tolerant: a
-    null / blank / malformed value yields ``[]``."""
+    a clean list of ``{carrier_name, callsign, license_expiry, license_status,
+    license_status_desc, confidence_tag}``. De-dup + ordering were already done
+    in #24 — preserved as-is. Tolerant: a null / blank / malformed value yields
+    ``[]``; fields missing from an entry default to ""."""
     out: list[dict] = []
     for c in _parse_json_list(raw):
         out.append({k: ("" if c.get(k) is None else str(c.get(k))) for k in _CARRIER_FIELDS})

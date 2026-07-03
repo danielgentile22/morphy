@@ -68,6 +68,11 @@ class CarrierOut(BaseModel):
     carrier_name: str = ""
     callsign: str = ""
     license_expiry: str = ""
+    # ULS HD status code (A/C/E/T/…) + label (audit M-l / #216) — lets the
+    # badge distinguish active from cancelled/expired licenses. Defaulted so
+    # a pre-v6 owners index still validates.
+    license_status: str = ""
+    license_status_desc: str = ""
     confidence_tag: str = ""
 
 

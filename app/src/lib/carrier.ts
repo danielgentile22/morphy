@@ -34,7 +34,30 @@ export interface Carrier {
   carrier_name: string;
   callsign: string;
   license_expiry: string | null;
+  /** ULS HD status code (A/C/E/T/…) — '' on pre-#216 data (audit M-l). */
+  license_status: string;
+  /** Human label for the status code ("Active", "Cancelled", …). */
+  license_status_desc: string;
   confidence_tag: ConfidenceTag | string;
+}
+
+/** ULS HD codes that mean the license no longer authorizes service. A blank /
+ *  unknown status is NOT flagged — pre-#216 data carries no status, and a
+ *  false "cancelled" would be worse than staying quiet (audit M-l / INH-10). */
+const INACTIVE_STATUS_CODES = new Set(['C', 'E', 'T', 'X']);
+
+/** True when the carrier's license is cancelled/expired/terminated — the
+ *  badge then marks it so a dead license can't read as a live carrier. */
+export function isInactiveLicense(c: Pick<Carrier, 'license_status'>): boolean {
+  return INACTIVE_STATUS_CODES.has(c.license_status);
+}
+
+/** The word the badge shows for an inactive license — the status label when
+ *  the data carries one, else a generic "Inactive". */
+export function inactiveLicenseLabel(
+  c: Pick<Carrier, 'license_status' | 'license_status_desc'>,
+): string {
+  return c.license_status_desc.trim() || 'Inactive';
 }
 
 /** Display metadata for a confidence tag: the word shown in the badge, the
@@ -116,6 +139,8 @@ export function parseCarriers(value: unknown): Carrier[] {
       carrier_name: String(x.carrier_name ?? '').trim(),
       callsign: String(x.callsign ?? '').trim(),
       license_expiry: fmtExpiry(x.license_expiry),
+      license_status: String(x.license_status ?? '').trim(),
+      license_status_desc: String(x.license_status_desc ?? '').trim(),
       confidence_tag: String(x.confidence_tag ?? '').trim(),
     }));
 }
