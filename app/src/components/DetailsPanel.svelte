@@ -1,5 +1,6 @@
 <script lang="ts">
   import { app } from '../lib/stores.svelte';
+  import { scoring } from '../lib/scoring-store.svelte';
   import { entitySchema, fieldLabel, infrastructureItems, scoreComponents, carriers, type Props } from '../lib/schema';
   import CarrierList from './CarrierList.svelte';
   import Icon from './Icon.svelte';
@@ -92,6 +93,16 @@
         {#if components.length > 0}
           <div class="section">
             <h3>Score factors</h3>
+            <!-- The bars are the *baked* default-profile components (parcel-grained,
+                 precomputed). Custom scoring ranks by a different owner-grained
+                 formula, so the bars can't be recomputed for it — disclose instead
+                 of letting them misrepresent the active order (audit M-g). -->
+            {#if !scoring.useDefault}
+              <p class="factors-note" data-testid="score-factors-note">
+                Default score profile — a custom ranking is active, so these factors don't drive
+                the current order.
+              </p>
+            {/if}
             {#each components as c (c.factor)}
               <div class="factor">
                 <span class="fk">{humanize(c.factor)}</span>
@@ -202,6 +213,13 @@
     word-break: break-word;
   }
   .v.empty {
+    color: var(--muted);
+  }
+
+  .factors-note {
+    margin: 2px 0 4px;
+    font-size: 11px;
+    line-height: 1.4;
     color: var(--muted);
   }
 
