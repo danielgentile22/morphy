@@ -17,10 +17,22 @@ import os
 import time
 import urllib.error
 import urllib.request
+import zlib
 from collections.abc import Callable
 from pathlib import Path
 
 USER_AGENT = "PilotDataPuller/0.1 (lease-optimization research; contact: 43241327+danielgentile22@users.noreply.github.com)"
+
+# data.fcc.gov's bot filter (observed 2026-07) silently stalls requests that
+# don't advertise a browser-like "gzip, deflate" Accept-Encoding — "gzip"
+# alone or urllib's default both hang until timeout. Advertising it means
+# bodies may arrive compressed, so every body-reading path decompresses via
+# _decompressor().
+BASE_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": "*/*",
+    "Accept-Encoding": "gzip, deflate",
+}
 
 DEFAULT_TIMEOUT = 60  # seconds, per download request
 PROBE_TIMEOUT = 15  # seconds, per HEAD / cheap metadata GET
@@ -34,8 +46,18 @@ class HttpError(RuntimeError):
 
 def _opener() -> urllib.request.OpenerDirector:
     opener = urllib.request.build_opener()
-    opener.addheaders = [("User-Agent", USER_AGENT)]
+    opener.addheaders = list(BASE_HEADERS.items())
     return opener
+
+
+def _decompressor(resp):
+    """Streaming decompressor for the response body, or None if plain."""
+    enc = (resp.headers.get("Content-Encoding") or "").lower()
+    if enc in ("gzip", "deflate"):
+        # ponytail: wbits=47 auto-detects gzip + zlib-wrapped deflate; a server
+        # sending raw deflate would fail loudly — none of ours do.
+        return zlib.decompressobj(47)
+    return None
 
 
 def head(url: str) -> dict[str, str | None]:
@@ -44,7 +66,7 @@ def head(url: str) -> dict[str, str | None]:
     Keys: 'etag', 'last_modified', 'content_length', 'content_type'.
     Values may be None when the server omits the header.
     """
-    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": USER_AGENT})
+    req = urllib.request.Request(url, method="HEAD", headers=dict(BASE_HEADERS))
     try:
         with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT) as resp:
             h = resp.headers
@@ -68,7 +90,7 @@ def _head_via_get(url: str) -> dict[str, str | None]:
     """Fallback when HEAD isn't supported: issue a Range: bytes=0-0 GET."""
     req = urllib.request.Request(
         url,
-        headers={"User-Agent": USER_AGENT, "Range": "bytes=0-0"},
+        headers={**BASE_HEADERS, "Range": "bytes=0-0"},
     )
     try:
         with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT) as resp:
@@ -93,10 +115,13 @@ def _head_via_get(url: str) -> dict[str, str | None]:
 
 def fetch_text(url: str, max_bytes: int = 5 * 1024 * 1024) -> str:
     """Small GET returning decoded text. For listing pages and JSON metadata."""
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    req = urllib.request.Request(url, headers=dict(BASE_HEADERS))
     try:
         with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT) as resp:
             data = resp.read(max_bytes + 1)
+            decomp = _decompressor(resp)
+            if decomp is not None:
+                data = decomp.decompress(data) + decomp.flush()
             if len(data) > max_bytes:
                 raise HttpError(f"response exceeded {max_bytes} bytes")
             enc = resp.headers.get_content_charset() or "utf-8"
@@ -155,7 +180,7 @@ def _do_download(
     expected_min_bytes: int,
     cancel_check: Callable[[], bool] | None,
 ) -> int:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    req = urllib.request.Request(url, headers=dict(BASE_HEADERS))
     with urllib.request.urlopen(req, timeout=DEFAULT_TIMEOUT) as resp:
         total: int | None = None
         cl = resp.headers.get("Content-Length")
@@ -165,23 +190,32 @@ def _do_download(
             except ValueError:
                 total = None
 
-        bytes_done = 0
+        decomp = _decompressor(resp)
+        bytes_done = 0  # wire bytes — comparable to Content-Length for progress
+        written = 0  # on-disk bytes — what expected_min_bytes is about
         with open(tmp, "wb") as f:
             while True:
                 if cancel_check is not None and cancel_check():
                     raise HttpError("download cancelled by user")
                 chunk = resp.read(CHUNK)
                 if not chunk:
+                    if decomp is not None:
+                        tail = decomp.flush()
+                        f.write(tail)
+                        written += len(tail)
                     break
-                f.write(chunk)
                 bytes_done += len(chunk)
+                if decomp is not None:
+                    chunk = decomp.decompress(chunk)
+                f.write(chunk)
+                written += len(chunk)
                 if on_progress is not None:
                     on_progress(bytes_done, total)
 
-    if expected_min_bytes and bytes_done < expected_min_bytes:
-        raise HttpError(f"downloaded only {bytes_done} bytes, expected ≥ {expected_min_bytes}")
+    if expected_min_bytes and written < expected_min_bytes:
+        raise HttpError(f"downloaded only {written} bytes, expected ≥ {expected_min_bytes}")
 
     os.replace(tmp, dest)
     if on_progress is not None:
         on_progress(bytes_done, total if total is not None else bytes_done)
-    return bytes_done
+    return written
