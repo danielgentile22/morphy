@@ -68,6 +68,7 @@ def _legacy_valid_parcel_mask(chunk: gpd.GeoDataFrame):
 def _legacy_build_infra_to_parcel_lookups(
     specs: dict[str, tuple[gpd.GeoDataFrame | None, list[str]]],
     state_fips: str,
+    predicates: dict[str, str] | None = None,
 ) -> dict[str, dict[int, dict]]:
     out: dict[str, dict[int, dict]] = {name: {} for name in specs}
     active = {
@@ -87,7 +88,11 @@ def _legacy_build_infra_to_parcel_lookups(
             present = [c for c in keep_cols if c in valid_chunk.columns]
             right = valid_chunk[[*present, "geometry"]].rename(columns=_INFRA_PARCEL_RENAME)
             try:
-                hit = gpd.sjoin(infra_geo, right, how="inner", predicate="within")
+                # Per-layer predicate (audit M-a / #211): the reference is the
+                # registered InfraToParcelJoin's gpd.sjoin with the same
+                # predicate the DuckDB stage now applies per layer.
+                pred = (predicates or {}).get(name, "within")
+                hit = gpd.sjoin(infra_geo, right, how="inner", predicate=pred)
             except Exception as e:  # noqa: BLE001
                 log.warning("infra→parcel sjoin failed on a shard for %s: %s", name, e)
                 continue
@@ -124,9 +129,9 @@ def _norm_lookups(lookups: dict[str, dict[int, dict]]) -> dict[str, dict[int, di
     }
 
 
-def _assert_equivalent(specs, state_fips):
-    legacy = _norm_lookups(_legacy_build_infra_to_parcel_lookups(specs, state_fips))
-    ducked = _norm_lookups(_build_infra_to_parcel_lookups(specs, state_fips))
+def _assert_equivalent(specs, state_fips, predicates=None):
+    legacy = _norm_lookups(_legacy_build_infra_to_parcel_lookups(specs, state_fips, predicates))
+    ducked = _norm_lookups(_build_infra_to_parcel_lookups(specs, state_fips, predicates))
     assert ducked == legacy
     return ducked
 
@@ -294,6 +299,60 @@ def test_equivalence_no_parcel_shards(edge_fixture, monkeypatch):
     specs = {"tower": (towers, TOWER_KEEP)}
     result = _assert_equivalent(specs, "30")  # fixture shards are all state 05
     assert result == {"tower": {}}
+
+
+def test_polygon_solar_attaches_by_intersects(edge_fixture):
+    """Audit M-a / #211: a utility-scale solar polygon that spans a parcel
+    boundary attaches under `intersects` (its primary parcel, canonical
+    order) — and demonstrably does NOT under the old blanket `within`.
+    Points behave identically under both predicates away from boundaries.
+    Both engines agree under the per-layer predicates."""
+    spanning = Polygon(  # straddles P1's right edge (P1 covers x ∈ [-0.5, 0.5])
+        [(0.2, -0.2), (0.8, -0.2), (0.8, 0.2), (0.2, 0.2)]
+    )
+    solar = gpd.GeoDataFrame(
+        {
+            "facility_id": ["S_span", "S_point", "S_nowhere"],
+            "geometry": [spanning, Point(6, 0), Point(50, 50)],
+        },
+        crs="EPSG:4326",
+    )
+    specs = {"solar": (solar, ["parcel_id_full", "owner_name"])}
+
+    # The old blanket-within behaviour: the spanning polygon attaches nowhere.
+    old = _norm_lookups(_build_infra_to_parcel_lookups(specs, "05"))
+    assert 0 not in old["solar"], "within must not match a boundary-spanning polygon"
+    assert old["solar"][1]["parcel_id_full"] == "P6"
+
+    # The M-a fix: intersects — the spanning polygon lands on its primary
+    # parcel (P1: first shard, first row wins the P1/P2/P7 overlap), points
+    # are unchanged, and both engines agree.
+    fixed = _assert_equivalent(specs, "05", predicates={"solar": "intersects"})
+    assert fixed["solar"][0]["parcel_id_full"] == "P1"
+    assert fixed["solar"][0]["parcel_owner"] == "OWNER ONE"
+    assert fixed["solar"][1]["parcel_id_full"] == "P6"
+    assert 2 not in fixed["solar"]
+
+
+def test_mixed_predicates_one_call(edge_fixture):
+    """Towers (within) + solar (intersects) in ONE lookup call — the per-
+    predicate grouping must not leak layers across queries."""
+    towers = gpd.GeoDataFrame(
+        {"asr_number": ["T1"], "geometry": [Point(0, 0)]},
+        crs="EPSG:4326",
+    )
+    spanning = Polygon([(0.2, -0.2), (0.8, -0.2), (0.8, 0.2), (0.2, 0.2)])
+    solar = gpd.GeoDataFrame(
+        {"facility_id": ["S_span"], "geometry": [spanning]},
+        crs="EPSG:4326",
+    )
+    specs = {
+        "tower": (towers, TOWER_KEEP),
+        "solar": (solar, ["parcel_id_full", "owner_name"]),
+    }
+    result = _assert_equivalent(specs, "05", predicates={"tower": "within", "solar": "intersects"})
+    assert result["tower"][0]["parcel_id_full"] == "P1"
+    assert result["solar"][0]["parcel_id_full"] == "P1"
 
 
 # ═══ Stage 2: county_summary rollup ════════════════════════════════════════
