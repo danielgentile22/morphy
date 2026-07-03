@@ -353,3 +353,9 @@ class User(Base):
     # Friendly name for task assignment (#110); '' falls back to the email.
     display_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    @property
+    def name(self) -> str:
+        """The render name — display_name, falling back to the email. The one
+        home for that rule (UserOut and the roster lookups both read it)."""
+        return self.display_name or self.email

@@ -9,7 +9,7 @@ from datetime import date, timedelta
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from backend.app.attention_service import AttentionService
+from backend.app.attention_service import DISMISS_CHANNEL, AttentionService
 from backend.app.lead_store import LeadStore
 from backend.app.task_store import TaskStore
 
@@ -61,9 +61,11 @@ def test_outbound_only_is_not_attention(engine: Engine) -> None:
 
 
 def test_dismiss_clears_the_reply(engine: Engine) -> None:
+    # Dismissal is just a newer activity row (channel='dismiss') — the rule the
+    # /api/attention/dismiss route applies via the lead store.
     _leads(engine, 1).append_attempt(CID, channel="email", outcome="hi", direction="inbound")
-    assert _svc(engine, 1).count() == 1
-    _svc(engine, 1).dismiss(CID)  # appends a newer dismiss row
+    assert len(_svc(engine, 1).items()) == 1
+    _leads(engine, 1).append_attempt(CID, channel=DISMISS_CHANNEL, outcome="dismissed")
     assert _svc(engine, 1).unhandled_replies() == []
 
 
@@ -100,10 +102,10 @@ def test_my_overdue_task_is_attention(engine: Engine) -> None:
 def test_feed_combines_replies_and_overdue_tasks(engine: Engine) -> None:
     _leads(engine, 1).append_attempt(CID, channel="email", outcome="hi", direction="inbound")
     _tasks(engine, 1).create(title="overdue", due_date=TODAY - timedelta(days=1))
-    assert _svc(engine, 1).count() == 2
+    assert len(_svc(engine, 1).items()) == 2
 
 
 def test_attention_is_tenant_scoped(engine: Engine) -> None:
     _leads(engine, 1).append_attempt(CID, channel="email", outcome="hi", direction="inbound")
     _tasks(engine, 1).create(title="overdue", due_date=TODAY - timedelta(days=1))
-    assert _svc(engine, 2).count() == 0
+    assert _svc(engine, 2).items() == []

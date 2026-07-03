@@ -19,9 +19,9 @@ class UserStore(TenantScopedStore):
         return self.get_scoped(User, user_id)
 
     def names_by_id(self) -> dict[int, str]:
-        """``user_id → display name`` (display_name or email) for the tenant."""
+        """``user_id → render name`` (the ``User.name`` rule) for the tenant."""
         rows = self.session.scalars(self.scoped(select(User)))
-        return {u.id: (u.display_name or u.email) for u in rows}
+        return {u.id: u.name for u in rows}
 
     def list_by_email(self) -> list[User]:
         """The tenant's teammates, ordered by email — the task-assignment roster."""

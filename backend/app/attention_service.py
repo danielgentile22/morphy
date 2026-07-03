@@ -100,11 +100,3 @@ class AttentionService:
     def items(self) -> list[AttentionItem]:
         """The full feed — replies first (then overdue tasks), each newest-first."""
         return self.unhandled_replies() + self.overdue_tasks()
-
-    def count(self) -> int:
-        return len(self.items())
-
-    def dismiss(self, cluster_id: str) -> None:
-        """Clear a Lead's unhandled reply by appending a newer activity row
-        (a no-op touch with ``channel='dismiss'``)."""
-        self.leads.append_attempt(cluster_id, channel=DISMISS_CHANNEL, outcome="dismissed")

@@ -268,9 +268,12 @@ class OwnersIndexService:
             {"display_cluster_id": m, "owner_name": self._by_id.get(m, {}).get("owner_name", "")}
             for m in sorted(members - {root})
         ]
+        status = lead.status if lead else INITIAL_STATUS
         return {
-            "owner": {**owner, "trigger_asr": trigger_asr},
-            "status": lead.status if lead else INITIAL_STATUS,
+            # The owner carries the lead status too, so the view validates
+            # straight into LeadDetail (whose OwnerSummary declares status).
+            "owner": {**owner, "trigger_asr": trigger_asr, "status": status},
+            "status": status,
             "notes": lead.notes if lead else "",
             "updated_at": lead.updated_at.isoformat() if lead else None,
             "contact_name": lead.contact_name if lead else "",

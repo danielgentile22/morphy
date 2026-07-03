@@ -1,8 +1,53 @@
-"""Pydantic request/response models for the thin Lead REST surface."""
+"""Pydantic request/response models for the thin Lead REST surface.
+
+The Out schemas are the single field list (PRD #253 W2): response models
+declare ``from_attributes`` and routes validate straight from ORM rows /
+service dataclasses, so a field exists in exactly one place. Where the wire
+shape differs from the storage shape (ISO date strings, comma-joined labels,
+JSON-encoded preset config), a ``mode="before"`` validator on the schema owns
+the transform — the OpenAPI contract shape is unchanged.
+"""
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+import json
+from collections.abc import Sequence
+from datetime import date, datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def sent_fields(
+    body: BaseModel, fields: Sequence[str], *, keep_none: bool = False
+) -> dict[str, Any]:
+    """The subset of ``fields`` the client actually sent, in ``fields`` order —
+    the one home for partial-update (PATCH-over-PUT) semantics.
+
+    By default an explicit ``null`` is dropped (null == omitted — nothing is
+    clearable); ``keep_none=True`` passes it through for stores whose sentinel
+    defaults make a sent ``null`` mean *clear* (TaskStore's ``_UNSET`` fields).
+    """
+    sent = body.model_fields_set
+    out: dict[str, Any] = {}
+    for f in fields:
+        if f not in sent:
+            continue
+        v = getattr(body, f)
+        if v is None and not keep_none:
+            continue
+        out[f] = v
+    return out
+
+
+def _iso_or_none(v: object) -> object:
+    return v.isoformat() if isinstance(v, (date, datetime)) else v
+
+
+def _iso_or_empty(v: object) -> object:
+    if v is None:
+        return ""
+    return v.isoformat() if isinstance(v, (date, datetime)) else v
 
 
 class OwnerSummary(BaseModel):
@@ -211,6 +256,8 @@ class AntennaState(BaseModel):
     """The team's editable layer over one antenna (by ASR). All fields default
     so an antenna with no override row serializes as the empty/unedited state."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     asr: str
     archived: bool = False
     address: str = ""
@@ -333,6 +380,8 @@ class TaskUpdate(BaseModel):
 
 
 class TaskOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     title: str
     description: str
@@ -349,6 +398,18 @@ class TaskOut(BaseModel):
     updated_at: str
     completed_at: str | None = None
 
+    # Wire shape vs ORM shape: dates serve as ISO strings ('' for an unset
+    # timestamp), labels as a list over the comma-joined column.
+    _dates = field_validator("due_date", "completed_at", mode="before")(_iso_or_none)
+    _stamps = field_validator("created_at", "updated_at", mode="before")(_iso_or_empty)
+
+    @field_validator("labels", mode="before")
+    @classmethod
+    def _split_labels(cls, v: object) -> object:
+        from .task_store import label_list
+
+        return label_list(v) if isinstance(v, str) else v
+
 
 class TasksResponse(BaseModel):
     count: int
@@ -358,6 +419,9 @@ class TasksResponse(BaseModel):
 class UserOut(BaseModel):
     """A tenant teammate for the assignment UI (#110). ``name`` is the display
     name, falling back to the email."""
+
+    # Filled straight off the User row; ``name`` reads the model property.
+    model_config = ConfigDict(from_attributes=True)
 
     id: int
     email: str
@@ -372,6 +436,8 @@ class UsersResponse(BaseModel):
 
 # ── Dashboard attention feed (UI overhaul P2 / #111) ─────────────────────────
 class AttentionItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     kind: str  # 'reply' | 'overdue_task'
     title: str
     when: str
@@ -391,6 +457,8 @@ class DismissBody(BaseModel):
 
 # ── Dashboard activity views: History + Calendar (UI overhaul P3 / #112) ─────
 class ActivityEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int  # ContactAttempt PK — stable key for keyed rendering
     date: str
     kind: str  # touch | reply | status | flag
@@ -411,6 +479,9 @@ class ActivityResponse(BaseModel):
 
 # ── Settings: automation (UI overhaul P5 / #116) ─────────────────────────────
 class SettingsResponse(BaseModel):
+    # Validated straight off the SettingsStore's typed properties.
+    model_config = ConfigDict(from_attributes=True)
+
     auto_followup_enabled: bool
     auto_followup_window_days: int
 
@@ -428,10 +499,24 @@ class ScoringPresetIn(BaseModel):
 
 
 class ScoringPresetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     config: dict
     is_default: bool
+
+    @field_validator("config", mode="before")
+    @classmethod
+    def _decode_config(cls, v: object) -> object:
+        """The column is opaque JSON text; the wire shape is a dict. A stored
+        value that doesn't parse serves as {} rather than a 500."""
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (ValueError, TypeError):
+                return {}
+        return v
 
 
 class ScoringPresetsResponse(BaseModel):
@@ -441,6 +526,8 @@ class ScoringPresetsResponse(BaseModel):
 
 # ── Dashboard Stats (UI overhaul P3 / #113) ──────────────────────────────────
 class StatsResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     funnel: dict[str, int]
     conversion: dict[str, float]
     reply_rate: float

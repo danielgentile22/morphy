@@ -105,6 +105,7 @@ from .schemas import (
     UserSettingsResponse,
     UserSettingsUpdate,
     UsersResponse,
+    sent_fields,
 )
 from .scoring_preset_store import ScoringPresetStore
 from .settings_store import (
@@ -115,7 +116,7 @@ from .settings_store import (
     UserSettingsStore,
 )
 from .stats_service import ActivityRow, LeadRow, StatsService
-from .task_store import InvalidTaskPriority, InvalidTaskStatus, TaskStore, label_list
+from .task_store import InvalidTaskPriority, InvalidTaskStatus, TaskStore
 from .tenant_scoped_store import TenantScopedStore
 from .tenant_service import TenantService
 from .user_store import UserStore
@@ -410,13 +411,7 @@ def update_my_settings(
     """Upsert one or more preference keys (PRD #121). ``home_view`` /
     ``filter_default`` are opaque client-owned blobs persisted verbatim — the
     backend never inspects them (same posture as ``ScoringPreset.config``)."""
-    sent = body.model_fields_set
-    for key in KNOWN_KEYS:
-        if key not in sent:
-            continue
-        value = getattr(body, key)
-        if value is None:
-            continue  # an explicit null means "leave unchanged" — never store "None"
+    for key, value in sent_fields(body, KNOWN_KEYS).items():
         # bool prefs are stored as "0"/"1"; everything else is a string.
         s.set(key, ("1" if value else "0") if isinstance(value, bool) else str(value))
     return _user_settings_out(s)
@@ -617,7 +612,7 @@ def get_lead(
     view = owners_index.lead_view(store, display_cluster_id, merges=merges)
     if view is None:
         raise HTTPException(status_code=404, detail="owner not found in index")
-    return _to_detail(view)
+    return LeadDetail.model_validate(view)
 
 
 @app.put("/api/leads/{display_cluster_id}", response_model=LeadDetail)
@@ -634,9 +629,7 @@ def update_lead(
     # Honor coalesce on writes too: a merged-away source id persists onto the
     # surviving target row, so what the user sees is what they edit.
     target = merges.resolve(display_cluster_id)
-    contact = {
-        f: getattr(body, f) for f in LeadStore.CONTACT_FIELDS if getattr(body, f) is not None
-    }
+    contact = sent_fields(body, LeadStore.CONTACT_FIELDS)
     try:
         store.upsert(
             target,
@@ -655,7 +648,7 @@ def update_lead(
         )
     view = owners_index.lead_view(store, display_cluster_id, merges=merges)
     assert view is not None  # owner existence checked above
-    return _to_detail(view)
+    return LeadDetail.model_validate(view)
 
 
 @app.post("/api/leads/{display_cluster_id}/attempts", response_model=LeadDetail)
@@ -704,7 +697,7 @@ def log_attempt(
         )
     view = owners_index.lead_view(store, display_cluster_id, merges=merges)
     assert view is not None
-    return _to_detail(view)
+    return LeadDetail.model_validate(view)
 
 
 @app.post("/api/leads/{display_cluster_id}/pursue", response_model=LeadDetail)
@@ -728,7 +721,7 @@ def pursue_owner(
     )
     view = owners_index.lead_view(store, display_cluster_id, merges=merges)
     assert view is not None
-    return _to_detail(view)
+    return LeadDetail.model_validate(view)
 
 
 @app.post("/api/leads/{display_cluster_id}/merge", response_model=LeadDetail)
@@ -754,7 +747,7 @@ def merge_cluster(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     view = owners_index.lead_view(store, target, merges=merges)
     assert view is not None
-    return _to_detail(view)
+    return LeadDetail.model_validate(view)
 
 
 @app.post("/api/leads/{display_cluster_id}/split", response_model=LeadDetail)
@@ -774,23 +767,14 @@ def split_cluster(
         raise HTTPException(status_code=404, detail="no merge override to split")
     view = owners_index.lead_view(store, target, merges=merges)
     assert view is not None
-    return _to_detail(view)
+    return LeadDetail.model_validate(view)
 
 
 # ── per-antenna manual state (UI overhaul round 2) ────────────────────────────
 def _antenna_state(asr: str, row) -> AntennaState:
-    """Serialize an antenna override row, or the empty/unedited state if none."""
-    if row is None:
-        return AntennaState(asr=asr)
-    return AntennaState(
-        asr=asr,
-        archived=row.archived,
-        address=row.address,
-        owner_name=row.owner_name,
-        owner_phone=row.owner_phone,
-        owner_email=row.owner_email,
-        notes=row.notes,
-    )
+    """The override row validated straight into the schema, or the
+    empty/unedited state when no row exists (asr comes from the path)."""
+    return AntennaState.model_validate(row) if row is not None else AntennaState(asr=asr)
 
 
 @app.get("/api/antennas/archived", response_model=ArchivedAsrsResponse)
@@ -819,9 +803,8 @@ def update_antenna(
     """Set the archived flag and/or any subset of the editable fields for an
     antenna. Only fields actually sent are touched (``model_fields_set``), so
     archiving doesn't clear an address and vice-versa."""
-    sent = body.model_fields_set
-    fields = {f: getattr(body, f) for f in AntennaStore.EDITABLE if f in sent}
-    archived = body.archived if "archived" in sent else None
+    fields = sent_fields(body, AntennaStore.EDITABLE)
+    archived = sent_fields(body, ("archived",)).get("archived")
     row = antennas.upsert(asr, archived=archived, fields=fields or None)
     return _antenna_state(asr, row)
 
@@ -854,7 +837,7 @@ def list_tasks(
         due_before=_parse_iso_date(due_before),
         q=q,
     )
-    return TasksResponse(count=len(rows), tasks=[_task_to_out(t) for t in rows])
+    return TasksResponse(count=len(rows), tasks=[TaskOut.model_validate(t) for t in rows])
 
 
 @app.post("/api/tasks", response_model=TaskOut)
@@ -879,7 +862,7 @@ def create_task(
         )
     except InvalidTaskPriority as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _task_to_out(task)
+    return TaskOut.model_validate(task)
 
 
 @app.get("/api/tasks/{task_id}", response_model=TaskOut)
@@ -887,7 +870,7 @@ def get_task(task_id: int, tasks: TaskStore = Depends(get_tasks)) -> TaskOut:
     task = tasks.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
-    return _task_to_out(task)
+    return TaskOut.model_validate(task)
 
 
 @app.put("/api/tasks/{task_id}", response_model=TaskOut)
@@ -898,18 +881,14 @@ def update_task(
 ) -> TaskOut:
     if body.title is not None and not body.title.strip():
         raise HTTPException(status_code=422, detail="title cannot be blank")
-    # Only fields the client actually sent — so omitting a nullable link leaves
-    # it unchanged while sending null clears it (#110).
-    sent = body.model_fields_set
-    kwargs: dict = {}
-    for f in ("title", "description", "status", "priority", "labels"):
-        if f in sent:
-            kwargs[f] = getattr(body, f)
-    if "due_date" in sent:
-        kwargs["due_date"] = _parse_iso_date(body.due_date)
-    for f in ("assignee_user_id", "lead_cluster_id", "tower_asr"):
-        if f in sent:
-            kwargs[f] = getattr(body, f)
+    # Only fields the client actually sent; for the sentinel-clearable fields
+    # a sent null passes through so it clears the link/due/assignee (#110).
+    kwargs = sent_fields(body, ("title", "description", "status", "priority", "labels"))
+    kwargs |= sent_fields(
+        body, ("due_date", "assignee_user_id", "lead_cluster_id", "tower_asr"), keep_none=True
+    )
+    if "due_date" in kwargs:
+        kwargs["due_date"] = _parse_iso_date(kwargs["due_date"])
     try:
         task = tasks.update(task_id, **kwargs)
     except InvalidTaskStatus as exc:
@@ -918,7 +897,7 @@ def update_task(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
-    return _task_to_out(task)
+    return TaskOut.model_validate(task)
 
 
 @app.delete("/api/tasks/{task_id}", status_code=204)
@@ -947,17 +926,7 @@ def attention(
     items = svc.items()
     return AttentionResponse(
         count=len(items),
-        items=[
-            AttentionItemOut(
-                kind=i.kind,
-                title=i.title,
-                when=i.when,
-                cluster_id=i.cluster_id,
-                owner_name=i.owner_name,
-                task_id=i.task_id,
-            )
-            for i in items
-        ],
+        items=[AttentionItemOut.model_validate(i) for i in items],
     )
 
 
@@ -983,10 +952,7 @@ def dismiss_attention(
 # ── Settings: automation (#116) ───────────────────────────────────────────────
 @app.get("/api/settings", response_model=SettingsResponse)
 def get_tenant_settings(settings: SettingsStore = Depends(get_settings)) -> SettingsResponse:
-    return SettingsResponse(
-        auto_followup_enabled=settings.auto_followup_enabled,
-        auto_followup_window_days=settings.auto_followup_window_days,
-    )
+    return SettingsResponse.model_validate(settings)
 
 
 @app.put("/api/settings", response_model=SettingsResponse)
@@ -999,27 +965,18 @@ def update_tenant_settings(
         if body.auto_followup_window_days < 1:
             raise HTTPException(status_code=422, detail="window must be ≥ 1 day")
         settings.set(AUTO_FOLLOWUP_WINDOW_DAYS, str(body.auto_followup_window_days))
-    return SettingsResponse(
-        auto_followup_enabled=settings.auto_followup_enabled,
-        auto_followup_window_days=settings.auto_followup_window_days,
-    )
+    return SettingsResponse.model_validate(settings)
 
 
 # ── Scoring presets (#115) — tenant-shared named scoring configs ──────────────
-def _preset_out(p) -> ScoringPresetOut:
-    try:
-        config = json.loads(p.config)
-    except (ValueError, TypeError):
-        config = {}
-    return ScoringPresetOut(id=p.id, name=p.name, config=config, is_default=p.is_default)
-
-
 @app.get("/api/scoring-presets", response_model=ScoringPresetsResponse)
 def list_scoring_presets(
     presets: ScoringPresetStore = Depends(get_presets),
 ) -> ScoringPresetsResponse:
     rows = presets.list()
-    return ScoringPresetsResponse(count=len(rows), presets=[_preset_out(p) for p in rows])
+    return ScoringPresetsResponse(
+        count=len(rows), presets=[ScoringPresetOut.model_validate(p) for p in rows]
+    )
 
 
 @app.post("/api/scoring-presets", response_model=ScoringPresetOut)
@@ -1031,7 +988,7 @@ def create_scoring_preset(
     p = presets.create(
         name=body.name.strip(), config=json.dumps(body.config), is_default=body.is_default
     )
-    return _preset_out(p)
+    return ScoringPresetOut.model_validate(p)
 
 
 @app.post("/api/scoring-presets/{preset_id}/default", response_model=ScoringPresetOut)
@@ -1041,7 +998,7 @@ def set_default_scoring_preset(
     p = presets.set_default(preset_id)
     if p is None:
         raise HTTPException(status_code=404, detail="preset not found")
-    return _preset_out(p)
+    return ScoringPresetOut.model_validate(p)
 
 
 @app.delete("/api/scoring-presets/{preset_id}", status_code=204)
@@ -1099,17 +1056,7 @@ def stats(
         state=state,
         member=member,
     )
-    return StatsResponse(
-        funnel=r.funnel,
-        conversion=r.conversion,
-        reply_rate=r.reply_rate,
-        win_rate=r.win_rate,
-        volume_by_channel=r.volume_by_channel,
-        activity_total=r.activity_total,
-        active_days=r.active_days,
-        by_state=r.by_state,
-        by_member=r.by_member,
-    )
+    return StatsResponse.model_validate(r)
 
 
 # ── Dashboard: activity views — History + Calendar (#112) ─────────────────────
@@ -1148,20 +1095,7 @@ def activity(
     digest = svc.digest()
     return ActivityResponse(
         count=len(events),
-        events=[
-            ActivityEventOut(
-                id=e.id,
-                date=e.date,
-                kind=e.kind,
-                channel=e.channel,
-                cluster_id=e.cluster_id,
-                owner_name=e.owner_name,
-                logged_by_user_id=e.logged_by_user_id,
-                member_name=e.member_name,
-                summary=e.summary,
-            )
-            for e in events
-        ],
+        events=[ActivityEventOut.model_validate(e) for e in events],
         last_contact_on=digest["last_contact_on"],
         last_reply_on=digest["last_reply_on"],
     )
@@ -1171,18 +1105,7 @@ def activity(
 def list_users(users: UserStore = Depends(get_users)) -> UsersResponse:
     """The tenant's teammates for task assignment (#110)."""
     rows = users.list_by_email()
-    return UsersResponse(
-        count=len(rows),
-        users=[
-            UserOut(
-                id=u.id,
-                email=u.email,
-                display_name=u.display_name,
-                name=u.display_name or u.email,
-            )
-            for u in rows
-        ],
-    )
+    return UsersResponse(count=len(rows), users=[UserOut.model_validate(u) for u in rows])
 
 
 def _parse_iso_date(value: str | None) -> date | None:
@@ -1192,44 +1115,3 @@ def _parse_iso_date(value: str | None) -> date | None:
         return date.fromisoformat(value)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="occurred_on must be ISO date") from exc
-
-
-def _task_to_out(task) -> TaskOut:
-    # Trusted ORM row → skip the in-route validation pass (PERF-024); the
-    # /api/tasks response_model still validates once authoritatively.
-    return TaskOut.model_construct(
-        id=task.id,
-        title=task.title,
-        description=task.description,
-        status=task.status,
-        priority=task.priority,
-        due_date=task.due_date.isoformat() if task.due_date else None,
-        assignee_user_id=task.assignee_user_id,
-        lead_cluster_id=task.lead_cluster_id,
-        tower_asr=task.tower_asr,
-        labels=label_list(task.labels),
-        source=task.source,
-        created_by_user_id=task.created_by_user_id,
-        created_at=task.created_at.isoformat() if task.created_at else "",
-        updated_at=task.updated_at.isoformat() if task.updated_at else "",
-        completed_at=task.completed_at.isoformat() if task.completed_at else None,
-    )
-
-
-def _to_detail(view: dict) -> LeadDetail:
-    owner = OwnerSummary(**{**view["owner"], "status": view["status"]})
-    return LeadDetail(
-        owner=owner,
-        status=view["status"],
-        notes=view["notes"],
-        updated_at=view["updated_at"],
-        attempts=view["attempts"],
-        contact_name=view["contact_name"],
-        contact_phone=view["contact_phone"],
-        contact_email=view["contact_email"],
-        best_channel=view["best_channel"],
-        mailing_address=view["mailing_address"],
-        tallest_tower_height_m=view["tallest_tower_height_m"],
-        holdings=view["holdings"],
-        merged_members=view.get("merged_members", []),
-    )
