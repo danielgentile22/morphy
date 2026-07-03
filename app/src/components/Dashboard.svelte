@@ -16,6 +16,7 @@
   import History from './History.svelte';
   import Calendar from './Calendar.svelte';
   import Stats from './Stats.svelte';
+  import DataFreshness from './DataFreshness.svelte';
 
   let { sub }: { sub: DashboardSub } = $props();
 
@@ -120,6 +121,12 @@
       <History heading={false} />
     </section>
   </div>
+
+  <!-- Data freshness read-out (#235) — a small read-only footer section. -->
+  <section class="view freshness-view" data-section="freshness" aria-label="Data freshness">
+    <h2 class="view-h">Data freshness</h2>
+    <DataFreshness />
+  </section>
   </div>
 </div>
 
@@ -155,6 +162,12 @@
     padding-top: 0;
     border-top: none;
     min-width: 0; /* let the grid column shrink below the content's intrinsic width */
+  }
+  /* Data freshness trails the grid under its own rule, like a grid row. */
+  .freshness-view {
+    margin-top: 22px;
+    padding-top: 22px;
+    border-top: 1px solid var(--border);
   }
   /* The headline Attention section sits flush at the very top — no rule above. */
   .view.attention {
