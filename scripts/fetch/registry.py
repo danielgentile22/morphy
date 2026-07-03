@@ -38,8 +38,8 @@ from .sources.fcc_asr import SOURCE as FCC_ASR
 # Split into active/deferred below.
 from .sources.fcc_uls import SOURCES as FCC_ULS_ALL
 
-# FL parcels — `fl_fgdl_parcels` is deferred (wrong dataset for landowner work);
-# replaced by `fdor_nal`.
+# FL parcels — `fdor_nal` is the private tax roll (the landowner dataset);
+# `fl_fgdl_parcels` is the DSL state-owned-land composite that complements it.
 from .sources.fdor_nal import SOURCE as FDOR_NAL
 
 # Billboards (all deferred for v1 — not core to cell-tower thesis)
@@ -83,6 +83,7 @@ _ACTIVE: list[DataSource] = [
     # Parcels — anchor states
     NC_PARCELS,
     FDOR_NAL,
+    FL_FGDL_PARCELS,  # FL state-owned land — complements fdor_nal (activated 2026-07-03)
     *STATE_PARCELS_ACTIVE,  # MT + AR + WV
     # Distress overlays
     HUD_OZ,
@@ -106,9 +107,6 @@ _DEFERRED: list[DataSource] = [
     FDOT_BILLBOARDS,
     NCDOT_BILLBOARDS,
     TXDOT_BILLBOARDS,
-    # FL FGDL DSL — state-land parcels (wrong dataset for landowner work).
-    # Replaced in active block by fdor_nal.
-    FL_FGDL_PARCELS,
     # MN + IN parcels — MN license ambiguous; IN public parcels have no
     # owner_name column.
     *STATE_PARCELS_DEFERRED,

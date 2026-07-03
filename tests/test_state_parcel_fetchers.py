@@ -1,10 +1,11 @@
 """Fetch-layer tests for the 2026-07 MANUAL_ONLY→ALLOWED flips.
 
-MT, WV, and FL FDOR parcel sources auto-fetch as of 2026-07-03 (direct
-anonymous HTTPS confirmed per-source; see each source's legal notes).
-These tests pin the fetch mechanics: zip download → extract-in-place →
-zip cleanup, WV vintage discovery, FDOR SharePoint listing walk +
-per-county resume. AR deliberately stays MANUAL_ONLY.
+MT, WV, FL FDOR, and FL FGDL DSL parcel sources auto-fetch as of
+2026-07-03 (direct anonymous HTTPS confirmed per-source; see each
+source's legal notes). These tests pin the fetch mechanics: zip
+download → extract-in-place → zip cleanup, WV vintage discovery, FGDL
+newest-release discovery, FDOR SharePoint listing walk + per-county
+resume. AR deliberately stays MANUAL_ONLY.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from fetch.http import HttpError
 from fetch.registry import get_source
 from fetch.sources import _helpers as helpers_mod
 from fetch.sources import fdor_nal as fdor_mod
+from fetch.sources import fl_fgdl_parcels as fgdl_mod
 from fetch.sources import state_parcels as sp_mod
 
 
@@ -51,7 +53,7 @@ def _sink(*_args):
 
 
 def test_flip_census():
-    for sid in ("mt_cadastral_parcels", "wv_parcels", "fdor_nal"):
+    for sid in ("mt_cadastral_parcels", "wv_parcels", "fdor_nal", "fl_fgdl_parcels"):
         src = get_source(sid)
         assert not src.is_manual_only, f"{sid} should be auto-fetch"
         assert src.manual_walkthrough() is not None, f"{sid} must keep its fallback walkthrough"
@@ -112,6 +114,43 @@ def test_wv_fetch_extracts_gdb(monkeypatch, tmp_path):
     assert (tmp_path / "WV_WVGISTC_Tax_2025.gdb" / "gdb_file.gdbtable").exists()
     assert not (tmp_path / "WV_WVGISTC_Tax_2025.gdb.zip").exists()
     assert res.remote_version == "2025:2026-06-24"
+
+
+# ── Florida FGDL DSL (state-owned land) ────────────────────────────────────
+
+_FGDL_LISTING = """
+<a href="dsl_parcel_composite_oct24.zip">dsl_parcel_composite_oct24.zip</a>
+<a href="dsl_parcel_composite_oct25.zip">dsl_parcel_composite_oct25.zip</a>
+<a href="dsl_parcel_composite_mar25.zip">dsl_parcel_composite_mar25.zip</a>
+"""
+
+
+def test_fgdl_discovers_newest_release(monkeypatch):
+    monkeypatch.setattr(fgdl_mod, "fetch_text", lambda url, **kw: _FGDL_LISTING)
+    url, tag = fgdl_mod.FlFgdlParcels()._latest_zip()
+    assert tag == "oct25"  # oct25 > mar25 > oct24
+    assert url == f"{fgdl_mod.FGDL_CURRENT_DIR}dsl_parcel_composite_oct25.zip"
+
+
+def test_fgdl_empty_listing_raises(monkeypatch):
+    monkeypatch.setattr(fgdl_mod, "fetch_text", lambda url, **kw: "<html>nothing</html>")
+    with pytest.raises(HttpError):
+        fgdl_mod.FlFgdlParcels()._latest_zip()
+
+
+def test_fgdl_fetch_extracts_gdb(monkeypatch, tmp_path):
+    zbytes = _zip_bytes({"dsl_parcel_composite_oct25.gdb/a00000001.gdbtable": b"gdb-bytes"})
+    monkeypatch.setattr(fgdl_mod, "fetch_text", lambda url, **kw: _FGDL_LISTING)
+    monkeypatch.setattr(fgdl_mod, "version_from_head", lambda url, label="": "2025-12-04")
+    url = f"{fgdl_mod.FGDL_CURRENT_DIR}dsl_parcel_composite_oct25.zip"
+    monkeypatch.setattr(helpers_mod, "download", _fake_download({url: zbytes}))
+
+    res = fgdl_mod.FlFgdlParcels().fetch(tmp_path, _sink)
+
+    # Same layout the manual install produced: current/<name>.gdb/, zip gone.
+    assert (tmp_path / "dsl_parcel_composite_oct25.gdb" / "a00000001.gdbtable").exists()
+    assert not (tmp_path / "dsl_parcel_composite_oct25.zip").exists()
+    assert res.remote_version == "oct25:2025-12-04"
 
 
 # ── Florida FDOR ───────────────────────────────────────────────────────────
