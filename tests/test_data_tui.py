@@ -48,6 +48,7 @@ def _notifications(monkeypatch):
     """Capture desktop notifications instead of running osascript."""
     sent: list[tuple] = []
     monkeypatch.setattr("data_tui.app.notify_send", lambda *a: sent.append(a))
+    monkeypatch.setattr("data_tui.deploy_ui.notify_send", lambda *a: sent.append(a))
     return sent
 
 
@@ -744,6 +745,213 @@ def test_preprocess_with_no_data_shows_hint():
             await pilot.pause()
             assert not isinstance(app.screen, PreprocessScreen)
             assert any("No states with data to preprocess" in line for line in app.job_lines)
+
+    asyncio.run(scenario())
+
+
+# ── slice 5 (#239): verify + confirm-gated deploy ────────────────────────
+
+
+def _mk_composite(root: Path, parcel: int = 1000) -> Path:
+    import json
+
+    state = root / "54"
+    state.mkdir(parents=True, exist_ok=True)
+    (root / "index.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "states": [
+                    {
+                        "fips": "54",
+                        "abbr": "WV",
+                        "name": "West Virginia",
+                        "counts": {"parcel": parcel, "tower": 100},
+                    }
+                ],
+            }
+        )
+    )
+    (root / "owners_index.json").write_text(
+        json.dumps({"schema_version": 5, "count": 500, "generated_at": "2026-07-01T00:00:00+00:00"})
+    )
+    (state / "towers.parquet").write_bytes(b"t")
+    return root
+
+
+def _stub_script(tmp_path: Path, name: str, fail_on: str = "") -> tuple[Path, Path]:
+    import stat
+
+    log = tmp_path / f"{name}.log"
+    script = tmp_path / name
+    script.write_text(
+        "#!/bin/sh\n"
+        f'echo "$@" >> "{log}"\n'
+        'echo "out: $@"\n'
+        f'[ -n "{fail_on}" ] && [ "$1" = "{fail_on}" ] && exit 1\n'
+        "exit 0\n"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    return script, log
+
+
+def _deploy_env(tmp_path, monkeypatch, *, receipt: bool = True, fail_on: str = ""):
+    """Fixture composite + stub deploy/restart scripts wired into the module
+    constants DeployScreen resolves at mount (RAW_ROOT monkeypatch pattern)."""
+    from data_tui import deploy as deploy_mod
+    from data_tui import verify as verify_mod
+    from data_tui.verify import snapshot, write_receipt
+
+    comp = _mk_composite(tmp_path / "composite")
+    receipt_path = tmp_path / "deploy_receipt.json"
+    script, deploy_log = _stub_script(tmp_path, "deploy.sh", fail_on)
+    restart, restart_log = _stub_script(tmp_path, "fly")
+    monkeypatch.setattr(verify_mod, "COMPOSITE_ROOT", comp)
+    monkeypatch.setattr(verify_mod, "RECEIPT_PATH", receipt_path)
+    monkeypatch.setattr(deploy_mod, "DEPLOY_SCRIPT", script)
+    monkeypatch.setattr(deploy_mod, "RESTART_ARGV", (str(restart), "restart"))
+    if receipt:
+        write_receipt(snapshot(comp), receipt_path)
+    return comp, receipt_path, deploy_log, restart_log
+
+
+def _log_calls(log: Path) -> list[str]:
+    return log.read_text().splitlines() if log.exists() else []
+
+
+def test_deploy_happy_path_dry_run_confirm_apply_receipt(tmp_path, monkeypatch, _notifications):
+    from data_tui.deploy_ui import DeployScreen
+
+    _, receipt_path, deploy_log, restart_log = _deploy_env(tmp_path, monkeypatch)
+    app = DataTuiApp(sources=[FakeSource()], deferred=[], manifest=_manifest({}))
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            await pilot.press("v")
+            await pilot.pause()
+            scr = app.screen
+            assert isinstance(scr, DeployScreen)
+            assert all("✗" not in line for line in scr.lines), scr.lines
+            assert "[d] dry-run" in scr.status_line
+            await pilot.press("d")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            # Dry-run output shown first; apply waits for confirmation.
+            assert "[dry-run] out: data" in scr.output_lines
+            assert "APPLY TO PROD" in scr.status_line
+            assert _log_calls(deploy_log) == ["data"]
+            await pilot.press("a")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert "[sync] out: data --apply" in scr.output_lines
+            assert "[smoke] out: smoke" in scr.output_lines
+            assert "✓ SMOKE PASSED" in scr.output_lines
+            # Sync strictly before smoke; owners unchanged → no restart.
+            assert _log_calls(deploy_log) == ["data", "data --apply", "smoke"]
+            assert _log_calls(restart_log) == []
+            assert receipt_path.exists()
+            assert any("deploy complete" in e.message for e in app.activity)
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen, DeployScreen)
+            assert any("deploy complete" in line for line in app.job_lines)
+
+    asyncio.run(scenario())
+    assert _notifications and "deploy complete" in _notifications[-1][0]
+
+
+def test_failed_verify_blocks_deploy_until_logged_override(tmp_path, monkeypatch):
+    from data_tui.deploy_ui import DeployScreen
+    from data_tui.verify import snapshot, write_receipt
+
+    comp, receipt_path, deploy_log, _ = _deploy_env(tmp_path, monkeypatch, receipt=False)
+    # Receipt claims twice the parcels — the fresh composite reads as a 50% drop.
+    inflated = snapshot(comp)
+    inflated["state_counts"]["54"]["parcel"] = 2000
+    write_receipt(inflated, receipt_path)
+    app = DataTuiApp(sources=[FakeSource()], deferred=[], manifest=_manifest({}))
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            await pilot.press("v")
+            await pilot.pause()
+            scr = app.screen
+            assert isinstance(scr, DeployScreen)
+            assert any("✗ counts:54:parcel" in line for line in scr.lines)
+            assert "VERIFY FAILED" in scr.status_line
+            # Blocked: [d] does nothing until the override is logged.
+            await pilot.press("d")
+            await pilot.pause()
+            assert scr.output_lines == []
+            assert _log_calls(deploy_log) == []
+            await pilot.press("o")
+            await pilot.pause()
+            assert any(
+                e.error and "verify override" in e.message and "counts:54:parcel" in e.message
+                for e in app.activity
+            )
+            await pilot.press("d")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert _log_calls(deploy_log) == ["data"]
+            assert "APPLY TO PROD" in scr.status_line
+
+    asyncio.run(scenario())
+
+
+def test_smoke_failure_is_unmissable_and_receipt_not_written(tmp_path, monkeypatch, _notifications):
+    from data_tui.verify import load_receipt
+
+    _, receipt_path, _, _ = _deploy_env(tmp_path, monkeypatch, fail_on="smoke")
+    before = load_receipt(receipt_path)
+    app = DataTuiApp(sources=[FakeSource()], deferred=[], manifest=_manifest({}))
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            await pilot.press("v")
+            await pilot.pause()
+            await pilot.press("d")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.press("a")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            scr = app.screen
+            assert any("SMOKE FAILED" in line for line in scr.output_lines)
+            assert "SMOKE FAILED" in scr.status_line
+            assert any(e.error and "SMOKE FAILED" in e.message for e in app.activity)
+
+    asyncio.run(scenario())
+    assert load_receipt(receipt_path) == before  # failed deploy leaves the baseline alone
+    assert _notifications and "FAILED" in _notifications[-1][0]
+
+
+def test_first_deploy_reports_without_blocking_and_restarts(tmp_path, monkeypatch):
+    from data_tui.deploy_ui import DeployScreen
+    from data_tui.verify import load_receipt
+
+    _, receipt_path, deploy_log, restart_log = _deploy_env(tmp_path, monkeypatch, receipt=False)
+    app = DataTuiApp(sources=[FakeSource()], deferred=[], manifest=_manifest({}))
+
+    async def scenario():
+        async with app.run_test() as pilot:
+            await pilot.press("v")
+            await pilot.pause()
+            scr = app.screen
+            assert isinstance(scr, DeployScreen)
+            assert any("no deploy receipt yet" in line for line in scr.lines)
+            assert "[d] dry-run" in scr.status_line  # first run never blocks
+            await pilot.press("d")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.press("a")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            # No receipt → owners considered changed → restart between sync and smoke.
+            assert _log_calls(deploy_log) == ["data", "data --apply", "smoke"]
+            assert _log_calls(restart_log) == ["restart"]
+            receipt = load_receipt(receipt_path)
+            assert receipt and receipt["state_counts"]["54"]["parcel"] == 1000
 
     asyncio.run(scenario())
 

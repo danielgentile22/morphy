@@ -14,6 +14,12 @@ Slice 4 (#238) adds the preprocess stage: the pure ``planner`` maps
 state picker opens preseeded with the states affected by what was pulled,
 and the pipeline (normalize → compose → assets) runs as a background job
 with per-source / per-state progress lines.
+
+Slice 5 (#239) closes the lifecycle: ``v`` opens the verify + deploy
+screen — the pure ``verify`` module diffs the fresh composite against
+the last deploy receipt (failed checks block deploy pending a logged
+override), and the ``deploy`` driver runs dry-run → confirmed apply →
+restart-if-owners-changed → smoke, writing the receipt on success.
 """
 
 from __future__ import annotations
@@ -35,6 +41,7 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Footer, Header, Static
 
+from .deploy_ui import DeployScreen
 from .freshness import Badge, attention_items, badge_for
 from .manual import InstallScreen, WalkthroughScreen
 from .notify import send as notify_send
@@ -150,6 +157,7 @@ class DataTuiApp(App):
         ("p", "pull_now", "Pull"),
         ("P", "pull_stale", "Pull stale"),
         ("r", "preprocess", "Preprocess"),
+        ("v", "verify_deploy", "Verify/Deploy"),
         ("l", "toggle_log", "Log"),
         ("f", "cycle_log_filter", "Log filter"),
         ("d", "diagnose", "Diagnose"),
@@ -210,6 +218,7 @@ class DataTuiApp(App):
         self._sweep_running = False
         self._pull_running = False
         self._preprocess_running = False
+        self._deploy_open = False
         self._diagnose_running = False
         self._diagnose_for: str | None = None
         self._diagnose_text = ""
@@ -449,7 +458,7 @@ class DataTuiApp(App):
         self._start_pull(targets)
 
     def _start_pull(self, targets: list[DataSource]) -> None:
-        if self._pull_running or self._preprocess_running:
+        if self._pull_running or self._preprocess_running or self._deploy_open:
             return
         self._pull_running = True
         # Pre-seed entries on the app thread — pool/worker threads must
@@ -528,7 +537,7 @@ class DataTuiApp(App):
     # ── preprocess stage (#238) ─────────────────────────────────────────
 
     def action_preprocess(self) -> None:
-        if self._preprocess_running or self._pull_running:
+        if self._preprocess_running or self._pull_running or self._deploy_open:
             return
         pre = self._pre_manifest if self._pre_manifest is not None else PreprocessManifest.load()
         plan = plan_refresh(self.sources, self.manifest, pre)
@@ -598,6 +607,23 @@ class DataTuiApp(App):
         self._job_update(line)
         self._log_activity("preprocess", line, error=True)
         notify_send("Pilot Data — preprocess failed", str(ex))
+
+    # ── verify + deploy (#239) ──────────────────────────────────────────
+
+    def action_verify_deploy(self) -> None:
+        if self._pull_running or self._preprocess_running or self._deploy_open:
+            return
+        self._deploy_open = True
+        self.push_screen(
+            DeployScreen(on_activity=lambda msg, err: self._log_activity("deploy", msg, err)),
+            self._deploy_closed,
+        )
+
+    def _deploy_closed(self, summary: str | None) -> None:
+        self._deploy_open = False
+        if summary:
+            self._job_update(summary)
+            self.sub_title = summary
 
     # ── manual path: walkthrough + install-from-file (#237) ─────────────
 
