@@ -8,6 +8,12 @@ the fetch layer (``supports_resume`` sources keep their ``.partial/``).
 Failures surface in a detail pane fed by the manifest's structured
 ``last_error``, the session activity log filters all / errors / per-source,
 and job completion fires a desktop notification (``notify.send``).
+
+Slice 4 (#238) adds the preprocess stage: the pure ``planner`` maps
+(registry, fetch manifest, preprocess manifest) to a refresh plan, the
+state picker opens preseeded with the states affected by what was pulled,
+and the pipeline (normalize → compose → assets) runs as a background job
+with per-source / per-state progress lines.
 """
 
 from __future__ import annotations
@@ -24,6 +30,7 @@ from fetch.install import install_files, mark_manual_install
 from fetch.manifest import Manifest, SourceEntry
 from fetch.puller import CheckOutcome, FetchOutcome, check_one, fetch_one
 from fetch.storage import human_bytes
+from preprocess.manifest import PreprocessManifest
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Footer, Header, Static
@@ -31,6 +38,8 @@ from textual.widgets import DataTable, Footer, Header, Static
 from .freshness import Badge, attention_items, badge_for
 from .manual import InstallScreen, WalkthroughScreen
 from .notify import send as notify_send
+from .planner import plan_pulls, plan_refresh
+from .preprocess_ui import PreprocessScreen
 
 BADGE_STYLES = {
     "fresh": "bold green",
@@ -72,6 +81,66 @@ def filter_activity(
     return list(events)
 
 
+def preprocess_progress_line(phase: str, key: str, info: dict) -> str | None:
+    """Map a preprocess ProgressCallback event to a job line (None = drop).
+    Per-source lines during normalize, per-state during compose (#238)."""
+    if phase == "normalize_start":
+        return f"normalize {key} …"
+    if phase == "normalize_ok":
+        return f"✓ normalize {key}: {info.get('rows', 0):,} rows"
+    if phase == "normalize_fail":
+        return f"✗ normalize {key}: {info.get('error', '')}"
+    if phase == "compose_start":
+        return f"compose state {key} ({info.get('name', '')}) …"
+    if phase == "compose_ok":
+        return f"✓ compose state {key}: {info.get('counts', {})}"
+    if phase == "compose_fail":
+        return f"✗ compose state {key}: {info.get('error', '')}"
+    if phase == "step_start" and key in ("app_assets", "owners_index", "tiles"):
+        return f"{key} …"
+    if phase == "step_ok" and key in ("app_assets", "owners_index", "tiles"):
+        return f"✓ {key}"
+    if phase == "step_fail":
+        return f"✗ step {key}: {info.get('error', '')}"
+    return None
+
+
+def run_preprocess_pipeline(state_fips: list[str], progress_callback):
+    """Normalize all sources, compose the selected states, then refresh
+    app assets / owners index / tiles — the same step list
+    ``preprocess.runner.run_all`` builds, constructed here so compose can
+    take a multi-state selection (run_all only accepts one state or all).
+    Heavy imports stay inside so the TUI starts without pandas/geopandas.
+    """
+    from preprocess import registry as _registry  # noqa: F401 — fires @register decorators
+    from preprocess.geographies import get_state
+    from preprocess.pipeline import (
+        AppAssetsStep,
+        ComposeStatesStep,
+        NormalizeAllStep,
+        OwnersIndexStep,
+        Pipeline,
+        TilesStep,
+    )
+    from preprocess.runner import RunOutcome
+
+    outcome = RunOutcome()
+    Pipeline(
+        steps=[
+            NormalizeAllStep(),
+            ComposeStatesStep(states=[get_state(f) for f in state_fips]),
+            AppAssetsStep(),
+            OwnersIndexStep(),
+            TilesStep(),
+        ]
+    ).run(
+        outcome=outcome,
+        manifest=PreprocessManifest.load(),
+        progress_callback=progress_callback,
+    )
+    return outcome
+
+
 class DataTuiApp(App):
     """Sources table grouped by category, freshness badges, pulls, activity log."""
 
@@ -80,6 +149,7 @@ class DataTuiApp(App):
         ("c", "check_updates", "Check"),
         ("p", "pull_now", "Pull"),
         ("P", "pull_stale", "Pull stale"),
+        ("r", "preprocess", "Preprocess"),
         ("l", "toggle_log", "Log"),
         ("f", "cycle_log_filter", "Log filter"),
         ("d", "diagnose", "Diagnose"),
@@ -125,6 +195,7 @@ class DataTuiApp(App):
         sources: list[DataSource] | None = None,
         deferred: list[DataSource] | None = None,
         manifest: Manifest | None = None,
+        pre_manifest: PreprocessManifest | None = None,
     ) -> None:
         super().__init__()
         self.sources = sources if sources is not None else registry.all_sources()
@@ -133,8 +204,12 @@ class DataTuiApp(App):
         self._deferred_ids = {s.id for s in self.deferred}
         self._persist = manifest is None  # injected manifest (tests) never saves to disk
         self.manifest = manifest if manifest is not None else Manifest.load()
+        # Injected in tests; None → loaded fresh each time the preprocess
+        # screen opens (the pipeline rewrites it on disk).
+        self._pre_manifest = pre_manifest
         self._sweep_running = False
         self._pull_running = False
+        self._preprocess_running = False
         self._diagnose_running = False
         self._diagnose_for: str | None = None
         self._diagnose_text = ""
@@ -367,20 +442,14 @@ class DataTuiApp(App):
         self._start_pull([source])
 
     def action_pull_stale(self) -> None:
-        targets = [
-            s
-            for s in self.sources
-            if badge_for(s, self.manifest.entry(s.id)).kind in ("stale", "missing")
-            and not s.is_manual_only
-            and (not s.needs_credentials or s.credentials_available())
-        ]
+        targets = [self._by_id[sid] for sid in plan_pulls(self.sources, self.manifest)]
         if not targets:
             self._job_update("Nothing stale to pull.")
             return
         self._start_pull(targets)
 
     def _start_pull(self, targets: list[DataSource]) -> None:
-        if self._pull_running:
+        if self._pull_running or self._preprocess_running:
             return
         self._pull_running = True
         # Pre-seed entries on the app thread — pool/worker threads must
@@ -455,6 +524,80 @@ class DataTuiApp(App):
             notify_send("Pilot Data — pull complete", f"{pulled} source(s) pulled.")
         self._job_update(summary)
         self.sub_title = summary
+
+    # ── preprocess stage (#238) ─────────────────────────────────────────
+
+    def action_preprocess(self) -> None:
+        if self._preprocess_running or self._pull_running:
+            return
+        pre = self._pre_manifest if self._pre_manifest is not None else PreprocessManifest.load()
+        plan = plan_refresh(self.sources, self.manifest, pre)
+        if not plan.candidate_states:
+            self._job_update("No states with data to preprocess — pull something first.")
+            return
+        self.push_screen(
+            PreprocessScreen(
+                list(plan.candidate_states),
+                list(plan.preprocess_states),
+                plan.deploy_warranted,
+            ),
+            self._preprocess_selected,
+        )
+
+    def _preprocess_selected(self, states: list[str] | None) -> None:
+        if not states:
+            return
+        self._preprocess_running = True
+        self.run_worker(lambda: self._preprocess_worker(states), thread=True)
+
+    def _preprocess_worker(self, states: list[str]) -> None:
+        """Thread worker: normalize all → compose selected states → assets."""
+        label = ", ".join(states)
+        self.call_from_thread(self._job_update, f"preprocess [{label}] — starting…")
+        self.call_from_thread(
+            self._log_activity, "preprocess", f"started for states {label}", False
+        )
+        try:
+            outcome = run_preprocess_pipeline(states, self._preprocess_progress)
+        except Exception as ex:  # noqa: BLE001 — surface any crash as a failed job
+            self.call_from_thread(self._preprocess_crashed, ex)
+            return
+        self.call_from_thread(self._preprocess_done, outcome)
+
+    def _preprocess_progress(self, phase: str, key: str, info: dict) -> None:
+        """Pipeline ProgressCallback — runs on the worker thread."""
+        line = preprocess_progress_line(phase, key, info)
+        if line is None:
+            return
+        self.call_from_thread(self._job_update, line)
+        if phase.endswith("_fail"):
+            self.call_from_thread(self._log_activity, "preprocess", line, True)
+
+    def _preprocess_done(self, outcome) -> None:
+        self._preprocess_running = False
+        failed = (
+            [f"normalize {s}" for s in outcome.normalized_failed]
+            + [f"compose {f}" for f in outcome.composed_failed]
+            + [f"step {n}" for n in outcome.failed_steps]
+        )
+        n_norm, n_comp = len(outcome.normalized_ok), len(outcome.composed_ok)
+        if failed:
+            summary = f"✗ preprocess finished — {n_comp} composed, {len(failed)} failed"
+            self._log_activity("preprocess", summary, error=True)
+            notify_send("Pilot Data — preprocess failed", "; ".join(failed))
+        else:
+            summary = f"✓ preprocess finished — {n_norm} normalized, {n_comp} composed"
+            self._log_activity("preprocess", summary)
+            notify_send("Pilot Data — preprocess complete", f"{n_comp} state(s) composed.")
+        self._job_update(summary)
+        self.sub_title = summary
+
+    def _preprocess_crashed(self, ex: Exception) -> None:
+        self._preprocess_running = False
+        line = f"✗ preprocess crashed — {ex}"
+        self._job_update(line)
+        self._log_activity("preprocess", line, error=True)
+        notify_send("Pilot Data — preprocess failed", str(ex))
 
     # ── manual path: walkthrough + install-from-file (#237) ─────────────
 
