@@ -82,6 +82,7 @@ pilot/
 ├── backend/                  FastAPI + SQLAlchemy lead-triage write-layer — tenant-scoped Lead state + Tasks, username/password auth, owners-index read path. Deployed in production. Auth + schema mechanics canonical in backend/README.md; invariants in §8.
 ├── scripts/
 │   ├── fetch/                Headless puller library
+│   ├── data_tui/             Textual data TUI — Qt-puller successor (PRD #233; slice 1 shipped)
 │   ├── preprocess/           Normalizer/Join/View framework + Composer
 │   ├── serve.py              Range-capable static server (for the map app)
 │   └── *.py                  Top-level CLI scripts
@@ -138,6 +139,7 @@ Full details in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Quick reference:
 uv sync                                         # once: .venv from uv.lock (all groups + editable fetch/preprocess)
 source .venv/bin/activate
 python -m app_puller                            # raw data fetcher (desktop UI)
+python -m data_tui                              # data TUI — freshness table + check-for-updates (PRD #233)
 python scripts/preprocess.py                    # all sources + all states
 python scripts/preprocess.py --state 05         # one state
 python scripts/preprocess.py --app-assets       # index.json + per-state facets / slim parquet / county boundaries
