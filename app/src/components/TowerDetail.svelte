@@ -56,6 +56,23 @@
   const pointCoords = $derived(
     pointFeature ? (pointFeature.geometry.coordinates as [number, number]) : null,
   );
+  // Static tower-layer facts that only ride towers.json (audit M-b/M-c /
+  // #208): the build date + the ASR registrant (towerco/carrier — the lease
+  // counterparty, NOT the landowner). The owners-index Structure doesn't
+  // carry them, so both owned and unowned towers read them from here.
+  const staticProps = $derived(pointFeature?.properties ?? null);
+  const towerOwnerAddress = $derived.by(() => {
+    const p = staticProps;
+    if (!p) return null;
+    const cityStateZip = [p.tower_owner_city, p.tower_owner_state, p.tower_owner_zip]
+      .filter(Boolean)
+      .join(' ');
+    const parts = [p.tower_owner_street, cityStateZip].filter(Boolean);
+    return parts.length ? parts.join(', ') : null;
+  });
+  const hasTowerOwnerBlock = $derived(
+    Boolean(staticProps?.tower_owner || towerOwnerAddress || staticProps?.tower_owner_phone),
+  );
 
   // ── per-antenna manual state (address / manual owner / notes) ─────────────
   let draft = $state({ address: '', owner_name: '', owner_phone: '', owner_email: '', notes: '' });
@@ -172,6 +189,7 @@
           <dt>Height</dt><dd>{feet(t.height_m ?? null)}</dd>
           <dt>Structure</dt><dd>{t.structure_kind || '—'}</dd>
           <dt>Active</dt><dd>{t.active == null ? '—' : t.active ? 'yes' : 'no'}</dd>
+          <dt>Built</dt><dd data-testid="tower-date-built">{staticProps?.date_built ?? '—'}</dd>
           <dt>Coordinates</dt>
           <dd>{t.lat != null && t.lon != null ? `${t.lat.toFixed(5)}, ${t.lon.toFixed(5)}` : '—'}</dd>
           <dt>Score</dt><dd>{t.score != null ? t.score.toFixed(2) : '—'}</dd>
@@ -183,6 +201,7 @@
           <dt>Height</dt><dd>{p.height_m != null ? feet(p.height_m) : '—'}</dd>
           <dt>State</dt><dd>{p.state || '—'}</dd>
           <dt>Active</dt><dd>{p.active ? 'yes' : 'no'}</dd>
+          <dt>Built</dt><dd data-testid="tower-date-built">{p.date_built ?? '—'}</dd>
           <dt>Coordinates</dt>
           <dd>{pointCoords ? `${pointCoords[1].toFixed(5)}, ${pointCoords[0].toFixed(5)}` : '—'}</dd>
         </dl>
@@ -194,6 +213,23 @@
         </p>
       {/if}
     </section>
+
+    <!-- The ASR registrant's contact block (audit M-b / #208): the towerco /
+         carrier that registered the structure — the lease counterparty. Kept
+         visually distinct from the landowner above. FCC-sourced towers carry
+         it on ~99% of rows; FAA-sourced ones have none, so the card hides. -->
+    {#if hasTowerOwnerBlock}
+      {@const p = staticProps!}
+      <section class="card" data-testid="tower-owner-card">
+        <h3>Tower owner (ASR)</h3>
+        <dl class="kv">
+          <dt>Name</dt><dd data-testid="tower-owner-name">{p.tower_owner ?? '—'}</dd>
+          <dt>Address</dt><dd data-testid="tower-owner-address">{towerOwnerAddress ?? '—'}</dd>
+          <dt>Phone</dt><dd data-testid="tower-owner-phone">{p.tower_owner_phone ?? '—'}</dd>
+        </dl>
+        <p class="worked-note">The FCC ASR registrant — who to negotiate with, not the landowner.</p>
+      </section>
+    {/if}
 
     {#if found}
       {@const t = found.tower}

@@ -99,7 +99,12 @@ class FaaDofNormalizer(Normalizer):
             state_fips = canon_state_fips(r.get("state"))
             canonical_rows.append(
                 {
-                    "asr_number": r.get("obstacle_number"),  # FAA's own ID, not FCC ASR
+                    # The FAA obstacle/study number is NOT an FCC ASR registration
+                    # — it gets its own column (audit M-i / #215); asr_number stays
+                    # null so the two namespaces never mix again. The union-wide
+                    # row identity is _source_row_id (same value as before).
+                    "asr_number": None,
+                    "obstacle_number": r.get("obstacle_number"),
                     "owner_name": "",
                     "height_m": (to_float(r.get("agl_ft")) or 0) * 0.3048 or None,
                     "structure_type": safe_str(r.get("obstacle_type")),

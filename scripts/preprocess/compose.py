@@ -212,18 +212,27 @@ def _host_eligible_sql(shards: list[duck.ParcelShard]) -> str:
     return f"(CASE WHEN p.__shard_seq IN ({seqs}) THEN {flag} ELSE {geos} END)"
 
 
+# Spatial predicate per infra layer → the DuckDB function the join uses.
+_PREDICATE_FN = {"within": "ST_Within", "intersects": "ST_Intersects"}
+
+
 def _build_infra_to_parcel_lookups(
     specs: dict[str, tuple[gpd.GeoDataFrame | None, list[str]]],
     state_fips: str,
+    predicates: dict[str, str] | None = None,
 ) -> dict[str, dict[int, dict]]:
     """For every infra layer in `specs`, find the parcel each infra row sits in
-    — one DuckDB spatial join over the state's sharded parquet (PRD #135).
+    — a DuckDB spatial join over the state's sharded parquet (PRD #135).
 
-    `specs` maps a layer name → (infra GeoDataFrame, keep_cols). All layers
-    ride one query (one parcel sweep, one R-tree — the single-pass property
-    PERF-016 established), and the engine is out-of-core: parcel shards never
-    load into pandas here; only the small infra geometries go in and only the
-    matched rows come back.
+    `specs` maps a layer name → (infra GeoDataFrame, keep_cols). `predicates`
+    maps a layer name → 'within' (default) or 'intersects' — mirroring the
+    registered InfraToParcelJoin instances (audit M-a / #211: solar is
+    `intersects` so a utility-scale array spanning parcel boundaries still
+    attaches to its primary parcel; point layers keep `within`). Layers
+    sharing a predicate ride one query (the PERF-016 single-pass property,
+    now per predicate group), and the engine is out-of-core: parcel shards
+    never load into pandas here; only the small infra geometries go in and
+    only the matched rows come back.
 
     Semantics preserved from the streaming pre-pass this replaced
     (equivalence pinned by tests/test_duckdb_equivalence.py):
@@ -244,6 +253,10 @@ def _build_infra_to_parcel_lookups(
     }
     if not active:
         return out
+    pred_of = {name: (predicates or {}).get(name, "within") for name in active}
+    unknown = sorted(set(pred_of.values()) - set(_PREDICATE_FN))
+    if unknown:
+        raise ValueError(f"unsupported infra→parcel predicate(s): {unknown}")
     with duck.session() as con:
         shards = duck.register_state_parcels(con, state_fips)
         if not shards:
@@ -275,22 +288,31 @@ def _build_infra_to_parcel_lookups(
             if c in union_cols
         ]
         attach_sql = "".join(f', p."{c}" AS "{_INFRA_PARCEL_RENAME.get(c, c)}"' for c in keep_union)
-        rows = con.execute(
-            f"""
-            WITH hits AS (
-              SELECT i.layer, i.infra_idx, p.__shard_seq{attach_sql},
-                     ROW_NUMBER() OVER (
-                       PARTITION BY i.layer, i.infra_idx
-                       ORDER BY p.__shard_seq, p.__row_idx
-                     ) AS rn
-              FROM __infra_geo i
-              JOIN "{duck.PARCELS_VIEW}" p ON ST_Within(i.geom, p.geometry)
-              WHERE {_host_eligible_sql(shards)}
-            )
-            SELECT * EXCLUDE (rn) FROM hits WHERE rn = 1
-            ORDER BY __shard_seq, infra_idx
-            """
-        ).fetchall()
+        # One query per predicate group — a direct spatial-function join per
+        # query keeps DuckDB's spatial-join optimization applicable (a CASE
+        # over predicates would not).
+        rows: list[tuple] = []
+        by_pred: dict[str, list[str]] = {}
+        for name, pred in pred_of.items():
+            by_pred.setdefault(pred, []).append(name)
+        for pred, layer_names in sorted(by_pred.items()):
+            layers_sql = ", ".join(duck.sql_str(n) for n in sorted(layer_names))
+            rows += con.execute(
+                f"""
+                WITH hits AS (
+                  SELECT i.layer, i.infra_idx, p.__shard_seq{attach_sql},
+                         ROW_NUMBER() OVER (
+                           PARTITION BY i.layer, i.infra_idx
+                           ORDER BY p.__shard_seq, p.__row_idx
+                         ) AS rn
+                  FROM __infra_geo i
+                  JOIN "{duck.PARCELS_VIEW}" p ON {_PREDICATE_FN[pred]}(i.geom, p.geometry)
+                  WHERE i.layer IN ({layers_sql}) AND {_host_eligible_sql(shards)}
+                )
+                SELECT * EXCLUDE (rn) FROM hits WHERE rn = 1
+                ORDER BY __shard_seq, infra_idx
+                """
+            ).fetchall()
         shard_cols = {s.seq: frozenset(s.columns) for s in shards}
         keep_by_layer = {name: set(keep) for name, (_infra, keep) in active.items()}
         for layer, idx, seq, *values in rows:
@@ -378,6 +400,10 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
             "billboard": (ctx.get("billboard"), ["parcel_id_full", "owner_name"]),
         },
         state.fips,
+        # Mirrors the registered InfraToParcelJoin predicates (audit M-a /
+        # #211): polygon solar attaches by intersects so a spanning array
+        # still reports its primary parcel; point layers stay within.
+        predicates={"tower": "within", "solar": "intersects", "billboard": "within"},
     )
     tower_lookup = infra_lookups["tower"]
     solar_lookup = infra_lookups["solar"]
@@ -397,7 +423,11 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
         tower_lookup,
         infra=ctx.get("tower"),
         kind="tower",
-        id_col="asr_number",
+        # The union-wide structure identity: the FCC registration number on
+        # fcc_asr rows, the FAA obstacle number on faa_oeaaa rows. asr_number
+        # is FCC-only since the M-i namespace split (#215); values here are
+        # unchanged (the mixed asr_number used to carry exactly these ids).
+        id_col="_source_row_id",
         owner_col="owner_name",
     )
     solar_counts, solar_summary = _reverse_index(

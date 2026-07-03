@@ -10,11 +10,12 @@
  * parcel-fade machinery was retired with the state selector.
  */
 
-import type { FeatureCollection, Point } from 'geojson';
+import type { FeatureCollection, MultiPolygon, Point, Polygon } from 'geojson';
 import type { CompositeIndex } from './catalog';
 import { loadIndex, pmtilesUrl, probeResource } from './data';
 import { loadNationalTowers, type TowerProps } from './towers';
 import { loadSolarPoints, solarTotal, type SolarProps } from './solar';
+import { loadCountyBoundaries, type CountyProps } from './county-layers';
 import { errMsg, parcelSources as computeParcelSources, unionBounds } from './stores-helpers';
 import type { ParcelSource } from './stores-helpers';
 import type { EntityKind, Props } from './schema';
@@ -59,6 +60,13 @@ export class AppStore {
   solarPoints = $state<FeatureCollection<Point, SolarProps> | null>(null);
   solarStatus = $state<Loadable>('idle');
   solarError = $state<string | null>(null);
+
+  // ── county-distress choropleth (audit M-d / #209) ─────────────────────
+  /** County polygons + distress tier across every anchor state — display-only
+   *  context, loaded lazily the first time its toggle turns on. */
+  countyBoundaries = $state<FeatureCollection<Polygon | MultiPolygon, CountyProps> | null>(null);
+  countiesStatus = $state<Loadable>('idle');
+  countiesError = $state<string | null>(null);
 
   // ── parcels for all states (#119) ─────────────────────────────────────
   /** One parcel vector-tile source per anchor state whose tiles are present.
@@ -211,6 +219,24 @@ export class AppStore {
     } catch (e) {
       this.solarError = errMsg(e);
       this.solarStatus = 'error';
+    }
+  }
+
+  /** Load county boundaries + distress tiers across every anchor state.
+   *  Mirrors `loadSolar`; a missing state's file degrades to fewer shaded
+   *  counties. */
+  async loadCounties(): Promise<void> {
+    if (this.countiesStatus === 'loading' || this.countiesStatus === 'ready') return;
+    const fipsList = this.index?.states.map((s) => s.fips) ?? [];
+    if (fipsList.length === 0) return;
+    this.countiesStatus = 'loading';
+    this.countiesError = null;
+    try {
+      this.countyBoundaries = await loadCountyBoundaries(fipsList);
+      this.countiesStatus = 'ready';
+    } catch (e) {
+      this.countiesError = errMsg(e);
+      this.countiesStatus = 'error';
     }
   }
 }

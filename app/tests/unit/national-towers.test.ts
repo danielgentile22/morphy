@@ -78,11 +78,37 @@ describe('parseNationalTowers', () => {
       active: true,
       lat: 33,
       lon: -91.3,
+      // v1-file rows have no v2 fields → safe null defaults (stale-file safe).
+      date_built: null,
+      tower_owner: null,
+      tower_owner_street: null,
+      tower_owner_city: null,
+      tower_owner_state: null,
+      tower_owner_zip: null,
+      tower_owner_phone: null,
     });
     expect(rows[1].owner).toBeNull();
     expect(rows[1].cid).toBeUndefined(); // absent → recomputed downstream
     expect(rows[1].height_m).toBeNull();
     expect(rows[1].active).toBeNull();
+  });
+
+  it('passes the v2 build-date + tower-owner contact fields through (M-b/M-c)', () => {
+    const rows = parseNationalTowers({
+      schema_version: 2,
+      towers: [
+        {
+          asr: '080946', owner: 'MITCHELL VICKI', state: 'AR', lat: 33, lon: -91.3,
+          date_built: '1990-06-14', tower_owner: 'SBA TOWERS II LLC',
+          tower_owner_street: '8051 CONGRESS AVE', tower_owner_city: 'BOCA RATON',
+          tower_owner_state: 'FL', tower_owner_zip: '33487', tower_owner_phone: '(561) 995-7670',
+        },
+      ],
+    });
+    expect(rows[0].date_built).toBe('1990-06-14');
+    expect(rows[0].tower_owner).toBe('SBA TOWERS II LLC');
+    expect(rows[0].tower_owner_zip).toBe('33487');
+    expect(rows[0].tower_owner_phone).toBe('(561) 995-7670');
   });
 
   it('throws when the envelope has no towers[] array (loader then falls back)', () => {

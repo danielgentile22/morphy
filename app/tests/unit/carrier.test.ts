@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { parseCarriers, confidenceMeta, CONFIDENCE_ORDER } from '../../src/lib/carrier';
+import {
+  parseCarriers,
+  confidenceMeta,
+  isInactiveLicense,
+  inactiveLicenseLabel,
+  CONFIDENCE_ORDER,
+} from '../../src/lib/carrier';
 import { carriers } from '../../src/lib/schema';
 
 // A real AR composite carrier entry shape (see composite/05/towers.geojson).
@@ -16,9 +22,19 @@ describe('parseCarriers', () => {
       carrier_name: 'AT&T',
       callsign: 'KNKN566',
       license_expiry: '2031-10-01',
+      license_status: '',
+      license_status_desc: '',
       confidence_tag: 'verified',
     });
     expect(out[1].confidence_tag).toBe('likely');
+  });
+
+  it('carries the license status code + label when present (M-l / #216)', () => {
+    const out = parseCarriers([
+      { carrier_name: 'ALLTEL', callsign: 'WPOI253', license_status: 'C', license_status_desc: 'Cancelled', confidence_tag: 'likely' },
+    ]);
+    expect(out[0].license_status).toBe('C');
+    expect(out[0].license_status_desc).toBe('Cancelled');
   });
 
   it('parses the DuckDB JSON-string form (parquet row)', () => {
@@ -34,7 +50,7 @@ describe('parseCarriers', () => {
     expect(parseCarriers('{not json')).toEqual([]);
   });
 
-  it('normalises a missing/blank license_expiry to null and keeps only the 4 fields', () => {
+  it('normalises a missing/blank license_expiry to null and keeps only the known fields', () => {
     const out = parseCarriers([
       { carrier_name: 'Verizon', callsign: 'WQGA123', confidence_tag: 'possible', extra: 'drop me' },
       { carrier_name: 'T-Mobile', callsign: 'KNKA000', license_expiry: '', confidence_tag: 'possible' },
@@ -43,6 +59,8 @@ describe('parseCarriers', () => {
       carrier_name: 'Verizon',
       callsign: 'WQGA123',
       license_expiry: null,
+      license_status: '',
+      license_status_desc: '',
       confidence_tag: 'possible',
     });
     expect(out[1].license_expiry).toBeNull();
@@ -54,6 +72,29 @@ describe('parseCarriers', () => {
       { carrier_name: 'SOME RURAL TELEPHONE CO-OP', callsign: 'WXYZ999', confidence_tag: 'likely' },
     ]);
     expect(out[0].carrier_name).toBe('SOME RURAL TELEPHONE CO-OP');
+  });
+});
+
+describe('isInactiveLicense / inactiveLicenseLabel (M-l / #216)', () => {
+  it('flags cancelled / expired / terminated / term-pending codes', () => {
+    for (const code of ['C', 'E', 'T', 'X']) {
+      expect(isInactiveLicense({ license_status: code })).toBe(true);
+    }
+  });
+
+  it('does NOT flag active, blank (pre-#216 data) or unknown codes', () => {
+    expect(isInactiveLicense({ license_status: 'A' })).toBe(false);
+    expect(isInactiveLicense({ license_status: '' })).toBe(false);
+    expect(isInactiveLicense({ license_status: 'P' })).toBe(false);
+  });
+
+  it('labels with the status word when carried, else a generic Inactive', () => {
+    expect(
+      inactiveLicenseLabel({ license_status: 'C', license_status_desc: 'Cancelled' }),
+    ).toBe('Cancelled');
+    expect(inactiveLicenseLabel({ license_status: 'E', license_status_desc: '' })).toBe(
+      'Inactive',
+    );
   });
 });
 

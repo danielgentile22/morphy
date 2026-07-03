@@ -460,6 +460,16 @@
             "default": "",
             "title": "License Expiry",
             "type": "string"
+          },
+          "license_status": {
+            "default": "",
+            "title": "License Status",
+            "type": "string"
+          },
+          "license_status_desc": {
+            "default": "",
+            "title": "License Status Desc",
+            "type": "string"
           }
         },
         "title": "CarrierOut",

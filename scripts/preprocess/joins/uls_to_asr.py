@@ -64,9 +64,13 @@ location by ``usi``. Tests inject a ``license`` table into the context, which
 takes precedence over the disk read.
 
 Per-tower output — ``carriers`` is a list of structs, each:
-    {carrier_name, callsign, license_expiry, confidence_tag}
+    {carrier_name, callsign, license_expiry, license_status,
+     license_status_desc, confidence_tag}
 deduped by (carrier_name, callsign), keeping the best tag (verified > likely
-> possible). A tower with no match gets an empty list.
+> possible). A tower with no match gets an empty list. ``license_status``
+(the ULS HD code — A/C/E/T/…) + its label ride along so the badge can
+distinguish an active license from a cancelled/expired one riding through
+the match (audit M-l / #216).
 """
 
 from __future__ import annotations
@@ -101,19 +105,24 @@ _LICENSE_RELPATHS = [
 ]
 
 
-def _expiry(value) -> str | None:
-    """A license expiry as a clean string, or None for blank / NaN."""
+def _clean_str(value) -> str | None:
+    """A license field as a clean string, or None for blank / NaN."""
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     s = str(value).strip()
     return s or None
 
 
+# License columns the join consumes: identity + expiry + status (audit M-l).
+_LICENSE_COLS = ["usi", "licensee_name", "expired_date", "license_status", "license_status_desc"]
+
+
 def load_uls_licenses() -> pd.DataFrame:
     """Read the four bands' normalized license tables off disk.
 
-    Returns one row per ``usi`` with ``licensee_name`` + ``expired_date``.
-    National + small; safe to read whole. Missing band files are skipped.
+    Returns one row per ``usi`` with ``licensee_name`` + ``expired_date`` +
+    ``license_status``/``license_status_desc``. National + small; safe to
+    read whole. Missing band files are skipped.
     """
     from .. import NORMALIZED_ROOT  # local import — avoid an import cycle
 
@@ -122,9 +131,11 @@ def load_uls_licenses() -> pd.DataFrame:
         path = NORMALIZED_ROOT / rel / fname
         if not path.exists():
             continue
-        frames.append(pd.read_parquet(path, columns=["usi", "licensee_name", "expired_date"]))
+        # Read whole (national + small), then project: a stale pre-#216
+        # normalize output without the status columns still loads (→ None).
+        frames.append(pd.read_parquet(path).reindex(columns=_LICENSE_COLS))
     if not frames:
-        return pd.DataFrame(columns=["usi", "licensee_name", "expired_date"])
+        return pd.DataFrame(columns=_LICENSE_COLS)
     lic = pd.concat(frames, ignore_index=True)
     return lic.drop_duplicates(subset="usi", keep="first")
 
@@ -159,7 +170,13 @@ class UlsToAsrJoin(Join):
         lic = ctx.get("license")
         if lic is None or len(lic) == 0:
             lic = load_uls_licenses()
-        lic = lic[["usi", "licensee_name", "expired_date"]].drop_duplicates("usi", keep="first")
+        # An injected test table may predate the status columns — default them
+        # so a lean fixture still joins (status then rides as None → "").
+        lic = lic.copy()
+        for col in _LICENSE_COLS:
+            if col not in lic.columns:
+                lic[col] = None
+        lic = lic[_LICENSE_COLS].drop_duplicates("usi", keep="first")
         locs = locs.merge(lic, on="usi", how="left")
 
         has_asr = locs["asr_number"].notna() & (
@@ -261,7 +278,11 @@ class UlsToAsrJoin(Join):
             "__tidx": int(tidx),
             "carrier_name": carrier_name,
             "callsign": cs,
-            "license_expiry": _expiry(row.get("expired_date")),
+            "license_expiry": _clean_str(row.get("expired_date")),
+            # ULS HD status (A/C/E/T/…) + label — lets the badge distinguish
+            # an active license from a cancelled/expired one (audit M-l).
+            "license_status": _clean_str(row.get("license_status")),
+            "license_status_desc": _clean_str(row.get("license_status_desc")),
             "confidence_tag": tag,
         }
 

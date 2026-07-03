@@ -147,8 +147,10 @@ export function scoreComponents(p: Props): Array<{ factor: string; weight: numbe
 export const TOWER_SCHEMA: EntitySchema = {
   kind: 'tower',
   title: (p) => {
-    const asr = fmtText(p.asr_number);
-    return asr ? `Tower ${asr}` : 'Tower';
+    // FCC rows title by ASR number; FAA rows (asr_number null since the M-i
+    // split, #215) fall back to the per-source id — their obstacle number.
+    const id = fmtText(p.asr_number) ?? fmtText(p._source_row_id);
+    return id ? `Tower ${id}` : 'Tower';
   },
   tags: (p) => {
     const tags: Tag[] = [];
@@ -189,7 +191,22 @@ export const TOWER_SCHEMA: EntitySchema = {
     {
       title: 'Tower (FCC ASR / FAA)',
       fields: [
-        { label: 'ASR number', keys: ['asr_number'], value: (p) => fmtText(p.asr_number) },
+        {
+          // FCC-only since the M-i namespace split (#215). Gated on _source so
+          // a pre-split composite (FAA obstacle numbers still riding
+          // asr_number) never labels an FAA study number as an ASR.
+          label: 'ASR number',
+          keys: ['asr_number', '_source'],
+          value: (p) => (p._source === 'faa_oeaaa' ? null : fmtText(p.asr_number)),
+        },
+        {
+          // The FAA's own ID for an obstruction row — a disjoint namespace
+          // from FCC ASR numbers (M-i / #215). _source_row_id carries it on
+          // both pre- and post-split composites.
+          label: 'FAA obstacle #',
+          keys: ['_source_row_id', '_source'],
+          value: (p) => (p._source === 'faa_oeaaa' ? fmtText(p._source_row_id) : null),
+        },
         {
           label: 'Status',
           keys: ['status_desc', 'status'],
@@ -219,6 +236,18 @@ export const TOWER_SCHEMA: EntitySchema = {
           label: 'Tower owner (ASR)',
           keys: ['owner_name'],
           value: (p) => fmtText(p.owner_name),
+        },
+        {
+          // The registrant's contact block (audit M-b / #208) — rides ~99%
+          // of FCC rows; blank on FAA-sourced towers.
+          label: 'Tower owner address',
+          keys: ['owner_street', 'owner_city', 'owner_state', 'owner_zip'],
+          value: (p) => joinNonEmpty([p.owner_street, p.owner_city, p.owner_state, p.owner_zip]),
+        },
+        {
+          label: 'Tower owner phone',
+          keys: ['owner_phone'],
+          value: (p) => fmtText(p.owner_phone),
         },
       ],
     },

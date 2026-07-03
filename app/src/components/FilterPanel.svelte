@@ -14,6 +14,7 @@
   import type { TowerFeature } from '../lib/towers';
   import { kindLabel, money, feet } from '../lib/lead-format';
   import { distressTierLabel } from '../lib/palette';
+  import { COUNTIES_LAYER } from '../lib/county-layers';
 
   onMount(() => void filterModel.load());
 
@@ -246,6 +247,17 @@
       <label class="check"><input type="checkbox" checked={m.inOz} onchange={(e) => setBool('inOz', e.currentTarget.checked)} /> Opportunity Zone</label>
       <label class="check"><input type="checkbox" checked={m.inQct} onchange={(e) => setBool('inQct', e.currentTarget.checked)} /> Qualified Census Tract</label>
       <label class="check"><input type="checkbox" checked={m.persistentPoverty} onchange={(e) => setBool('persistentPoverty', e.currentTarget.checked)} /> Persistent poverty</label>
+      <!-- Map display, not a filter: shades counties by ARC distress tier at
+           low zoom (audit M-d / #209). Doesn't constrain owners, so it never
+           lights the group's active dot. -->
+      <label class="check" data-testid="county-shading-toggle">
+        <input
+          type="checkbox"
+          checked={app.isLayerVisible(COUNTIES_LAYER)}
+          onchange={(e) => app.setLayerVisible(COUNTIES_LAYER, e.currentTarget.checked)}
+        />
+        Shade counties by distress
+      </label>
     </div>
   </details>
 

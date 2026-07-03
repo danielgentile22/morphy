@@ -33,6 +33,17 @@ export interface TowerProps {
   height_m: number | null;
   state: string;
   active: boolean;
+  /** Construction date (audit M-c / #208) — null when granted-but-not-built. */
+  date_built: string | null;
+  /** The ASR registrant — the towerco/carrier lease counterparty (audit M-b).
+   *  NOT the landowner: `owner` above is the parcel's owner. Null on
+   *  FAA-sourced rows; ~99% populated on FCC rows. */
+  tower_owner: string | null;
+  tower_owner_street: string | null;
+  tower_owner_city: string | null;
+  tower_owner_state: string | null;
+  tower_owner_zip: string | null;
+  tower_owner_phone: string | null;
 }
 
 export type TowerFeature = Feature<Point, TowerProps>;
@@ -77,6 +88,10 @@ function escapeHtml(s: string): string {
  *  Rows without finite coordinates are dropped. Pure — unit-tested. */
 export function rowsToFeatureCollection(rows: TowerRow[]): FeatureCollection<Point, TowerProps> {
   const features: TowerFeature[] = [];
+  const text = (v: string | null | undefined): string | null => {
+    const s = (v ?? '').trim();
+    return s === '' ? null : s;
+  };
   for (const r of rows) {
     if (!Number.isFinite(r.lon) || !Number.isFinite(r.lat)) continue;
     const owner = (r.owner ?? '').trim();
@@ -93,6 +108,13 @@ export function rowsToFeatureCollection(rows: TowerRow[]): FeatureCollection<Poi
         height_m: r.height_m ?? null,
         state: String(r.state ?? ''),
         active: r.active === true,
+        date_built: text(r.date_built),
+        tower_owner: text(r.tower_owner),
+        tower_owner_street: text(r.tower_owner_street),
+        tower_owner_city: text(r.tower_owner_city),
+        tower_owner_state: text(r.tower_owner_state),
+        tower_owner_zip: text(r.tower_owner_zip),
+        tower_owner_phone: text(r.tower_owner_phone),
       },
     });
   }
@@ -160,17 +182,26 @@ export async function loadTowerPoints(
 export function parseNationalTowers(json: unknown): TowerRow[] {
   const towers = (json as { towers?: unknown } | null)?.towers;
   if (!Array.isArray(towers)) throw new Error('towers.json — missing towers[] array');
+  const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
   return towers.map((t): TowerRow => {
     const r = (t ?? {}) as Record<string, unknown>;
     return {
       asr: String(r.asr ?? ''),
-      owner: typeof r.owner === 'string' ? r.owner : null,
+      owner: str(r.owner),
       height_m: typeof r.height_m === 'number' ? r.height_m : null,
       state: String(r.state ?? ''),
       active: typeof r.active === 'boolean' ? r.active : null,
       lat: typeof r.lat === 'number' ? r.lat : Number.NaN,
       lon: typeof r.lon === 'number' ? r.lon : Number.NaN,
       ...(typeof r.cid === 'string' ? { cid: r.cid } : {}),
+      // v2 fields (audit M-b/M-c) — absent on a stale v1 file → null defaults.
+      date_built: str(r.date_built),
+      tower_owner: str(r.tower_owner),
+      tower_owner_street: str(r.tower_owner_street),
+      tower_owner_city: str(r.tower_owner_city),
+      tower_owner_state: str(r.tower_owner_state),
+      tower_owner_zip: str(r.tower_owner_zip),
+      tower_owner_phone: str(r.tower_owner_phone),
     };
   });
 }

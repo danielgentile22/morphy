@@ -7,7 +7,7 @@
   // are done upstream in #24 — rendered as given. Empty is the COMMON case
   // (most ASR towers have no matched ULS per-site license), so it reads as
   // normal, not an error.
-  import { confidenceMeta, type Carrier } from '../lib/carrier';
+  import { confidenceMeta, isInactiveLicense, inactiveLicenseLabel, type Carrier } from '../lib/carrier';
 
   let { carriers, compact = false }: { carriers: Carrier[]; compact?: boolean } = $props();
 
@@ -30,11 +30,25 @@
   <ul class="carriers" class:compact data-testid="carrier-list">
     {#each carriers as c, i (c.callsign + '·' + i)}
       {@const m = confidenceMeta(c.confidence_tag)}
-      <li class="carrier">
+      {@const dead = isInactiveLicense(c)}
+      <li class="carrier" class:dead>
         <span class="who">
           <span class="name">{c.carrier_name || 'Unknown licensee'}</span>
           <span class="sub">{c.callsign || '—'}</span>
         </span>
+        <!-- A cancelled/expired license must not read as a live carrier
+             (audit M-l): a danger chip names the status, and the row dims. -->
+        {#if dead}
+          <span
+            class="chip"
+            data-tone="danger"
+            data-license-status={c.license_status}
+            title="This ULS license is {inactiveLicenseLabel(c).toLowerCase()} — not a live authorization"
+            aria-label="License {inactiveLicenseLabel(c)}. Not a live authorization."
+          >
+            {inactiveLicenseLabel(c)}
+          </span>
+        {/if}
         <span
           class="chip"
           data-tone={BADGE_TONE[m.tone] ?? 'neutral'}
@@ -88,6 +102,12 @@
      cue — stays colourblind-safe. */
   .chip {
     flex-shrink: 0;
+  }
+
+  /* A dead license dims the row — the status chip carries the words, the
+     dimming is only reinforcement (never the sole signal). */
+  .carrier.dead .who {
+    opacity: 0.55;
   }
 
   .empty {

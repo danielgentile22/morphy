@@ -56,7 +56,12 @@ OWNERS_INDEX_FILENAME = "owners_index.json"
 # ``interestingness_score``. Different towers sit on different parcels, so
 # same-owner towers can rank differently in Explore. A stale (pre-v5) index
 # omits the field; readers default it to None.
-OWNERS_INDEX_SCHEMA_VERSION = 5
+# v6 (audit M-l / #216): each carrier entry gains ``license_status`` (the ULS
+# HD code — A/C/E/T/…) + ``license_status_desc`` so the badge can distinguish
+# an active license from a cancelled/expired one. A stale (pre-v6) index (or
+# a pre-#216 composite behind a fresh index build) omits them; readers
+# default both to "".
+OWNERS_INDEX_SCHEMA_VERSION = 6
 
 OWNERS_FILTER_FILENAME = "owners_filter.json"
 
@@ -101,10 +106,13 @@ INDEX_INPUT_COLUMNS = (
     "mailing_zip",
 )
 
-# Tower-attribute columns joined onto a parcel's structures by ASR number
-# (the ``infrastructure_summary`` tower ``id`` is the ASR number).
+# Tower-attribute columns joined onto a parcel's structures by the union-wide
+# structure id (the ``infrastructure_summary`` tower ``id``): the FCC ASR
+# registration number on fcc_asr rows, the FAA obstacle number on faa_oeaaa
+# rows — ``_source_row_id`` on both, since the M-i namespace split (#215)
+# made ``asr_number`` FCC-only. Values are unchanged from the mixed era.
 TOWER_ATTR_COLUMNS = (
-    "asr_number",
+    "_source_row_id",
     "height_m",
     "lat",
     "lon",
@@ -117,14 +125,23 @@ TOWER_ATTR_COLUMNS = (
 
 # Fields kept from a raw ULS carrier entry (drop anything #24 adds later that
 # the UI doesn't read, so the index stays lean + the contract is explicit).
-_CARRIER_FIELDS = ("carrier_name", "callsign", "license_expiry", "confidence_tag")
+# license_status/_desc (v6, audit M-l) default to "" on a pre-#216 composite.
+_CARRIER_FIELDS = (
+    "carrier_name",
+    "callsign",
+    "license_expiry",
+    "license_status",
+    "license_status_desc",
+    "confidence_tag",
+)
 
 
 def _normalize_carriers(raw) -> list[dict]:
     """Parse a tower's ``carriers`` (a JSON-array string on the composite) into
-    a clean list of ``{carrier_name, callsign, license_expiry, confidence_tag}``.
-    De-dup + ordering were already done in #24 — preserved as-is. Tolerant: a
-    null / blank / malformed value yields ``[]``."""
+    a clean list of ``{carrier_name, callsign, license_expiry, license_status,
+    license_status_desc, confidence_tag}``. De-dup + ordering were already done
+    in #24 — preserved as-is. Tolerant: a null / blank / malformed value yields
+    ``[]``; fields missing from an entry default to ""."""
     out: list[dict] = []
     for c in _parse_json_list(raw):
         out.append({k: ("" if c.get(k) is None else str(c.get(k))) for k in _CARRIER_FIELDS})
@@ -543,22 +560,23 @@ def pq_columns(path: Path) -> set[str]:
 
 
 def _read_state_towers(state_dir: Path) -> dict[str, dict]:
-    """Map ``asr_number → {height_m, lat, lon, is_active, structure_type_desc}``
+    """Map ``structure id → {height_m, lat, lon, is_active, structure_type_desc}``
     for one state, used to enrich a parcel's structures with real tower
-    detail. Missing file ⇒ empty map (structures keep only their ASR ids)."""
+    detail. Keyed by ``_source_row_id`` — the union-wide structure identity
+    (M-i / #215). Missing file ⇒ empty map (structures keep only their ids)."""
     towers = state_dir / "towers.parquet"
     if not towers.exists():
         return {}
     cols = pq_columns(towers)
     wanted = [c for c in TOWER_ATTR_COLUMNS if c in cols]
-    if "asr_number" not in wanted:
+    if "_source_row_id" not in wanted:
         return {}
     df = pd.read_parquet(towers, columns=wanted)
     out: dict[str, dict] = {}
     for rec in df.to_dict("records"):
-        asr = str(rec.get("asr_number") or "").strip()
-        if asr:
-            out[asr] = rec
+        sid = str(rec.get("_source_row_id") or "").strip()
+        if sid:
+            out[sid] = rec
     return out
 
 

@@ -73,11 +73,16 @@ dev = [
     "testcontainers[postgres]>=4.0",
     "pyright>=1.1.390",
 ]
+# Data TUI (PRD #233) — the Textual successor to the frozen Qt puller.
+# Pure-Python; replaces the ~700 MB PySide6 pin at retirement (#240).
+tui = [
+    "textual>=1.0",
+]
 
 [tool.uv]
 # `uv sync` with no flags = the full dev environment (user story: one
 # documented command produces a working environment).
-default-groups = ["pipeline", "puller", "backend", "dev"]
+default-groups = ["pipeline", "puller", "backend", "dev", "tui"]
 
 [build-system]
 requires = ["hatchling"]
@@ -90,6 +95,7 @@ build-backend = "hatchling.build"
 # needed to bootstrap them.
 [tool.hatch.build.targets.wheel]
 only-include = [
+    "scripts/data_tui",
     "scripts/fetch",
     "scripts/preprocess",
     "scripts/serve.py",

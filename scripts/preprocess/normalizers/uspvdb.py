@@ -1,4 +1,11 @@
-"""USGS USPVDB (shapefile) → canonical `solar_facility` (polygons)."""
+"""USGS USPVDB (shapefile) → canonical `solar_facility` (polygons).
+
+Carries ``eia_id`` — the EIA plant code (the same code space as the
+eia_860 normalizer's ``facility_id``) — as a first-class column: it is
+the cross-feed key the solar dedup (MACRO-3) matches on (M-f / #210).
+USPVDB v4.0 (2026-04) renamed the field ``p_eia_id`` → ``eia_id``; both
+spellings are read so an older extract still normalizes.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +13,7 @@ import logging
 from pathlib import Path
 
 import geopandas as gpd
+import pandas as pd
 
 from ..base import (
     Normalizer,
@@ -21,6 +29,19 @@ from .fips import canon_county_fips, canon_state_fips
 from .pandas_coerce import safe_str, to_float
 
 log = logging.getLogger("preprocess.uspvdb")
+
+
+def _eia_id_str(v: object) -> str:
+    """The EIA plant code as a clean string ('' when absent).
+
+    Arrives int64 from the v4 shapefile but float when the column carries
+    nulls — strip the integral ``.0`` so the key matches eia_860's
+    ``facility_id`` strings ("2953", never "2953.0")."""
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return ""
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v).strip()
 
 
 def _select_capacity(p_cap_ac: object, p_cap_dc: object) -> tuple[float | None, str | None]:
@@ -60,9 +81,14 @@ class UspvdbNormalizer(Normalizer):
             state_fips = canon_state_fips(r.get("p_state"))
             county_fips = canon_county_fips(r.get("p_county"), state_fips=state_fips)
             capacity_mw, capacity_rating = _select_capacity(r.get("p_cap_ac"), r.get("p_cap_dc"))
+            # v4 name first, pre-v4 fallback (M-f / #210) — see module docstring.
+            eia_id = _eia_id_str(r.get("eia_id")) or _eia_id_str(r.get("p_eia_id"))
             rows.append(
                 {
                     "facility_id": safe_str(r.get("p_id") or r.get("case_id")),
+                    # The EIA plant code — the MACRO-3 dedup key against the
+                    # EIA-860/860M feeds (their facility_id is this code).
+                    "eia_id": eia_id,
                     "name": safe_str(r.get("p_name") or r.get("plant_name")),
                     "operator": safe_str(r.get("p_owner") or r.get("p_oper")),
                     "capacity_mw": capacity_mw,
@@ -74,7 +100,6 @@ class UspvdbNormalizer(Normalizer):
                     "county_fips": county_fips,
                     "state_fips": state_fips,
                     "extras": {
-                        "p_eia_id": r.get("p_eia_id"),
                         "capacity_rating": capacity_rating,
                         "p_lulc_pre": r.get("p_lulc_pre"),
                         "p_area": r.get("p_area"),

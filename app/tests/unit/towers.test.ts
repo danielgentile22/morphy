@@ -38,7 +38,37 @@ describe('rowsToFeatureCollection', () => {
       height_m: 79.248,
       state: 'AR',
       active: true,
+      date_built: null,
+      tower_owner: null,
+      tower_owner_street: null,
+      tower_owner_city: null,
+      tower_owner_state: null,
+      tower_owner_zip: null,
+      tower_owner_phone: null,
     });
+  });
+
+  it('carries the build date + ASR owner contact block, blank → null (M-b/M-c)', () => {
+    const fc = rowsToFeatureCollection([
+      row({
+        date_built: '1990-06-14',
+        tower_owner: 'SBA TOWERS II LLC',
+        tower_owner_street: '8051 CONGRESS AVE',
+        tower_owner_city: 'BOCA RATON',
+        tower_owner_state: 'FL',
+        tower_owner_zip: '33487',
+        tower_owner_phone: '(561) 995-7670',
+      }),
+      row({ asr: 'faa', date_built: '', tower_owner: '  ' }), // FAA-style blanks
+    ]);
+    const p = fc.features[0].properties;
+    expect(p.date_built).toBe('1990-06-14');
+    expect(p.tower_owner).toBe('SBA TOWERS II LLC');
+    expect(p.tower_owner_street).toBe('8051 CONGRESS AVE');
+    expect(p.tower_owner_phone).toBe('(561) 995-7670');
+    const faa = fc.features[1].properties;
+    expect(faa.date_built).toBeNull(); // blank string normalized to null
+    expect(faa.tower_owner).toBeNull();
   });
 
   it('bakes the owner cluster id onto each tower for filter joins', () => {
@@ -155,6 +185,13 @@ describe('towerHoverHtml', () => {
     height_m: 79.248,
     state: 'AR',
     active: true,
+    date_built: null,
+    tower_owner: null,
+    tower_owner_street: null,
+    tower_owner_city: null,
+    tower_owner_state: null,
+    tower_owner_zip: null,
+    tower_owner_phone: null,
   };
   it('previews owner, ASR, height (ft) and state', () => {
     const html = towerHoverHtml(props);
