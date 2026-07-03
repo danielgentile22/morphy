@@ -24,6 +24,9 @@ AR_PARCELS_ADAPTER = ParcelAdapter(
         "land_value": ["LandValue"],
         "improvement_value": ["ImpValue"],
         "assessed_value": ["TotalValue", "AssessValu"],
+        # M-k (#213): AR's statutory assessed value (20% of appraised), distinct
+        # from TotalValue (market). Same raw column that backstops assessed_value.
+        "statutory_assessed_value": ["AssessValu"],
         "land_use_code": ["ParcelType"],
         "land_use_desc": ["ParcelType"],
         "county_fips": ["CountyFips"],

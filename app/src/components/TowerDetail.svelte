@@ -245,8 +245,12 @@
           <dt>State</dt><dd>{h.state}</dd>
           <dt>County FIPS</dt><dd>{h.county_fips || '—'}</dd>
           <dt>Land use</dt><dd>{h.land_use || '—'}</dd>
-          <dt>Assessed</dt>
+          <dt>Market</dt>
           <dd>{h.assessed_value ? `$${h.assessed_value.toLocaleString()}` : '—'}</dd>
+          <dt>Assessed (statutory)</dt>
+          <dd>
+            {h.statutory_assessed_value ? `$${h.statutory_assessed_value.toLocaleString()}` : '—'}
+          </dd>
           <dt>Acreage</dt><dd>{h.acreage != null ? `${h.acreage} ac` : '—'}</dd>
           <dt>Parcel ID</dt><dd>{h.parcel_id}</dd>
         </dl>

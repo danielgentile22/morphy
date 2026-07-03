@@ -14,7 +14,7 @@ The audit found the default score is dominated by the coarse **county-distress t
 A new **default preset** (everything still tunable per ADR-058):
 
 - **Portfolio size → inverted + clamped.** Fewer towers per owner ranks higher; a hard clamp floors giant portfolios so breadth can't dominate. Replaces the unclamped rollup bias.
-- **Assessed value → inverse term.** Lower assessed ranks higher (the ADR-070 statutory figure once it lands; market until then).
+- **Value → inverse term.** Lower value ranks higher. Uses the **owner-level market** rollup (`total_assessed_value`) — per the ADR-070 (2026-07-03) amendment, the owner-level axis stays on market because statutory is null for MT and mixes state fractions cross-state. Statutory stays a per-parcel display figure.
 - **Carrier count → linear reward.** More carriers on the tower, higher.
 - **County distress → demoted** from ~40% to a minor tiebreaker.
 - Owner rollup stays an aggregate of the owner's tower scores (ADR-058 amendment), but the aggregate is **clamped** so portfolio breadth doesn't substitute for per-tower interest.

@@ -290,6 +290,21 @@ def test_holdings_aggregate_per_parcel_across_states():
     assert ar["point"] == [round((-90.1 + -90.0) / 2, 6), round((34.9 + 35.0) / 2, 6)]
 
 
+def test_holding_surfaces_statutory_assessed_value():
+    """M-k (#213, ADR-070): each holding carries the per-parcel statutory assessed
+    value, distinct from the market ``assessed_value``; an absent column (stale
+    composite / MT) defaults to 0.0."""
+    row = _parcel_with_holding("STAT OWNER LLC", "05", score=0.5, parcel_id="P1")
+    row["statutory_assessed_value"] = 20000.0
+    idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(pd.DataFrame([row]))
+    assert idx.iloc[0]["holdings"][0]["statutory_assessed_value"] == 20000.0
+
+    # Absent column → safe 0.0 default (a pre-v7 composite must still serve).
+    bare = _parcel_with_holding("BARE OWNER LLC", "30", score=0.4, parcel_id="P2")
+    idx2 = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(pd.DataFrame([bare]))
+    assert idx2.iloc[0]["holdings"][0]["statutory_assessed_value"] == 0.0
+
+
 def test_mailing_address_is_the_modal_non_junk_address():
     real = {"addr": "10 MAIN ST", "city": "BOSTON", "state": "MA", "zip": "02101"}
     idx = CrossStateOwnerResolver(fips_to_abbr=ABBR).resolve(

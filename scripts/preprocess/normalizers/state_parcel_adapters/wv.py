@@ -25,6 +25,9 @@ mis-assign half the counties, so we resolve via an explicit, verified table.
 
 from __future__ import annotations
 
+import geopandas as gpd
+import pandas as pd
+
 from ..state_parcels import AttributeJoin, ParcelAdapter
 
 # WV county NAME → Census ANSI 5-digit FIPS (54001..54109, odd). Authoritative
@@ -165,6 +168,20 @@ def _resolve_wv_county(value: str) -> str | None:
     return WV_COUNTY_NAME_TO_FIPS.get(s.upper())
 
 
+# WV statutory assessed value = 60% of appraised, by law (WV Const. Art. X §1b).
+# It's not a stored column — the feed ships only TotalAppraisal (→ assessed_value,
+# the market/appraised figure) — so we derive it here (M-k / #213 / ADR-070).
+_WV_ASSESSED_RATIO = 0.60
+
+
+def _wv_post_map(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    gdf = gdf.copy()
+    gdf["statutory_assessed_value"] = _WV_ASSESSED_RATIO * pd.to_numeric(
+        gdf["assessed_value"], errors="coerce"
+    )
+    return gdf
+
+
 WV_PARCELS_ADAPTER = ParcelAdapter(
     source_id="wv_parcels",  # MUST equal the fetch-side DataSource.id
     state_fips="54",
@@ -199,6 +216,7 @@ WV_PARCELS_ADAPTER = ParcelAdapter(
         "county_fips": ["CountyID", "CountyName", "CountyCode"],
     },
     county_resolver=_resolve_wv_county,
+    post_map=_wv_post_map,
     mailing_addr_is_full=True,
     attribute_join=AttributeJoin(
         layer_name="ParcelSummary",

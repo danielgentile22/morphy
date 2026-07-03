@@ -668,6 +668,11 @@
             "title": "State",
             "type": "string"
           },
+          "statutory_assessed_value": {
+            "default": 0.0,
+            "title": "Statutory Assessed Value",
+            "type": "number"
+          },
           "structures": {
             "items": {
               "$ref": "#/components/schemas/Structure"

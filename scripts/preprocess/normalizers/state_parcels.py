@@ -416,6 +416,11 @@ def map_layer_to_canonical(
     out["land_value"] = _num_series(g, fm.get("land_value", []))
     out["improvement_value"] = _num_series(g, fm.get("improvement_value", []))
     out["assessed_value"] = _num_series(g, fm.get("assessed_value", []))
+    # M-k (#213, ADR-070): the true statutory assessed figure, distinct from the
+    # market/appraised value above. Direct raw column where the source ships one
+    # (FL AV_NSD, AR AssessValu); WV computes 60%-of-appraised in its post_map;
+    # MT has no such field → the empty field_map leaves it null.
+    out["statutory_assessed_value"] = _num_series(g, fm.get("statutory_assessed_value", []))
     out["land_use_code"] = _str_series(g, fm.get("land_use_code", []))
     out["land_use_desc"] = _str_series(g, fm.get("land_use_desc", []))
     out["year_built"] = _num_series(g, fm.get("year_built", []))

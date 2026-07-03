@@ -107,6 +107,10 @@ class Holding(BaseModel):
     county_fips: str = ""
     land_use: str = ""
     assessed_value: float = 0.0
+    # M-k (#213): the statutory assessed figure (FL AV_NSD, AR AssessValu, WV
+    # 60%-of-appraised), distinct from assessed_value (market/appraised). Safe
+    # default 0.0 so a stale (pre-v7) owners index still serves.
+    statutory_assessed_value: float = 0.0
     acreage: float | None = None
     tower_count: int = 0
     solar_count: int = 0

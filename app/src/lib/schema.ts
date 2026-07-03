@@ -355,12 +355,20 @@ export const PARCEL_SCHEMA: EntitySchema = {
       title: 'Valuation',
       fields: [
         {
-          // Fed by market/appraised value in all 4 states (FL JV, AR/MT
-          // TotalValue, WV TotalAppraisal), not the statutory assessed figure
-          // (E2). The true assessed value is the separate M-k item.
+          // Market/appraised value in all 4 states (FL JV, AR/MT TotalValue, WV
+          // TotalAppraisal) — the cross-state-comparable figure (E2). The
+          // statutory assessed figure is the separate field below (M-k).
           label: 'Market / appraised value',
           keys: ['assessed_value'],
           value: (p) => fmtMoney(p.assessed_value),
+        },
+        {
+          // M-k (#213, ADR-070): the statutory assessed figure — FL AV_NSD, AR
+          // AssessValu, WV 60%-of-appraised — distinct from market above. MT
+          // ships no such field, so it's sparse there and renders "—".
+          label: 'Assessed value (statutory)',
+          keys: ['statutory_assessed_value'],
+          value: (p) => fmtMoney(p.statutory_assessed_value),
         },
         { label: 'Land value', keys: ['land_value'], value: (p) => fmtMoney(p.land_value) },
         {

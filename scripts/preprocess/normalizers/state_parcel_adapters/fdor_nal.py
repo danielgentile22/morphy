@@ -71,6 +71,9 @@ FDOR_NAL_ADAPTER = ParcelAdapter(
         # left null rather than compute, to keep the field map declarative.
         "improvement_value": [],
         "assessed_value": ["JV"],  # JV = just value (FL's market value)
+        # M-k (#213): AV_NSD = assessed value, non-school-district — FL's
+        # statutory assessed figure, distinct from JV (market) by exemptions.
+        "statutory_assessed_value": ["AV_NSD"],
         "land_use_code": ["DOR_UC"],
         "land_use_desc": ["DOR_UC"],
         "year_built": ["ACT_YR_BLT"],

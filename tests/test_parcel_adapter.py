@@ -383,6 +383,79 @@ def test_wv_parcels_mapping_post_join():
     assert out["acreage"].tolist() == [5.0, 1.0]
 
 
+def test_statutory_assessed_value_per_state():
+    """M-k (#213, ADR-070): the statutory assessed figure, kept separate from the
+    market/appraised ``assessed_value``. Direct raw column on FL (AV_NSD) and AR
+    (AssessValu); WV derives 60%-of-appraised in its post_map; MT ships no such
+    field, so it stays null (empty field_map → NaN)."""
+    import pandas as pd
+    from preprocess.normalizers.state_parcel_adapters.wv import WV_PARCELS_ADAPTER
+
+    # FL — AV_NSD is the statutory figure, JV the market value; both surface.
+    fl = map_layer_to_canonical(
+        _gdf(
+            [
+                {
+                    "PARCEL_ID": "F1",
+                    "OWN_NAME": "O",
+                    "JV": 200000.0,
+                    "AV_NSD": 150000.0,
+                    "geometry": _square(),
+                }
+            ]
+        ),
+        FDOR_NAL_ADAPTER,
+    )
+    assert fl["assessed_value"].iloc[0] == 200000.0
+    assert fl["statutory_assessed_value"].iloc[0] == 150000.0
+
+    # AR — AssessValu is the statutory (20%-of-appraised) figure, TotalValue market.
+    ar = map_layer_to_canonical(
+        _gdf(
+            [
+                {
+                    "ParcelId": "A1",
+                    "OwnerName": "O",
+                    "TotalValue": 100000.0,
+                    "AssessValu": 20000.0,
+                    "geometry": _square(),
+                }
+            ]
+        ),
+        AR_PARCELS_ADAPTER,
+    )
+    assert ar["assessed_value"].iloc[0] == 100000.0
+    assert ar["statutory_assessed_value"].iloc[0] == 20000.0
+
+    # WV — no stored column; 60% of appraised, computed in the post_map.
+    wv = WV_PARCELS_ADAPTER.post_map(
+        map_layer_to_canonical(
+            _gdf(
+                [
+                    {
+                        "CleanParcelID": "W1",
+                        "CountyID": "27",
+                        "Owner1": "O",
+                        "TotalAppraisal": 3000.0,
+                        "geometry": _square(),
+                    }
+                ]
+            ),
+            WV_PARCELS_ADAPTER,
+        )
+    )
+    assert wv["assessed_value"].iloc[0] == 3000.0
+    assert wv["statutory_assessed_value"].iloc[0] == 1800.0
+
+    # MT — no statutory field → null.
+    mt = map_layer_to_canonical(
+        _gdf([{"OwnerName": "O", "TotalValue": 50000.0, "geometry": _square()}]),
+        MT_CADASTRAL_PARCELS_ADAPTER,
+    )
+    assert mt["assessed_value"].iloc[0] == 50000.0
+    assert pd.isna(mt["statutory_assessed_value"].iloc[0])
+
+
 # ── mailing_addr_is_full: full single-line address isn't duplicated ───────
 
 

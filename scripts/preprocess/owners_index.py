@@ -61,7 +61,12 @@ OWNERS_INDEX_FILENAME = "owners_index.json"
 # an active license from a cancelled/expired one. A stale (pre-v6) index (or
 # a pre-#216 composite behind a fresh index build) omits them; readers
 # default both to "".
-OWNERS_INDEX_SCHEMA_VERSION = 6
+# v7 (audit M-k / #213, ADR-070): each holding gains ``statutory_assessed_value``
+# — the true statutory assessed figure (FL AV_NSD, AR AssessValu, WV 60%-of-
+# appraised), distinct from the market/appraised ``assessed_value``. Owner-level
+# rollups stay on market (cross-state comparable; MT ships no statutory value). A
+# stale (pre-v7) index or composite omits it; readers default it to 0 (shown "—").
+OWNERS_INDEX_SCHEMA_VERSION = 7
 
 OWNERS_FILTER_FILENAME = "owners_filter.json"
 
@@ -85,6 +90,7 @@ INDEX_INPUT_COLUMNS = (
     "owner_kind",
     "state_fips",
     "assessed_value",
+    "statutory_assessed_value",
     "tower_count",
     "solar_count",
     "has_tower",
@@ -294,6 +300,11 @@ class CrossStateOwnerResolver:
             return df[name] if name in df.columns else pd.Series(default, index=df.index)
 
         df["_assessed"] = pd.to_numeric(_col("assessed_value", 0.0), errors="coerce").fillna(0.0)
+        # M-k (#213): per-holding statutory assessed value, surfaced on the panel
+        # only (owner-level rollups stay on market — see the v7 schema note).
+        df["_statutory_assessed"] = pd.to_numeric(
+            _col("statutory_assessed_value", 0.0), errors="coerce"
+        ).fillna(0.0)
         df["_score"] = pd.to_numeric(_col("interestingness_score", 0.0), errors="coerce").fillna(
             0.0
         )
@@ -408,6 +419,7 @@ class CrossStateOwnerResolver:
             "county_fips": str(rec.get("county_fips") or ""),
             "land_use": str(rec.get("land_use_desc") or ""),
             "assessed_value": round(float(rec.get("_assessed", 0.0) or 0.0), 2),
+            "statutory_assessed_value": round(float(rec.get("_statutory_assessed", 0.0) or 0.0), 2),
             "acreage": _to_float(rec.get("acreage")),
             "tower_count": int(rec.get("_towers", 0) or 0),
             "solar_count": int(rec.get("_solar", 0) or 0),

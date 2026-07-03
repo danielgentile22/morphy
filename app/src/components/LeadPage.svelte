@@ -206,7 +206,7 @@
             {#if o.solar_count}
               <div class="pill"><b>{o.solar_count}</b><span>solar</span></div>
             {/if}
-            <div class="pill"><b>{money(o.total_assessed_value)}</b><span>assessed</span></div>
+            <div class="pill"><b>{money(o.total_assessed_value)}</b><span>market</span></div>
             <div class="pill"><b>{feet(l.tallest_tower_height_m)}</b><span>tallest</span></div>
           </div>
           <div class="distress">

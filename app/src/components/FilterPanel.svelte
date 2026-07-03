@@ -311,7 +311,7 @@
   <details class="group">
     <summary class="ghead">
       <span class="chev" aria-hidden="true">›</span>
-      <span class="gtitle">Total assessed value</span>
+      <span class="gtitle">Total market value</span>
       {#if m.assessedValue}<span class="dot"></span>{/if}
     </summary>
     <div class="group-body">

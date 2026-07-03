@@ -1035,6 +1035,11 @@ export interface components {
             solar_count: number;
             /** State */
             state: string;
+            /**
+             * Statutory Assessed Value
+             * @default 0
+             */
+            statutory_assessed_value: number;
             /** Structures */
             structures?: components["schemas"]["Structure"][];
             /**

@@ -323,6 +323,6 @@ export function summarizeFilterModel(m: FilterModel): string[] {
   if (m.portfolioMin > 1) out.push(`Parcels ≥ ${m.portfolioMin}`);
   if (m.heightMin > 0) out.push(`Height ≥ ${m.heightMin} m`);
   if (m.structureCountMin > 1) out.push(`Structures ≥ ${m.structureCountMin}`);
-  if (m.assessedValue) out.push(`Assessed $${m.assessedValue[0]}–$${m.assessedValue[1]}`);
+  if (m.assessedValue) out.push(`Market $${m.assessedValue[0]}–$${m.assessedValue[1]}`);
   return out;
 }
