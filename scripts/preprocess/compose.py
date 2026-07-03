@@ -46,7 +46,7 @@ import geopandas as gpd
 import pandas as pd
 
 from . import COMPOSITE_ROOT, cluster, duck
-from .annotators import county_score, owner_cluster
+from .annotators import owner_cluster
 from .base import (
     OUTPUT_BASENAMES,
     SPATIAL_TYPES,
@@ -68,14 +68,13 @@ from .io import (
     write_json,
     write_parquet,
 )
-from .joins.uls_to_asr import carrier_coverage_summary
-from .per_chunk_joins import (
-    apply_county_score,
-    apply_interestingness_score,
-    apply_parcel_hosts_infra,
-    apply_parcel_to_distress,
-    attach_owner_cluster,
+from .joins.infra_to_parcel import (
+    INFRA_PARCEL_RENAME,
+    INFRA_TO_PARCEL_JOINS,
+    apply_infra_lookup,
 )
+from .joins.parcel_chunk import HOSTS_INFRA_ARTIFACT, OWNER_LOOKUP_ARTIFACT
+from .joins.uls_to_asr import carrier_coverage_summary
 
 log = logging.getLogger("preprocess.compose")
 
@@ -166,13 +165,10 @@ def _build_owner_cluster_lookup(state_fips: str) -> pd.DataFrame:
 # ── Tower / solar / billboard pre-pass (DuckDB spatial join, PRD #135) ────
 
 
-# Parcel columns renamed onto the infra row when a match is found.
-_INFRA_PARCEL_RENAME = {
-    "owner_name": "parcel_owner",
-    "assessed_value": "parcel_value",
-    "acreage": "parcel_acreage",
-    "land_use_code": "parcel_use_code",
-}
+# Parcel columns renamed onto the infra row when a match is found — the
+# union of the registered InfraToParcelJoin declarations, so the SQL attach
+# list can never drift from the adapters (ADR-002 / #263).
+_INFRA_PARCEL_RENAME = INFRA_PARCEL_RENAME
 
 
 def _host_eligible_sql(shards: list[duck.ParcelShard]) -> str:
@@ -305,19 +301,9 @@ def _build_infra_to_parcel_lookups(
     return out
 
 
-def _apply_lookup(infra: gpd.GeoDataFrame, lookup: dict[int, dict]) -> gpd.GeoDataFrame:
-    """Add per-row columns from `lookup` (row index → cols dict) onto `infra`."""
-    if infra is None or len(infra) == 0 or not lookup:
-        return infra
-    infra = infra.copy()
-    # Collect every column that any lookup row provides.
-    cols: set[str] = set()
-    for d in lookup.values():
-        cols.update(d.keys())
-    for col in cols:
-        # bind col per-iteration (lambda is consumed immediately by .map)
-        infra[col] = infra.index.map(lambda i, col=col: lookup.get(int(i), {}).get(col))
-    return infra
+# The lookup applier lives with the InfraToParcelJoin adapters now (#263);
+# this alias keeps the long-standing compose-side name importable.
+_apply_lookup = apply_infra_lookup
 
 
 # ── Top-level orchestrator ────────────────────────────────────────────────
@@ -362,39 +348,33 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
     # 2. Owner-cluster pre-pass ---------------------------------------------
     log.info("owner-cluster pre-pass (DuckDB)…")
     owner_lookup = _build_owner_cluster_lookup(state.fips)
+    ctx.artifacts[OWNER_LOOKUP_ARTIFACT] = owner_lookup
     log.info("owner-cluster pre-pass: %d parcels indexed", len(owner_lookup))
 
-    # 3. Infra→parcel pre-pass (one DuckDB spatial join, all layers — PRD #135)
+    # 3. Infra→parcel pre-pass (one DuckDB spatial join, all layers — PRD #135).
+    #    Keep-columns and predicates come straight from the registered
+    #    InfraToParcelJoin declarations — the pre-pass can't drift from the
+    #    adapters (ADR-002 / #263; audit M-a / #211 chose the predicates:
+    #    polygon solar attaches by intersects so a spanning array still
+    #    reports its primary parcel; point layers stay within).
     log.info("infra→parcel pre-pass (DuckDB)…")
     infra_lookups = _build_infra_to_parcel_lookups(
         {
-            "tower": (
-                ctx.get("tower"),
-                [
-                    "parcel_id_full",
-                    "owner_name",
-                    "assessed_value",
-                    "acreage",
-                    "land_use_code",
-                ],
-            ),
-            "solar": (ctx.get("solar_facility"), ["parcel_id_full", "owner_name"]),
-            "billboard": (ctx.get("billboard"), ["parcel_id_full", "owner_name"]),
+            j.name: (ctx.get(j.target_type), list(j.parcel_columns_map))
+            for j in INFRA_TO_PARCEL_JOINS
         },
         state.fips,
-        # Mirrors the registered InfraToParcelJoin predicates (audit M-a /
-        # #211): polygon solar attaches by intersects so a spanning array
-        # still reports its primary parcel; point layers stay within.
-        predicates={"tower": "within", "solar": "intersects", "billboard": "within"},
+        predicates={j.name: j.predicate for j in INFRA_TO_PARCEL_JOINS},
     )
-    tower_lookup = infra_lookups["tower"]
-    solar_lookup = infra_lookups["solar"]
-    billboard_lookup = infra_lookups["billboard"]
+    for j in INFRA_TO_PARCEL_JOINS:
+        ctx.artifacts[j.artifact_key()] = infra_lookups[j.name]
+    tower_lookup = infra_lookups["TowerToParcelJoin"]
+    solar_lookup = infra_lookups["SolarToParcelJoin"]
     log.info(
         "infra→parcel lookups: towers=%d, solar=%d, billboards=%d",
         len(tower_lookup),
         len(solar_lookup),
-        len(billboard_lookup),
+        len(infra_lookups["BillboardToParcelJoin"]),
     )
 
     #    Build per-parcel reverse maps (parcel_id_full → infra counts +
@@ -421,14 +401,25 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
     )
     # Billboards are no longer rolled up onto parcels (E14): every source is
     # deferred (MACRO-9), so the per-parcel counts were 0 on 100% of rows. The
-    # billboard layer itself is still composed below (billboard_lookup) so the
+    # billboard layer itself is still composed below so the
     # plumbing is ready when a source is acquired.
 
+    ctx.artifacts[HOSTS_INFRA_ARTIFACT] = {
+        "tower_counts": tower_counts,
+        "solar_counts": solar_counts,
+        "tower_summary": tower_summary,
+        "solar_summary": solar_summary,
+    }
+
     # 4. Per-chunk loop -----------------------------------------------------
-    # Hoist the county_score rollup out of the shard loop (PERF-021): it's a
-    # groupby over the small, chunk-independent county_score table, so computing
-    # it once and reusing it per shard is identical output, far less work.
-    county_score_prepared = county_score.prepare(ctx.get("county_score"))
+    # The chunked parcel joins come from the ordered registry (ADR-002 /
+    # #263): prepare once (hoists like PERF-021 live in each join's
+    # prepare_chunks), then apply per shard in dependency order — the
+    # depends_on chain pins the output column order, which is part of the
+    # byte-identical compose contract.
+    chunk_joins = [j for j in ordered_joins() if j.chunked]
+    for j in chunk_joins:
+        j.prepare_chunks(ctx)
     view_aggregators = _build_view_aggregators()
     skipped_views: list[str] = []
     for v in all_views():
@@ -446,17 +437,8 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
 
     for label, chunk in iter_state_parcel_shards(state.fips):
         # Parcel-touching joins, applied directly on the chunk.
-        chunk = apply_parcel_hosts_infra(
-            chunk,
-            tower_counts,
-            solar_counts,
-            tower_summary,
-            solar_summary,
-        )
-        chunk = apply_county_score(chunk, county_score_prepared)
-        chunk = apply_parcel_to_distress(chunk, ctx.get("distress_overlay"))
-        chunk = attach_owner_cluster(chunk, owner_lookup)
-        chunk = apply_interestingness_score(chunk)
+        for j in chunk_joins:
+            chunk = j.apply_chunk(chunk)
 
         # Feed view aggregators.
         for agg in view_aggregators:
@@ -478,31 +460,20 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
 
     log.info("chunk loop done: %d shards, %d parcels", shard_count, total_parcel_rows)
 
-    # 5. Apply infra→parcel lookups onto the in-memory infra tables, then
-    #    run non-parcel-touching joins (CountyScoreToTower etc.) via the
-    #    standard registry — they don't need parcels in ctx.
-    if ctx.has("tower"):
-        ctx.set("tower", _apply_lookup(ctx.get("tower"), tower_lookup))
-    if ctx.has("solar_facility"):
-        ctx.set("solar_facility", _apply_lookup(ctx.get("solar_facility"), solar_lookup))
-    if ctx.has("billboard"):
-        ctx.set("billboard", _apply_lookup(ctx.get("billboard"), billboard_lookup))
+    # Registered joins are singletons — drop their whole-state chunk-stage
+    # state now so a multi-state run's peak memory stays one state's worth.
+    for j in chunk_joins:
+        j.release_chunks()
 
-    joins_applied = [
-        "ParcelHostsInfraJoin",
-        "CountyScoreToParcelJoin",
-        "ParcelToDistressJoin",
-        "OwnerClusterJoin",
-        "InterestingnessScoreJoin",
-        "TowerToParcelJoin",
-        "SolarToParcelJoin",
-        "BillboardToParcelJoin",
-    ]
+    # 5. Run the whole-layer joins via the ordered registry — infra→parcel
+    #    attachment (from the pre-pass lookups), county/distress on the
+    #    in-memory infra layers, ULS carriers. The chunked joins above are
+    #    the same registry, different stage.
+    joins_applied = [j.name for j in chunk_joins]
     joins_skipped: list[str] = list(cfg.skip_joins or [])
     for j in ordered_joins():
-        # Skip parcel-touching joins (already done streaming above).
-        if j.annotates == "parcel" or j.name in joins_applied:
-            continue
+        if j.chunked:
+            continue  # already ran streaming above
         if j.name in joins_skipped:
             continue
         if not j.is_applicable(ctx):

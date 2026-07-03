@@ -12,7 +12,7 @@ Two feeds drive the same body. The streaming Composer runs ``prepare`` once
 in a pre-pass and ``annotate`` per county shard (parcels — ADR-050 keeps peak
 memory to one shard). The registered parametric Joins (tower / solar targets)
 call ``annotate`` on the whole in-memory layer. There is no second
-implementation to drift against: the per-chunk functions in
-``preprocess.per_chunk_joins`` and the registered Joins are thin feed adapters
-over these modules.
+implementation to drift against: the registered Joins (whole-layer via
+``apply``, chunked via ``prepare_chunks``/``apply_chunk`` — #263) are thin
+feed adapters over these modules.
 """

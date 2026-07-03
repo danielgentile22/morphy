@@ -7,9 +7,9 @@ computation lives in the shared annotator
 feed over it. The streaming Composer feeds the *same* annotator per parcel
 chunk, so there is one implementation, not two.
 
-Live registrations: ``TowerToDistressJoin`` (runs via the registry on the
-tower layer). ``ParcelToDistressJoin`` is registered for name/manifest
-continuity but skipped by the Composer, which annotates parcels per chunk.
+Live registrations: ``TowerToDistressJoin`` (whole-layer via ``apply``)
+and ``ParcelToDistressJoin`` (chunked, ADR-051 — the Composer drives it
+per parcel shard through ``prepare_chunks``/``apply_chunk``).
 
 ``SpatialAttributeSpec`` is re-exported here from the annotator so the
 long-standing ``from preprocess.joins.spatial_attribute import …`` surface
@@ -33,14 +33,28 @@ __all__ = [
 
 
 class SpatialAttributeJoin(Join):
-    """Whole-layer Join driven by a `SpatialAttributeSpec`."""
+    """Join driven by a `SpatialAttributeSpec` — whole-layer or chunked."""
 
-    def __init__(self, spec: SpatialAttributeSpec, name: str):
+    def __init__(
+        self,
+        spec: SpatialAttributeSpec,
+        name: str,
+        *,
+        chunked: bool = False,
+        filter_invalid_target_geom: bool = False,
+        depends_on: list[str] | None = None,
+    ):
         self.spec = spec
         self.name = name
         self.inputs = [spec.target, spec.source]
         self.annotates = spec.target
         self.columns_added = list(spec.derived_columns.keys())
+        self.chunked = chunked
+        # Declared here (not at the feed site) so the parcel feed's one
+        # behavioral knob lives on the adapter with everything else it owns.
+        self.filter_invalid_target_geom = filter_invalid_target_geom
+        self.depends_on = list(depends_on or [])
+        self._source = None
 
     def apply(self, ctx: ComposeContext) -> None:
         tgt = ctx.get(self.spec.target)
@@ -51,6 +65,28 @@ class SpatialAttributeJoin(Join):
             return
         ctx.set(self.spec.target, annotate(tgt, src, self.spec))
         ctx.join_log.append(self.name)
+
+    # ── chunked feed (parcel, ADR-051) ────────────────────────────────────
+    def is_applicable(self, ctx: ComposeContext) -> bool:
+        if self.chunked:
+            # The target is streamed; the annotator no-ops on an absent
+            # source, matching the pre-registry chunk loop exactly.
+            return True
+        return super().is_applicable(ctx)
+
+    def prepare_chunks(self, ctx: ComposeContext) -> None:
+        self._source = ctx.get(self.spec.source)
+
+    def apply_chunk(self, chunk):
+        return annotate(
+            chunk,
+            self._source,
+            self.spec,
+            filter_invalid_target_geom=self.filter_invalid_target_geom,
+        )
+
+    def release_chunks(self) -> None:
+        self._source = None
 
 
 # ── Distress-overlay specs ──────────────────────────────────────────────
@@ -84,6 +120,17 @@ TOWER_TO_DISTRESS_SPEC = SpatialAttributeSpec(
     derived_columns=_DISTRESS_DERIVED,
 )
 
-# Pin legacy names so existing manifests + logs stay continuous.
-register_join_instance(SpatialAttributeJoin(PARCEL_TO_DISTRESS_SPEC, "ParcelToDistressJoin"))
+# Pin legacy names so existing manifests + logs stay continuous. The parcel
+# instance runs chunked with normalize-time geometry-validity filtering
+# (PERF-028); depends_on pins its chunk-stage position (column order is part
+# of the byte-identical compose contract).
+register_join_instance(
+    SpatialAttributeJoin(
+        PARCEL_TO_DISTRESS_SPEC,
+        "ParcelToDistressJoin",
+        chunked=True,
+        filter_invalid_target_geom=True,
+        depends_on=["CountyScoreToParcelJoin"],
+    )
+)
 register_join_instance(SpatialAttributeJoin(TOWER_TO_DISTRESS_SPEC, "TowerToDistressJoin"))

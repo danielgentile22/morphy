@@ -1,22 +1,35 @@
-"""Regression tests for the streaming Composer's per-chunk join applicators.
+"""Regression tests for the chunked parcel-join seam (#263).
 
-apply_county_score merges county distress values onto a parcel chunk that
-already carries distress_tier / persistent_poverty placeholders (the
-normalizer initialises them). It must use safe_merge so a raw merge's
+The county-score chunk stage merges county distress values onto a parcel
+chunk that already carries distress_tier / persistent_poverty placeholders
+(the normalizer initialises them). It must use safe_merge so a raw merge's
 _x/_y suffix collision doesn't drop the real columns — the bug that
-blocked FL's recompose (KeyError 'distress_tier').
+blocked FL's recompose (KeyError 'distress_tier'). Driven through the
+registered CountyScoreToParcelJoin's prepare_chunks/apply_chunk — the seam
+the Composer uses (ADR-002 / #263).
 """
 
 from __future__ import annotations
 
 import geopandas as gpd
 import pandas as pd
-from preprocess.annotators import county_score
-from preprocess.per_chunk_joins import apply_county_score
+import preprocess.registry  # noqa: F401 — populate the join registry
+from preprocess.base import ComposeContext, all_joins
 from shapely.geometry import Point
 
 
-def test_apply_county_score_overwrites_placeholders_without_suffix_collision():
+def _county_join():
+    return next(j for j in all_joins() if j.name == "CountyScoreToParcelJoin")
+
+
+def _ctx(scores: pd.DataFrame | None) -> ComposeContext:
+    ctx = ComposeContext(state_fips="05", state_name="Arkansas", state_abbr="AR")
+    if scores is not None:
+        ctx.set("county_score", scores)
+    return ctx
+
+
+def test_county_chunk_stage_overwrites_placeholders_without_suffix_collision():
     chunk = gpd.GeoDataFrame(
         {
             "county_fips": ["05001", "05001", "05003"],
@@ -34,9 +47,9 @@ def test_apply_county_score_overwrites_placeholders_without_suffix_collision():
             "persistent_poverty": [True, False],
         }
     )
-    # apply_county_score now takes an already-prepared rollup (PERF-021 hoists
-    # county_score.prepare out of the shard loop); prepare it here.
-    out = apply_county_score(chunk, county_score.prepare(scores))
+    join = _county_join()
+    join.prepare_chunks(_ctx(scores))  # PERF-021 hoist lives here now
+    out = join.apply_chunk(chunk)
 
     assert list(out["distress_tier"]) == ["distressed", "distressed", "competitive"]
     assert [bool(v) for v in out["persistent_poverty"]] == [True, True, False]
@@ -45,10 +58,12 @@ def test_apply_county_score_overwrites_placeholders_without_suffix_collision():
     assert isinstance(out, gpd.GeoDataFrame)
 
 
-def test_apply_county_score_is_noop_without_scores():
+def test_county_chunk_stage_is_noop_without_scores():
     chunk = gpd.GeoDataFrame(
         {"county_fips": ["05001"], "geometry": [Point(0, 0)]},
         geometry="geometry",
         crs="EPSG:4326",
     )
-    assert apply_county_score(chunk, None) is chunk
+    join = _county_join()
+    join.prepare_chunks(_ctx(None))
+    assert join.apply_chunk(chunk) is chunk

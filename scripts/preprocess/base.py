@@ -335,6 +335,11 @@ class ComposeContext:
     join_log: list[str] = field(default_factory=list)
     view_log: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # Products of the Composer's heavy pre-passes (PRD #135 DuckDB stages),
+    # keyed for the Joins that consume them — the parcel layer itself never
+    # materializes here (ADR-051), so chunked Joins get their whole-state
+    # lookups this way instead of via tables.
+    artifacts: dict[str, Any] = field(default_factory=dict)
 
     def get(self, canonical_type: str):
         return self.tables.get(canonical_type)
@@ -369,8 +374,28 @@ class Join(ABC):
     columns_added: list[str] = []
     depends_on: list[str] = []  # other Join names that must run first
 
+    # ADR-051: a Join that annotates the streamed parcel layer sets
+    # ``chunked = True`` and implements the two chunk stages below instead of
+    # relying on apply() seeing a whole layer. The Composer drives BOTH kinds
+    # from the one ordered registry: chunked joins run prepare_chunks() once,
+    # then apply_chunk() per shard; whole-layer joins run apply() post-loop.
+    chunked: bool = False
+
     @abstractmethod
     def apply(self, ctx: ComposeContext) -> None: ...
+
+    def prepare_chunks(self, ctx: ComposeContext) -> None:
+        """One-time pre-loop stage for chunked joins (hoist lookups/rollups)."""
+
+    def apply_chunk(self, chunk):
+        """Annotate one parcel shard; returns the (possibly new) frame."""
+        raise NotImplementedError(f"{self.name} is not a chunked join")
+
+    def release_chunks(self) -> None:
+        """Drop per-state chunk-stage state after the loop. Registered joins
+        are module-level singletons, so anything stashed by prepare_chunks
+        (whole-state lookups) would otherwise outlive the state's compose and
+        inflate peak memory on multi-state runs."""
 
     def is_applicable(self, ctx: ComposeContext) -> bool:
         """Default: applicable if all inputs are present."""

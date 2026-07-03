@@ -15,6 +15,7 @@ return empty and the whole pipeline is a no-op.
 from .joins import (  # noqa: F401
     county_score_lookup,
     infra_to_parcel,
+    parcel_chunk,
     spatial_attribute,
     uls_to_asr,
 )

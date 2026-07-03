@@ -1,9 +1,9 @@
-"""Seam tests: the whole-layer feed and the per-chunk feed are one body.
+"""Seam tests: the whole-layer feed and the chunked feed are one body.
 
 These prove the deepening goal — each parcel annotation is computed in
 exactly one place, fed two ways — by driving the *real* entry points
-(the registered Join for the whole-layer feed, the
-``preprocess.per_chunk_joins`` adapter for the streaming feed) over the
+(the Join's ``apply()`` for the whole-layer feed, its
+``prepare_chunks``/``apply_chunk`` for the streaming feed, #263) over the
 same toy parcels and asserting identical annotation columns. If the two
 feeds ever drift, these go red.
 
@@ -18,11 +18,9 @@ import pandas as pd
 
 # Force registration of every Join.
 from preprocess import registry  # noqa: F401
-from preprocess.annotators import county_score
 from preprocess.base import ComposeContext
 from preprocess.joins.county_score_lookup import CountyScoreLookupJoin
 from preprocess.joins.spatial_attribute import PARCEL_TO_DISTRESS_SPEC, SpatialAttributeJoin
-from preprocess.per_chunk_joins import apply_county_score, apply_parcel_to_distress
 from shapely.geometry import Polygon
 
 
@@ -96,10 +94,13 @@ def _by_id(df: pd.DataFrame, cols: list[str]) -> dict:
 def test_county_score_whole_layer_matches_per_chunk():
     parcels, scores = _parcels(), _scores()
     whole = _whole_layer_county_score(parcels, scores)
-    # apply_county_score takes a prepared rollup now (PERF-021), mirroring how
-    # the Composer hoists prepare() once before the shard loop.
-    prepared = county_score.prepare(scores)
-    chunked = _chunked(parcels, lambda c: apply_county_score(c, prepared))
+    # The chunked feed: prepare_chunks hoists the rollup once (PERF-021),
+    # then apply_chunk runs per shard — the Composer's exact sequence.
+    join = CountyScoreLookupJoin("parcel", name="CountyScoreSeamTest")
+    ctx = ComposeContext(state_fips="05", state_name="AR", state_abbr="AR")
+    ctx.set("county_score", scores)
+    join.prepare_chunks(ctx)
+    chunked = _chunked(parcels, join.apply_chunk)
     cols = ["distress_tier", "persistent_poverty"]
     assert _by_id(whole, cols) == _by_id(chunked, cols)
     # And the values are actually populated (not a degenerate all-equal pass).
@@ -111,9 +112,20 @@ def test_distress_whole_layer_matches_per_chunk():
     ctx = ComposeContext(state_fips="05", state_name="AR", state_abbr="AR")
     ctx.set("parcel", parcels.copy())
     ctx.set("distress_overlay", overlays)
-    SpatialAttributeJoin(PARCEL_TO_DISTRESS_SPEC, "ParcelToDistressJoin").apply(ctx)
+    SpatialAttributeJoin(PARCEL_TO_DISTRESS_SPEC, "DistressSeamWhole").apply(ctx)
     whole = ctx.get("parcel")
-    chunked = _chunked(parcels, lambda c: apply_parcel_to_distress(c, overlays))
+    # The chunked feed, with the parcel instance's declared geometry-validity
+    # filtering knob (PERF-028) — as the Composer drives it.
+    join = SpatialAttributeJoin(
+        PARCEL_TO_DISTRESS_SPEC,
+        "DistressSeamChunked",
+        chunked=True,
+        filter_invalid_target_geom=True,
+    )
+    chunk_ctx = ComposeContext(state_fips="05", state_name="AR", state_abbr="AR")
+    chunk_ctx.set("distress_overlay", overlays)
+    join.prepare_chunks(chunk_ctx)
+    chunked = _chunked(parcels, join.apply_chunk)
     cols = ["distress_overlays", "in_oz", "in_qct"]
     assert _by_id(whole, cols) == _by_id(chunked, cols)
     assert _by_id(whole, cols)["in_oz"] == [True, True, False, True]
