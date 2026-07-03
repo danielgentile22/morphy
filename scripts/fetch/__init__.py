@@ -1,8 +1,8 @@
 """Pilot data-fetch package.
 
 Headless library that downloads, tracks, and validates every raw dataset
-the pilot project depends on. Consumed by both the standalone desktop UI
-(`app_puller`) and any future CLI / cron driver.
+the pilot project depends on. Consumed by the data TUI (`data_tui`) and
+any future CLI driver.
 
 Public surface:
 

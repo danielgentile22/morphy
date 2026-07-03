@@ -1,24 +1,21 @@
 # PULLER_UX — Design Spec for the Puller Overhaul
 
-**Last updated:** 2026-06-26
-**Status:** Implemented — the puller overhaul is complete, and
-`app_puller/` is now **FROZEN (bug-fix-only) per PRD #138**. This
-document is the historical design reference for the now-frozen Qt
-puller; no new features land here. The forward path is a thin
-Textual-TUI successor over the unchanged headless libraries (see
-[`app_puller/AGENTS.md`](../app_puller/AGENTS.md) + PRD #138).
+**Last updated:** 2026-07-03
+**Status:** Historical design reference. The Qt puller this spec
+described was **retired and deleted in #240** (PRD #138 retirement
+clause) after its Textual successor — the data TUI at
+`scripts/data_tui/`, PRD #233 — covered the full lifecycle (pull →
+preprocess → verify → deploy) with tests. The UX principles below
+(walkthroughs, attention panel, freshness surfacing, no hand-placed
+files) carried over into the TUI; the Qt widget specifics did not.
+Current intent-layer node:
+[`scripts/data_tui/AGENTS.md`](../scripts/data_tui/AGENTS.md).
 
 > **Phase 1 product (2026-05-25):** the puller stays a dev-side tool
 > in Phase 1 — the co-founder sees freshness state inside the product
 > (per [DATA_FRESHNESS.md §8](./DATA_FRESHNESS.md)) but does not trigger
-> refreshes himself. **Phase 2 candidate:** the forward path for the
-> puller is a thin Textual-TUI successor over the unchanged headless
-> libraries (PRD #138) — the Qt desktop app is frozen and not easily
-> backend-driven, so any self-serve in-product refresh would build on
-> that successor rather than the current Qt app. A separate Phase 2
-> candidate: a guided checklist UI for MANUAL_ONLY sources like FDOR
-> NAL (67 Florida counties, click-through each) to compress the
-> per-refresh effort.
+> refreshes himself. Any Phase-2 self-serve in-product refresh would
+> build on the data TUI's headless modules rather than the TUI itself.
 
 This document is the design spec for the data puller upgrade. The
 puller is the **single tool the user interacts with most often** to
@@ -176,8 +173,8 @@ Each `ManualStep` (`scripts/fetch/walkthroughs.py`):
 - `title: str` — short, action-oriented ("Click Graham on the map").
 - `body: str` — Markdown; rendered inline.
 - `deep_link: str | None` — opens in OS browser.
-- `screenshot: Path | None` — optional, under
-  `app_puller/assets/walkthroughs/<source_id>/`.
+- `screenshot: Path | None` — optional repo-relative image path (no
+  source ships one today).
 
 The enclosing `ManualWalkthrough` carries the source-level fields
 (`expected_files` is **not** a per-step field):
@@ -215,7 +212,8 @@ two places:
    the navigation row. Lets the user upload mid-walkthrough without
    having to leave the modal.
 
-Both call the same helper in `app_puller/manual_install.py`:
+Both called the same install helper (now the headless
+`scripts/fetch/install.py`, which the TUI's install-from-file drives):
 
 - File picker opens at `~/Desktop`.
 - Multiple files selectable in one go (the typical shapefile set is

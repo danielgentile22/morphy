@@ -4,8 +4,8 @@ For MANUAL_ONLY sources the puller can't auto-fetch; it shows the user a
 step-by-step guide instead. Each source returns one of these from
 ``DataSource.manual_walkthrough()``.
 
-Kept in the headless ``scripts/fetch`` package (no Qt imports) so it can
-be consumed by either a Qt UI or a CLI / web frontend in future.
+Kept in the headless ``scripts/fetch`` package (no UI imports) so any
+frontend — today the data TUI — can render it.
 """
 
 from __future__ import annotations
@@ -18,9 +18,9 @@ from pathlib import Path
 class ManualStep:
     """One ordered step in a manual-download walkthrough.
 
-    ``screenshot`` is a path under ``app_puller/assets/walkthroughs/<id>/``
-    that the UI may render inline. The fetch package itself never reads
-    these files; the path is a contract with the UI.
+    ``screenshot`` is an optional repo-relative image path the UI may
+    render inline. The fetch package itself never reads these files; the
+    path is a contract with the UI. (No source ships one today.)
     """
 
     title: str

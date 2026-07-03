@@ -1,9 +1,9 @@
 """Badge + attention decision logic — pure functions, no UI imports.
 
-Mirrors the semantics of ``app_puller/status.py`` + ``attention_panel.py``
-without the Qt dependency (that module dies with the Qt puller in #240;
-this one is its successor). Badge vocabulary per PRD #233 story 3:
-fresh / due soon / stale / missing / endpoint-dead / manual / deferred.
+Successor to the retired Qt puller's status/attention modules (#240),
+same semantics without the Qt dependency. Badge vocabulary per PRD #233
+story 3: fresh / due soon / stale / missing / endpoint-dead / manual /
+deferred.
 """
 
 from __future__ import annotations

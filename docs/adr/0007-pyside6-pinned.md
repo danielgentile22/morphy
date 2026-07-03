@@ -1,6 +1,8 @@
 # ADR-007: PySide6 pinned at 6.7.3
 
-**Status:** Accepted
+**Status:** Retired 2026-07-03 — PySide6 left the dependency tree entirely when the
+Qt puller was deleted (#240, PRD #138 retirement clause); the puller is now the
+Textual data TUI (PRD #233)
 **Date:** 2026-05
 
 ## Context

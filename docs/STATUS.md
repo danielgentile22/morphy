@@ -1,6 +1,6 @@
 # STATUS — Where the project stands today
 
-**Last updated:** 2026-06-26
+**Last updated:** 2026-07-03
 **Update cadence:** at the start of every slice and at every session handoff.
 
 A snapshot of *current* reality. If this disagrees with the code or data, the code/data
@@ -59,6 +59,12 @@ disk) — then **Slice B** (vendor inference). The 4-week outcome-bar clock star
 - **Slice C tunable scoring** — per-tower `score` (owners index → **schema v5**), tunable
   live re-rank, named presets. Solar→parcel done (`SolarToParcelJoin`; `has_solar` /
   `solar_count` on AR/MT/FL).
+- **The data TUI** (`python -m data_tui`, PRD #233; shipped 2026-07-03) — *the* puller:
+  full lifecycle pull → preprocess → verify → confirm-gated data deploy from one terminal
+  app, over the unchanged headless `fetch`/`preprocess` libraries + `deploy.sh`. 15/16
+  active sources auto-fetch (AR parcels manual until its ~2027-05 refresh; `w`/`i` cover
+  the manual path). The Qt puller + PySide6 pin were deleted in #240 (PRD #138 retirement
+  clause).
 - **Preprocess pipeline** — v3 Normalizer→Join→View→Compose framework over **DuckDB** as the
   heavy-lift engine (PRD #135; `scripts/preprocess/duck.py` owns connections), chunked
   compose (ADR-051, the only compose path), one annotator per parcel/infra concept.
@@ -117,10 +123,9 @@ NC is **deferred** — no longer a committed anchor. Both `data/raw/nc_onemap_pa
 `data/raw/NC/` were deleted 2026-05-20. NC OneMap's auto-fetch paginates ~1,186 pages; the
 previous fetch stalled at page 1,106 on a server-side HTTP 504 at deep offsets (intermittent
 upstream degradation, not a code bug) — part of why the re-fetch is deferred rather than
-scheduled. If picked up: `python -m app_puller` (auto-fetch `nc_onemap_parcels`), then
-normalize + compose via the chunked path. NB: the puller's `prepare_fresh_partial()` wipes
-`.partial/` at the start of every fetch, so a real resumability fix rides along with the
-deferred re-fetch.
+scheduled. If picked up: `python -m data_tui` (auto-fetch `nc_onemap_parcels` — the source
+opts into resumable partials, so a stall mid-pagination resumes instead of restarting), then
+normalize + compose via the chunked path.
 
 ### 4.4 Stale on-disk items
 

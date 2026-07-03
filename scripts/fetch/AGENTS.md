@@ -2,7 +2,7 @@
 
 The headless engine that fetches raw source data + tracks versions. Owns the
 `DataSource` contract, the registry, the manifest, and per-source fetchers under
-`sources/`. Does NOT own any UI — the Qt desktop puller lives in `../../app_puller/`.
+`sources/`. Does NOT own any UI — the data TUI lives in `../data_tui/`.
 
 **Deep dives:** CLAUDE.md §5 (adding a source) + §6 (fragile sources);
 [`docs/DATA_SOURCES.md`](../../docs/DATA_SOURCES.md), [`docs/PULLER_UX.md`](../../docs/PULLER_UX.md).
@@ -15,8 +15,8 @@ The headless engine that fetches raw source data + tracks versions. Owns the
 - `manifest.py`, `storage.py`, `http.py` — manifest, atomic storage, HTTP.
 
 ## Contracts & invariants
-- **Headless: no PySide6 imports anywhere in this package.** Qt lives only in
-  `app_puller/`. This boundary is load-bearing — keep it clean.
+- **Headless: no UI imports (Textual or otherwise) anywhere in this package.**
+  UI lives only in `scripts/data_tui/`. This boundary is load-bearing — keep it clean.
 - **Default `AutomationPolicy` to `MANUAL_ONLY` if unsure. Never add scraping to a
   MANUAL_ONLY source without confirming the publisher's terms changed.** This is a
   legal boundary, not a convenience one.
@@ -34,5 +34,5 @@ implement `manual_walkthrough()` for MANUAL_ONLY, append to `registry.py`, docum
 in `docs/DATA_SOURCES.md`, add a fixture + `tests/test_<source>.py`. Full checklist: CLAUDE.md §5.
 
 ## Related context
-- The Qt UI that drives this: [`../../app_puller/AGENTS.md`](../../app_puller/AGENTS.md)
+- The TUI that drives this: [`../data_tui/AGENTS.md`](../data_tui/AGENTS.md)
 - What consumes the raw output: [`../preprocess/AGENTS.md`](../preprocess/AGENTS.md)

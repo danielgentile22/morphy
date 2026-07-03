@@ -20,10 +20,10 @@ serves write-layer state + the **Ask Claude** SSE stream and edge-gates `/data/p
 
 ```
 ┌──────────────────────┐    raw/   ┌──────────────────────┐  normalized/  ┌──────────────────────┐
-│  app_puller/         │──────────▶│  scripts/preprocess/ │──────────────▶│  app/  (map browser) │
-│   PySide6 desktop UI │           │   Normalize → Join → │  composite/   │   Svelte + MapLibre  │
-│   data fetcher       │           │   View → Compose     │               │   PMTiles + DuckDB   │
-│   (frozen, PRD #138) │           │   (DuckDB engine)    │               │                      │
+│  scripts/data_tui/   │──────────▶│  scripts/preprocess/ │──────────────▶│  app/  (map browser) │
+│   Textual TUI        │           │   Normalize → Join → │  composite/   │   Svelte + MapLibre  │
+│   pull → preprocess  │           │   View → Compose     │               │   PMTiles + DuckDB   │
+│   → verify → deploy  │           │   (DuckDB engine)    │               │                      │
 └──────────────────────┘           └──────────────────────┘               └─────────┬────────────┘
         │                                    │                                      │ thin API (cookie auth)
         ▼                                    ▼                                      ▼
@@ -51,11 +51,13 @@ hits the backend over a thin API (httpOnly-cookie auth) for write-layer state.
 
 ---
 
-## 2. Subsystem 1 — The data puller (`app_puller/`, `scripts/fetch/`)
+## 2. Subsystem 1 — The data puller (`scripts/data_tui/`, `scripts/fetch/`)
 
-A PySide6 desktop application (now **frozen** — bug-fix-only, PRD #138) that fetches the
-registered data sources into `data/raw/<source_id>/current/` — 16 active sources, plus
-deferred ones split out via the `_ACTIVE` / `_DEFERRED` registry blocks (ADR-045).
+A Textual terminal app (PRD #233; it replaced the retired PySide6 desktop puller in
+#240) that fetches the registered data sources into `data/raw/<source_id>/current/`
+— 16 active sources, plus deferred ones split out via the `_ACTIVE` / `_DEFERRED`
+registry blocks (ADR-045) — then drives preprocess, composite verify, and the
+confirm-gated data deploy from the same screen.
 
 ### 2.1 Source contract
 
@@ -113,25 +115,27 @@ disk." Per source:
 
 ### 2.5 Puller UI
 
-`app_puller/main_window.py` shows a category-grouped tree of every
-registered source with status, size, version, and a primary action.
-Top action bar:
+`scripts/data_tui/app.py` shows a category-grouped table of every
+registered source with freshness badge, size, version, and an attention
+panel ranking what needs action. Key bindings:
 
-- **Check for updates** — parallel HEAD across all sources.
-- **Pull all stale / missing** — sequential auto-fetch (auto-policy
-  sources only).
-- **Rescan disk** — finds manually-dropped files.
-- **Verify contents** — runs `scripts/verify_raw.py` per source.
-- **Preprocess** — opens the per-state preprocess dialog.
-
-Walkthrough modal (added in puller overhaul, Section 3 of work plan)
-surfaces step-by-step download instructions for MANUAL_ONLY sources.
+- **`c`** — check for updates: parallel sweep across all sources.
+- **`p` / `P`** — pull one source / pull all stale (background worker,
+  byte/speed progress, resume, desktop notification on completion).
+- **`w` / `i`** — guided walkthrough + install-from-file for the manual
+  path (and as fallback when an auto endpoint rots).
+- **`r`** — preprocess, preseeded with the states affected by what was
+  just pulled (pure planner in `data_tui/planner.py`).
+- **`v`** — verify + deploy: composite diff vs the last deploy receipt,
+  then the confirm-gated `deploy.sh data` flow with smoke checks
+  (`data_tui/verify.py`, `data_tui/deploy.py`).
+- **`d`** — diagnose a failure with the LLM (`scripts/diagnose.py`).
 
 ### 2.6 Headless reuse
 
-The `scripts/fetch/` package is intentionally Qt-free. The puller is
-just the UI layer on top — a CLI or scheduled job could call
-`fetch.puller.fetch_one()` directly without touching PySide6.
+The `scripts/fetch/` package is intentionally UI-free. The TUI is just
+the shell on top — a CLI could call `fetch.puller.fetch_one()` directly
+without importing Textual.
 
 ---
 
@@ -503,8 +507,8 @@ at preprocess time produces a new toggle in the UI with zero JS changes.
 
 ## 8. Code conventions
 
-- **Headless `fetch/`.** No PySide6 imports inside `scripts/fetch/`.
-  Qt lives only in `app_puller/`.
+- **Headless `fetch/`.** No UI imports inside `scripts/fetch/`.
+  Textual lives only in `scripts/data_tui/`.
 - **Atomic writes everywhere.** Download to `.partial`, rename.
   Manifest writes go through `Manifest.save()` (temp + rename).
 - **Preprocess outputs EPSG:4326.** Every spatial output reprojected

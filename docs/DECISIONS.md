@@ -1,6 +1,6 @@
 # DECISIONS — Architecture Decision Records (index)
 
-**Last updated:** 2026-06-26 (doc sweep — PRD #205). Latest decisions: ADR-069 (credentials in DB + cookie sessions + edge-gated data plane, PRD #130); ADR-064 shipped & deployed (#16 closed); ADR-019 superseded by ADR-047. (No ADRs added since ADR-069; the data-audit catalog + Ask Claude shipped under PRDs #176/#187, not ADRs.)
+**Last updated:** 2026-07-03 (Qt-puller retirement, #240). Latest changes: ADR-007 (PySide6 pin) retired — the dependency left the tree with the Qt puller; ADR-069 (credentials in DB + cookie sessions + edge-gated data plane, PRD #130) remains the newest decision. (No ADRs added since ADR-069; the data TUI shipped under PRDs #233/#138, not an ADR.)
 
 Index of every locked-in design choice in the repo. Per-ADR content lives under [`docs/adr/`](./adr/). New ADRs go straight there ([CLAUDE.md §9](../CLAUDE.md)).
 
@@ -20,7 +20,6 @@ The currently-binding decisions.
 | [ADR-002](./adr/0002-registry-driven-architecture.md) | Registry-driven Normalizer / Join / View architecture |
 | [ADR-004](./adr/0004-current-only-versioning.md) | Current-only data versioning, no history |
 | [ADR-005](./adr/0005-on-demand-fetch-only.md) | On-demand fetch trigger only |
-| [ADR-007](./adr/0007-pyside6-pinned.md) | PySide6 pinned at 6.7.3 |
 | [ADR-042](./adr/0042-docs-in-subfolder.md) | Documentation lives in `docs/` |
 | [ADR-044](./adr/0044-ci-github-actions.md) | CI on GitHub Actions |
 | [ADR-045](./adr/0045-registry-active-deferred.md) | Registry split into `_ACTIVE` / `_DEFERRED` blocks |
@@ -128,6 +127,7 @@ Replaced wholesale by a later ADR.
 | # | Title | Superseded by |
 |---|---|---|
 | [ADR-006](./adr/0006-static-site-no-backend.md) | Static-site, no backend | [ADR-055](./adr/0055-hosted-private-backend.md) for write-layer features (reads stay static) |
+| [ADR-007](./adr/0007-pyside6-pinned.md) | PySide6 pinned at 6.7.3 | Retired 2026-07-03 — the pinned dependency itself left the tree with the Qt puller's deletion (#240, PRD #138 retirement clause); the puller is the Textual data TUI (PRD #233) |
 | [ADR-019](./adr/0019-fl-fgdl-to-fdor-nal.md) | FL FGDL DSL → `fdor_nal` source | [ADR-047](./adr/0047-fdor-nal-67-counties.md) (county scope) |
 | [ADR-031](./adr/0031-map-rehaul-deferred.md) | Map app rehaul deferred to post-pitch | [ADR-030](./adr/0030-map-app-v2-stack.md) (rehaul was executed in-cut) |
 | [ADR-046](./adr/0046-fl-fdor-nal-10-counties.md) | FL FDOR NAL: 10 representative counties | [ADR-047](./adr/0047-fdor-nal-67-counties.md) (expanded to all 67) |

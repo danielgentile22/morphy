@@ -13,7 +13,7 @@ All four surfaces run locally on a developer's machine (the hosted app is §8):
 
 | Surface | Run command | Port / location |
 |---|---|---|
-| **Puller** | `python -m app_puller` | Desktop window |
+| **Data TUI (the puller)** | `python -m data_tui` | Terminal (full-screen) |
 | **Preprocess CLI** | `python scripts/preprocess.py [flags]` | Terminal |
 | **Map app** | `python scripts/serve.py 8765` + `cd app && npm run dev` | localhost:5173 |
 | **Tests** | `pytest` · `cd app && npm run test:unit && npm run test:e2e` | Terminal |
@@ -26,7 +26,7 @@ All four surfaces run locally on a developer's machine (the hosted app is §8):
 
 | Component | Version | Why |
 |---|---|---|
-| Python | 3.11 | Tested baseline; pyogrio + PySide6 known good |
+| Python | 3.11 | Tested baseline; pyogrio known good |
 | macOS arm64 / Linux x86_64 | Any recent | macOS arm64 is the primary dev environment |
 | Homebrew (macOS) | — | For `gh` CLI and `tippecanoe` |
 | Disk space | ≥ 50 GB free | Raw data + composites; AR alone is ~3 GB raw, ~5 GB normalized |
@@ -51,7 +51,7 @@ source .venv/bin/activate
 
 # Verify installation
 python scripts/verify_raw.py     # No raw data yet — expect "missing" rows
-python -m app_puller             # Should launch the puller window
+python -m data_tui               # Should open the data TUI (q to quit)
 ```
 
 The first run sets up empty `data/raw/` and `data/processed/`
@@ -63,20 +63,22 @@ directories (gitignored).
 
 ### 4.1 Refresh data
 
-1. Launch the puller: `python -m app_puller`.
-2. Click **Check for updates** (parallel HEAD across all sources).
-3. The puller's "What needs my attention" panel surfaces:
-   - Auto sources past their `next_recommended_check_at` → click
-     **Pull all stale** to refresh.
-   - Manual sources stale → walkthrough modal guides each download.
-4. Click **Rescan disk** after any manual download.
-5. Click **Verify contents** to confirm each source has expected files.
+1. Launch the data TUI: `python -m data_tui` (the launch sweep checks
+   every source in parallel).
+2. The attention panel surfaces what needs action:
+   - Auto sources stale/missing → `P` pulls them all in a background
+     job (progress, resume, desktop notification on completion).
+   - Manual source stale (AR parcels) → `w` opens the guided
+     walkthrough; `i` installs the downloaded files from disk.
+3. Failures show a detail pane (URL tried, error, elapsed); `d` runs
+   the LLM diagnosis.
 
 ### 4.2 Preprocess
 
-Either via the puller:
+Either via the TUI:
 
-- Click **Preprocess** → state dropdown (or "all") → click **Run**.
+- `r` → state selection preseeded with the states affected by what you
+  pulled → run (background job with per-source/per-state progress).
 
 Or via CLI:
 
@@ -164,14 +166,14 @@ Most runs need no env vars. Optional:
 
 | Variable | Used by | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | `scripts/diagnose.py` (puller "Diagnose this failure") | LLM-powered verify-failure diagnosis (~$0.04 per call) |
+| `ANTHROPIC_API_KEY` | `scripts/diagnose.py` (the TUI's `d` diagnose action) | LLM-powered verify-failure diagnosis (~$0.04 per call) |
 | `REGRID_S3_BUCKET`, `REGRID_S3_PREFIX`, `AWS_*` | `scripts/fetch/sources/regrid_parcels.py` | Only activates the Regrid source if all set (paid; out of scope for v1) |
 
 Store in `.env` (git-ignored) and source before running:
 
 ```bash
 source .env
-python -m app_puller
+python -m data_tui
 ```
 
 ---
@@ -244,7 +246,7 @@ Secrets (`AUTH_JWT_SECRET`, the `LITESTREAM_*` R2 keys + bucket/endpoint, `ANTHR
 | `deploy.sh` | `code` (`fly deploy`; **refuses a dirty working tree** — `ALLOW_DIRTY=1` overrides), `data` (laptop → R2 → volume via `scripts/sync_composite.py`, mirror, **dry-run by default**), `all`, `smoke`. | `shellcheck` clean |
 | `scripts/sync_composite.py` | Owns the served-composite include/exclude contract (drops `*/parcels/` compose-inputs, keeps `parcels.pmtiles`); drives rclone (mirror / dry-run / idempotent). | `tests/test_sync_composite.py` (real rclone) |
 
-**Image dependency decision (PRD #96, storage amended by PRD #132).** The image installs the **`backend` dependency group exported from `uv.lock`** (the slim FastAPI/uvicorn/SQLAlchemy/PyJWT/psycopg set, hash-pinned to the same locked graph CI tests), **not** the pipeline groups — those carry geopandas/shapely/pyproj/PySide6 used only by preprocess, which never runs in this image. The old `backend/requirements.txt` is retired; the group lives in the root `pyproject.toml`. **Not** systemd units (that was the bare-VM path, not taken).
+**Image dependency decision (PRD #96, storage amended by PRD #132).** The image installs the **`backend` dependency group exported from `uv.lock`** (the slim FastAPI/uvicorn/SQLAlchemy/PyJWT/psycopg set, hash-pinned to the same locked graph CI tests), **not** the pipeline groups — those carry geopandas/shapely/pyproj used only by preprocess, which never runs in this image. The old `backend/requirements.txt` is retired; the group lives in the root `pyproject.toml`. **Not** systemd units (that was the bare-VM path, not taken).
 
 ### Provisioning runbook (operator — needs your hands)
 
@@ -435,7 +437,7 @@ Not built. Tracked in [ROADMAP.md](./ROADMAP.md) → Phase 3.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Puller crashes on launch | PySide6 version mismatch | `uv sync` (the lock pins PySide6 6.7.3) |
+| Data TUI fails to launch | Out-of-date environment | `uv sync` (Textual is in the `tui` group) |
 | Preprocess fails: `ImportError: openpyxl` | Out-of-date environment | `uv sync` (openpyxl is in the pipeline group) |
 | Map app shows "Could not load the map data" | Data server down | Start `python scripts/serve.py 8765` from the repo root — not `http.server` (it has no Range support) |
 | Stale manifest disagrees with disk | Interrupted run | `python scripts/preprocess.py --rebuild-manifest` |

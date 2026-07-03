@@ -118,7 +118,7 @@ the repo root is the authority; the entries below stay consistent with it.
 - **Phase 2** — post-Phase-1 expansion. Rooftop installations + mass email + paid Steel-in-the-Air tier + self-serve refresh + recorded-lease automation. See [ROADMAP.md](./ROADMAP.md).
 - **PII** — Personally Identifiable Information. Parcel-owner names + mailing addresses meet most PII definitions even when individually public-record. See ADR-040 + [SECURITY.md](./SECURITY.md).
 - **PMTiles** — single-file format for vector tiles. HTTP Range-request friendly; no tile server needed. Used for the parcel base layer in the map app.
-- **Puller** — `app_puller/`. PySide6 desktop app for fetching raw data into `data/raw/`. See [PULLER_UX.md](./PULLER_UX.md).
+- **Puller** — the data TUI (`scripts/data_tui/`, `python -m data_tui`): Textual terminal app for pulling raw data into `data/raw/` and driving preprocess → verify → deploy (PRD #233). Replaced the retired PySide6 desktop app (#240). See [PULLER_UX.md](./PULLER_UX.md).
 - **Pyogrio** — fast geopandas-compatible reader/writer for vector spatial files (shapefile, GDB, GeoJSON). Used in preprocess.
 
 ## Q

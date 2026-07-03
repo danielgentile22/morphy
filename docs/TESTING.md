@@ -1,7 +1,7 @@
 # TESTING — Strategy & Conventions
 
-**Last updated:** 2026-06-26
-**Status:** Preprocess + fetch + app_puller + map-app + backend test suites are
+**Last updated:** 2026-07-03
+**Status:** Preprocess + fetch + data-TUI + map-app + backend test suites are
 live (the backend and its multi-tenancy isolation suite have shipped to
 production). Only the LLM lease-extraction eval (§11.3, ADR-059) remains
 forward-looking.
@@ -215,10 +215,11 @@ code that's hard to exercise from synthetic fixtures.
 
 ## 8. What's NOT tested (intentionally)
 
-- **`scripts/fetch/sources/*`** — these talk to live HTTP endpoints.
-  Integration tests against real endpoints are flaky; we rely on
-  manual verification via the puller.
-- **`app_puller/`** — Qt UI; manual click-through verification only.
+- **`scripts/fetch/sources/*` against live endpoints** — integration
+  tests against real endpoints are flaky; fetch mechanics are tested
+  with mocked HTTP, live behavior verified manually via the TUI.
+  (The Qt puller — formerly the untested-UI entry here — was retired
+  in #240; its Textual successor has pilot tests in the CI gate.)
 - **`app/` from the pytest suite** — the map app has its own test
   stack: Vitest unit tests + Playwright E2E in `app/tests/` (run from
   `app/`, not via pytest). `pytest` covers only the Python backend +

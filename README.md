@@ -12,7 +12,7 @@
 
 | Subsystem | Path | Purpose |
 |---|---|---|
-| **Data Puller** | `app_puller/` | PySide6 desktop UI; fetches raw data into `data/raw/<source_id>/current/`. |
+| **Data TUI** | `scripts/data_tui/` | Textual terminal app; pulls raw data into `data/raw/<source_id>/current/`, then preprocess → verify → deploy (PRD #233). |
 | **Preprocess pipeline** | `scripts/preprocess/` | Registry-driven Normalizer + Join + View framework; per-state Composer. |
 | **Map app** | `app/` | Svelte 5 + MapLibre analytical SPA — three-section IA (Dashboard · Explore · Leads), PMTiles parcels + DuckDB-WASM filtering + tunable scoring. See [app/ARCHITECTURE.md](app/ARCHITECTURE.md). |
 | **Backend** | `backend/` | FastAPI + SQLAlchemy lead-triage write-layer — tenant-scoped lead + task state, contact attempts, owner merge/split overrides; username/password auth ([ADR-062](docs/adr/0062-username-password-replaces-magic-link.md)/[063](docs/adr/0063-file-credentials-teams-per-request-authority.md)/[069](docs/adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md)). Deployed in production. S3 lease-doc storage + Claude API extraction still planned. Per [ADR-055](docs/adr/0055-hosted-private-backend.md). See [backend/README.md](backend/README.md). |
@@ -37,11 +37,12 @@ source .venv/bin/activate
 ### 1. Pull raw data
 
 ```bash
-python -m app_puller
+python -m data_tui
 ```
 
-In the puller: **Check for updates** → **Pull all missing**. For
-MANUAL_ONLY sources, click **Walk me through** on each row.
+In the TUI: the launch sweep checks every source; `P` pulls all stale
+auto sources, `w` opens the guided walkthrough for the one manual
+source (AR parcels), `i` installs downloaded files from disk.
 [docs/PULLER_UX.md](docs/PULLER_UX.md) is the design spec.
 
 ### 2. Preprocess
@@ -142,12 +143,12 @@ pilot/
 ├── PROJECT_BRIEF.md          Business case
 ├── pyproject.toml            Project + dependency groups (uv; uv.lock pins exact versions)
 ├── app/                      Svelte 5 + MapLibre map app
-├── app_puller/               PySide6 desktop puller
 ├── backend/                  FastAPI + SQLAlchemy lead-triage write-layer (auth, teams-as-tenants; SQLite dev / Postgres) — see backend/README.md
 ├── scripts/
 │   ├── preprocess.py         CLI wrapper
 │   ├── preprocess/           Normalizer/Join/View framework
 │   ├── fetch/                Headless puller library
+│   ├── data_tui/             Textual data TUI (pull → preprocess → verify → deploy)
 │   ├── verify_raw.py         File-signature contents check
 │   └── diagnose.py           LLM-powered verify diagnosis
 ├── data/                     (git-ignored; ~15 GB raw)
