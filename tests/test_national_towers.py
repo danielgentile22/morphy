@@ -46,10 +46,16 @@ ROW_FIELDS = {
 }
 
 
-def _cid(owner: str | None) -> str:
-    """The owner Lead key the builder bakes — the canonical preprocess recipe
-    (same hash the client's ownerNameToClusterId produces)."""
-    return cross_state_owner_key(normalize_owner_name(owner))
+# Anchor-state abbr → FIPS, so a fixture row can carry only `state` and the
+# builder still gets the `state_fips` the name+state Lead key (ADR-075) needs.
+_ABBR_TO_FIPS = {"AR": "05", "FL": "12", "MT": "30", "WV": "54"}
+
+
+def _cid(owner: str | None, state_fips: str) -> str:
+    """The owner Lead key the builder bakes — the canonical name+state recipe
+    (ADR-075): the same hash the owners index stamps, so a tower's cid is always
+    a key that index contains."""
+    return cross_state_owner_key(normalize_owner_name(owner), state_fips)
 
 
 def _make_towers_parquet(path: Path, rows: list[dict]) -> None:
@@ -69,6 +75,12 @@ def _make_towers_parquet(path: Path, rows: list[dict]) -> None:
             "parcel_owner": pa.array([r.get("parcel_owner") for r in rows], pa.string()),
             "height_m": pa.array([r.get("height_m") for r in rows], pa.float64()),
             "state": pa.array([r.get("state") for r in rows], pa.string()),
+            # Explicit FIPS when a row sets it, else derived from the abbr — the
+            # name+state Lead key (ADR-075) hashes on this, matching real data.
+            "state_fips": pa.array(
+                [r.get("state_fips") or _ABBR_TO_FIPS.get(r.get("state") or "") for r in rows],
+                pa.string(),
+            ),
             "is_active": pa.array([r.get("is_active") for r in rows], pa.bool_()),
             "lat": pa.array([r.get("lat") for r in rows], pa.float64()),
             "lon": pa.array([r.get("lon") for r in rows], pa.float64()),
@@ -107,7 +119,7 @@ def _reference_union(paths: list[Path]) -> list[tuple]:
                 (
                     _s(r, "_source_row_id"),
                     owner,
-                    _cid(owner),
+                    _cid(owner, r.get("state_fips") or ""),
                     None if r.get("height_m") is None else float(r["height_m"]),
                     _s(r, "state"),
                     None if r.get("is_active") is None else bool(r["is_active"]),
@@ -279,8 +291,8 @@ def test_equivalent_to_per_state_union(tmp_path: Path) -> None:
     # obstacle number — `asr` comes from _source_row_id on every row.
     assert by_asr["123456"]["owner"] == "FAA HOST FARMS LLC"
 
-    # Baked cid == the canonical recipe; an un-clusterable owner → ''.
-    assert by_asr["080946"]["cid"] == _cid("MITCHELL VICKI")
+    # Baked cid == the canonical name+state recipe; un-clusterable owner → ''.
+    assert by_asr["080946"]["cid"] == _cid("MITCHELL VICKI", "05")
     assert by_asr["080946"]["cid"] != ""
     assert by_asr["080947"]["cid"] == ""  # null landowner → no Lead key
 
@@ -291,6 +303,30 @@ def test_equivalent_to_per_state_union(tmp_path: Path) -> None:
     assert by_asr["080946"]["date_built"] == "1990-06-14"
     assert by_asr["080947"]["tower_owner"] is None
     assert by_asr["080947"]["date_built"] is None
+
+
+def test_baked_cid_is_name_plus_state(tmp_path: Path) -> None:
+    """Regression (ADR-075 / #221): the baked cid must hash name **and** state,
+    so a same-named landowner in two states gets two distinct Lead keys — the
+    exact recipe the owners index stamps. A name-only bake (the pre-fix bug)
+    would collide these and then match nothing in the name+state owners index,
+    emptying the map's tower layer."""
+    same = {"parcel_owner": "ACME LAND CO", "height_m": 30.0, "is_active": True, "lat": 1.0}
+    _make_towers_parquet(
+        tmp_path / "05" / "towers.parquet",
+        [{**same, "_source_row_id": "a1", "state": "AR", "lon": -92.0}],
+    )
+    _make_towers_parquet(
+        tmp_path / "54" / "towers.parquet",
+        [{**same, "_source_row_id": "w1", "state": "WV", "lon": -80.0}],
+    )
+    build_national_towers(composite_root=tmp_path)
+
+    by_asr = {t["asr"]: t for t in json.loads((tmp_path / TOWERS_FILENAME).read_text())["towers"]}
+    ar_cid, wv_cid = by_asr["a1"]["cid"], by_asr["w1"]["cid"]
+    assert ar_cid != wv_cid  # would be equal under the name-only bug
+    assert ar_cid == _cid("ACME LAND CO", "05")
+    assert wv_cid == _cid("ACME LAND CO", "54")
 
 
 def test_state_without_towers_parquet_is_skipped(tmp_path: Path) -> None:

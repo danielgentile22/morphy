@@ -31,9 +31,12 @@ tests/test_national_towers.py).
 
 **Baked ``cid``** — each row also carries the owner's cross-state Lead
 key (``display_cluster_id``), precomputed with the canonical
-``cluster.normalize_owner_name`` → ``cross_state_owner_key`` recipe (the
-same hash the client's ``ownerNameToClusterId`` produces, pinned by the
-``owner-cluster`` parity test). Measured during #166: hashing 80,814
+``cluster.normalize_owner_name`` → ``cross_state_owner_key(name, state_fips)``
+recipe (ADR-075: name **plus** state, so co-located same-name owners in
+different states don't false-merge). This is the exact hash the owners
+index stamps, so a baked ``cid`` is always a key that index contains — the
+map narrows its towers by that id set, and a mismatch would empty the map.
+Measured during #166: hashing 80,814
 owner names client-side costs ~227 ms — the single largest CPU cost on
 the new tower load (vs ~53 ms to JSON.parse the file), so it is baked
 here and the loader prefers a present ``cid``. ``cid`` is additive +
@@ -123,7 +126,8 @@ def build_national_towers(composite_root: Path | None = None) -> dict:
                        CAST(owner_city AS VARCHAR) AS tower_owner_city,
                        CAST(owner_state AS VARCHAR) AS tower_owner_state,
                        CAST(owner_zip AS VARCHAR) AS tower_owner_zip,
-                       CAST(owner_phone AS VARCHAR) AS tower_owner_phone
+                       CAST(owner_phone AS VARCHAR) AS tower_owner_phone,
+                       CAST(state_fips AS VARCHAR) AS state_fips
                 FROM read_parquet([{paths_sql}], union_by_name=true)
                 WHERE lat IS NOT NULL AND lon IS NOT NULL
                 ORDER BY state, asr, lat, lon
@@ -144,14 +148,17 @@ def build_national_towers(composite_root: Path | None = None) -> dict:
             t_state,
             t_zip,
             t_phone,
+            state_fips,
         ) in rows:
             towers.append(
                 {
                     "asr": asr,
                     "owner": owner,
-                    # Baked Lead key — same recipe (and result) as the client's
-                    # ownerNameToClusterId; '' for an un-clusterable landowner.
-                    "cid": cross_state_owner_key(normalize_owner_name(owner)),
+                    # Baked Lead key — the canonical name+state recipe (ADR-075):
+                    # the SAME hash the owners index stamps, so a tower's cid is
+                    # always a key present in the owners index (the map narrows
+                    # towers by that id set). '' for an un-clusterable landowner.
+                    "cid": cross_state_owner_key(normalize_owner_name(owner), state_fips or ""),
                     "height_m": height_m,
                     "state": state,
                     "active": active,

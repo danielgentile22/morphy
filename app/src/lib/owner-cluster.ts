@@ -1,14 +1,19 @@
-// Cross-state Lead identity, client side.
+// Legacy client-side Lead key: `sha1(normalize_owner_name(name))[:12]` —
+// name-ONLY (ADR-061 / ADR-056).
 //
-// A tower's landowner (its `parcel_owner`) resolves to a Lead via the same
-// name-anchored key the preprocess pipeline uses for the owners index
-// (ADR-061 / ADR-056): `display_cluster_id = sha1(normalize_owner_name(name))[:12]`.
-// Porting it here lets the structures-first map turn a clicked tower into a
-// `/lead/:key` link with no extra fetch — and it MUST stay byte-for-byte in
-// lockstep with the Python (`scripts/preprocess/cluster.normalize_owner_name`
-// + `owners_index.display_cluster_id`), which `tests/unit/owner-cluster.test.ts`
-// pins against fixtures captured from that code. The backend looks a Lead up
-// by exactly this id, so any drift would 404 the Lead page.
+// ⚠️ This is NO LONGER the canonical Lead key. ADR-075 (#221) moved the
+// authoritative `display_cluster_id` to a name+**state** key (plus a curated
+// towerco alias table), computed server-side and baked onto every tower as
+// `cid` (national_towers.py) and stamped on the owners index. The map resolves
+// a clicked tower via that baked `cid` (see `resolveTowerLeadKey`), and narrows
+// towers by the owners-index id set — neither goes through this hash.
+//
+// What remains here is only the degraded fallback `rowsToFeatureCollection`
+// uses when a tower feature has no baked `cid` (a stale towers.json / the
+// per-state DuckDB path). Because it is name-only, that fallback can collide
+// same-named owners across states and won't match the name+state index — good
+// enough to draw a dot, not to open the right Lead. `normalizeOwnerName` stays
+// the shared normalizer; do NOT wire `displayClusterId` back into Lead links.
 
 // Suffix / entity noise that doesn't disambiguate owners. Mirrors the Python
 // `_NOISE_WORDS`. Run AFTER punctuation is stripped, so the dotted variants

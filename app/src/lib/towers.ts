@@ -63,9 +63,12 @@ export function towerOwnerLabel(owner: string | null | undefined): string {
 }
 
 /** Lead key for a clicked tower, or '' when its landowner is un-clusterable
- *  (blank name) — the caller treats '' as "no Lead to open". */
-export function resolveTowerLeadKey(props: Pick<TowerProps, 'owner'>): string {
-  return ownerNameToClusterId(props.owner);
+ *  (blank name) — the caller treats '' as "no Lead to open". Returns the
+ *  builder-baked `cid` (the canonical name+state key, ADR-075); never recompute
+ *  it from the owner name here — the client's name-only hash would not match the
+ *  name+state owners index and would 404 the Lead. */
+export function resolveTowerLeadKey(props: Pick<TowerProps, 'cid'>): string {
+  return props.cid;
 }
 
 /** Hover preview text: owner, ASR, height, state (acceptance criterion). */
@@ -101,9 +104,12 @@ export function rowsToFeatureCollection(rows: TowerRow[]): FeatureCollection<Poi
       properties: {
         asr: String(r.asr ?? ''),
         owner,
-        // Prefer the builder-baked Lead key (#166); recompute only when it's
-        // absent (per-state DuckDB path / a stale towers.json). Same recipe,
-        // so the two agree — pinned by the owner-cluster parity test.
+        // The builder-baked Lead key (#166) is authoritative: the canonical
+        // name+state key (ADR-075) the owners index also stamps, so the map's
+        // owner-id narrowing matches. Recompute only when it's absent (a stale
+        // towers.json / the per-state DuckDB fallback) — that client hash is
+        // name-ONLY (legacy) and won't match the name+state index, so that path
+        // is a degraded fallback, not an equivalent one.
         cid: typeof r.cid === 'string' ? r.cid : ownerNameToClusterId(owner),
         height_m: r.height_m ?? null,
         state: String(r.state ?? ''),
