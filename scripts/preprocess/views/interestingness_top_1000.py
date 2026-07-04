@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from ..base import ComposeContext, View, register_view
+import pandas as pd
+
+from ..base import ChunkAggregator, View, register_view
+from ..compose_helpers import TopNChunkAggregator
 
 
 @register_view
@@ -15,17 +18,18 @@ class InterestingnessTop1000View(View):
     )
     write_geojson = True
 
-    def build(self, ctx: ComposeContext):
-        parcels = ctx.get("parcel")
-        if parcels is None or "interestingness_score" not in parcels.columns:
-            return None
+    def make_aggregator(self) -> ChunkAggregator:
         # Outreach list — drop government / school owners so federal land
-        # hosting infrastructure can't crowd out actionable targets.
-        eligible = parcels
-        if "owner_kind" in parcels.columns:
-            eligible = parcels[~parcels["owner_kind"].isin(("gov", "school"))]
-        sorted_p = eligible.sort_values("interestingness_score", ascending=False)
-        top = sorted_p.head(1000).copy()
-        # Only keep rows with score > 0 — no point in writing 1000 zero-score parcels
-        top = top[top["interestingness_score"] > 0]
-        return top
+        # hosting infrastructure can't crowd out actionable targets, and
+        # drop zero-score parcels at finalize.
+        return TopNChunkAggregator(
+            self.name,
+            n=1000,
+            sort_column="interestingness_score",
+            eligible=lambda df: (
+                ~df["owner_kind"].isin(("gov", "school"))
+                if "owner_kind" in df.columns
+                else pd.Series(True, index=df.index)
+            ),
+            min_value=0.0,
+        )

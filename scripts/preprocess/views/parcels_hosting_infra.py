@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ..base import ComposeContext, View, register_view
+from ..base import ChunkAggregator, View, register_view
+from ..compose_helpers import FilterChunkAggregator
 
 
 @register_view
@@ -12,11 +13,10 @@ class ParcelsHostingInfraView(View):
     description = "Parcels hosting at least one tower or solar facility."
     write_geojson = True
 
-    def build(self, ctx: ComposeContext):
-        parcels = ctx.get("parcel")
-        if parcels is None:
-            return None
-        mask = parcels.get("has_tower", False).fillna(False) | parcels.get(
-            "has_solar", False
-        ).fillna(False)
-        return parcels[mask].copy()
+    def make_aggregator(self) -> ChunkAggregator:
+        return FilterChunkAggregator(
+            self.name,
+            lambda df: (
+                df.get("has_tower", False).fillna(False) | df.get("has_solar", False).fillna(False)
+            ),
+        )

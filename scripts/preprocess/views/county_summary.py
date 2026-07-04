@@ -1,8 +1,20 @@
-"""Per-county rollup — what's in each county of this state."""
+"""Per-county rollup — what's in each county of this state.
+
+DuckDB-backed (PRD #135 stage 2): the aggregator's consume() is a no-op
+and finalize() runs one SQL rollup over the composite shards the chunk
+loop just wrote. The rollup query itself (``county_summary_rollup``)
+lives in :mod:`preprocess.compose_helpers` — the equivalence harness
+(tests/test_duckdb_equivalence.py) pins that import surface.
+"""
 
 from __future__ import annotations
 
-from ..base import ComposeContext, View, register_view
+from typing import Any
+
+import geopandas as gpd
+import pandas as pd
+
+from ..base import OUTPUT_BASENAMES, ChunkAggregator, View, register_view
 
 
 @register_view
@@ -16,36 +28,29 @@ class CountySummaryView(View):
     )
     write_geojson = False
 
-    def build(self, ctx: ComposeContext):
-        parcels = ctx.get("parcel")
-        if parcels is None:
-            return None
-        df = parcels.copy()
-        agg = (
-            df.groupby("county_fips")
-            .agg(
-                parcel_count=("parcel_id_full", "size"),
-                total_assessed_value=("assessed_value", "sum"),
-                total_acres=("acreage", "sum"),
-                tower_count=("tower_count", "sum"),
-                solar_count=("solar_count", "sum"),
-                parcels_hosting_infra=("has_tower", "sum"),  # approx; refined below
-                parcels_in_oz=("in_oz", "sum"),
-                parcels_in_qct=("in_qct", "sum"),
-                distress_tier=("distress_tier", "first"),
-                persistent_poverty=("persistent_poverty", "any"),
-                llc_owner_count=("owner_kind", lambda x: (x == "llc").sum()),
-            )
-            .reset_index()
-        )
-        # Refine parcels_hosting_infra to count parcels with ANY infra type.
-        df["_any_infra"] = df["has_tower"] | df["has_solar"]
-        infra = (
-            df.groupby("county_fips")["_any_infra"]
-            .sum()
-            .reset_index(name="parcels_hosting_infra_total")
-        )
-        agg = agg.merge(infra, on="county_fips", how="left")
-        agg["parcels_hosting_infra"] = agg["parcels_hosting_infra_total"]
-        agg = agg.drop(columns=["parcels_hosting_infra_total"])
-        return agg.sort_values("parcels_hosting_infra", ascending=False)
+    def make_aggregator(self) -> ChunkAggregator:
+        return CountySummarySQLAggregator()
+
+
+class CountySummarySQLAggregator:
+    """county_summary under the DuckDB engine (PRD #135 stage 2).
+
+    ``consume`` is deliberately a no-op: by finalize time the chunk loop
+    has written every annotated shard to ``composite/<fips>/parcels/``,
+    so the per-county rollup runs as a single out-of-core GROUP BY over
+    those files instead of accumulating per-chunk partials.
+    """
+
+    name = "county_summary"
+
+    def consume(self, chunk: gpd.GeoDataFrame) -> None:
+        pass
+
+    def finalize(self, ctx: Any) -> pd.DataFrame | None:
+        # Deferred imports — pick up monkeypatched roots, like
+        # compose_helpers._normalized_root.
+        from .. import COMPOSITE_ROOT
+        from ..compose_helpers import county_summary_rollup
+
+        shard_dir = COMPOSITE_ROOT / ctx.state_fips / OUTPUT_BASENAMES.get("parcel", "parcel")
+        return county_summary_rollup(sorted(shard_dir.glob("*.parquet")))

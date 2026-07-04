@@ -59,7 +59,7 @@ from .base import (
 )
 from .catalog_builder import build_catalog, geom_type, schema_summary
 from .catalog_schema import validate_catalog
-from .compose_helpers import aggregator_for_view, iter_state_parcel_shards
+from .compose_helpers import iter_state_parcel_shards
 from .geographies import StateGeography
 from .io import (
     dual_write_spatial,
@@ -421,13 +421,6 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
     for j in chunk_joins:
         j.prepare_chunks(ctx)
     view_aggregators = _build_view_aggregators()
-    skipped_views: list[str] = []
-    for v in all_views():
-        if v.name not in {a.name for a in view_aggregators}:
-            # Tower-only / non-parcel views still build at the end via
-            # the in-memory ctx (towers + solar + billboard fit easily).
-            if "parcel" in v.inputs:
-                skipped_views.append(v.name)
 
     shard_count = 0
     total_parcel_rows = 0
@@ -687,15 +680,11 @@ def _reverse_index(
 
 
 def _build_view_aggregators():
-    """Build a list of streaming aggregators for the registered views."""
-    out = []
-    for v in all_views():
-        if "parcel" not in v.inputs:
-            continue
-        agg = aggregator_for_view(v)
-        if agg is not None:
-            out.append(agg)
-    return out
+    """Fresh per-state aggregators from the views that stream (#266).
+
+    Each view owns its aggregation via ``View.make_aggregator``; non-parcel
+    views return None and build post-loop from ctx instead."""
+    return [agg for v in all_views() if (agg := v.make_aggregator()) is not None]
 
 
 # Solar-feed precedence for the MACRO-3 dedup (ADR-071): EIA-860 (annual, the

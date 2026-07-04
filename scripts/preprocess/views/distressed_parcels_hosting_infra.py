@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ..base import ComposeContext, View, register_view
+from ..base import ChunkAggregator, View, register_view
+from ..compose_helpers import FilterChunkAggregator
 
 
 @register_view
@@ -16,17 +17,19 @@ class DistressedParcelsHostingInfraView(View):
     )
     write_geojson = True
 
-    def build(self, ctx: ComposeContext):
-        parcels = ctx.get("parcel")
-        if parcels is None:
-            return None
-        distress_mask = (
-            parcels.get("in_oz", False).fillna(False)
-            | parcels.get("in_qct", False).fillna(False)
-            | parcels.get("persistent_poverty", False).fillna(False)
-            | (parcels.get("distress_tier", "").fillna("").isin(["distressed", "at-risk"]))
+    def make_aggregator(self) -> ChunkAggregator:
+        return FilterChunkAggregator(
+            self.name,
+            lambda df: (
+                (
+                    df.get("in_oz", False).fillna(False)
+                    | df.get("in_qct", False).fillna(False)
+                    | df.get("persistent_poverty", False).fillna(False)
+                    | df.get("distress_tier", "").fillna("").isin(["distressed", "at-risk"])
+                )
+                & (
+                    df.get("has_tower", False).fillna(False)
+                    | df.get("has_solar", False).fillna(False)
+                )
+            ),
         )
-        infra_mask = parcels.get("has_tower", False).fillna(False) | parcels.get(
-            "has_solar", False
-        ).fillna(False)
-        return parcels[distress_mask & infra_mask].copy()

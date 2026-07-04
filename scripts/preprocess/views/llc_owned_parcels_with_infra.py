@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ..base import ComposeContext, View, register_view
+from ..base import ChunkAggregator, View, register_view
+from ..compose_helpers import FilterChunkAggregator
 
 
 @register_view
@@ -15,13 +16,15 @@ class LlcOwnedParcelsWithInfraView(View):
     )
     write_geojson = True
 
-    def build(self, ctx: ComposeContext):
-        parcels = ctx.get("parcel")
-        if parcels is None:
-            return None
+    def make_aggregator(self) -> ChunkAggregator:
         owner_kinds = {"llc", "trust", "partnership"}
-        kind_mask = parcels["owner_kind"].isin(owner_kinds)
-        infra_mask = parcels.get("has_tower", False).fillna(False) | parcels.get(
-            "has_solar", False
-        ).fillna(False)
-        return parcels[kind_mask & infra_mask].copy()
+        return FilterChunkAggregator(
+            self.name,
+            lambda df: (
+                df["owner_kind"].isin(owner_kinds)
+                & (
+                    df.get("has_tower", False).fillna(False)
+                    | df.get("has_solar", False).fillna(False)
+                )
+            ),
+        )

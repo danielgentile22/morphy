@@ -25,7 +25,7 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from .quality_report import (
     ColumnStats,
@@ -41,6 +41,7 @@ __all__ = [
     "SPATIAL_TYPES",
     "TABULAR_TYPES",
     "OUTPUT_BASENAMES",
+    "ChunkAggregator",
     "ColumnStats",
     "ComposeContext",
     "ComposeResult",
@@ -464,17 +465,50 @@ def ordered_joins() -> list[Join]:
 # ── View ABC + registry ──────────────────────────────────────────────────────
 
 
-class View(ABC):
-    """A derived dataset built from already-joined canonical tables."""
+class ChunkAggregator(Protocol):
+    """Streaming counterpart to View.build(ctx).
+
+    `consume` sees each parcel chunk in turn (potentially many calls);
+    `finalize` produces the same result a single-shot `View.build(ctx)`
+    would have produced over the union of those chunks. finalize runs
+    after the chunk loop has written every composite shard, so an
+    aggregator may no-op consume and read the shards from disk instead.
+    """
+
+    name: str
+
+    def consume(self, chunk) -> None: ...
+    def finalize(self, ctx: ComposeContext) -> Any: ...
+
+
+class View:
+    """A derived dataset built from already-joined canonical tables.
+
+    Two kinds (ADR-051): a view over the streamed parcel layer overrides
+    ``make_aggregator`` — the Composer feeds the aggregator each annotated
+    shard and finalizes it post-loop. A view over an in-memory layer
+    (towers etc.) overrides ``build`` and runs post-loop from ctx. Every
+    view overrides at least one of the two; ``register_view`` enforces it
+    (no abstractmethod — neither method alone is required).
+    """
 
     name: str = ""
     inputs: list[str] = []
     description: str = ""
     write_geojson: bool = False  # map-app-facing views set this True
 
-    @abstractmethod
     def build(self, ctx: ComposeContext):
         """Return a GeoDataFrame or DataFrame, or None if not buildable."""
+        raise NotImplementedError(f"view {self.name} streams; it does not build in-memory")
+
+    def make_aggregator(self) -> ChunkAggregator | None:
+        """Return a FRESH streaming aggregator for this view, or None.
+
+        Called once per state compose — the aggregator accumulates
+        whole-state result rows, so a shared instance would bleed one
+        state's rows into the next on multi-state runs.
+        """
+        return None
 
     def is_applicable(self, ctx: ComposeContext) -> bool:
         return all(ctx.has(t) for t in self.inputs)
@@ -489,6 +523,8 @@ def register_view(cls: type[View]) -> type[View]:
         inst.name = cls.__name__
     if not inst.inputs:
         raise ValueError(f"{cls.__name__}: inputs required")
+    if cls.build is View.build and cls.make_aggregator is View.make_aggregator:
+        raise ValueError(f"{cls.__name__}: must override build or make_aggregator")
     if inst.name in _VIEW_REGISTRY:
         raise ValueError(f"duplicate view name {inst.name!r}")
     _VIEW_REGISTRY[inst.name] = inst
