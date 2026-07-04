@@ -216,7 +216,7 @@ class FccUlsBulk(DataSource):
         return version_from_head(self.url, label=self.id)
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
+        # The puller captures remote_version once before the download (#264).
         # `band` files extract into a generic `extracted/` subdir so the
         # downstream FCC ULS normalizer can probe one path regardless of
         # which band ran; `meta` files extract into a folder named after
@@ -232,7 +232,6 @@ class FccUlsBulk(DataSource):
         )
         return FetchResult(
             files=extracted,
-            remote_version=rv,
             total_bytes=n,
         )
 

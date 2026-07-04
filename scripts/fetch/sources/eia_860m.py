@@ -74,6 +74,9 @@ def _latest_month_url() -> tuple[str, str]:
 
 class Eia860M(DataSource):
     id = "eia_860m"
+    # Version is a byproduct of the fetch (year/month walk or archive
+    # listing) — the puller uses the returned FetchResult.remote_version (#264).
+    derives_version_on_fetch = True
     name = "EIA Form 860M (monthly)"
     category = CATEGORY_SOLAR
     coverage = "National"

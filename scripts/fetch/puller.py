@@ -15,7 +15,6 @@ import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 from . import LOG_PATH
@@ -23,7 +22,6 @@ from .base import DataSource, ProgressCallback
 from .legal import AutomationPolicy
 from .manifest import Manifest
 from .storage import (
-    current_dir,
     directory_bytes,
     prepare_fresh_partial,
     prepare_partial_for_resume,
@@ -149,6 +147,15 @@ def fetch_one(
 
     started = time.monotonic()
     try:
+        # Capture the remote version once, before the download (#264), so a
+        # publisher update landing mid-fetch can't be stamped as already-
+        # installed. Sources whose version is a byproduct of the fetch work
+        # (EIA year/month walks, parcel-archive listings) skip the pre-probe
+        # and return it from fetch() instead.
+        pre_version = (
+            None if getattr(source, "derives_version_on_fetch", False) else source.remote_version()
+        )
+
         # Resumable sources (e.g. NC OneMap's 1,186-page fetch) preserve
         # the previous run's .partial/ so a stall can pick up where it
         # left off. Non-resumable sources start clean — every source's
@@ -163,32 +170,22 @@ def fetch_one(
         source.validate(result.files)
         promote_partial(sid)
 
-        # Re-resolve file paths to point inside current/ for the manifest
-        cur = current_dir(sid)
-        moved_files: list[Path] = []
-        for f in result.files:
-            try:
-                rel = f.relative_to(partial)
-                moved_files.append(cur / rel)
-            except ValueError:
-                moved_files.append(f)
-        total_bytes = directory_bytes(cur) or result.total_bytes
-
-        manifest.mark_fetch_ok(
+        remote_version = pre_version if pre_version is not None else result.remote_version
+        manifest.stamp_installed(
             sid,
-            result.remote_version,
-            moved_files,
-            total_bytes,
-            update_cadence_days=source.update_cadence_days,
+            local_version=remote_version,
+            remote_version=remote_version,
+            cadence_days=source.update_cadence_days,
         )
+        entry = manifest.entry(sid)
         log_event(
             "fetch_ok",
             source=sid,
-            remote_version=result.remote_version,
-            bytes=total_bytes,
-            n_files=len(moved_files),
+            remote_version=remote_version,
+            bytes=entry.bytes,
+            n_files=len(entry.files),
         )
-        return FetchOutcome(sid, ok=True, bytes=total_bytes, remote_version=result.remote_version)
+        return FetchOutcome(sid, ok=True, bytes=entry.bytes, remote_version=remote_version)
 
     except Exception as e:  # broad: never let one source kill the whole UI
         elapsed = round(time.monotonic() - started, 1)

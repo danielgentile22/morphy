@@ -16,14 +16,12 @@ delegates here:
 from __future__ import annotations
 
 import shutil
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from . import RAW_ROOT
 from .base import DataSource
 from .manifest import Manifest
 from .sources._helpers import safe_extract_zip
-from .storage import current_dir, directory_bytes
+from .storage import current_dir
 
 
 def _split(paths: list[Path]) -> tuple[list[Path], list[Path]]:
@@ -88,34 +86,16 @@ def install_files(
 def mark_manual_install(source: DataSource, manifest: Manifest) -> None:
     """Stamp the manifest entry to reflect a successful manual install.
 
-    Resets ``status`` to ``"ok"``, clears any prior ``fetch_failed`` /
-    ``check_failed`` error, refreshes the file list and byte count from
-    disk, and recomputes ``next_recommended_check_at`` from the source's
-    declared cadence. Like the other ``mark_*`` mutators, does NOT save
-    the manifest — the caller decides persistence.
+    Delegates to :meth:`Manifest.stamp_installed` — the single owner of the
+    file-list/bytes derivation + freshness clock (#264) — so a manual
+    install and an auto-fetch produce identical entries for identical
+    ``current/`` contents. ``local_version`` becomes ``"manual"``; the
+    entry's ``remote_version`` is left as the last checked value. Like the
+    other ``mark_*`` mutators, does NOT save — the caller decides.
     """
-    cur = current_dir(source.id)
-    files = [p for p in cur.rglob("*") if p.is_file() and not p.is_symlink()]
-    entry = manifest.entry(source.id)
-    now = datetime.now(UTC)
-    entry.local_version = "manual"
-    entry.status = "ok"
-    entry.bytes = directory_bytes(cur)
-    rels = []
-    for p in files:
-        try:
-            rels.append(str(p.relative_to(RAW_ROOT)))
-        except ValueError:
-            rels.append(str(p))
-    entry.files = rels
-    entry.error = None
-    entry.fetched_at = now.isoformat(timespec="seconds")
-    entry.checked_at = entry.fetched_at
-    cadence = source.update_cadence_days
-    entry.update_cadence_days = cadence
-    if cadence is not None:
-        entry.next_recommended_check_at = (now + timedelta(days=cadence)).isoformat(
-            timespec="seconds"
-        )
-    else:
-        entry.next_recommended_check_at = None
+    manifest.stamp_installed(
+        source.id,
+        local_version="manual",
+        remote_version=manifest.entry(source.id).remote_version,
+        cadence_days=source.update_cadence_days,
+    )

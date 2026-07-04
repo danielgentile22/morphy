@@ -182,6 +182,9 @@ def _latest_par_listing() -> tuple[str, list[dict]]:
 
 class FdorNal(DataSource):
     id = "fdor_nal"
+    # Version is a byproduct of the fetch (year/month walk or archive
+    # listing) — the puller uses the returned FetchResult.remote_version (#264).
+    derives_version_on_fetch = True
     name = "FL FDOR — Name/Address/Legal (per-county tax roll)"
     category = CATEGORY_PARCELS
     coverage = "State: Florida (all 67 counties)"

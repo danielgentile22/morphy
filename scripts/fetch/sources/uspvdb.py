@@ -96,7 +96,7 @@ class Uspvdb(DataSource):
         return version_from_head(SHP_ZIP_URL, label="USPVDB")
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
+        # The puller captures remote_version once before the download (#264).
         extracted, n = fetch_zip_extracted(
             SHP_ZIP_URL,
             dest_dir,
@@ -107,7 +107,6 @@ class Uspvdb(DataSource):
         )
         return FetchResult(
             files=extracted,
-            remote_version=rv,
             total_bytes=n,
         )
 

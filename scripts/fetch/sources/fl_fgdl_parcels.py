@@ -35,6 +35,9 @@ _MONTHS = "jan feb mar apr may jun jul aug sep oct nov dec".split()
 
 class FlFgdlParcels(DataSource):
     id = "fl_fgdl_parcels"
+    # Version is a byproduct of the fetch (year/month walk or archive
+    # listing) — the puller uses the returned FetchResult.remote_version (#264).
+    derives_version_on_fetch = True
     name = "Florida state-owned land parcels (FGDL DSL composite)"
     category = CATEGORY_PARCELS
     coverage = "State: Florida"

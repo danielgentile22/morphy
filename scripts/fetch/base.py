@@ -50,11 +50,18 @@ ProgressCallback = Callable[[int, int | None, str], None]
 
 @dataclass(frozen=True)
 class FetchResult:
-    """What ``DataSource.fetch`` returns to the puller."""
+    """What ``DataSource.fetch`` returns to the puller.
+
+    ``remote_version`` is optional (#264): the puller captures the version
+    once per pull via ``remote_version()`` before the download, so most
+    sources leave it ``None``. Sources that derive the version as a
+    byproduct of fetch (a year walk, a directory listing) set
+    ``derives_version_on_fetch`` and return it here instead.
+    """
 
     files: list[Path]
-    remote_version: str
     total_bytes: int
+    remote_version: str | None = None
 
 
 @dataclass
@@ -88,6 +95,15 @@ class DataSource(abc.ABC):
     # don't benefit and want the cleanslate guarantee.
     supports_resume: bool = field(init=False, default=False)
 
+    # ── version capture (#264) ──────────────────────────────────────────
+    # The puller captures ``remote_version()`` once, before the download,
+    # so a mid-fetch publisher update can't be recorded as already-
+    # installed. Sources whose version is a byproduct of the fetch work
+    # itself — a year/month walk (EIA) or a directory listing (parcel
+    # archives) — set this True, skip the pre-probe, and return the version
+    # in their ``FetchResult`` instead.
+    derives_version_on_fetch: bool = field(init=False, default=False)
+
     # ── behaviour ───────────────────────────────────────────────────────
 
     @abc.abstractmethod
@@ -104,8 +120,8 @@ class DataSource(abc.ABC):
         """Download data into ``dest_dir`` (already created, empty).
 
         Must report progress via ``progress(bytes_done, bytes_total, filename)``.
-        Returns the list of files actually written and the remote_version
-        string that corresponds to the downloaded snapshot.
+        Returns the files actually written; the puller derives the version
+        (see ``derives_version_on_fetch`` to return it here instead).
         """
 
     def validate(self, files: list[Path]) -> None:

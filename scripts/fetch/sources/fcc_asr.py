@@ -68,7 +68,7 @@ class FccAsr(DataSource):
         return version_from_head(R_TOWER_URL, label="FCC ASR")
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
+        # The puller captures remote_version once before the download (#264).
         files: list[Path] = []
         total = 0
 
@@ -102,7 +102,6 @@ class FccAsr(DataSource):
 
         return FetchResult(
             files=files,
-            remote_version=rv,
             total_bytes=total,
         )
 

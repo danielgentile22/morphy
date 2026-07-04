@@ -93,7 +93,7 @@ class MtCadastralParcels(DataSource):
         return version_from_head(MT_SHP_ZIP_URL, label=self.id)
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        rv = self.remote_version()
+        # The puller captures remote_version once before the download (#264).
         files, n = fetch_zip_extracted(
             MT_SHP_ZIP_URL,
             dest_dir,
@@ -101,7 +101,7 @@ class MtCadastralParcels(DataSource):
             zip_name="MontanaCadastral_SHP.zip",
             expected_min_bytes=200_000_000,
         )
-        return FetchResult(files=files, remote_version=rv, total_bytes=n)
+        return FetchResult(files=files, total_bytes=n)
 
     def manual_walkthrough(self) -> ManualWalkthrough:
         return ManualWalkthrough(
@@ -233,8 +233,8 @@ class WvParcels(DataSource):
         return f"{year}:{version_from_head(url, label=self.id)}"
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        url, year = self._latest_zip()
-        rv = f"{year}:{version_from_head(url, label=self.id)}"
+        # The puller captures remote_version once before the download (#264).
+        url, _year = self._latest_zip()
         files, n = fetch_zip_extracted(
             url,
             dest_dir,
@@ -242,7 +242,7 @@ class WvParcels(DataSource):
             zip_name=url.rsplit("/", 1)[1],
             expected_min_bytes=100_000_000,
         )
-        return FetchResult(files=files, remote_version=rv, total_bytes=n)
+        return FetchResult(files=files, total_bytes=n)
 
     def manual_walkthrough(self) -> ManualWalkthrough:
         return ManualWalkthrough(

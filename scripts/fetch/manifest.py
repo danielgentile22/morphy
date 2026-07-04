@@ -47,7 +47,6 @@ import os
 import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 from . import MANIFEST_PATH
 
@@ -81,6 +80,18 @@ def _parse_iso(s: str | None) -> datetime | None:
         return datetime.fromisoformat(s)
     except ValueError:
         return None
+
+
+def _next_check_iso(base: datetime, cadence_days: int | None) -> str | None:
+    """The freshness clock: next recommended check = ``base + cadence``.
+
+    The single owner of that arithmetic (#264) — install-stamp and
+    cadence-resync both call it, so the manual and auto paths can't drift.
+    ``None`` cadence (one-shot reference data) → no scheduled recheck.
+    """
+    if cadence_days is None:
+        return None
+    return (base + timedelta(days=cadence_days)).isoformat(timespec="seconds")
 
 
 @dataclass
@@ -231,16 +242,30 @@ class Manifest:
         e.error = error
         e.last_error = {"url": url, "error": error, "elapsed": elapsed, "at": e.checked_at}
 
-    def mark_fetch_ok(
+    def stamp_installed(
         self,
         source_id: str,
-        remote_version: str,
-        files: list[Path],
-        total_bytes: int,
-        update_cadence_days: int | None = None,
+        *,
+        local_version: str | None,
+        remote_version: str | None,
+        cadence_days: int | None,
     ) -> None:
-        from . import RAW_ROOT
+        """Record a successful install — the single owner of the freshness
+        clock + file-list/bytes derivation (#264).
 
+        Both callers place their files into ``current/`` first; this reads
+        the file list and byte total from disk, stamps the versions +
+        timestamps, clears the transient error, and restarts the freshness
+        clock. Auto-fetch passes ``local_version == remote_version`` (the
+        captured snapshot); manual install passes ``local_version="manual"``
+        and keeps the entry's existing ``remote_version``. Both therefore
+        produce identical entries for identical on-disk contents. Like the
+        other ``mark_*`` mutators, does NOT save — the caller decides."""
+        from . import RAW_ROOT
+        from .storage import current_dir, directory_bytes
+
+        cur = current_dir(source_id)
+        files = sorted(p for p in cur.rglob("*") if p.is_file() and not p.is_symlink())
         rels = []
         for f in files:
             try:
@@ -250,21 +275,15 @@ class Manifest:
         e = self.entry(source_id)
         now = _now()
         e.remote_version = remote_version
-        e.local_version = remote_version
+        e.local_version = local_version
         e.fetched_at = now.isoformat(timespec="seconds")
         e.checked_at = e.fetched_at
-        e.bytes = total_bytes
+        e.bytes = directory_bytes(cur)
         e.files = rels
         e.status = "ok"
         e.error = None
-        # v2: stamp cadence + next recommended check
-        e.update_cadence_days = update_cadence_days
-        if update_cadence_days is not None:
-            e.next_recommended_check_at = (now + timedelta(days=update_cadence_days)).isoformat(
-                timespec="seconds"
-            )
-        else:
-            e.next_recommended_check_at = None
+        e.update_cadence_days = cadence_days
+        e.next_recommended_check_at = _next_check_iso(now, cadence_days)
 
     def mark_fetch_failed(
         self,
@@ -286,12 +305,7 @@ class Manifest:
         e = self.entry(source_id)
         e.update_cadence_days = update_cadence_days
         f = _parse_iso(e.fetched_at)
-        if f is None or update_cadence_days is None:
-            e.next_recommended_check_at = None
-            return
-        e.next_recommended_check_at = (f + timedelta(days=update_cadence_days)).isoformat(
-            timespec="seconds"
-        )
+        e.next_recommended_check_at = _next_check_iso(f, update_cadence_days) if f else None
 
     def set_last_full_check(self) -> None:
         self.last_full_check = _now_iso()

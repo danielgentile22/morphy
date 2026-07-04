@@ -59,7 +59,7 @@ class ArcGisHubSource(DataSource):
         return arcgis_edit_date_version(self.meta_url, label=self.error_label)
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        rv = self.remote_version()  # capture once; avoid 2nd probe post-download
+        # The puller captures remote_version once before the download (#264).
         out = dest_dir / self.out_name
         n = arcgis_query_all(
             self.layer_url,
@@ -68,7 +68,7 @@ class ArcGisHubSource(DataSource):
         )
         if n < self.min_fetch_bytes:
             raise HttpError(f"{self.error_label} download only {n} bytes — incomplete")
-        return FetchResult(files=[out], remote_version=rv, total_bytes=n)
+        return FetchResult(files=[out], total_bytes=n)
 
     def validate(self, files: list[Path]) -> None:
         super().validate(files)

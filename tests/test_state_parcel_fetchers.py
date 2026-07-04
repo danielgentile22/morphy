@@ -77,7 +77,9 @@ def test_mt_fetch_extracts_and_cleans_up(monkeypatch, tmp_path):
 
     assert (tmp_path / "MontanaCadastral_SHP" / "OWNERPARCEL.shp").read_bytes() == b"shp-bytes"
     assert not (tmp_path / "MontanaCadastral_SHP.zip").exists(), "zip must be deleted"
-    assert res.remote_version == "2026-06-04"
+    # #264: fetch leaves the version to the puller's pre-probe (remote_version()).
+    assert res.remote_version is None
+    assert sp_mod.MtCadastralParcels().remote_version() == "2026-06-04"
     assert res.total_bytes == len(zbytes)
 
 
@@ -113,7 +115,9 @@ def test_wv_fetch_extracts_gdb(monkeypatch, tmp_path):
 
     assert (tmp_path / "WV_WVGISTC_Tax_2025.gdb" / "gdb_file.gdbtable").exists()
     assert not (tmp_path / "WV_WVGISTC_Tax_2025.gdb.zip").exists()
-    assert res.remote_version == "2025:2026-06-24"
+    # #264: fetch leaves the version to the puller's pre-probe (remote_version()).
+    assert res.remote_version is None
+    assert sp_mod.WvParcels().remote_version() == "2025:2026-06-24"
 
 
 # ── Florida FGDL DSL (state-owned land) ────────────────────────────────────

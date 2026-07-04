@@ -37,6 +37,9 @@ MIN_REAL_BYTES = 1_000_000
 
 class Eia860(DataSource):
     id = "eia_860"
+    # Version is a byproduct of the fetch (year/month walk or archive
+    # listing) — the puller uses the returned FetchResult.remote_version (#264).
+    derives_version_on_fetch = True
     name = "EIA Form 860 (annual)"
     category = CATEGORY_SOLAR
     coverage = "National (all US utility-scale generators ≥1 MW)"

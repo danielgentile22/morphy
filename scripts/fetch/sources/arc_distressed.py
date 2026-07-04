@@ -40,6 +40,9 @@ LEGACY_PAGE_PATTERN = (
 
 class ArcDistressed(DataSource):
     id = "arc_distressed"
+    # Version is a byproduct of the fetch (year/month walk or archive
+    # listing) — the puller uses the returned FetchResult.remote_version (#264).
+    derives_version_on_fetch = True
     name = "ARC County Economic Status (Appalachian region)"
     category = CATEGORY_DISTRESS
     coverage = "Appalachian region (13 states, 423 counties)"

@@ -154,7 +154,7 @@ class NcOnemapParcels(DataSource):
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
         """Paginated MapServer query → one GeoJSON file per 5000-feature page."""
-        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
+        # The puller captures remote_version once before the download (#264).
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         # 1) Total record count — needed for progress + page-count.
@@ -228,7 +228,6 @@ class NcOnemapParcels(DataSource):
         total_bytes = sum(p.stat().st_size for p in written)
         return FetchResult(
             files=written,
-            remote_version=rv,
             total_bytes=total_bytes,
         )
 

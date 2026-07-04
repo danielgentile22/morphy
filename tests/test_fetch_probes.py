@@ -99,11 +99,16 @@ def test_hud_sources_are_hub_configuration(monkeypatch, tmp_path, source_id, out
     monkeypatch.setattr(arcgis_mod, "arcgis_query_all", fake_query_all)
 
     res = src.fetch(tmp_path, _sink)
-    assert res.remote_version == "2025-01-01"
     assert res.files == [tmp_path / out_name]
     assert res.total_bytes > 600_000
     assert queried == [src.layer_url]
-    assert probes == [f"{src.layer_url}?f=pjson"]  # version captured exactly once
+    # #264: fetch no longer probes the version — the puller captures it once,
+    # before the download, via remote_version(). So fetch leaves it None and
+    # does not touch the metadata endpoint.
+    assert res.remote_version is None
+    assert probes == []
+    assert src.remote_version() == "2025-01-01"  # the puller's pre-probe
+    assert probes == [f"{src.layer_url}?f=pjson"]
     src.validate(res.files)  # FeatureCollection sniff accepts the payload
 
 
@@ -238,10 +243,12 @@ def test_faa_fetch_extracts_into_dof_subfolder(monkeypatch, tmp_path):
     payload = _zip_bytes({"DOF.DAT": b"x" * 10, "DOF_README": b"docs"})
     monkeypatch.setattr(helpers_mod, "download", _fake_download({faa_mod.DOF_URL: payload}))
 
-    res = get_source("faa_oeaaa").fetch(tmp_path, _sink)
+    src = get_source("faa_oeaaa")
+    res = src.fetch(tmp_path, _sink)
     assert (tmp_path / "dof" / "DOF.DAT").exists()
     assert not (tmp_path / "DAILY_DOF_DAT.ZIP").exists()  # zip removed after extract
-    assert res.remote_version == "2026-07-01"
+    assert res.remote_version is None  # #264: the puller captures it, not fetch
+    assert src.remote_version() == "2026-07-01"  # the puller's pre-probe
     assert res.total_bytes == len(payload)
 
 
