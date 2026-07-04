@@ -5,7 +5,7 @@ Functions:
   - run_normalize_one(...)  — normalize one source by id
   - run_compose_all(...)    — compose every state that has parcel data
   - run_compose_one(...)    — compose one state by FIPS
-  - run_all(...)            — normalize all → compose all states
+  - run_all(...)            — normalize all → compose a state selection
 
 All accept an optional progress_callback to report status as they go.
 """
@@ -218,20 +218,26 @@ def run_compose_all(
 
 def run_all(
     *,
-    state_fips: str | None = None,
+    states: list[str] | None = None,
     force_rebuild: bool = False,
     skip_tiles: bool = False,
     progress_callback: ProgressCallback | None = None,
 ) -> RunOutcome:
-    """Normalize all sources, then compose either one state or all that have data.
+    """Normalize all sources, then compose a selection of states.
 
-    Orchestration is delegated to a ``Pipeline`` of named steps
-    (NormalizeAll → ComposeStates → AppAssets → Tiles). The pipeline
+    ``states`` is a list of FIPS codes to compose; ``None`` composes every
+    state with normalized parcel data. This is the **single owner** of the
+    canonical pipeline step order (NormalizeAll → ComposeStates → AppAssets
+    → OwnersIndex → Tiles) — every caller (the CLI and the data TUI worker)
+    goes through here rather than rebuilding the list. The pipeline
     centralises severity policy (REQUIRED vs AUXILIARY) and progress
-    emission; ``skip_tiles=True`` translates to skipping the ``tiles``
-    step. Inner per-source events still flow through ``progress_callback``
-    unchanged.
+    emission; ``skip_tiles=True`` skips the ``tiles`` step. Inner per-source
+    events still flow through ``progress_callback`` unchanged.
     """
+    # Fire the @register decorators so the normalizer/view/join registries
+    # are populated — run_all owns this so every caller (CLI, TUI worker)
+    # gets a fully-registered pipeline without importing the registry itself.
+    from . import registry as _registry  # noqa: F401
     from .pipeline import (
         AppAssetsStep,
         ComposeStatesStep,
@@ -243,12 +249,14 @@ def run_all(
 
     outcome = RunOutcome()
     manifest = PreprocessManifest.load()
-    states = [get_state(state_fips)] if state_fips else None
+    # None → every state with normalized parcel data; an explicit list (even
+    # empty) → exactly those states.
+    geos = None if states is None else [get_state(f) for f in states]
 
     pipeline = Pipeline(
         steps=[
             NormalizeAllStep(force_rebuild=force_rebuild),
-            ComposeStatesStep(states=states),
+            ComposeStatesStep(states=geos),
             AppAssetsStep(),
             OwnersIndexStep(),
             TilesStep(),

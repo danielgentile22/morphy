@@ -978,3 +978,27 @@ def test_install_from_file_rejects_missing_path(monkeypatch, tmp_path):
             assert not isinstance(app.screen, InstallScreen)
 
     asyncio.run(scenario())
+
+
+def test_run_preprocess_pipeline_forwards_to_run_all(monkeypatch):
+    """The TUI worker is a thin shell (#259/PRD #233): it just forwards the
+    multi-state selection to preprocess.runner.run_all, which owns the
+    canonical step order."""
+    from data_tui.app import run_preprocess_pipeline
+
+    calls: dict = {}
+
+    def fake_run_all(*, states, progress_callback):
+        calls["states"] = states
+        calls["cb"] = progress_callback
+        return "outcome-sentinel"
+
+    monkeypatch.setattr("preprocess.runner.run_all", fake_run_all)
+
+    def cb(*_a):
+        pass
+
+    out = run_preprocess_pipeline(["05", "54"], cb)
+    assert out == "outcome-sentinel"
+    assert calls["states"] == ["05", "54"]
+    assert calls["cb"] is cb

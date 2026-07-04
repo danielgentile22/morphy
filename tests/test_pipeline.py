@@ -172,3 +172,97 @@ def test_tiles_step_inapplicable_when_no_composed_states():
     assert TilesStep().is_applicable(outcome) is False
     outcome.composed_ok.append("05")
     assert TilesStep().is_applicable(outcome) is True
+
+
+# ── run_all owns the canonical step order + multi-state selection (#259) ──
+
+
+def test_run_all_composes_a_multi_state_selection(monkeypatch):
+    """run_all is the single owner of the pipeline step order and forwards a
+    multi-state selection into ComposeStatesStep — no caller rebuilds it."""
+    import preprocess.pipeline as pipeline_mod
+    from preprocess.geographies import get_state
+    from preprocess.runner import run_all
+
+    captured: dict = {}
+
+    class _FakePipeline:
+        def __init__(self, steps):
+            captured["steps"] = steps
+
+        def run(self, **_kwargs):
+            pass  # don't execute the heavy steps
+
+    monkeypatch.setattr(pipeline_mod, "Pipeline", _FakePipeline)
+
+    run_all(states=["05", "54"])
+
+    names = [type(s).__name__ for s in captured["steps"]]
+    assert names == [
+        "NormalizeAllStep",
+        "ComposeStatesStep",
+        "AppAssetsStep",
+        "OwnersIndexStep",
+        "TilesStep",
+    ]
+    compose_step = captured["steps"][1]
+    assert [g.fips for g in compose_step.states] == ["05", "54"]
+    assert [g.fips for g in compose_step.states] == [get_state("05").fips, get_state("54").fips]
+
+
+def test_run_all_fires_the_preprocess_registry():
+    """run_all must populate the normalizer/view/join registries itself, so a
+    caller that never imports preprocess.registry (the TUI worker) still gets
+    a fully-registered pipeline. Runs in a fresh interpreter because the
+    in-process registries are already populated by other tests.
+    """
+    import subprocess
+    import sys
+    import textwrap
+
+    script = textwrap.dedent(
+        """
+        import preprocess.runner as runner
+        import preprocess.pipeline as pipeline
+        from preprocess import base
+
+        # Importing runner alone must NOT fire the registry.
+        assert len(base.all_normalizers()) == 0, base.all_normalizers()
+
+        class _NoopPipeline:
+            def __init__(self, steps):
+                self.steps = steps
+            def run(self, **kwargs):
+                pass  # skip the heavy steps
+
+        pipeline.Pipeline = _NoopPipeline
+        runner.run_all(states=["05"])
+
+        n, v, j = len(base.all_normalizers()), len(base.all_views()), len(base.all_joins())
+        assert n > 0 and v > 0 and j > 0, (n, v, j)
+        print("OK", n, v, j)
+        """
+    )
+    proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip().startswith("OK"), proc.stdout
+
+
+def test_run_all_none_selection_defers_to_step_default(monkeypatch):
+    """states=None leaves ComposeStatesStep.states None, so the step picks
+    every state with normalized parcel data (its existing default)."""
+    import preprocess.pipeline as pipeline_mod
+    from preprocess.runner import run_all
+
+    captured: dict = {}
+
+    class _FakePipeline:
+        def __init__(self, steps):
+            captured["steps"] = steps
+
+        def run(self, **_kwargs):
+            pass
+
+    monkeypatch.setattr(pipeline_mod, "Pipeline", _FakePipeline)
+    run_all(states=None)
+    assert captured["steps"][1].states is None

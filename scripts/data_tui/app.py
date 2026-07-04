@@ -113,39 +113,14 @@ def preprocess_progress_line(phase: str, key: str, info: dict) -> str | None:
 
 
 def run_preprocess_pipeline(state_fips: list[str], progress_callback):
-    """Normalize all sources, compose the selected states, then refresh
-    app assets / owners index / tiles — the same step list
-    ``preprocess.runner.run_all`` builds, constructed here so compose can
-    take a multi-state selection (run_all only accepts one state or all).
-    Heavy imports stay inside so the TUI starts without pandas/geopandas.
+    """Thin shell over ``preprocess.runner.run_all`` (PRD #233): the
+    canonical pipeline step order has one owner, in preprocess, and the TUI
+    just forwards its multi-state selection. Heavy imports stay inside the
+    worker so the TUI starts without pandas/geopandas.
     """
-    from preprocess import registry as _registry  # noqa: F401 — fires @register decorators
-    from preprocess.geographies import get_state
-    from preprocess.pipeline import (
-        AppAssetsStep,
-        ComposeStatesStep,
-        NormalizeAllStep,
-        OwnersIndexStep,
-        Pipeline,
-        TilesStep,
-    )
-    from preprocess.runner import RunOutcome
+    from preprocess.runner import run_all
 
-    outcome = RunOutcome()
-    Pipeline(
-        steps=[
-            NormalizeAllStep(),
-            ComposeStatesStep(states=[get_state(f) for f in state_fips]),
-            AppAssetsStep(),
-            OwnersIndexStep(),
-            TilesStep(),
-        ]
-    ).run(
-        outcome=outcome,
-        manifest=PreprocessManifest.load(),
-        progress_callback=progress_callback,
-    )
-    return outcome
+    return run_all(states=state_fips, progress_callback=progress_callback)
 
 
 class DataTuiApp(App):

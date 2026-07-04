@@ -281,7 +281,7 @@ def main() -> int:
         return 0 if n_failed == 0 else 1
 
     outcome = run_all(
-        state_fips=args.state,
+        states=[args.state] if args.state else None,
         force_rebuild=args.force_rebuild,
         skip_tiles=args.skip_tiles,
         progress_callback=_stream_progress,
