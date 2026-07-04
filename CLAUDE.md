@@ -256,6 +256,7 @@ anchors `05` (AR), `12` (FL), `30` (MT), `54` (WV); deferred stretch `37` (NC); 
 | What's next (Phase 2/3) | [docs/ROADMAP.md](docs/ROADMAP.md) |
 | Locked design choices | [docs/DECISIONS.md](docs/DECISIONS.md) (index of all ADRs) + [docs/adr/](docs/adr/) (per-ADR files) |
 | How to deploy / share outputs | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| `data/` on an external drive (T9) + exfat gotchas | [docs/EXTERNAL_DATA_DRIVE.md](docs/EXTERNAL_DATA_DRIVE.md) |
 | Testing strategy | [docs/TESTING.md](docs/TESTING.md) |
 | Puller UX design | [docs/PULLER_UX.md](docs/PULLER_UX.md) |
 | Map app — architecture + how to run | [app/ARCHITECTURE.md](app/ARCHITECTURE.md) |

@@ -67,7 +67,9 @@ def state_has_parcels(state_dir: Path) -> bool:
     if (state_dir / "parcels.parquet").exists():
         return True
     sharded = state_dir / "parcels"
-    return sharded.is_dir() and any(sharded.glob("*.parquet"))
+    # [!.] skips macOS AppleDouble "._*" sidecars that appear when data/
+    # lives on an exfat drive (see docs/EXTERNAL_DATA_DRIVE.md).
+    return sharded.is_dir() and any(sharded.glob("[!.]*.parquet"))
 
 
 def resolve_parcel_paths(state_dir: Path) -> tuple[list[Path], bool]:
@@ -85,7 +87,7 @@ def resolve_parcel_paths(state_dir: Path) -> tuple[list[Path], bool]:
     if single.exists():
         return [single], False
     if sharded.is_dir():
-        shards = sorted(sharded.glob("*.parquet"))
+        shards = sorted(sharded.glob("[!.]*.parquet"))  # skip exfat "._*" sidecars
         if shards:
             return shards, True
     raise FileNotFoundError(f"no parcels.parquet (or parcels/ shard dir) under {state_dir}")

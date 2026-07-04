@@ -1,7 +1,10 @@
 # ─── Data (PII; never commit) ────────────────────────────────────────
 # All raw + processed data is git-ignored. data/ may contain parcel-owner
 # names + mailing addresses (PII when combined). See docs/SECURITY.md.
-data/
+# `data` is a real dir, OR a symlink to an external drive (Samsung T9).
+# Reprocess/deploy need the drive mounted; plain code work does not.
+data
+data.local-bak/
 !data/.gitkeep
 
 # Local environment overrides
