@@ -79,6 +79,11 @@ backups/
 # so the catalog's "What needs updating" view always reflects the live puller.
 docs/research/data-audit/freshness.json
 
+# ─── Data-audit scratch handoff note (working doc, not a published finding) ──
+# Lives in the data-audit dir but isn't part of the audit board; kept local so
+# it neither tracks nor bakes into the gated /audit/data/ image (see .dockerignore).
+docs/research/data-audit/HANDOFF.md
+
 # ─── Throwaway UI verification artifacts (slice screenshots, MCP logs) ─
 screenshots/
 .playwright-mcp/
