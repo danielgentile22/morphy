@@ -24,6 +24,12 @@ surface.
 overhaul, auth, the #130–#138 hardening pass, the data-audit catalog at `/audit/`, and Ask
 Claude. (Trail in [CHANGELOG.md](./CHANGELOG.md).)
 
+**Deployed 2026-07-04:** the data-audit follow-through — 7 MACRO/HITL data-quality fixes
+([ADR-070](./adr/0070-statutory-assessed-value.md)–[076](./adr/0076-owner-type-classifier.md))
+— is live in prod (composites regen'd via the data TUI + `deploy.sh data --apply`), plus a
+same-day hotfix (PR #281) for a #221 tower-cid regression that had collapsed the map's tower
+layer (§4.5).
+
 **Next up:** the rest of **D+E** — lease-doc upload + LLM extraction + R2 storage (per
 [ADR-059](./adr/0059-llm-lease-extraction.md); **not started** — no lease/extraction code on
 disk) — then **Slice B** (vendor inference). The 4-week outcome-bar clock starts after B.
@@ -55,10 +61,11 @@ disk) — then **Slice B** (vendor inference). The 4-week outcome-bar clock star
   (head `0002_ask_log`).
 - **Slice A carriers** — ULS↔ASR `carriers` on every tower (owners index → schema v4);
   carrier-list UI with confidence badges. Coverage ~6–17% of ASR towers (high-precision /
-  low-recall) — an empty list is normal.
-- **Slice C tunable scoring** — per-tower `score` (owners index → **schema v5**), tunable
-  live re-rank, named presets. Solar→parcel done (`SolarToParcelJoin`; `has_solar` /
-  `solar_count` on AR/MT/FL).
+  low-recall) — an empty list is normal. *(The MACRO-1 rework that surfaces the modern
+  spectrum bands is live as of the 2026-07-04 deploy — §4.5.)*
+- **Slice C tunable scoring** — per-tower `score` (owners index → **schema v10** live as of
+  the 2026-07-04 data-audit deploy, §4.5), tunable live re-rank, named presets.
+  Solar→parcel done (`SolarToParcelJoin`; `has_solar` / `solar_count` on AR/MT/FL).
 - **The data TUI** (`python -m data_tui`, PRD #233; shipped 2026-07-03) — *the* puller:
   full lifecycle pull → preprocess → verify → confirm-gated data deploy from one terminal
   app, over the unchanged headless `fetch`/`preprocess` libraries + `deploy.sh`. 16/17
@@ -133,6 +140,45 @@ normalize + compose via the chunked path.
 - `composite/18` and `normalized/in_parcels` — IN dropped from this cut (ADR-017); safe to
   delete.
 
+### 4.5 Data-audit follow-through — shipped + deployed (2026-07-04)
+
+The data audit's actionable findings shipped their **code** in a batch (ADRs
+[070](./adr/0070-statutory-assessed-value.md)–[076](./adr/0076-owner-type-classifier.md);
+issues #213/#217/#218/#219/#220/#221/#222), all merged to `main` by 2026-07-03, then **regen'd +
+deployed to prod 2026-07-04** (composites rebuilt via the data TUI, synced with
+`deploy.sh data --apply`):
+
+- **MACRO-1 / #220** ([ADR-074](./adr/0074-uls-carrier-rearchitecture.md)) — ULS→carrier rework.
+  The market-band drop is fixed (a `load_state_data` override — PCS/AWS/700 now flow, so
+  T-Mobile / Dish / Verizon-market can attach via the proximity fallback); the dead ULS
+  `entity` layer dropped (M-e); the badge reframed **"Licensed in this area — not a confirmed
+  tenant."** The before/after unmapped-carrier rate is measured at regen.
+- **MACRO-6 / #221** ([ADR-075](./adr/0075-cross-state-owner-identity.md)) — cross-state owner
+  key changed name-only → **name + state**, with a curated towerco alias table (Crown Castle /
+  American Tower / SBA / Vertical Bridge) re-merging across states. Owners-index **schema
+  v9→v10**. Validated read-only on real data: **64** same-name-different-state false-merges
+  split, and **exactly the 4 curated towercos** stay national (nothing else spans states).
+- **MACRO-2/3/5/7 + M-k** — FAA↔ASR tower dedup (+`faa_corroborated`, #219), solar-feed dedup
+  by EIA plant code (#217), the reweighted default score preset (+owner `carrier_count`, #218),
+  the expanded owner-type classifier (towerco/utility/nonprofit, #222), and statutory assessed
+  value surfaced alongside market (#213). The owners-index schema climbed **v5 → v10** across
+  the batch.
+
+**Post-deploy hotfix — #221 tower-cid regression (PR #281, deployed 2026-07-04).** The v10
+name+state key was only applied in `owners_index.py`; `national_towers.py` still baked each
+tower's `cid` (in `towers.json`) with the old **name-only** key. The map narrows its tower layer
+by the owners-index id set, so tower cids and index ids diverged (only the 4 curated towercos
+overlapped) and the layer collapsed — ~400 towers shown in WV, every state hit. **Not data
+loss** (all towers stayed in the composite). Fixed by baking `cross_state_owner_key(name,
+state_fips)`; verified 100% cid overlap (WV 2663/2663, 5,722 towers resolve to a landowner) and
+shipped `towers.json`-only (no parcel reprocess, no lead remap). Lesson: the cross-state key
+recipe has **two producers** (`owners_index.py` + `national_towers.py`) — the parity test pinned
+`national_towers`↔client to each other, not to the owners index, so the drift slipped the batch.
+
+Live per-fix board: the **Fixes tab** at `/audit/` (`docs/research/data-audit/fixes.json` +
+`fix-ledger.md`). Research-first items still open: #223 (AR owner-mailing feed), #224 (FL
+billboards); #212 (M-h, FL NAL owner-name) is blocked on a manual download.
+
 ---
 
 ## 5. Phase 1 slice progress
@@ -153,5 +199,6 @@ The canonical slice plan + per-slice gates live in [SCOPE.md §3–§4](./SCOPE.
 
 | Item | Notes |
 |---|---|
+| **Verify the #221 owner-key remap ran** (§4.5) | The v10 recipe change re-hashes every `display_cluster_id`. The composites + tower-cid hotfix are deployed, but confirm the one-time `python -m app.remap_owner_clusters` ran on the prod DB (DEPLOYMENT.md §8) — if it didn't and prod carries `Lead`/`ContactAttempt`/`OwnerClusterOverride` state, those rows are orphaned under the old keys. The chosen policy is the **one-shot remap** (idempotent; safe to run/re-run). Product change to note: a national owner (e.g. Weyerhaeuser AR+WV) now shows as **two** Leads unless it's a curated towerco. |
 | Steel-in-the-Air free dataset — **premise overturned 2026-05-26** | The free county-level lease-rate dataset doesn't exist (`docs/research/reports-2026-05-26/INDEX.md`). Slice D `lease_comp` source-of-truth needs a replacement — next-best free path is REIT 10-K rent disclosures + ABS securitization filings. Paid Steel-in-the-Air tier is the Phase 2 unlock ([ADR-057](./adr/0057-budget-posture-reframed.md)). |
 | libpostal vs `usaddress` for owner-clustering address normalization | Deferred owner-resolution refinement (#26) — **not** in scope for the shipped name-anchored matching, and **superseded as the day-1 fix by the manual merge/split net** (#53, shipped). Lean libpostal; fall back to `usaddress` if dep-management is painful. |
