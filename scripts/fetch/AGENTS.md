@@ -11,7 +11,8 @@ The headless engine that fetches raw source data + tracks versions. Owns the
 - `base.py` — `DataSource` base + mixins (`ManualOnlySource`), `AutomationPolicy`.
 - `registry.py` — every source is appended here.
 - `sources/<name>.py` — one source each, exported as `SOURCE` (or `SOURCES`).
-- `sources/_helpers.py` — `version_from_head`, `safe_extract_zip`.
+- `sources/_helpers.py` — `version_from_head`, `head_size_ok`, `safe_extract_zip`, `fetch_zip_extracted`.
+- `sources/_arcgis.py` — `ArcGisHubSource` base (edit-date probe + query-all fetch + FeatureCollection validate); HUD sources are pure configuration of it.
 - `manifest.py`, `storage.py`, `http.py` — manifest, atomic storage, HTTP.
 
 ## Contracts & invariants

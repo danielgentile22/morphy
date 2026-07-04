@@ -34,6 +34,30 @@ def version_from_head(url: str, *, label: str = "") -> str:
     raise RuntimeError(f"could not derive remote version{' for ' + label if label else ''}")
 
 
+def head_size_ok(url: str, min_bytes: int, *, require_length: bool = False) -> bool:
+    """One HEAD: 2xx status and Content-Length ≥ ``min_bytes``.
+
+    Publishers (EIA) serve ~67 KB HTML stub pages with 200 OK for
+    unreleased files; the size gate rejects them. A missing or
+    unparseable Content-Length passes when ``require_length`` is False
+    (trust the 2xx) and fails when True (a real workbook always
+    advertises its size).
+    """
+    try:
+        h = head(url)
+    except HttpError:
+        return False
+    if not h.get("status", "").startswith("2"):
+        return False
+    cl = h.get("content_length")
+    if cl is None:
+        return not require_length
+    try:
+        return int(cl) >= min_bytes
+    except (TypeError, ValueError):
+        return not require_length
+
+
 def safe_extract_zip(zip_path: Path, dest: Path) -> list[Path]:
     """Extract a zip while protecting against path-traversal.
 

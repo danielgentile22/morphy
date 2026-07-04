@@ -29,9 +29,8 @@ from ..base import (
     FetchResult,
     ProgressCallback,
 )
-from ..http import download
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
-from ._helpers import safe_extract_zip, version_from_head
+from ._helpers import fetch_zip_extracted, version_from_head
 
 BASE_URL = "https://data.fcc.gov/download/pub/uls/complete"
 
@@ -218,20 +217,19 @@ class FccUlsBulk(DataSource):
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
         rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
-        zip_path = dest_dir / self.file.zip_name
-        n = download(
-            self.url,
-            zip_path,
-            lambda done, tot: progress(done, tot, self.file.zip_name),
-            expected_min_bytes=self.file.expected_min_bytes,
-        )
         # `band` files extract into a generic `extracted/` subdir so the
         # downstream FCC ULS normalizer can probe one path regardless of
         # which band ran; `meta` files extract into a folder named after
         # the zip to keep their distinct DAT-table identities clear.
         target = dest_dir / ("extracted" if self.file.kind == "band" else self.file.folder)
-        extracted = safe_extract_zip(zip_path, target)
-        zip_path.unlink()
+        extracted, n = fetch_zip_extracted(
+            self.url,
+            dest_dir,
+            progress,
+            zip_name=self.file.zip_name,
+            extract_to=target,
+            expected_min_bytes=self.file.expected_min_bytes,
+        )
         return FetchResult(
             files=extracted,
             remote_version=rv,

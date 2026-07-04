@@ -23,9 +23,8 @@ from ..base import (
     FetchResult,
     ProgressCallback,
 )
-from ..http import download
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
-from ._helpers import safe_extract_zip, version_from_head
+from ._helpers import fetch_zip_extracted, version_from_head
 
 DOF_URL = "https://aeronav.faa.gov/Obst_Data/DAILY_DOF_DAT.ZIP"
 
@@ -75,15 +74,14 @@ class FaaOeaaa(DataSource):
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
         rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
-        zip_path = dest_dir / "DAILY_DOF_DAT.ZIP"
-        n = download(
+        extracted, n = fetch_zip_extracted(
             DOF_URL,
-            zip_path,
-            lambda done, tot: progress(done, tot, "DAILY_DOF_DAT.ZIP"),
+            dest_dir,
+            progress,
+            zip_name="DAILY_DOF_DAT.ZIP",
+            extract_to=dest_dir / "dof",
             expected_min_bytes=100_000,
         )
-        extracted = safe_extract_zip(zip_path, dest_dir / "dof")
-        zip_path.unlink()
         return FetchResult(
             files=extracted,
             remote_version=rv,

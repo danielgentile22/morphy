@@ -6,19 +6,9 @@ HIFLD. Returns ~8,700 census-tract polygons.
 
 from __future__ import annotations
 
-import json
-from datetime import UTC
-from pathlib import Path
-
-from ..base import (
-    CATEGORY_DISTRESS,
-    DataSource,
-    FetchResult,
-    ProgressCallback,
-)
-from ..http import HttpError, fetch_text
+from ..base import CATEGORY_DISTRESS
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
-from ._helpers import arcgis_query_all
+from ._arcgis import ArcGisHubSource
 
 # HUD reshuffled their ArcGIS Online org in 2025: the OZ layer moved
 # from FeatureServer/0 to FeatureServer/13 inside the same service.
@@ -26,10 +16,9 @@ LAYER_URL = (
     "https://services.arcgis.com/VTyQ9soqVukalItT/arcgis/rest/services/"
     "Opportunity_Zones/FeatureServer/13"
 )
-META_URL = f"{LAYER_URL}?f=pjson"
 
 
-class HudOz(DataSource):
+class HudOz(ArcGisHubSource):
     id = "hud_oz"
     name = "HUD Opportunity Zones (OZ 1.0)"
     category = CATEGORY_DISTRESS
@@ -73,42 +62,9 @@ class HudOz(DataSource):
         ),
     )
 
-    def remote_version(self) -> str:
-        text = fetch_text(META_URL)
-        try:
-            meta = json.loads(text)
-        except json.JSONDecodeError as e:
-            raise HttpError(f"HUD OZ metadata not JSON: {e}")
-        edit_ms = (meta.get("editingInfo") or {}).get("lastEditDate")
-        if isinstance(edit_ms, (int, float)):
-            from datetime import datetime
-
-            dt = datetime.fromtimestamp(edit_ms / 1000, tz=UTC)
-            return dt.date().isoformat()
-        return f"n-{meta.get('name', '?')}"
-
-    def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
-        out = dest_dir / "opportunity_zones.geojson"
-        n = arcgis_query_all(
-            LAYER_URL,
-            out,
-            lambda done, tot: progress(done, tot, "opportunity_zones.geojson"),
-        )
-        if n < 500_000:
-            raise HttpError(f"HUD OZ download only {n} bytes — incomplete")
-        return FetchResult(
-            files=[out],
-            remote_version=rv,
-            total_bytes=n,
-        )
-
-    def validate(self, files: list[Path]) -> None:
-        super().validate(files)
-        with open(files[0]) as f:
-            head = f.read(2048)
-        if '"FeatureCollection"' not in head:
-            raise ValueError("HUD OZ download is not a GeoJSON FeatureCollection")
+    layer_url = LAYER_URL
+    out_name = "opportunity_zones.geojson"
+    error_label = "HUD OZ"
 
 
 SOURCE = HudOz()

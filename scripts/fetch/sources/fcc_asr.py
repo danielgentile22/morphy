@@ -19,9 +19,8 @@ from ..base import (
     FetchResult,
     ProgressCallback,
 )
-from ..http import download, head
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
-from ._helpers import parse_http_date, safe_extract_zip
+from ._helpers import fetch_zip_extracted, version_from_head
 
 R_TOWER_URL = "https://data.fcc.gov/download/pub/uls/complete/r_tower.zip"
 D_TOWER_URL = "https://data.fcc.gov/download/pub/uls/complete/d_tower.zip"
@@ -64,20 +63,9 @@ class FccAsr(DataSource):
     )
 
     def remote_version(self) -> str:
-        # Use the r_tower.zip Last-Modified as the source-of-truth version.
-        # If unavailable, fall back to ETag.
-        h = head(R_TOWER_URL)
-        lm = parse_http_date(h.get("last_modified"))
-        if lm:
-            return lm
-        etag = h.get("etag")
-        if etag:
-            return etag.strip('"')
-        # Last resort — content length changes weekly too
-        cl = h.get("content_length")
-        if cl:
-            return f"len-{cl}"
-        raise RuntimeError("could not derive remote version for FCC ASR")
+        # The r_tower.zip Last-Modified is the source-of-truth version;
+        # the helper's ETag / Content-Length fallbacks cover the rest.
+        return version_from_head(R_TOWER_URL, label="FCC ASR")
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
         rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
@@ -85,30 +73,29 @@ class FccAsr(DataSource):
         total = 0
 
         # 1. r_tower.zip (registrations) — required
-        r_zip = dest_dir / "r_tower.zip"
-        n = download(
+        extracted, n = fetch_zip_extracted(
             R_TOWER_URL,
-            r_zip,
-            lambda done, tot: progress(done, tot, "r_tower.zip"),
+            dest_dir,
+            progress,
+            zip_name="r_tower.zip",
+            extract_to=dest_dir / "r_tower",
             expected_min_bytes=5_000_000,
         )
-        total += n
-        extracted = safe_extract_zip(r_zip, dest_dir / "r_tower")
         files.extend(extracted)
-        r_zip.unlink()  # keep only the unpacked .dat files
+        total += n
 
         # 2. d_tower.zip (FAA determinations) — secondary; allow failure
-        d_zip = dest_dir / "d_tower.zip"
         try:
-            n = download(
+            extracted, n = fetch_zip_extracted(
                 D_TOWER_URL,
-                d_zip,
-                lambda done, tot: progress(done, tot, "d_tower.zip"),
+                dest_dir,
+                progress,
+                zip_name="d_tower.zip",
+                extract_to=dest_dir / "d_tower",
                 expected_min_bytes=500_000,
             )
+            files.extend(extracted)
             total += n
-            files.extend(safe_extract_zip(d_zip, dest_dir / "d_tower"))
-            d_zip.unlink()
         except Exception:
             # Determinations are optional for the prototype — log and continue
             pass

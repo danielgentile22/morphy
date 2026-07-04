@@ -21,9 +21,9 @@ from ..base import (
     FetchResult,
     ProgressCallback,
 )
-from ..http import download, head
+from ..http import HttpError, download
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
-from ._helpers import parse_http_date
+from ._helpers import version_from_head
 
 # County Typology Codes 2025 — persistent-poverty flag included.
 # ERS migrated from Laserfiche /sites/default/files paths to /media/<id>/
@@ -72,17 +72,14 @@ class UsdaPersistentPoverty(DataSource):
     )
 
     def remote_version(self) -> str:
-        h = head(DOWNLOAD_URL)
-        lm = parse_http_date(h.get("last_modified"))
-        if lm:
-            return lm
-        etag = h.get("etag")
-        if etag:
-            return etag.strip('"')
-        cl = h.get("content_length")
-        if cl:
-            return f"len-{cl}"
-        return "unknown"
+        try:
+            return version_from_head(DOWNLOAD_URL, label=self.id)
+        except HttpError:
+            raise  # network failure → check_failed, as before
+        except RuntimeError:
+            # Headerless 200 — historical behavior records a placeholder
+            # version rather than failing the check sweep.
+            return "unknown"
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
         rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download

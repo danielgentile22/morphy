@@ -25,9 +25,9 @@ from ..base import (
     FetchResult,
     ProgressCallback,
 )
-from ..http import HttpError, download, fetch_text, head
+from ..http import HttpError, fetch_text
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
-from ._helpers import parse_http_date, safe_extract_zip
+from ._helpers import fetch_zip_extracted, version_from_head
 
 DATA_PAGE = "https://eerscmap.usgs.gov/uspvdb/data/"
 SHP_ZIP_URL = "https://eerscmap.usgs.gov/uspvdb/assets/data/uspvdbSHP.zip"
@@ -92,27 +92,19 @@ class Uspvdb(DataSource):
         v = _version_from_page()
         if v:
             return v
-        # Fallback: HEAD the shapefile zip and use Last-Modified.
-        h = head(SHP_ZIP_URL)
-        lm = parse_http_date(h.get("last_modified"))
-        if lm:
-            return lm
-        cl = h.get("content_length")
-        if cl:
-            return f"len-{cl}"
-        raise HttpError("could not derive remote version for USPVDB")
+        # Fallback: HEAD the shapefile zip (Last-Modified → ETag → length).
+        return version_from_head(SHP_ZIP_URL, label="USPVDB")
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
         rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
-        zip_path = dest_dir / "uspvdbSHP.zip"
-        n = download(
+        extracted, n = fetch_zip_extracted(
             SHP_ZIP_URL,
-            zip_path,
-            lambda done, tot: progress(done, tot, "uspvdbSHP.zip"),
+            dest_dir,
+            progress,
+            zip_name="uspvdbSHP.zip",
+            extract_to=dest_dir / "uspvdb",
             expected_min_bytes=500_000,
         )
-        extracted = safe_extract_zip(zip_path, dest_dir / "uspvdb")
-        zip_path.unlink()
         return FetchResult(
             files=extracted,
             remote_version=rv,

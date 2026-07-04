@@ -32,7 +32,6 @@ from __future__ import annotations
 import json
 import time
 import urllib.parse
-from datetime import UTC
 from pathlib import Path
 
 from ..base import (
@@ -43,6 +42,7 @@ from ..base import (
 )
 from ..http import HttpError, download, fetch_text
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
+from ._arcgis import arcgis_edit_date_version
 
 # Metadata endpoint for the polygon feature layer (gives lastEditDate).
 # NC OneMap is a MapServer (not FeatureServer); the polygon layer is /1.
@@ -148,18 +148,9 @@ class NcOnemapParcels(DataSource):
     )
 
     def remote_version(self) -> str:
-        try:
-            text = fetch_text(META_URL)
-            meta = json.loads(text)
-        except (HttpError, json.JSONDecodeError) as e:
-            raise HttpError(f"NC OneMap metadata error: {e}")
-        edit_ms = (meta.get("editingInfo") or {}).get("lastEditDate")
-        if isinstance(edit_ms, (int, float)):
-            from datetime import datetime
-
-            dt = datetime.fromtimestamp(edit_ms / 1000, tz=UTC)
-            return dt.date().isoformat()
-        return f"n-{meta.get('name', '?')}"
+        # Same edit-date probe as the ArcGIS Hub sources (#258); only the
+        # paginated MapServer fetch below is NC-specific.
+        return arcgis_edit_date_version(META_URL, label="NC OneMap")
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
         """Paginated MapServer query → one GeoJSON file per 5000-feature page."""

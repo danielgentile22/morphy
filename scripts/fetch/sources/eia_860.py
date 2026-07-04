@@ -19,9 +19,9 @@ from ..base import (
     FetchResult,
     ProgressCallback,
 )
-from ..http import HttpError, download, head
+from ..http import HttpError
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
-from ._helpers import safe_extract_zip
+from ._helpers import fetch_zip_extracted, head_size_ok
 
 # EIA hosts past years at /xls/eia860{year}.zip (the /archive/xls/ path
 # became a stub returning a tiny placeholder in 2025). The current-year
@@ -29,28 +29,10 @@ from ._helpers import safe_extract_zip
 ARCHIVE_PATTERN = "https://www.eia.gov/electricity/data/eia860/xls/eia860{year}.zip"
 CURRENT_URL = "https://www.eia.gov/electricity/data/eia860/xls/eia860.zip"
 
-
-def _probe_url(url: str, min_bytes: int = 1_000_000) -> bool:
-    """Check that ``url`` resolves AND returns a file bigger than placeholder.
-
-    EIA serves ~67 KB stub pages for unreleased archive years that return
-    200 OK — without the size check the year-probe falsely picks them as
-    the 'latest available' archive.
-    """
-    try:
-        h = head(url)
-        if not h.get("status", "").startswith("2"):
-            return False
-        cl = h.get("content_length")
-        if cl is not None:
-            try:
-                if int(cl) < min_bytes:
-                    return False
-            except (TypeError, ValueError):
-                pass
-        return True
-    except HttpError:
-        return False
+# EIA serves ~67 KB stub pages for unreleased archive years that return
+# 200 OK — without the size gate the year-probe falsely picks them as
+# the 'latest available' archive.
+MIN_REAL_BYTES = 1_000_000
 
 
 class Eia860(DataSource):
@@ -100,10 +82,10 @@ class Eia860(DataSource):
         candidates = [this_year - 1, this_year - 2, this_year - 3]
         for y in candidates:
             url = ARCHIVE_PATTERN.format(year=y)
-            if _probe_url(url):
+            if head_size_ok(url, MIN_REAL_BYTES):
                 return url, f"{y}"
         # Last resort — the "current" file
-        if _probe_url(CURRENT_URL):
+        if head_size_ok(CURRENT_URL, MIN_REAL_BYTES):
             return CURRENT_URL, "current"
         raise HttpError("no EIA-860 archive year reachable")
 
@@ -113,15 +95,14 @@ class Eia860(DataSource):
 
     def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
         url, version = self._latest_year_url()
-        zip_path = dest_dir / f"eia860_{version}.zip"
-        n = download(
+        extracted, n = fetch_zip_extracted(
             url,
-            zip_path,
-            lambda done, tot: progress(done, tot, zip_path.name),
-            expected_min_bytes=1_000_000,
+            dest_dir,
+            progress,
+            zip_name=f"eia860_{version}.zip",
+            extract_to=dest_dir / "eia860",
+            expected_min_bytes=MIN_REAL_BYTES,
         )
-        extracted = safe_extract_zip(zip_path, dest_dir / "eia860")
-        zip_path.unlink()
         return FetchResult(
             files=extracted,
             remote_version=version,

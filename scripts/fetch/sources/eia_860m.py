@@ -21,8 +21,9 @@ from ..base import (
     FetchResult,
     ProgressCallback,
 )
-from ..http import HttpError, download, head
+from ..http import HttpError, download
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
+from ._helpers import head_size_ok
 
 MONTHS = (
     "january",
@@ -47,22 +48,6 @@ ARCHIVE_PATTERN = (
 MIN_REAL_BYTES = 1_000_000  # real workbooks are ~13 MB; HTML stubs are ~67 KB
 
 
-def _is_real_file(url: str) -> bool:
-    try:
-        h = head(url)
-        if not h.get("status", "").startswith("2"):
-            return False
-        cl = h.get("content_length")
-        if cl is None:
-            return False
-        try:
-            return int(cl) >= MIN_REAL_BYTES
-        except (TypeError, ValueError):
-            return False
-    except HttpError:
-        return False
-
-
 def _latest_month_url() -> tuple[str, str]:
     """Walk months backwards from today; return (url, 'YYYY-MM') of the newest real file.
 
@@ -75,7 +60,9 @@ def _latest_month_url() -> tuple[str, str]:
         m_name = MONTHS[month - 1]
         for pattern in (CURRENT_PATTERN, ARCHIVE_PATTERN):
             url = pattern.format(month=m_name, year=year)
-            if _is_real_file(url):
+            # require_length: a monthly workbook always advertises its
+            # size — a length-less 200 here is a stub, not a release.
+            if head_size_ok(url, MIN_REAL_BYTES, require_length=True):
                 return url, f"{year}-{month:02d}"
         # Step one month earlier
         month -= 1

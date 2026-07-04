@@ -6,19 +6,9 @@ pattern as the OZ layer.
 
 from __future__ import annotations
 
-import json
-from datetime import UTC
-from pathlib import Path
-
-from ..base import (
-    CATEGORY_DISTRESS,
-    DataSource,
-    FetchResult,
-    ProgressCallback,
-)
-from ..http import HttpError, fetch_text
+from ..base import CATEGORY_DISTRESS
 from ..legal import AutomationPolicy, CommercialUse, LegalInfo
-from ._helpers import arcgis_query_all
+from ._arcgis import ArcGisHubSource
 
 # HUD renamed the QCT service from Qualified_Census_Tracts_2024 to
 # QUALIFIED_CENSUS_TRACTS (uppercase). Layer 0 holds the 2025 tracts;
@@ -27,10 +17,9 @@ LAYER_URL = (
     "https://services.arcgis.com/VTyQ9soqVukalItT/arcgis/rest/services/"
     "QUALIFIED_CENSUS_TRACTS/FeatureServer/0"
 )
-META_URL = f"{LAYER_URL}?f=pjson"
 
 
-class HudQct(DataSource):
+class HudQct(ArcGisHubSource):
     id = "hud_qct"
     name = "HUD Qualified Census Tracts (QCT)"
     category = CATEGORY_DISTRESS
@@ -73,42 +62,9 @@ class HudQct(DataSource):
         ),
     )
 
-    def remote_version(self) -> str:
-        text = fetch_text(META_URL)
-        try:
-            meta = json.loads(text)
-        except json.JSONDecodeError as e:
-            raise HttpError(f"HUD QCT metadata not JSON: {e}")
-        edit_ms = (meta.get("editingInfo") or {}).get("lastEditDate")
-        if isinstance(edit_ms, (int, float)):
-            from datetime import datetime
-
-            dt = datetime.fromtimestamp(edit_ms / 1000, tz=UTC)
-            return dt.date().isoformat()
-        return f"n-{meta.get('name', '?')}"
-
-    def fetch(self, dest_dir: Path, progress: ProgressCallback) -> FetchResult:
-        rv = self.remote_version()  # capture once; avoid 2nd HEAD post-download
-        out = dest_dir / "qct.geojson"
-        n = arcgis_query_all(
-            LAYER_URL,
-            out,
-            lambda done, tot: progress(done, tot, "qct.geojson"),
-        )
-        if n < 500_000:
-            raise HttpError(f"HUD QCT download only {n} bytes — incomplete")
-        return FetchResult(
-            files=[out],
-            remote_version=rv,
-            total_bytes=n,
-        )
-
-    def validate(self, files: list[Path]) -> None:
-        super().validate(files)
-        with open(files[0]) as f:
-            head = f.read(2048)
-        if '"FeatureCollection"' not in head:
-            raise ValueError("HUD QCT download is not a GeoJSON FeatureCollection")
+    layer_url = LAYER_URL
+    out_name = "qct.geojson"
+    error_label = "HUD QCT"
 
 
 SOURCE = HudQct()
