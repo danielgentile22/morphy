@@ -5,10 +5,7 @@ import {
   TERMINAL_STATUSES,
   KANBAN_LANES,
   canTransition,
-  nextStatuses,
   isValidStatus,
-  validateTransition,
-  InvalidTransition,
 } from '../../src/lib/lead-status';
 
 describe('lead status ladder', () => {
@@ -72,26 +69,6 @@ describe('lead status ladder', () => {
     for (const s of STATUSES) {
       expect(canTransition('uninterested', s)).toBe(true); // every status incl. the identity save
     }
-  });
-
-  it('nextStatuses lists the current status plus legal moves, in ladder order', () => {
-    expect(nextStatuses('new')).toEqual(['new', 'researching']);
-    expect(nextStatuses('contacted')).toEqual(['contacted', 'interested', 'uninterested']);
-    // Uninterested can reopen anywhere → its whole ladder, in order.
-    expect(nextStatuses('uninterested')).toEqual([
-      'new',
-      'researching',
-      'contacted',
-      'interested',
-      'in_business',
-      'uninterested',
-    ]);
-  });
-
-  it('validateTransition throws InvalidTransition on an illegal move', () => {
-    expect(() => validateTransition('new', 'researching')).not.toThrow();
-    expect(() => validateTransition('new', 'in_business')).toThrow(InvalidTransition);
-    expect(() => validateTransition('new', 'bogus')).toThrow(InvalidTransition);
   });
 });
 

@@ -12,8 +12,6 @@ import {
   INITIAL_STATUS,
   TERMINAL_STATUSES,
   canTransition,
-  validateTransition,
-  InvalidTransition,
 } from '../../src/lib/lead-status';
 
 interface TransitionCase {
@@ -55,14 +53,6 @@ describe('lead-status ladder contract (PRD #137)', () => {
   describe.each(contract.transition_cases)('$from -> $to', (c: TransitionCase) => {
     it(`canTransition is ${c.allowed}`, () => {
       expect(canTransition(c.from, c.to)).toBe(c.allowed);
-    });
-
-    it(`validateTransition ${c.allowed ? 'does not throw' : 'throws'}`, () => {
-      if (c.allowed) {
-        expect(() => validateTransition(c.from, c.to)).not.toThrow();
-      } else {
-        expect(() => validateTransition(c.from, c.to)).toThrow(InvalidTransition);
-      }
     });
   });
 });

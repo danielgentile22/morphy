@@ -384,7 +384,7 @@
               <m.default />
             {/await}
           {:else if route.name === 'dashboard'}
-            <Dashboard sub={route.sub} />
+            <Dashboard />
           {:else if route.name === 'leads'}
             {#await import('./components/Leads.svelte') then m}
               <m.default />

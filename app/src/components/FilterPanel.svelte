@@ -4,7 +4,8 @@
   // individually collapsible <details> section (so the panel stays scannable
   // and a set-and-forget filter can be tucked away), with an "active" dot so a
   // collapsed-but-applied filter is still visible. Drives the ONE shared
-  // FilterModel that narrows BOTH the map's tower layer and the candidates list.
+  // FilterModel that narrows BOTH Explore lenses — the map's tower layer and
+  // Explore's ranked tower list.
   import { onMount } from 'svelte';
   import { app } from '../lib/stores.svelte';
   import { filterModel } from '../lib/filter-model.svelte';

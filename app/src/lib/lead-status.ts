@@ -89,18 +89,3 @@ export function canTransition(from: string, to: string): boolean {
   if (from === to) return true;
   return ALLOWED_TRANSITIONS[from].includes(to);
 }
-
-/** Statuses selectable from `from` (itself + legal next), in ladder order. */
-export function nextStatuses(from: string): LeadStatus[] {
-  if (!isValidStatus(from)) return [];
-  const allowed = new Set<LeadStatus>([from, ...ALLOWED_TRANSITIONS[from]]);
-  return STATUSES.filter((s) => allowed.has(s));
-}
-
-export class InvalidTransition extends Error {}
-
-/** Throw `InvalidTransition` if `from → to` is not allowed. */
-export function validateTransition(from: string, to: string): void {
-  if (!isValidStatus(to)) throw new InvalidTransition(`unknown status ${to}`);
-  if (!canTransition(from, to)) throw new InvalidTransition(`illegal transition ${from} → ${to}`);
-}

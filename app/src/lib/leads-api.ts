@@ -5,7 +5,6 @@
 // Override the base for other setups with `VITE_API_BASE`.
 
 import type { LeadStatus } from './lead-status';
-import type { FilterableOwner } from './filter-model';
 import type { Carrier } from './carrier';
 import type { BasemapName } from './basemap';
 import type { components } from './api-types';
@@ -24,33 +23,6 @@ type Schemas = components['schemas'];
 export type OwnerSummary = Omit<Schemas['OwnerSummary'], 'status'> & {
   status: LeadStatus;
 };
-
-/** Adapt an OwnerSummary to the shape the shared FilterModel predicate reads,
- *  filling the v3 rollups (which an older backend may omit) from what's
- *  present — so the Candidates list and the map narrow by the same logic. */
-export function ownerSummaryToFilterable(o: OwnerSummary): FilterableOwner {
-  return {
-    states: o.states,
-    counties: o.counties ?? [],
-    owner_kind: o.owner_kind,
-    distress_tier: o.distress_tier,
-    in_oz: o.in_oz,
-    in_qct: o.in_qct,
-    persistent_poverty: o.persistent_poverty,
-    score: o.score,
-    parcel_count: o.parcel_count,
-    total_assessed_value: o.total_assessed_value,
-    tower_count: o.tower_count,
-    solar_count: o.solar_count,
-    structure_count: o.structure_count ?? o.tower_count + o.solar_count,
-    structure_types:
-      o.structure_types ??
-      [...(o.tower_count > 0 ? ['tower'] : []), ...(o.solar_count > 0 ? ['solar'] : [])],
-    active_tower_count: o.active_tower_count ?? 0,
-    tallest_tower_height_m: o.tallest_tower_height_m ?? null,
-    carrier_count: o.carrier_count ?? 0,
-  };
-}
 
 export type ActivityDirection = 'outbound' | 'inbound';
 

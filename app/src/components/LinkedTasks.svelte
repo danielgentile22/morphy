@@ -3,7 +3,7 @@
   // page + tower detail so task context lives where you work. Fetches its tasks
   // server-side via the shared task-filter query (lead=… or tower=…).
   import { fetchTasks, type Task } from '../lib/tasks-api';
-  import { dashboardHash } from '../lib/nav';
+  import { SECTION_HASH } from '../lib/nav';
 
   let { query, heading = 'Tasks' }: { query: string; heading?: string } = $props();
 
@@ -31,7 +31,7 @@
     <p class="muted small">Loading…</p>
   {:else if items.length === 0}
     <p class="muted small">
-      No linked tasks. Add one in <a href={dashboardHash('tasks')}>Tasks</a>.
+      No linked tasks. Add one in <a href={SECTION_HASH.dashboard}>Tasks</a>.
     </p>
   {:else}
     <ul class="ltasks">

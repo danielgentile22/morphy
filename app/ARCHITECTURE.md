@@ -1,8 +1,9 @@
 # Map app — architecture
 
-The analytical map app for the ground-lease pilot. Catalog-driven: it
-binds to the preprocess output, never to a hardcoded state, so any state
-that composes appears with zero app changes.
+The analytical map app for the ground-lease pilot. Data-driven: it binds
+to the preprocess output (the composite `index.json` + per-state assets),
+never to a hardcoded state, so any state that composes appears with zero
+app changes.
 
 > Replaces the v1 Leaflet prototype (retired; in git history). Design locked in [ADR-030](../docs/adr/0030-map-app-v2-stack.md); shipped 2026-05-21.
 
@@ -13,8 +14,7 @@ that composes appears with zero app changes.
 | Framework | Svelte 5 (runes) + Vite 8 + TypeScript |
 | Map | MapLibre GL JS 5 + keyless raster basemaps (Carto Positron/Voyager/Dark Matter); optional MapTiler Satellite Hybrid when `VITE_MAPTILER_KEY` is set |
 | Parcel base layer | PMTiles vector tiles (tippecanoe-built) |
-| Lead filter / search | One shared lead-centric `FilterModel` over the slim owners index (top bar + "More" popover + owner/ASR search — Slice 6 / #52) |
-| Parcel base-layer filter | DuckDB-WASM over a slim per-state parquet (now UI-less — see below) |
+| Explore filter / search | One shared `FilterModel` over the slim owners index narrows both Explore lenses — map + ranked tower list (top bar + "More" popover + owner/ASR search — Slice 6 / #52) |
 | Tests | Vitest (unit) + Playwright (E2E, Chromium + WebKit) |
 
 ## Data contract
@@ -23,13 +23,16 @@ The app reads, from one origin under `/data/processed/composite/`:
 
 - `index.json` — the state list + bbox + counts (the `--app-assets`
   writer produces it). The app boots from this; no per-state probing.
-- `<fips>/catalog.json` — per-state layer/view manifest + field schema.
+  Per-state assets (towers, `parcels.pmtiles`, county boundaries, …) are
+  then addressed by convention.
 - `<fips>/summary.json` — headline counts for the summary card.
 
 `src/lib/schema.ts` pins the v3 composite field names. The
 schema-completeness contract (`tests/unit/schema-completeness.test.ts`)
-fails `npm run test:unit` if a future compose renames or drops a field —
-drift is caught in CI, not as a blank detail panel.
+reads each composite's `<fips>/catalog.json` layer schema and fails
+`npm run test:unit` if a future compose renames or drops a field — drift
+is caught in CI, not as a blank detail panel. (The app itself no longer
+parses `catalog.json` at runtime — #260.)
 
 A tower's `carriers` (the ULS spectrum licensee(s) #24 put on every tower —
 a list-of-struct, not a scalar) is special-cased rather than rendered as a
@@ -53,18 +56,20 @@ JSON-string, and the backend's already-parsed JSON forms.
 3. **County choropleth** — `<fips>/county_boundaries.geojson`, shaded by
    ARC distress tier at low zoom; parcels fade in and take over at z ≥ 10.
 
-## Lead filter & search (the primary triage surface — Slice 6 / #52)
+## Explore filter & search (Slice 6 / #52)
 
-Triage filtering is **lead-centric**: one shared `FilterModel` narrows **both**
-the structures-first map's tower layer **and** the Candidates list from the same
-state. The cluttered parcel-centric sidebar (acreage, raw "has tower", per-parcel
+Triage filtering is **lead-centric** but lives in **Explore**: one shared
+`FilterModel` narrows **both Explore lenses** — the structures-first map's tower
+layer **and** Explore's ranked tower list — from the same state. (The Leads
+worklist is a separate surface, sorted by score; it does not adopt this filter.)
+The cluttered parcel-centric sidebar (acreage, raw "has tower", per-parcel
 ranking) is retired in favour of a slim **top filter bar + "More" popover** + an
 **owner-name/ASR search box**.
 
 - `src/lib/filter-model.ts` — the deep module. A `FILTER_FIELDS` registry
   projects two ways from one source of truth: `composeOwnerWhere()` (a
   deterministic SQL string, **unit-tested byte-for-byte** — the query contract)
-  and `matchesOwner()` (the runtime predicate both surfaces use). Filter set:
+  and `matchesOwner()` (the runtime predicate both lenses use). Filter set:
   State (multi, **OR**), distress (ARC tier + OZ/QCT/persistent-poverty),
   structure type, score (**min threshold**), owner kind, portfolio size, total
   assessed value (range), county, tower height, active-only, structure count.
@@ -73,21 +78,17 @@ ranking) is retired in favour of a slim **top filter bar + "More" popover** + an
   the map narrows towers by) + the control options/extents + owner search.
 - **Map**: each tower carries its owner's `display_cluster_id` (`cid`, baked in
   `towers.ts`); `filterTowers()` keeps only towers whose `cid ∈ matchingClusterIds`,
-  then `setData`. **Candidates**: filters the same slim index (minus owners
+  then `setData`. **Ranked list**: narrows the same slim index (minus owners
   advanced off New) with the same predicate, ranked by score.
 - Owner-name search opens the matching Lead; ASR search flies the map to the tower.
 
-### Parcel base-layer filter (now UI-less)
+### Parcel base layer (PMTiles-only)
 
-The original DuckDB-WASM parcel filter still backs the parcel base layer but no
-longer has a UI surface (the parcel-centric `FilterPanel`/`SearchPanel`/`TopList`
-were removed in Slice 6). It range-queries `<fips>/parcels_attr.parquet`:
-
-- `src/lib/query.ts` — `composeWhere` turns the parcel filter state into SQL
-  (unit-tested byte-for-byte; string literals escaped, numbers validated).
-- A filter → DuckDB count + matching parcel ids → batched `setFeatureState`
-  → the parcels layer fades non-matches.
-- Clicking any parcel fetches its full row from DuckDB to fill the panel.
+The parcel base layer is the PMTiles vector tiles alone (12 attributes baked in
+for instant click/paint). The original DuckDB-WASM parcel filter over a slim
+per-state parquet — and its parcel-centric sidebar (search + top-list) — were
+retired in Slice 6; the owner `FilterModel` above replaced them. (DuckDB-WASM
+remains only as the tower-load fallback in `towers.ts`.)
 
 ## Serving
 
@@ -140,12 +141,12 @@ app/
 │   ├── App.svelte           shell + hash router, boot, URL sync, shortcuts
 │   ├── components/          MapView + TopFilterBar + DetailsPanel + the
 │                            map-layer panels + the Lead surfaces
-│                            (Candidates / MyLeads / LeadPage / SignIn)
+│                            (ExploreList / Leads / MyLeads / LeadPage / SignIn)
 │   └── lib/                 catalog, schema, data, stores (Svelte state),
-│                            duckdb, query, filters, facets, url, geo,
-│                            format, palette, towers, owner-cluster,
-│                            filter-model (+ .svelte store), owners-filter-index,
-│                            leads-api, leads-store, auth-store, lead-status
+│                            duckdb, filters, url, geo, format, palette,
+│                            towers, owner-cluster, filter-model (+ .svelte
+│                            store), owners-filter-index, leads-api,
+│                            leads-store, auth-store, lead-status
 └── tests/
     ├── unit/                Vitest — pure logic
     └── e2e/                 Playwright — against the built app

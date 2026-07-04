@@ -163,19 +163,3 @@ export function matchesTask(t: Task, f: TaskFilter, today: string): boolean {
   }
   return true;
 }
-
-/** How many filter controls are currently constraining the result. */
-export function activeTaskFilterCount(f: TaskFilter): number {
-  return TASK_FILTER_FIELDS.reduce((n, field) => n + (field.isActive(f) ? 1 : 0), 0);
-}
-
-/** The Dashboard Tasks digest rule (#111, D9): not done, AND either due
- *  today/tomorrow OR high-priority (regardless of date). `today` injected
- *  (ISO) for purity. */
-export function isTaskInDigest(t: Task, today: string): boolean {
-  if (t.status === 'done') return false;
-  if (t.priority === 'high') return true;
-  if (t.due_date == null) return false;
-  const tomorrow = addDays(today, 1);
-  return t.due_date === today || t.due_date === tomorrow;
-}

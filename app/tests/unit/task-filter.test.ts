@@ -4,8 +4,6 @@ import {
   matchesTask,
   taskQueryString,
   dueBeforeFor,
-  activeTaskFilterCount,
-  isTaskInDigest,
   type TaskFilter,
 } from '../../src/lib/task-filter';
 import type { Task } from '../../src/lib/tasks-api';
@@ -41,7 +39,6 @@ describe('task-filter (UI overhaul P2 / #110)', () => {
   it('empty filter matches everything and has no query string', () => {
     expect(taskQueryString(emptyTaskFilter(), TODAY)).toBe('');
     expect(matchesTask(task(), emptyTaskFilter(), TODAY)).toBe(true);
-    expect(activeTaskFilterCount(emptyTaskFilter())).toBe(0);
   });
 
   // ── byte-for-byte query string (the canonical API contract) ────────────────
@@ -104,20 +101,9 @@ describe('task-filter (UI overhaul P2 / #110)', () => {
     expect(taskQueryString(f, TODAY)).toBe('due_before=2026-06-05');
   });
 
-  // ── Dashboard Tasks digest rule (#111) ──────────────────────────────────────
-  it('digest = due today/tomorrow OR high-priority, never done', () => {
-    expect(isTaskInDigest(task({ due_date: TODAY }), TODAY)).toBe(true);
-    expect(isTaskInDigest(task({ due_date: '2026-06-07' }), TODAY)).toBe(true); // tomorrow
-    expect(isTaskInDigest(task({ due_date: '2026-06-09' }), TODAY)).toBe(false); // later
-    expect(isTaskInDigest(task({ priority: 'high', due_date: null }), TODAY)).toBe(true);
-    expect(isTaskInDigest(task({ priority: 'high', status: 'done' }), TODAY)).toBe(false);
-    expect(isTaskInDigest(task({ due_date: null }), TODAY)).toBe(false);
-  });
-
   it('combines filters with AND', () => {
     const f = filter({ status: 'open', priority: 'high', q: 'michael' });
     expect(matchesTask(task({ status: 'open', priority: 'high' }), f, TODAY)).toBe(true);
     expect(matchesTask(task({ status: 'done', priority: 'high' }), f, TODAY)).toBe(false);
-    expect(activeTaskFilterCount(f)).toBe(3);
   });
 });

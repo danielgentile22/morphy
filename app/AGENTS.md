@@ -11,7 +11,8 @@ data production (that's `scripts/preprocess/`).
 - `src/App.svelte`, `src/main.ts` — app shell + boot.
 - `src/lib/filter-model.ts` — the deep module: one `FILTER_FIELDS` registry →
   `composeOwnerWhere()` (SQL string, unit-tested byte-for-byte) + `matchesOwner()`
-  (runtime predicate). Both the map's tower layer and the Candidates list read it.
+  (runtime predicate). Both Explore lenses — the map's tower layer and Explore's
+  ranked tower list — narrow by it. (Leads sorts by score, not this filter.)
 - `src/lib/schema.ts` — pins the v3 composite field names (the data contract).
 - `src/lib/*.svelte.ts` — runes stores (auth, leads, filter-model, stores).
 - `src/lib/leads-api.ts` (auth via `auth-store.svelte.ts` → `login`/`logout`/`fetchMe`),
@@ -27,7 +28,7 @@ data production (that's `scripts/preprocess/`).
 - `carriers` is a list-of-struct, special-cased via `parseCarriers` + the shared
   `CarrierList.svelte` on both tower surfaces. An empty carrier list is the common
   case (~6–17% coverage) — render the empty state, don't treat it as an error.
-- Filter logic lives in `filter-model.ts` only; don't fork per-surface filtering.
+- Filter logic lives in `filter-model.ts` only; don't fork it per Explore lens.
 - **`src/lib/api-types.ts` is generated — never hand-edit it** (PRD #133): produced
   from `backend/openapi.json` by `npm run generate:api`, and the API clients derive
   their types from its `components['schemas']`. Backend model changed? Regenerate

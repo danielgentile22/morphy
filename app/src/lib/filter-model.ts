@@ -1,16 +1,18 @@
 /**
  * The shared, lead-centric FilterModel (Slice 6 / #52).
  *
- * ONE filter state narrows BOTH surfaces: the structures-first map's tower
- * layer and the Candidates list. To guarantee they can't drift, every filter
- * is described once in `FILTER_FIELDS` and projected two ways:
+ * ONE filter state narrows BOTH Explore lenses: the structures-first map's
+ * tower layer and Explore's ranked tower list. (The Leads worklist is a
+ * separate surface, sorted by score — it does not adopt this filter.) To
+ * guarantee the two lenses can't drift, every filter is described once in
+ * `FILTER_FIELDS` and projected two ways:
  *
  *   - `composeOwnerWhere(model)` → a deterministic SQL WHERE-clause body over
- *     the owners-index columns. This is the canonical query contract — the
- *     unit tests assert it byte-for-byte (mirroring the parcel-layer `query.ts`).
- *   - `matchesOwner(owner, model)` → the runtime predicate. The map builds the
- *     set of matching `display_cluster_id`s with it (then keeps only those
- *     towers); the Candidates list filters its owner rows with it.
+ *     the owners-index columns — the canonical owner-filter query contract,
+ *     asserted byte-for-byte by the unit tests.
+ *   - `matchesOwner(owner, model)` → the runtime predicate both Explore lenses
+ *     use: the map builds the set of matching `display_cluster_id`s with it
+ *     (then keeps only those towers); the ranked tower list narrows by it too.
  *
  * Both come from the same `FILTER_FIELDS` registry, so the SQL and the
  * predicate are the same logic by construction (a consistency test pins it).
@@ -28,9 +30,8 @@
 
 import { sqlNumber, sqlString } from './filters';
 
-/** The owner-index fields the predicate reads. Both the slim client filter
- *  index (`owners_filter.json`) and the backend `OwnerSummary` satisfy this,
- *  so one predicate filters both surfaces. */
+/** The owner-index fields the predicate reads — the slim client filter index
+ *  (`owners_filter.json`) that powers the Explore filter satisfies this shape. */
 export interface FilterableOwner {
   states: string[];
   counties: string[];

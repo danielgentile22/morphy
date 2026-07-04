@@ -62,15 +62,6 @@ export function towerOwnerLabel(owner: string | null | undefined): string {
   return o || 'Unknown landowner';
 }
 
-/** Lead key for a clicked tower, or '' when its landowner is un-clusterable
- *  (blank name) — the caller treats '' as "no Lead to open". Returns the
- *  builder-baked `cid` (the canonical name+state key, ADR-075); never recompute
- *  it from the owner name here — the client's name-only hash would not match the
- *  name+state owners index and would 404 the Lead. */
-export function resolveTowerLeadKey(props: Pick<TowerProps, 'cid'>): string {
-  return props.cid;
-}
-
 /** Hover preview text: owner, ASR, height, state (acceptance criterion). */
 export function towerHoverHtml(props: TowerProps): string {
   const ft = heightFeet(props.height_m);

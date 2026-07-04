@@ -17,8 +17,14 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ENTITY_SCHEMAS, type EntityKind } from '../../src/lib/schema';
-import { parseCatalog } from '../../src/lib/catalog';
 import { hasValue } from '../../src/lib/format';
+
+// The app no longer parses catalog.json at runtime (#260), but this guard
+// still reads each composite's layer schema straight from the JSON. Minimal
+// shape: `layers` is keyed by layer name, each carrying a field->type schema.
+interface RawCatalog {
+  layers: Record<string, { schema: Record<string, string> }>;
+}
 
 // Vitest runs from app2/; the composite tree is one level up under data/.
 const COMPOSITE = resolve(process.cwd(), '../data/processed/composite') + '/';
@@ -50,14 +56,14 @@ for (const fips of ['05', '30']) {
       it.skip(`composite/${fips} is not on disk`, () => {});
       return;
     }
-    const catalog = parseCatalog(readJson(`${fips}/catalog.json`));
+    const catalog = readJson(`${fips}/catalog.json`) as RawCatalog;
 
     for (const [kind, src] of Object.entries(SOURCES) as Array<
       [EntityKind, (typeof SOURCES)[EntityKind]]
     >) {
       const schema = ENTITY_SCHEMAS[kind];
       if (!schema) continue;
-      const catalogLayer = catalog.layers.find((l) => l.name === src.layer);
+      const catalogLayer = src.layer ? catalog.layers[src.layer] : undefined;
       const fc = readJson(`${fips}/${src.geojson}`) as { features: Feature[] };
       // The whole file, not a head-slice: source-gated fields (e.g. the
       // FCC-only "ASR number" after the M-i split, #215) can be null across

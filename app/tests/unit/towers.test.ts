@@ -4,7 +4,6 @@ import {
   filterTowers,
   heightFeet,
   towerOwnerLabel,
-  resolveTowerLeadKey,
   towerHoverHtml,
   type TowerProps,
 } from '../../src/lib/towers';
@@ -162,18 +161,6 @@ describe('towerOwnerLabel', () => {
     expect(towerOwnerLabel('')).toBe('Unknown landowner');
     expect(towerOwnerLabel('   ')).toBe('Unknown landowner');
     expect(towerOwnerLabel(null)).toBe('Unknown landowner');
-  });
-});
-
-describe('resolveTowerLeadKey', () => {
-  it('returns the builder-baked cid (the name+state key), not a name recompute', () => {
-    // The authoritative Lead key rides the feature as `cid`; the resolver must
-    // pass it through so a click opens the same Lead the name+state owners index
-    // holds. Recomputing from the owner name (the old name-only hash) would 404.
-    expect(resolveTowerLeadKey({ cid: '209af3ad593f' })).toBe('209af3ad593f');
-  });
-  it('is empty when the landowner is un-clusterable (no Lead to open)', () => {
-    expect(resolveTowerLeadKey({ cid: '' })).toBe('');
   });
 });
 

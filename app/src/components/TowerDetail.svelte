@@ -15,6 +15,7 @@
   import { app } from '../lib/stores.svelte';
   import { feet } from '../lib/lead-format';
   import { leadHash, isUnowned, SECTION_HASH } from '../lib/nav';
+  import { emptyTaskFilter, taskQueryString } from '../lib/task-filter';
   import { archivedAntennas } from '../lib/archived-antennas.svelte';
   import {
     fetchAntenna,
@@ -319,8 +320,12 @@
       </span>
     </section>
 
-    <!-- Tower-linked tasks (#110). -->
-    <LinkedTasks query={`tower=${encodeURIComponent(asr)}`} heading="Tasks for this tower" />
+    <!-- Tower-linked tasks (#110). The query goes through the task-filter
+         registry so its byte-for-byte contract test guards the string. -->
+    <LinkedTasks
+      query={taskQueryString({ ...emptyTaskFilter(), towerAsr: asr }, '')}
+      heading="Tasks for this tower"
+    />
   {/if}
 </div>
 

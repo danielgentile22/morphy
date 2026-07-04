@@ -12,6 +12,7 @@
   import type { ContactAttempt, Holding, Structure } from '../lib/leads-api';
   import type { OwnerFilterRecord } from '../lib/owners-filter-index';
   import { SECTION_HASH, towerHash } from '../lib/nav';
+  import { emptyTaskFilter, taskQueryString } from '../lib/task-filter';
   import MiniMap from './MiniMap.svelte';
   import CarrierList from './CarrierList.svelte';
   import LinkedTasks from './LinkedTasks.svelte';
@@ -426,8 +427,12 @@
           {/if}
         </section>
 
-        <!-- Owner-linked tasks (#110). -->
-        <LinkedTasks query={`lead=${encodeURIComponent(displayClusterId)}`} heading="Tasks for this owner" />
+        <!-- Owner-linked tasks (#110). The query goes through the task-filter
+             registry so its byte-for-byte contract test guards the string. -->
+        <LinkedTasks
+          query={taskQueryString({ ...emptyTaskFilter(), leadClusterId: displayClusterId }, '')}
+          heading="Tasks for this owner"
+        />
 
         <section class="card">
           <h3>Notes</h3>
