@@ -29,28 +29,7 @@
  */
 
 import { sqlNumber, sqlString } from './filters';
-
-/** The owner-index fields the predicate reads — the slim client filter index
- *  (`owners_filter.json`) that powers the Explore filter satisfies this shape. */
-export interface FilterableOwner {
-  states: string[];
-  counties: string[];
-  owner_kind: string;
-  distress_tier: string;
-  in_oz: boolean;
-  in_qct: boolean;
-  persistent_poverty: boolean;
-  score: number;
-  parcel_count: number;
-  total_assessed_value: number;
-  tower_count: number;
-  solar_count: number;
-  structure_count: number;
-  structure_types: string[];
-  active_tower_count: number;
-  tallest_tower_height_m: number | null;
-  carrier_count: number;
-}
+import type { OwnerFeatures } from './owner-features';
 
 export interface FilterModel {
   /** Anchor-state abbreviations; OR (an owner with a holding in ANY matches). */
@@ -109,7 +88,7 @@ interface FilterField {
   /** SQL WHERE fragment over the owner-index column, or null when inactive. */
   readonly toSQL: (m: FilterModel) => string | null;
   /** Runtime predicate fragment. Only consulted when `isActive`. */
-  readonly test: (o: FilterableOwner, m: FilterModel) => boolean;
+  readonly test: (o: OwnerFeatures, m: FilterModel) => boolean;
 }
 
 /** `[a, b, c]` SQL list literal (DuckDB) — used by the OR/`list_has_any` specs. */
@@ -121,7 +100,7 @@ function sqlList(values: string[]): string {
 function inSetField(
   id: keyof FilterModel,
   column: string,
-  get: (o: FilterableOwner) => string,
+  get: (o: OwnerFeatures) => string,
 ): FilterField {
   return {
     id,
@@ -139,7 +118,7 @@ function inSetField(
 function listOverlapField(
   id: keyof FilterModel,
   column: string,
-  get: (o: FilterableOwner) => string[],
+  get: (o: OwnerFeatures) => string[],
 ): FilterField {
   return {
     id,
@@ -160,7 +139,7 @@ function boolField(
   id: keyof FilterModel,
   column: string,
   sql: string,
-  get: (o: FilterableOwner) => boolean,
+  get: (o: OwnerFeatures) => boolean,
 ): FilterField {
   return {
     id,
@@ -175,7 +154,7 @@ function minField(
   id: keyof FilterModel,
   column: string,
   noOpAt: number,
-  get: (o: FilterableOwner) => number,
+  get: (o: OwnerFeatures) => number,
 ): FilterField {
   return {
     id,
@@ -192,7 +171,7 @@ function minField(
 function rangeField(
   id: keyof FilterModel,
   column: string,
-  get: (o: FilterableOwner) => number,
+  get: (o: OwnerFeatures) => number,
 ): FilterField {
   return {
     id,
@@ -247,7 +226,7 @@ export function composeOwnerWhere(m: FilterModel): string {
 }
 
 /** True when this owner passes every active filter. Empty model ⇒ all owners. */
-export function matchesOwner(o: FilterableOwner, m: FilterModel): boolean {
+export function matchesOwner(o: OwnerFeatures, m: FilterModel): boolean {
   for (const f of FILTER_FIELDS) {
     if (f.isActive(m) && !f.test(o, m)) return false;
   }

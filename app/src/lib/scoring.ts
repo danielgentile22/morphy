@@ -17,6 +17,8 @@
  * preset re-ranks every surface consistently.
  */
 
+import type { OwnerFeatures } from './owner-features';
+
 const TIER_RANK: Record<string, number> = {
   '': 0,
   transitional: 1,
@@ -104,19 +106,21 @@ export interface ScoreExtents {
   carrierMax: number;
 }
 
-/** The owner fields the scorer reads. */
-export interface ScorableOwner {
-  distress_tier: string;
-  in_oz: boolean;
-  in_qct: boolean;
-  persistent_poverty: boolean;
-  total_assessed_value: number;
-  parcel_count: number;
-  tower_count: number;
-  active_tower_count: number;
-  tallest_tower_height_m: number | null;
-  carrier_count: number;
-}
+/** The owner columns the scorer reads — a view of the shared `OwnerFeatures`
+ *  vocabulary, so the compiler forces the two to agree. */
+export type ScorableOwner = Pick<
+  OwnerFeatures,
+  | 'distress_tier'
+  | 'in_oz'
+  | 'in_qct'
+  | 'persistent_poverty'
+  | 'total_assessed_value'
+  | 'parcel_count'
+  | 'tower_count'
+  | 'active_tower_count'
+  | 'tallest_tower_height_m'
+  | 'carrier_count'
+>;
 
 function norm(value: number, max: number): number {
   return max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;

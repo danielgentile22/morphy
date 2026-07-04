@@ -11,15 +11,15 @@ import {
   summarizeFilterModel,
   FILTER_FIELDS,
   type FilterModel,
-  type FilterableOwner,
 } from '../../src/lib/filter-model';
+import type { OwnerFeatures } from '../../src/lib/owner-features';
 
 function model(overrides: Partial<FilterModel>): FilterModel {
   return { ...emptyFilterModel(), ...overrides };
 }
 
 /** A fully-populated owner so a single active filter is what discriminates. */
-function owner(overrides: Partial<FilterableOwner> = {}): FilterableOwner {
+function owner(overrides: Partial<OwnerFeatures> = {}): OwnerFeatures {
   return {
     states: ['AR'],
     counties: ['05119'],

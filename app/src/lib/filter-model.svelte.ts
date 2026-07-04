@@ -21,6 +21,7 @@ import {
   type FilterModel,
 } from './filter-model';
 import { loadOwnersFilterIndex, type OwnerFilterRecord } from './owners-filter-index';
+import { computeOwnerExtents } from './owner-features';
 import { DISTRESS_TIERS } from './palette';
 
 type Loadable = 'idle' | 'loading' | 'ready' | 'error';
@@ -79,22 +80,20 @@ class FilterModelStore {
     return [...set].sort();
   });
 
+  /** Per-column maxima over the loaded index — the single O(N) pass shared by
+   *  the filter sliders (below) and the scorer's normalization (scoring-store
+   *  reads this via `filterModel.ownerExtents`). */
+  ownerExtents = $derived.by(() => computeOwnerExtents(this.owners));
+
+  /** Slider bounds for the range/min controls — the shared extents rounded up
+   *  to whole numbers for tidy slider maxima. */
   extents = $derived.by<FilterExtents>(() => {
-    let assessed = 0;
-    let portfolio = 1;
-    let height = 0;
-    let structures = 1;
-    for (const o of this.owners) {
-      if (o.total_assessed_value > assessed) assessed = o.total_assessed_value;
-      if (o.parcel_count > portfolio) portfolio = o.parcel_count;
-      if ((o.tallest_tower_height_m ?? 0) > height) height = o.tallest_tower_height_m ?? 0;
-      if (o.structure_count > structures) structures = o.structure_count;
-    }
+    const e = this.ownerExtents;
     return {
-      assessedMax: Math.ceil(assessed),
-      portfolioMax: portfolio,
-      heightMax: Math.ceil(height),
-      structureCountMax: structures,
+      assessedMax: Math.ceil(e.assessedMax),
+      portfolioMax: e.portfolioMax,
+      heightMax: Math.ceil(e.heightMax),
+      structureCountMax: e.structureCountMax,
     };
   });
 

@@ -17,8 +17,8 @@ import {
   matchesOwner,
   emptyFilterModel,
   type FilterModel,
-  type FilterableOwner,
 } from '../../src/lib/filter-model';
+import type { OwnerFeatures } from '../../src/lib/owner-features';
 
 interface FilterCase {
   name: string;
@@ -27,7 +27,7 @@ interface FilterCase {
   expected_ids: string[];
 }
 interface FilterContract {
-  owners: (FilterableOwner & { id: string })[];
+  owners: (OwnerFeatures & { id: string })[];
   cases: FilterCase[];
 }
 
