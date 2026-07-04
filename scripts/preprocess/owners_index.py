@@ -275,13 +275,29 @@ def _build_key_migration(df: pd.DataFrame) -> dict[str, list[dict]]:
     pairs["state_fips"] = pairs["state_fips"].astype(str).str.zfill(2)
     pairs = pairs[(pairs["_legacy_cluster"] != "") & (pairs["_cluster"] != "")]
     pairs = pairs.drop_duplicates()
-    out: dict[str, list[dict]] = {}
+    # Group each old key's targets by *new* key. A genuine cross-state SPLIT has a
+    # distinct new key per state (state disambiguates → keep it). An aliased
+    # towerco's new key is state-independent, so many states yield the SAME new
+    # key — that is one destination, not a split: collapse to a single entry
+    # (state "" — it can't disambiguate). Emitting it once per state would make
+    # the remap treat repeated identical targets as a split and DUPLICATE the
+    # lead's rows on every run (ADR-075 regression: the alias key spans states).
+    states_by_pair: dict[str, dict[str, set[str]]] = {}
     for old, new, st in zip(pairs["_legacy_cluster"], pairs["_cluster"], pairs["state_fips"]):
-        entries = out.setdefault(str(old), [])
-        rec = {"new": str(new), "state": str(st)}
-        if rec not in entries:
-            entries.append(rec)
-    return {k: sorted(v, key=lambda r: (r["new"], r["state"])) for k, v in sorted(out.items())}
+        states_by_pair.setdefault(str(old), {}).setdefault(str(new), set()).add(str(st))
+    out: dict[str, list[dict]] = {}
+    for old, by_new in states_by_pair.items():
+        entries = [
+            {"new": new, "state": next(iter(states)) if len(states) == 1 else ""}
+            for new, states in by_new.items()
+        ]
+        # Drop a pure-identity entry (old maps only to itself — an aliased owner
+        # whose lead is ALREADY under the final key): nothing to remap, and
+        # leaving it in would loop the remap on that key.
+        if len(entries) == 1 and entries[0]["new"] == old:
+            continue
+        out[old] = sorted(entries, key=lambda r: (r["new"], r["state"]))
+    return dict(sorted(out.items()))
 
 
 class CrossStateOwnerResolver:

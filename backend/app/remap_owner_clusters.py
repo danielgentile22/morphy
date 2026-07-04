@@ -16,9 +16,14 @@ Policy (conservative — never lose data):
   * **many → one** (aliased towerco fragments that now MERGE): for a Lead PK
     collision, keep the most-advanced status + concatenate notes; attempts just
     repoint (their id is the PK, no collision).
-  * **unmapped** (an id not in the map — a genuine orphan, or already a new-style
-    key): left untouched. New keys are never map *keys*, so a second run is a
-    **no-op** — the remap is idempotent + safe to re-run.
+  * **unmapped** (an id not in the map — a genuine orphan, or an already-final
+    key): left untouched.
+
+Idempotency: repeated targets are collapsed to distinct new keys and a
+self-only entry is treated as identity, so a multi-state alias key (whose new
+key is the same across states) repoints once and never re-duplicates — a second
+run is a no-op. (The sidecar builder also drops these, ADR-075; this is the
+belt to that suspenders.)
 
 Run once at deploy, after the fresh index + sidecar are in place:
 
@@ -70,9 +75,19 @@ def build_expander(mapping: dict[str, list[dict]]) -> Expander:
     return lambda old: table.get(old, [(old, "")])
 
 
+def _distinct_new(cid: str, expand: Expander) -> list[str]:
+    """The DISTINCT new keys ``cid`` maps to, order-stable. A multi-state alias
+    key repeats the same new key once per state; collapsing here keeps the remap
+    a repoint (one destination), never a bogus duplication."""
+    return list(dict.fromkeys(new for new, _ in expand(cid)))
+
+
 def _is_identity(old: str, targets: list[tuple[str, str]]) -> bool:
-    """True when the id maps only to itself (unmapped) — nothing to do."""
-    return len(targets) == 1 and targets[0][0] == old
+    """True when the id maps only to itself (unmapped, or an already-final alias
+    key) — nothing to do. Dedups first, so a self-map repeated per state counts
+    as identity too."""
+    distinct = list(dict.fromkeys(new for new, _ in targets))
+    return distinct == [old]
 
 
 # ── pure planners (no DB — the tested policy surface) ────────────────────────
@@ -80,11 +95,11 @@ def _is_identity(old: str, targets: list[tuple[str, str]]) -> bool:
 
 def plan_attempt_targets(cid: str, expand: Expander) -> list[str]:
     """The new cluster id(s) a ContactAttempt on ``cid`` should live under.
-    Empty ⇒ unmapped (leave the row as-is)."""
-    targets = expand(cid)
-    if _is_identity(cid, targets):
+    Empty ⇒ unmapped / self-only (leave the row as-is). Distinct new keys only:
+    a repeated target (multi-state alias) must never spawn a duplicate row."""
+    if _is_identity(cid, expand(cid)):
         return []
-    return [new for new, _ in targets]
+    return _distinct_new(cid, expand)
 
 
 def plan_leads(leads: list[dict], expand: Expander) -> tuple[list[dict], int]:
@@ -95,7 +110,10 @@ def plan_leads(leads: list[dict], expand: Expander) -> tuple[list[dict], int]:
     advanced status + concatenated notes). Returns ``(rows, n_merged)``."""
     buckets: dict[tuple[int, str], list[dict]] = {}
     for lead in leads:
-        for new_cid, _state in expand(lead["display_cluster_id"]):
+        # Distinct new keys only — a multi-state alias repeats one destination;
+        # appending the lead per state would collide it with itself and force a
+        # spurious "merge" (and, run to run, keep churning the same row).
+        for new_cid in _distinct_new(lead["display_cluster_id"], expand):
             buckets.setdefault((lead["tenant_id"], new_cid), []).append(lead)
     out: list[dict] = []
     merged = 0
@@ -171,7 +189,8 @@ _OV_COLS = ("tenant_id", "source_cluster_id", "target_cluster_id")
 
 def remap(session: Session, mapping: dict[str, list[dict]], *, dry_run: bool = False) -> dict:
     """Apply the old→new key map to every lead-state table. Returns a stats dict.
-    Idempotent (new keys are never map keys). Commits unless ``dry_run``."""
+    Idempotent — repeated/self targets collapse to a single repoint, so re-runs
+    are no-ops. Commits unless ``dry_run``."""
     expand = build_expander(mapping)
     keys = set(mapping)
     stats = {

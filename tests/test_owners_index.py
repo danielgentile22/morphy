@@ -256,6 +256,42 @@ def test_migration_map_records_old_name_only_to_new_name_state_keys():
     }
 
 
+def test_migration_map_collapses_multistate_alias_no_self_or_dup_targets():
+    # ADR-075 regression (#221 follow-up): a curated towerco's cross-state key is
+    # state-independent (the alias), so the SAME new key arises in every state it
+    # owns land in. The map must collapse those to ONE target (a repoint) — not
+    # one per state — else the deploy remap treats the repeats as a split and
+    # DUPLICATES the lead's rows every run. An owner already AT the final alias
+    # key (old == new) must be dropped from the map entirely (no self-loop).
+    from preprocess.cluster import cross_state_owner_key, legacy_cross_state_owner_key
+
+    resolver = CrossStateOwnerResolver(fips_to_abbr=ABBR)
+    resolver.resolve(
+        pd.DataFrame(
+            [
+                _parcel("AMERICAN TOWER CORP", "05", score=0.5),  # curated alias, 2 states
+                _parcel("AMERICAN TOWER CORP", "54", score=0.5),
+                _parcel("SPLIT OWNER", "05", score=0.5),  # genuine split, 2 states
+                _parcel("SPLIT OWNER", "54", score=0.5),
+            ]
+        )
+    )
+    mig = resolver._last_migration
+    # (a) no entry maps to the same new key twice (would duplicate on remap)
+    for old, news in mig.items():
+        nk = [e["new"] for e in news]
+        assert len(nk) == len(set(nk)), f"{old} has duplicate targets {nk}"
+    # (b) no new key is itself a map key — no transitive/self loop → idempotent
+    new_keys = {e["new"] for ns in mig.values() for e in ns}
+    assert new_keys.isdisjoint(set(mig)), "a new key is also an old key — remap would loop"
+    # (c) the aliased towerco (old == new) is dropped, not a self-loop entry
+    at = cross_state_owner_key("AMERICAN TOWER CORP", "05")
+    assert at not in mig
+    # (d) the genuine split still fans out to two distinct per-state keys
+    split_old = legacy_cross_state_owner_key("OWNER SPLIT")
+    assert len({e["new"] for e in mig[split_old]}) == 2
+
+
 def test_write_owners_index_emits_migration_sidecar(tmp_path):
     # The sidecar is written next to the index, carries the schema version + map,
     # and the served owners_index.json never leaks the map.

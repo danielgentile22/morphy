@@ -160,3 +160,50 @@ def test_remap_migrates_override_edges(new_session: Callable[[], Session]):
     check = new_session()
     rows = check.query(OwnerClusterOverride).all()
     assert [(r.source_cluster_id, r.target_cluster_id) for r in rows] == [("S05", "T05")]
+
+
+# ── ADR-075 regression: multi-state alias keys (#221 follow-up) ───────────────
+# A curated towerco's cross-state key is state-independent, so the SAME new key
+# recurs once per state it owns land in. The map lists it once per state; the
+# remap must repoint that once (never treat the repeats as a split and DUPLICATE
+# the row), and a self-map (old==new) is a no-op. Before this, American Tower /
+# SBA leads re-cloned their attempts on every deploy run.
+
+
+def test_plan_attempt_targets_collapses_repeated_alias_target():
+    expand = build_expander({"sba": [{"new": "AT", "state": "05"}, {"new": "AT", "state": "54"}]})
+    assert plan_attempt_targets("sba", expand) == ["AT"]  # one repoint, not ["AT","AT"]
+
+
+def test_plan_attempt_targets_self_map_is_noop():
+    expand = build_expander({"K": [{"new": "K", "state": "05"}, {"new": "K", "state": "54"}]})
+    assert plan_attempt_targets("K", expand) == []
+
+
+def test_plan_leads_self_map_does_not_self_merge():
+    expand = build_expander({"K": [{"new": "K", "state": "05"}, {"new": "K", "state": "54"}]})
+    rows, merged = plan_leads(
+        [{"tenant_id": 1, "display_cluster_id": "K", "status": "researching", "notes": ""}], expand
+    )
+    assert merged == 0
+    assert [r["display_cluster_id"] for r in rows] == ["K"]
+
+
+def test_remap_multistate_alias_never_duplicates(new_session: Callable[[], Session]):
+    s = new_session()
+    s.add(Lead(tenant_id=1, display_cluster_id="AT", status="researching", notes=""))
+    s.add(
+        ContactAttempt(
+            tenant_id=1, display_cluster_id="AT", channel="status", outcome="new→researching"
+        )
+    )
+    s.commit()
+    # AT owns land in two states → its alias key repeats; a naive remap would
+    # clone the attempt once per state, every run.
+    mapping = {"AT": [{"new": "AT", "state": "05"}, {"new": "AT", "state": "54"}]}
+    stats = remap(s, mapping)
+    assert stats["attempts_duplicated"] == 0 and stats["leads_merged"] == 0
+    remap(new_session(), mapping)  # second pass — still no growth
+    check = new_session()
+    assert check.query(ContactAttempt).count() == 1  # not 2, 3, ...
+    assert check.query(Lead).count() == 1
