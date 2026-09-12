@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-07-03 (data-audit follow-through). Latest changes: ADR-070–076 added — the seven HITL decisions from the 2026-06 data audit (assessed value, solar dedup, FAA↔ASR, score reweight, carrier rearchitecture, owner identity, owner-type classifier), all Accepted with implementation pending; ADR-073 amends ADR-058's default weights. Earlier this day: ADR-007 (PySide6 pin) retired with the Qt puller (#240); ADR-069 (PRD #130) was the prior newest.
 
-Index of every locked-in design choice in the repo. Per-ADR content lives under [`docs/adr/`](./adr/). New ADRs go straight there ([CLAUDE.md §9](../CLAUDE.md)).
+Index of every locked-in design choice in the repo. Per-ADR content lives under [`docs/adr/`](./adr/). New ADRs go straight there ([CLAUDE.md §1](../CLAUDE.md)).
 
 > When in doubt about a design call, open the ADR before reopening the debate. If the entry is here, the decision is locked unless the *context* materially changes.
 
