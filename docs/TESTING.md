@@ -279,7 +279,7 @@ production**; only the LLM lease-extraction eval (§11.3,
   lead CRUD + status ladder, tasks, owner merge, scoring presets,
   per-request credential authority, the Ask-Claude SSE endpoint, and more.
 - **Layout:** flat `backend/tests/test_*.py` (one file per surface) plus
-  the `isolation/` subdir below. See `backend/tests/` + `backend/AGENTS.md`.
+  the `isolation/` subdir below. See `backend/tests/` + `backend/CLAUDE.md`.
 
 ### 11.2 Multi-tenancy isolation — shipped
 

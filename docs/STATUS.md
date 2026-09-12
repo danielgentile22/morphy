@@ -99,7 +99,7 @@ disk) — then **Slice B** (vendor inference). The 4-week outcome-bar clock star
 
 The backend + UI test suites have shipped (backend `LeadStore` / multi-tenancy isolation /
 status-machine / merge-split, the frontend `FilterModel`/Vitest suites) — see
-[TESTING.md](./TESTING.md) and [backend/AGENTS.md](../backend/AGENTS.md).
+[TESTING.md](./TESTING.md) and [backend/CLAUDE.md](../backend/CLAUDE.md).
 
 ---
 

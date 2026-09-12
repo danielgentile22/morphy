@@ -9,7 +9,7 @@ preprocess → verify → deploy) with tests. The UX principles below
 (walkthroughs, attention panel, freshness surfacing, no hand-placed
 files) carried over into the TUI; the Qt widget specifics did not.
 Current intent-layer node:
-[`scripts/data_tui/AGENTS.md`](../scripts/data_tui/AGENTS.md).
+[`scripts/data_tui/CLAUDE.md`](../scripts/data_tui/CLAUDE.md).
 
 > **Phase 1 product (2026-05-25):** the puller stays a dev-side tool
 > in Phase 1 — the co-founder sees freshness state inside the product
