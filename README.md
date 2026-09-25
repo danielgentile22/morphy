@@ -1,4 +1,4 @@
-# pilot
+# morphy
 
 **Cell-tower ground-lease renegotiation analytics.** Joins tower locations to parcel records to economic-distress overlays, then layers carrier identification + lease document storage + LLM-based extraction + triage workflow into a co-founder-facing product. **Phase 1** covers four committed anchor states (AR + MT + FL + WV) with freestanding towers (NC deferred to a Phase-1 stretch candidate); **Phase 2** adds rooftop installations + operational scale.
 
@@ -136,7 +136,7 @@ See [docs/SCOPE.md §2](docs/SCOPE.md) for why these anchors, and [docs/STATUS.m
 ## Repository layout
 
 ```
-pilot/
+morphy/
 ├── README.md                 (you are here)
 ├── CONTEXT.md                Canonical product language (glossary)
 ├── CLAUDE.md                 AI-agent orientation

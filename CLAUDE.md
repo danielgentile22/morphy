@@ -25,7 +25,7 @@ nationwide coverage without a paid parcel source (ADR-012).
 ## 2. Where things live
 
 ```
-pilot/
+morphy/
 ├── PROJECT_BRIEF.md   Business case
 ├── CONTEXT.md         Product language (glossary)
 ├── docs/              Deep docs; adr/ (decisions), agents/ (skill config), research/ (data-source licensing)
@@ -99,7 +99,7 @@ deferred stretch `37` (NC); dropped IN, UT, MN. Per-state status: [docs/SCOPE.md
 
 ## 7. Agent skills
 
-GitHub Issues at `danielgentile22/infra-lease-analytics`; default triage labels
+GitHub Issues at `danielgentile22/morphy`; default triage labels
 (not yet created on the repo, `triage` creates them on first use); single-context
 domain docs. Details in [docs/agents/](docs/agents/).
 

@@ -5,7 +5,7 @@
 # requirements*.txt files are retired; dependencies live only here.
 
 [project]
-name = "pilot"
+name = "morphy"
 version = "0.1.0"
 description = "Ground-lease intelligence: FCC ASR + state parcels + distress overlays, joined into a lead-triage product"
 requires-python = ">=3.11"

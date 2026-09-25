@@ -1,6 +1,6 @@
 # ADR-070: Surface statutory assessed value alongside market/appraised
 
-**Status:** Accepted — implementation pending ([#213](https://github.com/danielgentile22/infra-lease-analytics/issues/213), audit **M-k**).
+**Status:** Accepted — implementation pending ([#213](https://github.com/danielgentile22/morphy/issues/213), audit **M-k**).
 **Date:** 2026-07-03
 **Deepens:** the audit **E2** relabel (which made the surfaced value honestly "market / appraised").
 

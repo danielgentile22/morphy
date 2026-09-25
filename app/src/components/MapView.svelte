@@ -151,7 +151,7 @@
     });
     // Test handle — lets E2E project feature coords to click the map
     // deterministically. Harmless in a local single-user app.
-    (window as unknown as { __pilotMap?: maplibregl.Map }).__pilotMap = m;
+    (window as unknown as { __morphyMap?: maplibregl.Map }).__morphyMap = m;
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     m.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
 
@@ -170,7 +170,7 @@
     m.on('click', onMapClick);
 
     return () => {
-      delete (window as unknown as { __pilotMap?: maplibregl.Map }).__pilotMap;
+      delete (window as unknown as { __morphyMap?: maplibregl.Map }).__morphyMap;
       towerPopup?.remove();
       towerPopup = undefined;
       towerLayersAdded = false;

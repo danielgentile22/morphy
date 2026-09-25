@@ -3,7 +3,7 @@
 **Status:** Accepted — **implemented** (#218, approach A). Default preset = the thesis (`smallPortfolio` / `lowValue` / `carriers` features, distress demoted); new owner-level `carrier_count` (owners-index v8); the baked score's portfolio log-bonus clamped.
 **Date:** 2026-07-03
 **Amends:** [ADR-058](0058-tunable-transparent-scoring.md) — the **default weights + owner rollup** change; the tunable/transparent client-side framework stands unchanged.
-**Prerequisite (landed):** [#214](https://github.com/danielgentile22/infra-lease-analytics/issues/214) — the score-factor bars are honest, so weights can move without the display lying.
+**Prerequisite (landed):** [#214](https://github.com/danielgentile22/morphy/issues/214) — the score-factor bars are honest, so weights can move without the display lying.
 
 ## Context
 

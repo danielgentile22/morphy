@@ -7,7 +7,7 @@ const MAP = 25_000;
 
 async function waitReady(page: Page): Promise<void> {
   await page.getByTestId('top-filter-bar').first().waitFor({ state: 'visible', timeout: MAP });
-  await page.waitForFunction(() => !!(window as any).__pilotMap, null, { timeout: MAP });
+  await page.waitForFunction(() => !!(window as any).__morphyMap, null, { timeout: MAP });
 }
 
 function search(page: Page) {
@@ -32,11 +32,11 @@ test('owner-name search surfaces matching owners and opens a Lead', async ({ pag
 test('ASR search surfaces tower matches and flies the map to one', async ({ page }) => {
   await page.goto('/#/explore');
   await waitReady(page);
-  await page.waitForFunction(() => (window as any).__pilotMap.isStyleLoaded());
+  await page.waitForFunction(() => (window as any).__morphyMap.isStyleLoaded());
 
   const center = () =>
     page.evaluate(() => {
-      const c = (window as any).__pilotMap.getCenter();
+      const c = (window as any).__morphyMap.getCenter();
       return [Math.round(c.lng * 100) / 100, Math.round(c.lat * 100) / 100];
     });
   const before = await center();

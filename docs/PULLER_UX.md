@@ -200,7 +200,7 @@ The enclosing `ManualWalkthrough` carries the source-level fields
 ## 4.5 Upload file(s) button
 
 Manual downloads land on the user's Desktop by default. To avoid the
-"navigate to `~/Projects/pilot/data/raw/<id>/current/` in Finder, drag
+"navigate to `~/Projects/morphy/data/raw/<id>/current/` in Finder, drag
 files in" friction, the puller exposes an **Upload file(s)** button in
 two places:
 

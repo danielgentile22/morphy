@@ -272,7 +272,7 @@ production**; only the LLM lease-extraction eval (§11.3,
 
 - **Tool:** `pytest`. The suite defaults to **SQLite** (behaviourally
   equivalent for the schema); real Postgres via **testcontainers** runs
-  only when `PILOT_TEST_TESTCONTAINERS=1` is set (auto-starting it by
+  only when `MORPHY_TEST_TESTCONTAINERS=1` is set (auto-starting it by
   default was dropped — too slow).
 - **Coverage:** ~45 test files under `backend/tests/` — auth flow
   (username/password login → identity-only `pilot_session` cookie),
@@ -324,7 +324,7 @@ backend/
 │                                    #   owners_index_service, ask_client, …)
 └── tests/
     ├── conftest.py                  # SQLite by default; opt-in testcontainers
-    │                                #   Postgres via PILOT_TEST_TESTCONTAINERS=1
+    │                                #   Postgres via MORPHY_TEST_TESTCONTAINERS=1
     ├── test_auth.py                 # + test_api.py, test_lead_store.py,
     │                                #   test_api_tasks.py, test_credential_authority.py,
     │                                #   test_api_ask.py, … (~45 files)

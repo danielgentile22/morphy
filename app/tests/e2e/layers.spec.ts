@@ -1,6 +1,6 @@
 import { test, expect, type ConsoleMessage, type Page } from '@playwright/test';
 
-// The map is exposed on window.__pilotMap as a test handle; the evaluate
+// The map is exposed on window.__morphyMap as a test handle; the evaluate
 // callbacks below run in the browser context, so `any` for that handle is glue.
 
 function watchConsole(page: Page): string[] {
@@ -16,7 +16,7 @@ function watchConsole(page: Page): string[] {
 async function waitForLayers(page: Page): Promise<void> {
   await page.waitForFunction(
     () => {
-      const m = (window as any).__pilotMap;
+      const m = (window as any).__morphyMap;
       return !!m && m.isStyleLoaded() && !!m.getSource('src:towers');
     },
     undefined,
@@ -27,7 +27,7 @@ async function waitForLayers(page: Page): Promise<void> {
 /** True if any MapLibre sublayer of a logical layer is visible. */
 async function logicalLayerVisible(page: Page, name: string): Promise<boolean> {
   return page.evaluate((n) => {
-    const m = (window as any).__pilotMap;
+    const m = (window as any).__morphyMap;
     if (!m) return false;
     const layers = m.getStyle().layers.filter((l: { id: string }) => l.id.startsWith(`${n}:`));
     if (layers.length === 0) return false;
@@ -38,7 +38,7 @@ async function logicalLayerVisible(page: Page, name: string): Promise<boolean> {
 }
 
 async function sourceExists(page: Page, sourceId: string): Promise<boolean> {
-  return page.evaluate((id) => !!(window as any).__pilotMap?.getSource(id), sourceId);
+  return page.evaluate((id) => !!(window as any).__morphyMap?.getSource(id), sourceId);
 }
 
 test('layer toggles show and hide map layers, no console errors', async ({ page }) => {
@@ -145,14 +145,14 @@ test('every layer toggle works without errors', async ({ page }) => {
 async function featurePoint(page: Page, sourceId: string): Promise<{ x: number; y: number }> {
   await page.waitForFunction(
     (id) => {
-      const m = (window as any).__pilotMap;
+      const m = (window as any).__morphyMap;
       return m && m.isSourceLoaded(id) && m.querySourceFeatures(id).length > 0;
     },
     sourceId,
     { timeout: 20_000 },
   );
   const pt = await page.evaluate((id) => {
-    const m = (window as any).__pilotMap;
+    const m = (window as any).__morphyMap;
     const feats = m.querySourceFeatures(id);
     const g = feats[0]?.geometry;
     if (!g) return null;
@@ -199,7 +199,7 @@ test('clicking a tower on the map opens a tower detail panel', async ({ page }) 
   // tower's coordinates to a viewport pixel and click it.
   await page.waitForFunction(
     () => {
-      const m = (window as any).__pilotMap;
+      const m = (window as any).__morphyMap;
       return m && m.isSourceLoaded('src:towers') && m.querySourceFeatures('src:towers').length > 0;
     },
     undefined,
@@ -207,7 +207,7 @@ test('clicking a tower on the map opens a tower detail panel', async ({ page }) 
   );
 
   const pt = await page.evaluate(() => {
-    const m = (window as any).__pilotMap;
+    const m = (window as any).__morphyMap;
     const feats = m
       .querySourceFeatures('src:towers')
       .filter((f: any) => f.geometry?.type === 'Point');

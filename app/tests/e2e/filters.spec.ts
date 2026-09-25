@@ -8,13 +8,13 @@ const MAP = 25_000;
 
 async function waitReady(page: Page): Promise<void> {
   await page.getByTestId('top-filter-bar').first().waitFor({ state: 'visible', timeout: MAP });
-  await page.waitForFunction(() => !!(window as any).__pilotMap, null, { timeout: MAP });
+  await page.waitForFunction(() => !!(window as any).__morphyMap, null, { timeout: MAP });
 }
 
 /** Approximate towers currently on the map: individual points + cluster sums. */
 function towerCount(page: Page): Promise<number> {
   return page.evaluate(() => {
-    const m = (window as any).__pilotMap;
+    const m = (window as any).__morphyMap;
     const r = m.queryRenderedFeatures({ layers: ['towers-point', 'towers-clusters'] });
     let n = 0;
     for (const f of r) n += f.properties.point_count || 1;
@@ -37,7 +37,7 @@ test('the slim top filter bar shows the high-use filters + search', async ({ pag
 test('a state filter narrows the tower layer (shared FilterModel)', async ({ page }) => {
   await page.goto('/#/explore');
   await waitReady(page);
-  await page.waitForFunction(() => (window as any).__pilotMap.isStyleLoaded());
+  await page.waitForFunction(() => (window as any).__morphyMap.isStyleLoaded());
   await expect.poll(() => towerCount(page), { timeout: MAP }).toBeGreaterThan(0);
   const before = await towerCount(page);
 

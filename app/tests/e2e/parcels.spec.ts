@@ -1,7 +1,7 @@
 import { test, expect, type ConsoleMessage, type Page } from '@playwright/test';
 
 // Phase B — the PMTiles parcel base layer + the county choropleth.
-// The map is exposed on window.__pilotMap; evaluate callbacks run in the
+// The map is exposed on window.__morphyMap; evaluate callbacks run in the
 // browser, so `any` for that handle is glue.
 //
 // Timing is measured *in-page* (MapLibre's own events / a setTimeout
@@ -26,7 +26,7 @@ async function waitForMapReady(page: Page): Promise<void> {
       new Promise<void>((resolve, reject) => {
         const deadline = Date.now() + 30_000;
         const tick = (): void => {
-          const m = (window as any).__pilotMap;
+          const m = (window as any).__morphyMap;
           if (m && m.isStyleLoaded() && m.getSource('src:parcels') && m.loaded()) resolve();
           else if (Date.now() > deadline) reject(new Error('map not ready within 30s'));
           else setTimeout(tick, 100);
@@ -45,7 +45,7 @@ async function jumpAndSettle(
   return page.evaluate(
     ([c, z]) =>
       new Promise<number>((resolve) => {
-        const m = (window as any).__pilotMap;
+        const m = (window as any).__morphyMap;
         const start = performance.now();
         m.once('idle', () => resolve(performance.now() - start));
         m.jumpTo({ center: c, zoom: z });
@@ -56,7 +56,7 @@ async function jumpAndSettle(
 
 async function parcelFeatureCount(page: Page): Promise<number> {
   return page.evaluate(
-    () => (window as any).__pilotMap.queryRenderedFeatures({ layers: ['parcels:fill'] }).length,
+    () => (window as any).__morphyMap.queryRenderedFeatures({ layers: ['parcels:fill'] }).length,
   );
 }
 
@@ -71,7 +71,7 @@ test('parcels render from the PMTiles vector source', async ({ page }) => {
   // The pmtiles source + parcel fill layer were added by convention.
   expect(
     await page.evaluate(() => {
-      const m = (window as any).__pilotMap;
+      const m = (window as any).__morphyMap;
       return !!m.getSource('src:parcels') && !!m.getLayer('parcels:fill');
     }),
   ).toBe(true);

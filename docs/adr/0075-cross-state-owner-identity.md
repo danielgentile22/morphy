@@ -1,6 +1,6 @@
 # ADR-075: Cross-state owner identity — name+state key plus a curated multi-state alias table
 
-**Status:** Accepted — **implemented** ([#221](https://github.com/danielgentile22/infra-lease-analytics/issues/221), audit **MACRO-6**); the migration executes at the user-supervised batched deploy (see *As implemented*).
+**Status:** Accepted — **implemented** ([#221](https://github.com/danielgentile22/morphy/issues/221), audit **MACRO-6**); the migration executes at the user-supervised batched deploy (see *As implemented*).
 **Date:** 2026-07-03
 **Refines:** [ADR-024](0024-owner-clustering-sha1.md) (clustering normalization) + [ADR-056](0056-lead-equals-owner-cluster.md) (Lead = owner cluster, merge/split UI).
 
