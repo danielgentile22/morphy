@@ -13,6 +13,8 @@ Issues and PRDs for this repo live as GitHub issues in `danielgentile22/infra-le
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
+**External PRs are not a triage surface.** `/triage` operates on Issues only; don't pull external PRs into the queue.
+
 ## When a skill says "publish to the issue tracker"
 
 Create a GitHub issue.
