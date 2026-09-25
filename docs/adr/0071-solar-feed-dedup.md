@@ -1,8 +1,8 @@
 # ADR-071: Solar feed dedup — EIA-860 as the base of record
 
-**Status:** Accepted — implementation pending ([#217](https://github.com/danielgentile22/infra-lease-analytics/issues/217), audit **MACRO-3**).
+**Status:** Accepted — implementation pending ([#217](https://github.com/danielgentile22/morphy/issues/217), audit **MACRO-3**).
 **Date:** 2026-07-03
-**Prerequisites (landed):** E5 + E6 (feed cleaning), [#210](https://github.com/danielgentile22/infra-lease-analytics/issues/210) (`eia_id` recovered + first-class on USPVDB), [#211](https://github.com/danielgentile22/infra-lease-analytics/issues/211) (intersects predicate).
+**Prerequisites (landed):** E5 + E6 (feed cleaning), [#210](https://github.com/danielgentile22/morphy/issues/210) (`eia_id` recovered + first-class on USPVDB), [#211](https://github.com/danielgentile22/morphy/issues/211) (intersects predicate).
 
 ## Context
 

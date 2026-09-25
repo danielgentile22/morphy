@@ -1,7 +1,7 @@
 """Backend test fixtures.
 
 Database fixture (TESTING.md §11.1): prefer a real Postgres — an explicit
-``PILOT_TEST_DATABASE_URL`` or a testcontainers Postgres when Docker is
+``MORPHY_TEST_DATABASE_URL`` or a testcontainers Postgres when Docker is
 available — and fall back to SQLite when neither is present. Slice 1's
 tenant isolation is enforced in application code (every query filters by
 ``tenant_id``, no dialect-specific JSONB/FTS/RLS), so the SQLite fallback
@@ -47,21 +47,21 @@ def database_url() -> Iterator[str]:
     filters by ``tenant_id``; no JSONB/FTS/RLS). Opt into real Postgres
     (TESTING.md §11.1) two ways:
 
-    - ``PILOT_TEST_DATABASE_URL=postgresql://…`` — point at a running
+    - ``MORPHY_TEST_DATABASE_URL=postgresql://…`` — point at a running
       Postgres (e.g. a CI ``services: postgres`` container); or
-    - ``PILOT_TEST_TESTCONTAINERS=1`` — spin one via testcontainers when a
+    - ``MORPHY_TEST_TESTCONTAINERS=1`` — spin one via testcontainers when a
       Docker daemon is available.
 
     (Auto-starting testcontainers by default was dropped: it is slow and
     flaky on the CI runner — the container starts but the run never
     settles.)
     """
-    explicit = os.environ.get("PILOT_TEST_DATABASE_URL")
+    explicit = os.environ.get("MORPHY_TEST_DATABASE_URL")
     if explicit:
         yield _force_psycopg3(explicit)
         return
 
-    if os.environ.get("PILOT_TEST_TESTCONTAINERS"):
+    if os.environ.get("MORPHY_TEST_TESTCONTAINERS"):
         container = None
         try:
             from testcontainers.postgres import PostgresContainer

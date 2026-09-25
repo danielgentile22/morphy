@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://infra-lease-analytics/schemas/catalog.schema.json",
+  "$id": "https://morphy/schemas/catalog.schema.json",
   "title": "Per-state composite catalog",
   "description": "The contract between the Python preprocess pipeline (catalog_builder.build_catalog) and the TypeScript map app (catalog.ts parseCatalog). This file is the single source of truth — both sides must conform.",
 

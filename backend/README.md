@@ -84,7 +84,7 @@ A fresh database just runs the chain. Test fixtures stay on fast
 `create_all` for ephemeral DBs; `tests/test_migration.py` proves the two
 paths produce identical schemas (columns, PKs, indexes, uniques) and that
 prod-shaped pre-Alembic DDL adopts cleanly — on SQLite and, via the
-`PILOT_TEST_TESTCONTAINERS=1` / `PILOT_TEST_DATABASE_URL` opt-ins, on real
+`MORPHY_TEST_TESTCONTAINERS=1` / `MORPHY_TEST_DATABASE_URL` opt-ins, on real
 Postgres.
 
 ## Manual owner merge/split (Slice 7 / #53, ADR-056)
@@ -413,6 +413,6 @@ is application-level, so SQLite exercises the same behavior). Opt into real
 Postgres (TESTING.md §11.1) either way:
 
 ```bash
-PILOT_TEST_DATABASE_URL=postgresql://user:pass@localhost/test pytest backend/tests   # a running Postgres
-PILOT_TEST_TESTCONTAINERS=1 pytest backend/tests                                      # spin one via Docker
+MORPHY_TEST_DATABASE_URL=postgresql://user:pass@localhost/test pytest backend/tests   # a running Postgres
+MORPHY_TEST_TESTCONTAINERS=1 pytest backend/tests                                      # spin one via Docker
 ```

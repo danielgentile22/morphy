@@ -51,7 +51,7 @@ Public-record information that is **not** sensitive in isolation: parcel APN, ge
 | Control | Status | Where |
 |---|---|---|
 | `data/` git-ignored | ✅ enforced | `.gitignore` |
-| GitHub repo visibility | **Private** | `danielgentile22/infra-lease-analytics` |
+| GitHub repo visibility | **Private** | `danielgentile22/morphy` |
 | Composite outputs encrypted at rest on disk | ❌ Not yet | macOS FileVault is the only protection today |
 | Pitch / demo screenshots audited for PII before sharing | ⚠ Manual | Prefer LLC-heavy AR for demo captures |
 | Anthropic key in env, not source | ✅ enforced | `.env` |

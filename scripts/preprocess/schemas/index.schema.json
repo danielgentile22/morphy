@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://infra-lease-analytics/schemas/index.schema.json",
+  "$id": "https://morphy/schemas/index.schema.json",
   "title": "Composite global state index",
   "description": "The contract between the Python preprocess pipeline (app_assets.py build_index) and the TypeScript map app (catalog.ts parseCompositeIndex). This file is the single source of truth — both sides must conform.",
 

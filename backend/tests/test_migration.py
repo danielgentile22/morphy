@@ -5,7 +5,7 @@ the migration chain from the baseline, a pre-Alembic one (built and
 maintained by the retired additive path) by *stamping* the baseline its
 schema already matches, then upgrading. These tests prove both routes on
 the ``database_url`` fixture — SQLite by default, real Postgres via
-``PILOT_TEST_DATABASE_URL`` / ``PILOT_TEST_TESTCONTAINERS=1`` (TESTING.md
+``MORPHY_TEST_DATABASE_URL`` / ``MORPHY_TEST_TESTCONTAINERS=1`` (TESTING.md
 §11.1) — and keep the retired ``test_migration`` scenarios: legacy rows
 survive adoption, contact writes work end-to-end, the first registered
 team still inherits tenant 1.

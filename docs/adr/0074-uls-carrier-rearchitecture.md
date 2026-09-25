@@ -1,9 +1,9 @@
 # ADR-074: Rearchitect ULS→carrier — all modern spectrum, honest authorization semantics
 
-**Status:** Accepted — **implemented** ([#220](https://github.com/danielgentile22/infra-lease-analytics/issues/220), audit **MACRO-1**; absorbs **M-e**). The unmapped-name before/after number is the one deliverable that lands at the batched composite regen (it needs real data — `scripts/audits/carrier_brand_coverage.py`).
+**Status:** Accepted — **implemented** ([#220](https://github.com/danielgentile22/morphy/issues/220), audit **MACRO-1**; absorbs **M-e**). The unmapped-name before/after number is the one deliverable that lands at the batched composite regen (it needs real data — `scripts/audits/carrier_brand_coverage.py`).
 **Date:** 2026-07-03
 **Extends:** [ADR-053](0053-product-phase-shift.md) Slice A (carrier identification).
-**Prerequisite (landed):** [#216](https://github.com/danielgentile22/infra-lease-analytics/issues/216) — the license-status badge (the honest-disclosure slice that survives this rework).
+**Prerequisite (landed):** [#216](https://github.com/danielgentile22/morphy/issues/216) — the license-status badge (the honest-disclosure slice that survives this rework).
 
 ## Context
 

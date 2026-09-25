@@ -1,11 +1,11 @@
 # Map-app perf-probe
 
 A committed, repeatable harness for the **map-app performance** baseline
-(PRD [#163](https://github.com/danielgentile22/infra-lease-analytics/issues/163),
-task [#164](https://github.com/danielgentile22/infra-lease-analytics/issues/164)).
+(PRD [#163](https://github.com/danielgentile22/morphy/issues/163),
+task [#164](https://github.com/danielgentile22/morphy/issues/164)).
 It reproduces the Step-0 measurement so the end-of-PRD per-category deltas
 (A–F) are computed **identically** to the baseline — the contract
-[#169](https://github.com/danielgentile22/infra-lease-analytics/issues/169)
+[#169](https://github.com/danielgentile22/morphy/issues/169)
 re-runs to report % improvement.
 
 > **Local-only, relative numbers.** Everything here runs against the local dev

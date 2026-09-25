@@ -42,7 +42,7 @@ pytestmark = pytest.mark.skipif(_CADDY is None, reason="caddy binary not install
 # Distinctive fixture contents so a wrong handler can't accidentally look right.
 _DB_MARKER = b"SQLITE-SECRET-DB-CONTENTS"
 _USERS_MARKER = b"alice:$hash$:acme\n"
-_SPA_MARKER = b"<!doctype html><title>pilot-spa</title>"
+_SPA_MARKER = b"<!doctype html><title>morphy-spa</title>"
 _AUDIT_SPA_MARKER = b"<!doctype html><title>audit-spa</title>"
 _AUDIT_DATA_MARKER = b'{"audit":"index-json-contents"}'
 _TILE_BYTES = bytes(range(256)) * 8  # 2048 deterministic bytes

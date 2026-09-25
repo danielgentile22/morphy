@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and PRDs for this repo live as GitHub issues in `danielgentile22/infra-lease-analytics`. Use the `gh` CLI for all operations.
+Issues and PRDs for this repo live as GitHub issues in `danielgentile22/morphy`. Use the `gh` CLI for all operations.
 
 ## Conventions
 
