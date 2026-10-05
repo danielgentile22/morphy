@@ -7,7 +7,7 @@ wants the **parent consumer brand** on a tower — AT&T / Verizon / T-Mobile /
 Dish / … — not the raw entity string. This module is the pure mapping that does
 that bucketing, and *only* that.
 
-**Vocabulary (CONTEXT.md).** A CARRIER is the ULS spectrum LICENSEE operating on
+**Vocabulary (GLOSSARY.md).** A CARRIER is the ULS spectrum LICENSEE operating on
 a tower (this module). It is NOT the VENDOR / REGISTRANT — the tower-co that owns
 the structure (Crown Castle, American Tower, …), which comes from FCC ASR and is
 Slice B. Do not conflate them.

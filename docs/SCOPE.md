@@ -190,6 +190,6 @@ If they can't get all five from the docs alone, the docs aren't done.
 - **Locked design decisions** → [DECISIONS.md](./DECISIONS.md) + [`docs/adr/`](./adr/)
 - **How the system fits together** → [ARCHITECTURE.md](./ARCHITECTURE.md)
 - **Per-source detail** → [DATA_SOURCES.md](./DATA_SOURCES.md)
-- **Product language** → [../CONTEXT.md](../CONTEXT.md) + [GLOSSARY.md](./GLOSSARY.md)
+- **Product language** → [../GLOSSARY.md](../GLOSSARY.md) + [GLOSSARY.md](./GLOSSARY.md)
 - **Caveats + pre-commercial blockers** → [LIMITATIONS.md](./LIMITATIONS.md)
 - **PII / data-handling** → [SECURITY.md](./SECURITY.md)

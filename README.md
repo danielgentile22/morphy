@@ -138,7 +138,7 @@ See [docs/SCOPE.md §2](docs/SCOPE.md) for why these anchors, and [docs/STATUS.m
 ```
 morphy/
 ├── README.md                 (you are here)
-├── CONTEXT.md                Canonical product language (glossary)
+├── GLOSSARY.md                Canonical product language (glossary)
 ├── CLAUDE.md                 AI-agent orientation
 ├── PROJECT_BRIEF.md          Business case
 ├── pyproject.toml            Project + dependency groups (uv; uv.lock pins exact versions)

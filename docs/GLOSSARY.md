@@ -6,7 +6,7 @@ The A–Z reference of record for every domain-specific term used across the doc
 a doc uses a term not defined here, file a fix.
 
 For the **mental model + product-language slice** (Lead / Candidate / Trigger / Vendor /
-Carrier / Registrant / Freestanding / Triage / Explore / …), [`CONTEXT.md`](../CONTEXT.md) at
+Carrier / Registrant / Freestanding / Triage / Explore / …), [`GLOSSARY.md`](../GLOSSARY.md) at
 the repo root is the authority; the entries below stay consistent with it.
 
 ---
@@ -57,7 +57,7 @@ the repo root is the authority; the entries below stay consistent with it.
 - **FDOT** — Florida Department of Transportation. Publishes outdoor advertising (billboard) permits.
 - **FGDL** — Florida Geographic Data Library. Aggregates various FL state datasets; published DSL (state-land) parcels, **not** FDOR NAL.
 - **FIPS** — Federal Information Processing Standards. We use the state FIPS (e.g., `37` = NC, `05` = AR) and county FIPS (e.g., `075` for Graham in NC, full GEOID `37075`).
-- **Freestanding tower** — standalone antenna structure (monopole, lattice, guyed) ≥ 200 ft or near an airport, registered in FCC ASR. **Phase 1 primary asset.** Distinct from **Rooftop installation**. See `CONTEXT.md` + [ADR-054](./adr/0054-asset-universe-phase-1-2.md).
+- **Freestanding tower** — standalone antenna structure (monopole, lattice, guyed) ≥ 200 ft or near an airport, registered in FCC ASR. **Phase 1 primary asset.** Distinct from **Rooftop installation**. See `GLOSSARY.md` + [ADR-054](./adr/0054-asset-universe-phase-1-2.md).
 
 ## G
 
@@ -80,7 +80,7 @@ the repo root is the authority; the entries below stay consistent with it.
 ## L
 
 - **LBNL Tracking the Sun** — Lawrence Berkeley National Lab dataset of US rooftop / distributed PV installations. Dropped from active registry (ADR-016).
-- **Lead** — the co-founder's outreach unit. **Keyed on the owner cluster (`display_cluster_id`)** ([ADR-056](./adr/0056-lead-equals-owner-cluster.md)), resolved **across all anchor states** — one landowner = one Lead regardless of how many parcels/towers they hold. Carries the **Lead status** ladder (new → researching → contacted → interested → in_business, or uninterested) plus contact info, attempts, and notes. See [`CONTEXT.md`](../CONTEXT.md) for the full Lead / Candidate / Trigger model.
+- **Lead** — the co-founder's outreach unit. **Keyed on the owner cluster (`display_cluster_id`)** ([ADR-056](./adr/0056-lead-equals-owner-cluster.md)), resolved **across all anchor states** — one landowner = one Lead regardless of how many parcels/towers they hold. Carries the **Lead status** ladder (new → researching → contacted → interested → in_business, or uninterested) plus contact info, attempts, and notes. See [`GLOSSARY.md`](../GLOSSARY.md) for the full Lead / Candidate / Trigger model.
 - **Lease** — the carrier-side ground-lease record. Keyed on `(parcel_id, tower_asr_id, carrier_callsign)`. State machine: unknown → pending_upload → uploaded → extracted → verified → superseded. Document storage + LLM-extracted structured fields land here in Slice D+E ([ADR-059](./adr/0059-llm-lease-extraction.md)).
 - **Lease extraction** — the Slice D+E pipeline that turns an uploaded lease PDF into structured fields (rent, escalation, expiry, amendment count, parties, …) plus per-field confidence, via the Claude API. Sonnet 4.6 default with an Opus 4.7 retry path for low-confidence leases; prompt caching on. See [ADR-059](./adr/0059-llm-lease-extraction.md). **Design only — unimplemented as of 2026-05-29.**
 - **`lease_comp`** — per-area lease-rent benchmark table. Bootstrapped from Steel-in-the-Air free county-level data in Slice D+E; augmented over time by extracted-lease rent from the cofounder's uploads. Powers the "comparables within X-mile radius" feature.
@@ -150,7 +150,7 @@ the repo root is the authority; the entries below stay consistent with it.
 - **TIGER** — Topologically Integrated Geographic Encoding and Referencing. Census Bureau's geospatial reference files.
 - **Tippecanoe** — Mapbox/Felt CLI tool for generating vector tiles (MBTiles / PMTiles) from large GeoJSON / NDJSON inputs. Required for the map app's parcel base layer.
 - **TPO** — Third-Party Ownership (of a solar system). Solar installations under PPA / lease where the contract can potentially be renegotiated. Solar-side concept; renewable-energy analogue of ground leases.
-- **Triage** — the co-founder's working session inside the product — filter parcels/towers across anchor states, rank by interestingness, drill into a **Lead**, advance its **Lead status** (new → researching → contacted → interested → in_business / uninterested), log activity, and export. The product's primary user-flow. Distinct from **Outreach** (Phase 2 — the actual email / call layer). See [`CONTEXT.md`](../CONTEXT.md).
+- **Triage** — the co-founder's working session inside the product — filter parcels/towers across anchor states, rank by interestingness, drill into a **Lead**, advance its **Lead status** (new → researching → contacted → interested → in_business / uninterested), log activity, and export. The product's primary user-flow. Distinct from **Outreach** (Phase 2 — the actual email / call layer). See [`GLOSSARY.md`](../GLOSSARY.md).
 
 ## U
 

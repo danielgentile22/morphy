@@ -1,4 +1,4 @@
-# CONTEXT
+# GLOSSARY
 
 The mental model + canonical product language for this repo. Read this before exploring the
 codebase. This file is the authority for the **product-language slice** (Lead / Candidate /

@@ -1,7 +1,7 @@
 """Tenant-scoped persistence for Tasks (UI overhaul P2 / #107, ADR-065).
 
 A Task is a unit of work — a follow-up, a business task, or a dev todo, all
-the same entity (CONTEXT.md). This is the thin tracer: create / list / read /
+the same entity (GLOSSARY.md). This is the thin tracer: create / list / read /
 update-status / delete, every method filtered by ``self.tenant_id`` (the
 multi-tenant isolation chokepoint, like ``LeadStore``). Links, assignee, due
 date, priority, labels, filtering, and free-text search land in #110.

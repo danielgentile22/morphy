@@ -1,4 +1,4 @@
-"""Lead status state machine (ADR-061 / CONTEXT.md).
+"""Lead status state machine (ADR-061 / GLOSSARY.md).
 
 Single status per Lead. The ladder branches after Contacted:
 

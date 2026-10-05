@@ -4,12 +4,12 @@ How the engineering skills should consume this repo's domain documentation when 
 
 ## Before exploring, read these
 
-- **`CONTEXT.md`** at the repo root — domain language, glossary terms, mental model.
+- **`GLOSSARY.md`** at the repo root — domain language, glossary terms, mental model.
 - **`docs/adr/`** — read ADRs that touch the area you're about to work in.
 - **Legacy decisions** still live inlined in **`docs/DECISIONS.md`** (e.g. ADR-001…ADR-051). Treat both as authoritative until the inline ADRs are migrated into `docs/adr/`. When in doubt, the newer file wins.
 - Companion domain references: **`PROJECT_BRIEF.md`**, **`docs/SCOPE.md`**, **`docs/GLOSSARY.md`**.
 
-If `CONTEXT.md` or `docs/adr/` is empty, **proceed silently**. Don't flag absence; don't suggest creating files upfront. The producer skill (`/grill-with-docs`) creates them lazily when terms or decisions actually get resolved.
+If `GLOSSARY.md` or `docs/adr/` is empty, **proceed silently**. Don't flag absence; don't suggest creating files upfront. The producer skill (`/grill-with-docs`) creates them lazily when terms or decisions actually get resolved.
 
 ## File structure
 
@@ -17,7 +17,7 @@ Single-context repo:
 
 ```
 /
-├── CONTEXT.md
+├── GLOSSARY.md
 ├── PROJECT_BRIEF.md
 ├── docs/
 │   ├── adr/                       ← new ADRs go here
@@ -28,7 +28,7 @@ Single-context repo:
 
 ## Use the glossary's vocabulary
 
-When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md` / `docs/GLOSSARY.md`. Don't drift to synonyms the glossary explicitly avoids.
+When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `GLOSSARY.md` / `docs/GLOSSARY.md`. Don't drift to synonyms the glossary explicitly avoids.
 
 If the concept you need isn't in the glossary yet, that's a signal — either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/grill-with-docs`).
 

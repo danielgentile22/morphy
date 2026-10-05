@@ -15,7 +15,7 @@ on top. Deployed in production.
 - Business case: [PROJECT_BRIEF.md](PROJECT_BRIEF.md)
 - Scope, goals, outcome bar, slice plan (**F → A → C → D+E → B**): [docs/SCOPE.md](docs/SCOPE.md)
 - What works today and what is next: [docs/STATUS.md](docs/STATUS.md). **Read it before starting a task.**
-- Product language and glossary: [CONTEXT.md](CONTEXT.md)
+- Product language and glossary: [GLOSSARY.md](GLOSSARY.md)
 - Locked decisions: [docs/DECISIONS.md](docs/DECISIONS.md) (index) + [docs/adr/](docs/adr/)
 
 Hard non-goals: paid LLC unmasking / skip-trace (ADR-041 as narrowed by ADR-057);
@@ -27,7 +27,7 @@ nationwide coverage without a paid parcel source (ADR-012).
 ```
 morphy/
 ├── PROJECT_BRIEF.md   Business case
-├── CONTEXT.md         Product language (glossary)
+├── GLOSSARY.md         Product language (glossary)
 ├── docs/              Deep docs; adr/ (decisions), agents/ (skill config), research/ (data-source licensing)
 ├── app/               Svelte 5 + MapLibre map app          → app/CLAUDE.md
 ├── backend/           FastAPI + SQLAlchemy write layer     → backend/CLAUDE.md

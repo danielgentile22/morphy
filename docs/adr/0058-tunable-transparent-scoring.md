@@ -48,7 +48,7 @@ refinements:
   (base = the tower's underlying parcel score; tower signals — height, carrier
   count, active, vendor — join the feature menu). Owner ranking = an aggregate
   (default `max`) of the owner's tower scores under the active config.
-- **Terminology.** The canonical term is **scoring preset** (CONTEXT.md); this
+- **Terminology.** The canonical term is **scoring preset** (GLOSSARY.md); this
   ADR's "saved scoring profiles" / "named weight presets" are the same thing —
   "profile" is now an alias to avoid.
 - **Storage.** Presets persist to a **tenant-shared** `scoring_preset` table (the

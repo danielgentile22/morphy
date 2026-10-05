@@ -8,7 +8,7 @@ on the licensee name, and attaches the result to the ``tower`` canonical
 type as a ``carriers`` list-of-struct. After this the Lead page / map (#28)
 can show "AT&T + Verizon on this tower".
 
-**Vocabulary (CONTEXT.md).** A CARRIER is the ULS spectrum LICENSEE on a
+**Vocabulary (GLOSSARY.md).** A CARRIER is the ULS spectrum LICENSEE on a
 tower (this join). It is NOT the VENDOR / REGISTRANT — the tower-co that owns
 the structure (American Tower, Crown Castle …), which comes from FCC ASR and
 is Slice B. Do not conflate them.
