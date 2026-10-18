@@ -8,6 +8,7 @@ import type { LeadStatus } from './lead-status';
 import type { Carrier } from './carrier';
 import type { BasemapName } from './basemap';
 import type { components } from './api-types';
+import { notice } from './notice.svelte';
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api';
 
@@ -49,7 +50,7 @@ export type Holding = Omit<Required<Schemas['Holding']>, 'bbox' | 'point' | 'str
 
 export type MailingAddress = Schemas['MailingAddress'];
 
-/** Fields the co-founder edits on a Lead (the backend `LeadUpdate` contact
+/** Fields the user edits on a Lead (the backend `LeadUpdate` contact
  *  fields, picked from the generated detail shape). */
 export type ContactFields = Pick<
   Schemas['LeadDetail'],
@@ -95,6 +96,8 @@ export type CountsResponse = Schemas['CountsResponse'];
 export type TokenResponse = Schemas['TokenResponse'];
 
 export type MeResponse = Schemas['MeResponse'];
+
+export type AuthConfig = Schemas['AuthConfig'];
 
 /** Per-user preferences (PRD #121). `home_view` / `filter_default` are opaque
  *  JSON strings this client owns; the backend stores + serves them verbatim. */
@@ -143,7 +146,11 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
       .json()
       .then((b) => (b as { detail?: string }).detail)
       .catch(() => null);
-    throw new ApiError(detail ?? `${res.status} ${res.statusText}`, res.status);
+    const message = detail ?? `${res.status} ${res.statusText}`;
+    // A refused write (the read-only demo, ADR-077) gets one calm app-wide
+    // notice; the caller still sees the error and rolls back as usual.
+    if (res.status === 403) notice.show(message);
+    throw new ApiError(message, res.status);
   }
   // 204 No Content (e.g. DELETE) has no body — resolve to undefined.
   if (res.status === 204) return undefined as T;
@@ -258,6 +265,17 @@ export function logout(): Promise<void> {
 
 export function fetchMe(): Promise<MeResponse> {
   return request<MeResponse>('/auth/me');
+}
+
+/** Public sign-in page config: is the password-less demo login on? */
+export function fetchAuthConfig(): Promise<AuthConfig> {
+  return request<AuthConfig>('/auth/config');
+}
+
+/** Sign in as the read-only demo account (DEMO_MODE only). Sets the same
+ *  httpOnly session cookie as a password login. */
+export function demoLogin(): Promise<TokenResponse> {
+  return request<TokenResponse>('/auth/demo', { method: 'POST' });
 }
 
 // ── per-user self-service (PRD #121) ─────────────────────────────────────────

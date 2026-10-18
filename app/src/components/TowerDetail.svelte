@@ -17,6 +17,7 @@
   import { leadHash, isUnowned, SECTION_HASH } from '../lib/nav';
   import { emptyTaskFilter, taskQueryString } from '../lib/task-filter';
   import { archivedAntennas } from '../lib/archived-antennas.svelte';
+  import { auth } from '../lib/auth-store.svelte';
   import {
     fetchAntenna,
     updateAntenna,
@@ -165,7 +166,7 @@
         {#if worked}
           <a class="btn btn-secondary open" href={leadHash(cid)} data-testid="open-in-leads">Open in Leads →</a>
           <span class="worked-note">already a lead ({leads.lead.status})</span>
-        {:else}
+        {:else if !auth.readOnly}
           <button class="btn btn-primary pursue" data-testid="pursue" onclick={pursue} disabled={leads.saving}>
             {leads.saving ? 'Pursuing…' : 'Pursue this owner'}
           </button>
@@ -176,8 +177,8 @@
     {:else}
       <p class="owner-line" data-testid="no-owner-note">
         {owned && leads.leadStatus === 'error'
-          ? 'Owner record unavailable — showing the basic facts on file. Add details below.'
-          : 'No landowner on file for this tower — add owner details below if you find them.'}
+          ? `Owner record unavailable. Showing the basic facts on file.${auth.readOnly ? '' : ' Add details below.'}`
+          : `No landowner on file for this tower.${auth.readOnly ? '' : ' Add owner details below if you find them.'}`}
       </p>
     {/if}
 
@@ -191,7 +192,7 @@
           <dt>Structure</dt><dd>{t.structure_kind || '—'}</dd>
           <dt>Active</dt><dd>{t.active == null ? '—' : t.active ? 'yes' : 'no'}</dd>
           <dt>FAA-corroborated</dt>
-          <dd>{t.faa_corroborated ? 'yes — co-located FAA obstacle' : 'no'}</dd>
+          <dd>{t.faa_corroborated ? 'yes (co-located FAA obstacle)' : 'no'}</dd>
           <dt>Built</dt><dd data-testid="tower-date-built">{staticProps?.date_built ?? '—'}</dd>
           <dt>Coordinates</dt>
           <dd>{t.lat != null && t.lon != null ? `${t.lat.toFixed(5)}, ${t.lon.toFixed(5)}` : '—'}</dd>
@@ -230,7 +231,7 @@
           <dt>Address</dt><dd data-testid="tower-owner-address">{towerOwnerAddress ?? '—'}</dd>
           <dt>Phone</dt><dd data-testid="tower-owner-phone">{p.tower_owner_phone ?? '—'}</dd>
         </dl>
-        <p class="worked-note">The FCC ASR registrant — who to negotiate with, not the landowner.</p>
+        <p class="worked-note">The FCC ASR registrant: who to negotiate with, not the landowner.</p>
       </section>
     {/if}
 
@@ -272,6 +273,7 @@
           bind:value={draft.address}
           placeholder="street address (if known)"
           data-testid="manual-address"
+          disabled={auth.readOnly}
         />
 
         {#if !owned}
@@ -282,16 +284,18 @@
             bind:value={draft.owner_name}
             placeholder="landowner (if found)"
             data-testid="manual-owner-name"
+            disabled={auth.readOnly}
           />
           <label for="m-phone">Owner phone</label>
-          <input id="m-phone" type="text" bind:value={draft.owner_phone} data-testid="manual-owner-phone" />
+          <input id="m-phone" type="text" bind:value={draft.owner_phone} data-testid="manual-owner-phone" disabled={auth.readOnly} />
           <label for="m-email">Owner email</label>
-          <input id="m-email" type="email" bind:value={draft.owner_email} data-testid="manual-owner-email" />
+          <input id="m-email" type="email" bind:value={draft.owner_email} data-testid="manual-owner-email" disabled={auth.readOnly} />
         {/if}
 
         <label for="m-notes">Notes</label>
-        <textarea id="m-notes" rows="3" bind:value={draft.notes} data-testid="manual-notes"></textarea>
+        <textarea id="m-notes" rows="3" bind:value={draft.notes} data-testid="manual-notes" disabled={auth.readOnly}></textarea>
 
+        {#if !auth.readOnly}
         <div class="form-actions">
           <button
             class="btn btn-primary save"
@@ -303,12 +307,14 @@
           </button>
           {#if saved}<span class="ok" data-testid="manual-saved">Saved ✓</span>{/if}
         </div>
+        {/if}
         {#if antError}<p class="err" data-testid="manual-error">{antError}</p>{/if}
       </div>
     </section>
 
     <!-- Archive (round 2): park an antenna that's not of interest — it drops
          off the Explore map + list until un-archived (recoverable). -->
+    {#if !auth.readOnly}
     <section class="card archive-card">
       <button class="btn btn-secondary archive" onclick={toggleArchive} data-testid="archive-toggle">
         {archived ? 'Un-archive antenna' : 'Archive antenna'}
@@ -319,6 +325,7 @@
           : 'Hides it from the Explore map + list (recoverable any time).'}
       </span>
     </section>
+    {/if}
 
     <!-- Tower-linked tasks (#110). The query goes through the task-filter
          registry so its byte-for-byte contract test guards the string. -->

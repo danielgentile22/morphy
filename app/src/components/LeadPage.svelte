@@ -1,6 +1,7 @@
 <script lang="ts">
   import { leads } from '../lib/leads-store.svelte';
   import { filterModel } from '../lib/filter-model.svelte';
+  import { auth } from '../lib/auth-store.svelte';
   import { STATUSES, STATUS_LABELS, canTransition, type LeadStatus } from '../lib/lead-status';
   import { kindLabel, money, distressText, statusVar, statusGlyph, feet } from '../lib/lead-format';
   import {
@@ -223,7 +224,7 @@
           <MiniMap holdings={l.holdings} />
           {#if l.holdings.length === 0}
             <p class="muted small mt">
-              Per-parcel holdings aren’t in the index yet — rebuild it with
+              Per-parcel holdings aren’t in the index yet. Rebuild it with
               <code>python scripts/preprocess.py --owners-index</code>.
             </p>
           {:else}
@@ -244,14 +245,14 @@
                   {#if h.land_use}<div class="readonly use">{h.land_use}</div>{/if}
                   {#each towersOf(h) as t (t.asr)}
                     <div class="twr">
-                      ▲ Tower ASR {t.asr} — {feet(t.height_m)}{#if t.structure_kind} {t.structure_kind}{/if}{#if t.active === false} (inactive){/if}
+                      ▲ Tower ASR {t.asr} · {feet(t.height_m)}{#if t.structure_kind} {t.structure_kind}{/if}{#if t.active === false} (inactive){/if}
                     </div>
                     <div class="carriers-wrap">
                       <CarrierList carriers={t.carriers ?? []} compact />
                     </div>
                   {/each}
                   {#each solarOf(h) as s (s.id)}
-                    <div class="twr">☀ Solar facility{#if s.owner} — {s.owner}{/if}</div>
+                    <div class="twr">☀ Solar facility{#if s.owner} · {s.owner}{/if}</div>
                   {/each}
                 </li>
               {/each}
@@ -309,7 +310,8 @@
                 style={l.status === s
                   ? `background:${statusVar(s)};border-color:${statusVar(s)};color:#fff`
                   : ''}
-                disabled={!canTransition(l.status, s)}
+                disabled={auth.readOnly || !canTransition(l.status, s)}
+                title={auth.readOnly ? 'Read-only demo' : undefined}
                 data-status={s}
                 onclick={() => setStatus(s)}
               >
@@ -336,36 +338,39 @@
                 {l.mailing_address.addr}{#if l.mailing_address.city}, {l.mailing_address.city}{/if}{#if l.mailing_address.state} {l.mailing_address.state}{/if}
                 {l.mailing_address.zip}
               {:else}
-                — none on file —
+                None on file
               {/if}
             </span>
           </div>
           <label class="field">
             <span class="flabel">Contact name</span>
-            <input data-testid="contact-name" bind:value={contactDraft.contact_name} placeholder="—" />
+            <input data-testid="contact-name" bind:value={contactDraft.contact_name} placeholder="—" disabled={auth.readOnly} />
           </label>
           <label class="field">
             <span class="flabel">Phone</span>
-            <input bind:value={contactDraft.contact_phone} placeholder="—" />
+            <input bind:value={contactDraft.contact_phone} placeholder="—" disabled={auth.readOnly} />
           </label>
           <label class="field">
             <span class="flabel">Email</span>
-            <input bind:value={contactDraft.contact_email} placeholder="—" />
+            <input bind:value={contactDraft.contact_email} placeholder="—" disabled={auth.readOnly} />
           </label>
           <label class="field">
             <span class="flabel">Best channel</span>
-            <select bind:value={contactDraft.best_channel}>
+            <select bind:value={contactDraft.best_channel} disabled={auth.readOnly}>
               <option value="">—</option>
               {#each CHANNELS as c (c)}<option value={c}>{c}</option>{/each}
             </select>
           </label>
-          <button class="btn btn-primary save" data-testid="save-contact" onclick={saveContact} disabled={leads.saving}>
-            {leads.saving ? 'Saving…' : 'Save contact'}
-          </button>
+          {#if !auth.readOnly}
+            <button class="btn btn-primary save" data-testid="save-contact" onclick={saveContact} disabled={leads.saving}>
+              {leads.saving ? 'Saving…' : 'Save contact'}
+            </button>
+          {/if}
         </section>
 
         <section class="card">
           <h3>Activity</h3>
+          {#if !auth.readOnly}
           <div class="attemptform" data-testid="attempt-form">
             <input
               type="date"
@@ -401,6 +406,7 @@
               ↩ log reply
             </button>
           </div>
+          {/if}
           {#if l.attempts.length === 0}
             <p class="muted small mt">No activity logged yet.</p>
           {:else}
@@ -441,26 +447,33 @@
             data-testid="notes"
             bind:value={noteDraft}
             placeholder="Free-text notes…"
+            disabled={auth.readOnly}
           ></textarea>
-          <button class="btn btn-primary save" data-testid="save-note" onclick={saveNote} disabled={leads.saving}>
-            {leads.saving ? 'Saving…' : 'Save note'}
-          </button>
+          {#if !auth.readOnly}
+            <button class="btn btn-primary save" data-testid="save-note" onclick={saveNote} disabled={leads.saving}>
+              {leads.saving ? 'Saving…' : 'Save note'}
+            </button>
+          {/if}
         </section>
 
         <!-- ── Owner identity: manual merge / split (Slice 7 / #53) ──────── -->
+        {#if !auth.readOnly || l.merged_members.length}
         <section class="card" data-testid="merge-card">
           <h3>Owner identity</h3>
+          {#if !auth.readOnly}
           <p class="muted small">
             Auto-clustering errs toward <em>not</em> merging. If this landowner is
             split across clusters, merge them; if two distinct owners were grouped,
             split one off.
           </p>
+          {/if}
 
           {#if l.merged_members.length}
             <ul class="merged" data-testid="merged-members">
               {#each l.merged_members as mm (mm.display_cluster_id)}
                 <li>
                   <span class="readonly">{mm.owner_name || mm.display_cluster_id}</span>
+                  {#if !auth.readOnly}
                   <button
                     class="btn btn-secondary btn-sm"
                     data-testid="split-{mm.display_cluster_id}"
@@ -469,11 +482,13 @@
                   >
                     split off
                   </button>
+                  {/if}
                 </li>
               {/each}
             </ul>
           {/if}
 
+          {#if !auth.readOnly}
           <label class="field mt">
             <span class="flabel">Merge another owner into this lead</span>
             <input
@@ -504,7 +519,9 @@
           {:else if mergeTerm.trim().length >= 2}
             <p class="muted small mt">No other owners match “{mergeTerm}”.</p>
           {/if}
+          {/if}
         </section>
+        {/if}
       </div>
     </div>
   {/if}

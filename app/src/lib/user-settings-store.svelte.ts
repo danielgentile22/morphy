@@ -116,6 +116,12 @@ class UserSettingsStore {
     const previous = this.settings; // snapshot before the optimistic update
     this.settings = { ...this.settings, ...patch };
     this.apply();
+    // Read-only demo (ADR-077): preferences apply for this visit only, so a
+    // visitor can still try the theme and basemap without a refused write.
+    if (auth.readOnly) {
+      this.saving = false;
+      return true;
+    }
     try {
       this.settings = await saveMySettings(patch);
       this.apply();

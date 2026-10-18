@@ -5,6 +5,7 @@
   // named presets here.)
   import { onMount } from 'svelte';
   import { scoring } from '../lib/scoring-store.svelte';
+  import { auth } from '../lib/auth-store.svelte';
   import { SCORE_FEATURES, type ScoreWeights } from '../lib/scoring';
 
   let newName = $state('');
@@ -102,12 +103,13 @@
         <option value={String(p.id)}>{p.name}{p.is_default ? ' ★' : ''}</option>
       {/each}
     </select>
-    {#if scoring.activePresetId != null}
+    {#if scoring.activePresetId != null && !auth.readOnly}
       <button class="mini" data-testid="preset-default" onclick={() => scoring.setDefault(scoring.activePresetId!)}>set default</button>
       <button class="mini" data-testid="preset-delete" onclick={() => scoring.remove(scoring.activePresetId!)}>delete</button>
     {/if}
   </div>
   {#if !scoring.useDefault}
+    {#if !auth.readOnly}
     <div class="saverow">
       <input
         class="pname"
@@ -120,6 +122,7 @@
         Save
       </button>
     </div>
+    {/if}
     <button class="reset" data-testid="scoring-reset" onclick={resetScoring}>
       ↺ Reset to default
     </button>

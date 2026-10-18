@@ -8,6 +8,7 @@
   import { onMount } from 'svelte';
   import { SECTION_HASH, leadHash } from '../lib/nav';
   import { dashboard } from '../lib/dashboard-store.svelte';
+  import { auth } from '../lib/auth-store.svelte';
   import Tasks from './Tasks.svelte';
   import History from './History.svelte';
   import Calendar from './Calendar.svelte';
@@ -42,13 +43,15 @@
               <span class="attn-icon">↩</span>
               <a class="attn-link" href={leadHash(it.cluster_id)}>{it.title}</a>
               <span class="attn-when">{it.when}</span>
-              <button
-                class="btn btn-secondary btn-sm dismiss"
-                data-testid="dismiss-{it.cluster_id}"
-                onclick={() => dashboard.dismiss(it.cluster_id)}
-              >
-                dismiss
-              </button>
+              {#if !auth.readOnly}
+                <button
+                  class="btn btn-secondary btn-sm dismiss"
+                  data-testid="dismiss-{it.cluster_id}"
+                  onclick={() => dashboard.dismiss(it.cluster_id)}
+                >
+                  dismiss
+                </button>
+              {/if}
             {:else}
               <span class="attn-icon overdue">⏰</span>
               <a class="attn-link" href={SECTION_HASH.dashboard}>{it.title}</a>

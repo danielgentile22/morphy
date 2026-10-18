@@ -237,121 +237,6 @@
         "title": "ArchivedAsrsResponse",
         "type": "object"
       },
-      "AskRequest": {
-        "description": "The body of POST /api/audit/ask.\n\nSlice 1 (#188) was question-only; slice 2 (#189) adds page grounding \u2014 the\ncurrent route, the highlighted selection, a bounded slice of the visible page\ntext, the on-screen signal records, and the prior thread. Everything except\n``question`` is optional, so a bare ``{\"question\": \"...\"}`` still works.\n\nThe bounds here are deliberately *generous* outer guards \u2014 they reject an\nabusive payload (422) but are not the functional caps. The real caps\n(page-text truncation, signal limit, thread clamp) live in the assembler so\nthey're enforced and unit-tested in exactly one place.",
-        "properties": {
-          "question": {
-            "maxLength": 4000,
-            "minLength": 1,
-            "title": "Question",
-            "type": "string"
-          },
-          "route": {
-            "default": "",
-            "maxLength": 200,
-            "title": "Route",
-            "type": "string"
-          },
-          "selection": {
-            "anyOf": [
-              {
-                "maxLength": 8000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Selection"
-          },
-          "signals": {
-            "items": {
-              "$ref": "#/components/schemas/AskSignal"
-            },
-            "maxItems": 200,
-            "title": "Signals",
-            "type": "array"
-          },
-          "thread": {
-            "items": {
-              "$ref": "#/components/schemas/AskTurn"
-            },
-            "maxItems": 40,
-            "title": "Thread",
-            "type": "array"
-          },
-          "visible_text": {
-            "default": "",
-            "maxLength": 20000,
-            "title": "Visible Text",
-            "type": "string"
-          }
-        },
-        "required": [
-          "question"
-        ],
-        "title": "AskRequest",
-        "type": "object"
-      },
-      "AskSignal": {
-        "description": "One on-screen audit signal the question may be about (#189): the five\ncontrolled-vocab tags plus the verdict, flattened from the catalog's Signal.\n\nEvery field defaults to \"\" so a partial or legacy record still validates \u2014\ngrounding is best-effort context, never a reason to 422 a question.",
-        "properties": {
-          "confidence": {
-            "default": "",
-            "title": "Confidence",
-            "type": "string"
-          },
-          "derivation_risk": {
-            "default": "",
-            "title": "Derivation Risk",
-            "type": "string"
-          },
-          "freshness_risk": {
-            "default": "",
-            "title": "Freshness Risk",
-            "type": "string"
-          },
-          "id": {
-            "default": "",
-            "title": "Id",
-            "type": "string"
-          },
-          "upstream_origin": {
-            "default": "",
-            "title": "Upstream Origin",
-            "type": "string"
-          },
-          "verdict": {
-            "default": "",
-            "title": "Verdict",
-            "type": "string"
-          },
-          "verifiability": {
-            "default": "",
-            "title": "Verifiability",
-            "type": "string"
-          }
-        },
-        "title": "AskSignal",
-        "type": "object"
-      },
-      "AskTurn": {
-        "description": "One prior conversation turn, echoed back so the stateless backend can keep\ncontext across follow-ups (#189). ``role`` is the speaker, ``content`` the\nraw text of that turn.",
-        "properties": {
-          "content": {
-            "default": "",
-            "title": "Content",
-            "type": "string"
-          },
-          "role": {
-            "default": "user",
-            "title": "Role",
-            "type": "string"
-          }
-        },
-        "title": "AskTurn",
-        "type": "object"
-      },
       "AttentionItemOut": {
         "properties": {
           "cluster_id": {
@@ -415,6 +300,20 @@
           "items"
         ],
         "title": "AttentionResponse",
+        "type": "object"
+      },
+      "AuthConfig": {
+        "description": "Public sign-in page config (ADR-077): whether the demo login is on.",
+        "properties": {
+          "demo_mode": {
+            "title": "Demo Mode",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "demo_mode"
+        ],
+        "title": "AuthConfig",
         "type": "object"
       },
       "CandidatesResponse": {
@@ -918,6 +817,10 @@
             "title": "Email",
             "type": "string"
           },
+          "read_only": {
+            "title": "Read Only",
+            "type": "boolean"
+          },
           "team": {
             "default": "",
             "title": "Team",
@@ -930,7 +833,8 @@
         },
         "required": [
           "tenant_id",
-          "email"
+          "email",
+          "read_only"
         ],
         "title": "MeResponse",
         "type": "object"
@@ -2383,43 +2287,6 @@
         "summary": "Dismiss Attention"
       }
     },
-    "/api/audit/ask": {
-      "post": {
-        "description": "Stream a grounded answer to a catalog reader's question (PRD #187 / #188 /\n#189).\n\nThe body carries the question plus optional page grounding \u2014 the route, the\nhighlighted selection, a bounded slice of visible page text, the on-screen\nsignal records, and the prior thread (#189) \u2014 which the assembler folds into\nthe prompt so answers reflect the actual on-screen ratings.\n\nAuthorizes via the same session seam as the rest of the app\n(``current_principal`` \u2014 the ``pilot_session`` cookie, bearer as fallback),\nso an unauthenticated request is 401. A light per-user throttle short-circuits\nwith 429 once a user passes the request limit inside the window. With no\n``ANTHROPIC_API_KEY`` the route self-disables with a clean 503 *before* it\ncommits to a stream, leaving the rest of the catalog working. Otherwise it\nreturns Server-Sent Events \u2014 the backend's first streaming endpoint \u2014 that\nCaddy's ``reverse_proxy`` passes through unbuffered.\n\nOn a clean finish the completed Q&A is persisted with its context snapshot\n(#190), tenant-scoped, best-effort \u2014 a write failure is logged and swallowed\nso it can never break the answer the reader already saw.",
-        "operationId": "audit_ask_api_audit_ask_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AskRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Audit Ask"
-      }
-    },
     "/api/auth/check": {
       "get": {
         "description": "Forward-auth seam for the edge (PRD #130): Caddy asks this before\nserving any byte under ``/data/processed/*``. Validates the session\n(cookie first, bearer fallback) and re-checks the username against the\ncredential table \u2014 per-request authority extends to the data plane, so a\nremoved user loses file access on their next fetch. 204 on success, 401\notherwise. One indexed SELECT \u2014 no tenant/user resolution, since the\nedge only needs yes/no.",
@@ -2435,6 +2302,44 @@
           }
         ],
         "summary": "Auth Check"
+      }
+    },
+    "/api/auth/config": {
+      "get": {
+        "description": "Public: what the sign-in page should offer (ADR-077).",
+        "operationId": "auth_config_api_auth_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Auth Config"
+      }
+    },
+    "/api/auth/demo": {
+      "post": {
+        "description": "Sign in as the configured read-only demo credential, no password\n(ADR-077). 404 unless DEMO_MODE is on. The credential is re-checked here\nas well as at boot: if it was removed or made writable since, the route\nrefuses rather than hand out a writable session. Nothing to brute-force,\nso no login throttle; the CSRF origin check still applies (POST).",
+        "operationId": "demo_login_api_auth_demo_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Demo Login"
       }
     },
     "/api/auth/login": {
@@ -2699,7 +2604,7 @@
     },
     "/api/leads/{display_cluster_id}/attempts": {
       "post": {
-        "description": "Append a manual activity event (date \u00b7 channel \u00b7 outcome) to the log.\n\n``direction='inbound'`` records a *reply* (the \"Log reply\" flow, #106);\nthe default ``'outbound'`` is a touch we made. Status-transition rows are\nauto-logged on ``PUT`` instead; this is the co-founder explicitly recording\nan outreach event or a reply.",
+        "description": "Append a manual activity event (date \u00b7 channel \u00b7 outcome) to the log.\n\n``direction='inbound'`` records a *reply* (the \"Log reply\" flow, #106);\nthe default ``'outbound'`` is a touch we made. Status-transition rows are\nauto-logged on ``PUT`` instead; this is the user explicitly recording\nan outreach event or a reply.",
         "operationId": "log_attempt_api_leads__display_cluster_id__attempts_post",
         "parameters": [
           {

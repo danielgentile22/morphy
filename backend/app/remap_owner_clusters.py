@@ -12,7 +12,7 @@ this reads it and rewrites those rows in place, once, at deploy.
 Policy (conservative — never lose data):
   * **one → one** (single-state owner): repoint.
   * **one → many** (a same-name owner that now SPLITS per state): duplicate the
-    row to each new sub-cluster — the co-founder resolves the wrong half.
+    row to each new sub-cluster — the user resolves the wrong half.
   * **many → one** (aliased towerco fragments that now MERGE): for a Lead PK
     collision, keep the most-advanced status + concatenate notes; attempts just
     repoint (their id is the PK, no collision).

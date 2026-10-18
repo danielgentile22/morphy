@@ -24,7 +24,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from backend.app.ask_log_store import AskLogStore
+from backend.app import credentials_store
 from backend.app.db import _ALEMBIC_INI, Base, init_db
 from backend.app.lead_store import LeadStore
 from backend.app.task_store import TaskStore
@@ -104,19 +104,24 @@ def _has_table(eng: Engine, table: str) -> bool:
     return table in inspect(eng).get_table_names()
 
 
-# Tables introduced by migrations *after* the 0001 baseline. A real pre-Alembic
+# Schema added by migrations *after* the 0001 baseline. A real pre-Alembic
 # database is frozen at the baseline schema (the retired additive path produced
-# exactly the baseline), so the adoption tests below — which use a create_all'd
-# *current-head* DB to stand in for that legacy DB — drop these first to restore
-# the baseline shape before exercising stamp-baseline + upgrade-to-head. Add a
-# table here when a new migration creates one.
-_POST_BASELINE_TABLES = ("ask_log",)
+# exactly the baseline), so the adoption tests below, which use a create_all'd
+# *current-head* DB to stand in for that legacy DB, strip these first to restore
+# the baseline shape before exercising stamp-baseline + upgrade-to-head. Add an
+# entry here when a new migration adds a column (or a DROP TABLE line for a
+# new table).
+_POST_BASELINE_COLUMNS = (("credential", "read_only"),)
 
 
 def _strip_post_baseline(eng: Engine) -> None:
-    for table in _POST_BASELINE_TABLES:
-        with eng.begin() as conn:
-            conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+    with eng.begin() as conn:
+        for table, column in _POST_BASELINE_COLUMNS:
+            conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {column}"))
+
+
+def _columns(eng: Engine, table: str) -> set[str]:
+    return {c["name"] for c in inspect(eng).get_columns(table)}
 
 
 # ── parity: the migration chain must build exactly the create_all schema ─────
@@ -145,7 +150,7 @@ def test_pre_alembic_db_is_stamped_and_upgraded_with_rows_intact(
     receives tenant 1 — inheriting the pre-teams board (#86)."""
     eng = migration_engine
     Base.metadata.create_all(eng)
-    _strip_post_baseline(eng)  # a pre-Alembic DB is baseline-shaped (no ask_log yet)
+    _strip_post_baseline(eng)  # a pre-Alembic DB is baseline-shaped
     LeadStore(Session(bind=eng, future=True), tenant_id=1).upsert("old1", status="researching")
     TaskStore(Session(bind=eng, future=True), tenant_id=1).create(title="legacy task")
     assert "alembic_version" not in inspect(eng).get_table_names()
@@ -234,7 +239,7 @@ def test_prod_shaped_tables_adopt_cleanly(migration_engine: Engine) -> None:
             )
         )
     Base.metadata.create_all(eng)  # the remaining tables; existing ones stay as-is
-    _strip_post_baseline(eng)  # a pre-Alembic DB is baseline-shaped (no ask_log yet)
+    _strip_post_baseline(eng)  # a pre-Alembic DB is baseline-shaped
 
     init_db(eng)
 
@@ -258,36 +263,38 @@ def test_init_db_is_idempotent(migration_engine: Engine) -> None:
     assert _stamped_revision(migration_engine) == _head_revision()
 
 
-# ── slice 3: the ask_log revision (#190) ─────────────────────────────────────
-def test_ask_log_revision_up_down_on_a_fresh_db(migration_engine: Engine) -> None:
-    """The 0002 ``ask_log`` revision applies cleanly on a fresh DB, the table
-    serves ``AskLogStore`` end-to-end, and ``downgrade`` removes it — leaving
-    the rest of the baseline schema intact (the revision is reversible)."""
+# ── 0003: read-only credentials + the Ask Claude log retired (ADR-077) ────────
+def test_read_only_revision_up_down_keeps_existing_credentials_writable(
+    migration_engine: Engine,
+) -> None:
+    """0003 adds ``credential.read_only`` with a false default, so a credential
+    that existed before the upgrade keeps full write access, and drops the
+    retired ``ask_log`` table. ``downgrade`` restores the 0002 shape."""
     from alembic import command
 
     eng = migration_engine
-    init_db(eng)  # fresh → baseline → 0002 head
-    assert _has_table(eng, "ask_log")
-
-    # The migrated table (not create_all) serves the store, tenant-scoped.
-    row = AskLogStore(Session(bind=eng, future=True), tenant_id=1).record(
-        username="dev",
-        question="What is an FCC ASR registration?",
-        answer="The FCC antenna-structure registry.",
-        route="Signal: owner_name@12",
-        signal_ids=["owner_name@12"],
-        model="claude-sonnet-4-6",
-    )
-    reloaded = AskLogStore(Session(bind=eng, future=True), 1).get(row.id)
-    assert reloaded is not None
-    assert reloaded.signal_ids == "owner_name@12"
-
     cfg = _alembic_cfg(eng)
-    command.downgrade(cfg, "0001")
-    assert not _has_table(eng, "ask_log")
-    assert _has_table(eng, "task")  # the rest of the baseline is untouched
-    assert _stamped_revision(eng) == "0001"
+    command.upgrade(cfg, "0002")
+    assert _has_table(eng, "ask_log")
+    with eng.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO credential (username, password_hash, team, created_at, updated_at)"
+                " VALUES ('alice', 'pbkdf2$x', 'acme', '2026-01-01', '2026-01-01')"
+            )
+        )
 
     command.upgrade(cfg, "head")
+    assert not _has_table(eng, "ask_log")
+    assert "read_only" in _columns(eng, "credential")
+    entry = credentials_store.get(Session(bind=eng, future=True), "alice")
+    assert entry is not None
+    assert entry.read_only is False
+
+    command.downgrade(cfg, "0002")
     assert _has_table(eng, "ask_log")
+    assert "read_only" not in _columns(eng, "credential")
+    assert _stamped_revision(eng) == "0002"
+
+    command.upgrade(cfg, "head")
     assert _stamped_revision(eng) == _head_revision()

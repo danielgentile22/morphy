@@ -8,6 +8,7 @@
   import ScoringPanel from './components/ScoringPanel.svelte';
   import SignIn from './components/SignIn.svelte';
   import UserMenu from './components/UserMenu.svelte';
+  import Notice from './components/Notice.svelte';
   // Off-first-paint route components are dynamically imported at their render
   // sites (PERF-012) so they land in their own chunks instead of the entry
   // bundle: Leads, LeadPage, ExploreList, TowerDetail, Settings. Dashboard stays
@@ -196,7 +197,7 @@
 {#if !auth.verified}
   <!-- Full-screen sign-in gate (#85): until a verified session exists, nothing
        else mounts — no map, no navigation, no panels, no data fetches. The
-       SignIn card carries the Morphy Consulting branding (round 2 cleanup). -->
+       SignIn card carries the morphy branding (round 2 cleanup). -->
   <div class="gate" data-testid="auth-gate">
     {#if auth.restoring}
       <p class="gate-checking" data-testid="gate-checking">Checking session…</p>
@@ -418,6 +419,8 @@
     {/if}
   </div>
 {/if}
+
+<Notice />
 
 <style>
   /* Full-screen sign-in gate (#85): the only surface an unauthenticated

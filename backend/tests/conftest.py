@@ -19,7 +19,7 @@ import pytest
 # Point the app's *default* engine + owners index at throwaway temp paths
 # before any backend module imports config — so importing the FastAPI app
 # (for the API test) never touches the real dev DB or owners_index.json.
-_TMP = tempfile.mkdtemp(prefix="pilot-leadtest-")
+_TMP = tempfile.mkdtemp(prefix="morphy-leadtest-")
 os.environ.setdefault("DATABASE_URL", f"sqlite+pysqlite:///{_TMP}/lead_state.sqlite3")
 os.environ.setdefault("OWNERS_INDEX_PATH", f"{_TMP}/owners_index.json")
 # Deterministic auth in tests: dev posture with a fixed (non-prod) signing

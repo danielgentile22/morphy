@@ -38,6 +38,15 @@
 </script>
 
 <div class="usermenu" bind:this={root}>
+  {#if auth.readOnly}
+    <span
+      class="ro-badge"
+      data-testid="read-only-badge"
+      title="You are exploring a read-only demo. Changes are disabled."
+    >
+      Read-only demo
+    </span>
+  {/if}
   <button
     class="trigger"
     data-testid="user-menu"
@@ -64,6 +73,17 @@
   .usermenu {
     margin-left: auto;
     position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .ro-badge {
+    padding: 3px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 999px;
+    color: var(--color-text-secondary);
+    font-size: var(--text-label-sm-size);
+    white-space: nowrap;
   }
   .trigger {
     display: inline-flex;

@@ -4,6 +4,7 @@
   // any-field + free-text search. Rendered as the Dashboard `tasks` sub-page.
   import { onMount } from 'svelte';
   import { tasks } from '../lib/tasks-store.svelte';
+  import { auth } from '../lib/auth-store.svelte';
   import { leadHash, towerHash, settingsHash } from '../lib/nav';
   import Icon from './Icon.svelte';
   import type { Task, TaskStatus, TaskPriority } from '../lib/tasks-api';
@@ -94,7 +95,7 @@
     Auto follow-up is configured in <a href={settingsHash()}>Settings → Automations</a>.
   </p>
 
-  <!-- create -->
+  {#if !auth.readOnly}
   <form
     class="newtask"
     data-testid="task-form"
@@ -142,6 +143,7 @@
       </div>
     {/if}
   </form>
+  {/if}
 
   <!-- filter bar -->
   <div class="filterbar" data-testid="task-filter">
@@ -182,13 +184,13 @@
     <p class="muted">Loading tasks…</p>
   {:else if tasks.visible.length === 0}
     <p class="muted" data-testid="task-empty">
-      {tasks.tasks.length === 0 ? 'No tasks yet. Add one above.' : 'No tasks match the filter.'}
+      {tasks.tasks.length === 0 ? (auth.readOnly ? 'No tasks yet.' : 'No tasks yet. Add one above.') : 'No tasks match the filter.'}
     </p>
   {:else}
     <ul class="list" data-testid="task-list">
       {#each tasks.visible as t (t.id)}
         <li class="row" class:done={t.status === 'done'} data-testid="task-row" data-status={t.status}>
-          <input type="checkbox" class="check" data-testid="task-check" checked={t.status === 'done'} onchange={() => toggleDone(t)} aria-label="Toggle done" />
+          <input type="checkbox" class="check" data-testid="task-check" checked={t.status === 'done'} onchange={() => toggleDone(t)} aria-label="Toggle done" disabled={auth.readOnly} />
           <div class="body">
             <div class="line1">
               <span class="ttitle">{t.title}</span>
@@ -205,10 +207,12 @@
               {#each t.labels as l (l)}<span class="chip" data-tone="neutral">{l}</span>{/each}
             </div>
           </div>
-          <button class="chip status-pill" data-testid="task-status" data-status={t.status} data-tone={STATUS_TONE[t.status]} onclick={() => cycle(t)} title="Cycle status">
+          <button class="chip status-pill" data-testid="task-status" data-status={t.status} data-tone={STATUS_TONE[t.status]} onclick={() => cycle(t)} disabled={auth.readOnly} title={auth.readOnly ? 'Read-only demo' : 'Cycle status'}>
             {STATUS_LABEL[t.status]}
           </button>
-          <button class="del" data-testid="task-delete" onclick={() => tasks.remove(t.id)} aria-label="Delete task"><Icon name="x" size={15} /></button>
+          {#if !auth.readOnly}
+            <button class="del" data-testid="task-delete" onclick={() => tasks.remove(t.id)} aria-label="Delete task"><Icon name="x" size={15} /></button>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -366,6 +370,9 @@
   .status-pill {
     flex-shrink: 0;
     cursor: pointer;
+  }
+  .status-pill:disabled {
+    cursor: default;
   }
   .del {
     flex-shrink: 0;

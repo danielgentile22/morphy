@@ -3,6 +3,8 @@
 Surface:
   POST /api/auth/login           username/password → session JWT (httpOnly cookie + body)
   POST /api/auth/logout          clear the session cookie (PRD #130)
+  POST /api/auth/demo            sign in as the read-only demo credential (DEMO_MODE, ADR-077)
+  GET  /api/auth/config          public sign-in page config (is the demo login on?)
   GET  /api/auth/check           forward-auth seam for the edge /data gate (PRD #130)
   GET  /api/auth/me              the authenticated tenant + email
   GET  /api/health               liveness (public)
@@ -28,8 +30,7 @@ unauthenticated requests are rejected with 401.
 from __future__ import annotations
 
 import json
-import logging
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import TypeVar
@@ -37,14 +38,11 @@ from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from .activity_service import ActivityService
 from .antenna_store import AntennaStore
-from .ask_assembler import AskSignal, build_prompt
-from .ask_client import AnthropicNotConfigured, AnthropicStreamer, AnthropicStreamError
-from .ask_log_store import AskLogStore
 from .attention_service import DISMISS_CHANNEL, AttentionService
 from .auth import (
     SESSION_COOKIE,
@@ -55,12 +53,13 @@ from .auth import (
     decode_access_token,
     session_token,
 )
-from .auth_service import InvalidCredentials, is_authorized
+from .auth_service import InvalidCredentials, NotAuthorized, is_authorized, resolve_principal
 from .auth_service import login as login_user
 from .auto_followup_rule import AutoFollowUpRule
 from .config import settings
 from .credentials import normalize_username
 from .credentials_store import CredentialsError, ensure_fail_closed_boot
+from .credentials_store import get as get_credential
 from .db import get_db, init_db
 from .lead_status import InvalidTransition
 from .lead_store import LeadStore
@@ -73,9 +72,9 @@ from .schemas import (
     AntennaState,
     AntennaUpdate,
     ArchivedAsrsResponse,
-    AskRequest,
     AttentionItemOut,
     AttentionResponse,
+    AuthConfig,
     CandidatesResponse,
     ContactAttemptIn,
     CountsResponse,
@@ -188,33 +187,6 @@ def get_login_throttle() -> LoginThrottle:
     return _login_throttle
 
 
-_log = logging.getLogger(__name__)
-
-
-# Light per-user request throttle for the "Ask Claude" route (PRD #188), reusing
-# the login throttle's sliding-window machinery (prior art): each request is
-# "recorded", and once a user passes the limit inside the window they get 429
-# until it rolls forward. Keyed by username, so one user can't run up the bill.
-_ask_throttle = LoginThrottle(
-    max_failures=settings.ask_rate_limit_max,
-    window_seconds=settings.ask_rate_limit_window_seconds,
-)
-
-
-def get_ask_throttle() -> LoginThrottle:
-    return _ask_throttle
-
-
-def get_ask_streamer() -> AnthropicStreamer:
-    """The Anthropic streaming seam, built from settings. Tests override this
-    with a fake so they never touch the network or need a key."""
-    return AnthropicStreamer(
-        api_key=settings.anthropic_api_key,
-        model=settings.ask_model,
-        max_tokens=settings.ask_max_tokens,
-    )
-
-
 _StoreT = TypeVar("_StoreT", bound=TenantScopedStore)
 
 
@@ -233,10 +205,7 @@ def tenant_store(cls: type[_StoreT]) -> Callable[..., _StoreT]:
 
 # One provider per store, all built by the same factory. FastAPI caches the
 # get_db dependency per request, so every store in a request shares one
-# session/transaction (a write + its read are one transaction), and the
-# session outlives a streaming body — get_ask_log's routes can persist
-# *after* the stream completes (#190).
-get_ask_log = tenant_store(AskLogStore)
+# session/transaction (a write + its read are one transaction).
 get_store = tenant_store(LeadStore)
 get_merges = tenant_store(OwnerMergeService)
 get_tasks = tenant_store(TaskStore)
@@ -306,7 +275,13 @@ def login(
         throttle.record_failure(key)
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     throttle.reset(key)  # a real sign-in clears the counter for this key
-    token = create_access_token(principal.email)
+    return _start_session(response, principal.email)
+
+
+def _start_session(response: Response, username: str) -> TokenResponse:
+    """Mint the identity-only JWT for ``username`` and set it in the session
+    cookie. The one place both sign-in routes issue a session."""
+    token = create_access_token(username)
     response.set_cookie(
         SESSION_COOKIE,
         token,
@@ -322,6 +297,31 @@ def login(
         access_token=token,
         expires_in=settings.session_ttl_days * 86400,
     )
+
+
+@app.get("/api/auth/config", response_model=AuthConfig)
+def auth_config() -> AuthConfig:
+    """Public: what the sign-in page should offer (ADR-077)."""
+    return AuthConfig(demo_mode=settings.demo_mode)
+
+
+@app.post("/api/auth/demo", response_model=TokenResponse)
+def demo_login(response: Response, db: Session = Depends(get_db)) -> TokenResponse:
+    """Sign in as the configured read-only demo credential, no password
+    (ADR-077). 404 unless DEMO_MODE is on. The credential is re-checked here
+    as well as at boot: if it was removed or made writable since, the route
+    refuses rather than hand out a writable session. Nothing to brute-force,
+    so no login throttle; the CSRF origin check still applies (POST)."""
+    if not settings.demo_mode:
+        raise HTTPException(status_code=404, detail="Not Found")
+    entry = get_credential(db, settings.demo_username)
+    if entry is None or not entry.read_only:
+        raise HTTPException(status_code=404, detail="Not Found")
+    try:
+        principal = resolve_principal(db, entry.username)
+    except NotAuthorized as exc:
+        raise HTTPException(status_code=404, detail="Not Found") from exc
+    return _start_session(response, principal.email)
 
 
 @app.post("/api/auth/logout", status_code=204)
@@ -360,6 +360,7 @@ def _me_response(principal: Principal, db: Session, users: UserStore) -> MeRespo
         # makes the JWT identity-only, so nothing tenant-shaped is added to it.
         team=TenantService(db).get_name(principal.tenant_id),
         display_name=user.display_name if user is not None else "",
+        read_only=principal.read_only,
     )
 
 
@@ -438,136 +439,6 @@ def change_my_password(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if outcome is ChangePasswordOutcome.WRONG_CURRENT:
         raise HTTPException(status_code=401, detail="Current password is incorrect")
-
-
-# ── "Ask Claude" catalog helper (PRD #187 / #188) ────────────────────────────
-def _sse(event: str, data: dict) -> bytes:
-    """Encode one Server-Sent Event frame. The payload is JSON so a delta that
-    contains newlines survives the line-oriented SSE wire format intact."""
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
-
-
-def _ask_event_stream(
-    streamer: AnthropicStreamer,
-    system: str,
-    messages: list[dict],
-    *,
-    on_complete: Callable[[str], None] | None = None,
-) -> Iterator[bytes]:
-    """The SSE body: ``delta`` frames as text arrives, a terminal ``done``, or a
-    single ``error`` frame if the SDK fails mid-stream. A streaming failure
-    can't change the already-sent 200, so it degrades to a clean error event
-    the client can show — never a 500 stack.
-
-    On a clean finish the assembled answer is handed to ``on_complete`` for
-    persistence (#190) — *after* the ``done`` frame is flushed, so the reader
-    has the full answer before any write happens, and a persistence failure
-    can never corrupt what they already saw."""
-    parts: list[str] = []
-    try:
-        for delta in streamer.stream(system=system, messages=messages):
-            parts.append(delta)
-            yield _sse("delta", {"text": delta})
-        yield _sse("done", {})
-    except AnthropicStreamError:
-        yield _sse("error", {"message": "Ask Claude is temporarily unavailable."})
-        return
-    # Reached only on a clean finish (an error returns above): persist the turn.
-    if on_complete is not None:
-        on_complete("".join(parts))
-
-
-@app.post("/api/audit/ask", response_class=StreamingResponse)
-def audit_ask(
-    body: AskRequest,
-    principal: Principal = Depends(current_principal),
-    streamer: AnthropicStreamer = Depends(get_ask_streamer),
-    throttle: LoginThrottle = Depends(get_ask_throttle),
-    log: AskLogStore = Depends(get_ask_log),
-) -> StreamingResponse:
-    """Stream a grounded answer to a catalog reader's question (PRD #187 / #188 /
-    #189).
-
-    The body carries the question plus optional page grounding — the route, the
-    highlighted selection, a bounded slice of visible page text, the on-screen
-    signal records, and the prior thread (#189) — which the assembler folds into
-    the prompt so answers reflect the actual on-screen ratings.
-
-    Authorizes via the same session seam as the rest of the app
-    (``current_principal`` — the ``pilot_session`` cookie, bearer as fallback),
-    so an unauthenticated request is 401. A light per-user throttle short-circuits
-    with 429 once a user passes the request limit inside the window. With no
-    ``ANTHROPIC_API_KEY`` the route self-disables with a clean 503 *before* it
-    commits to a stream, leaving the rest of the catalog working. Otherwise it
-    returns Server-Sent Events — the backend's first streaming endpoint — that
-    Caddy's ``reverse_proxy`` passes through unbuffered.
-
-    On a clean finish the completed Q&A is persisted with its context snapshot
-    (#190), tenant-scoped, best-effort — a write failure is logged and swallowed
-    so it can never break the answer the reader already saw.
-    """
-    key = ("ask", principal.email)
-    if throttle.is_blocked(key):
-        raise HTTPException(
-            status_code=429,
-            detail="Too many questions; give it a moment.",
-            headers={"Retry-After": str(int(throttle.retry_after(key)) + 1)},
-        )
-    throttle.record_failure(key)  # count this request toward the window
-    try:
-        streamer.ensure_ready()
-    except AnthropicNotConfigured as exc:
-        raise HTTPException(status_code=503, detail="Ask Claude is not configured.") from exc
-
-    # Map the request's page grounding (#189) onto the assembler's pure inputs.
-    # The assembler owns the functional caps (page-text truncation, signal
-    # limit, thread clamp); here we just translate model → dataclass/dicts.
-    prompt = build_prompt(
-        body.question,
-        route=body.route,
-        selection=body.selection,
-        visible_text=body.visible_text,
-        signals=[
-            AskSignal(
-                id=s.id,
-                confidence=s.confidence,
-                upstream_origin=s.upstream_origin,
-                freshness_risk=s.freshness_risk,
-                derivation_risk=s.derivation_risk,
-                verifiability=s.verifiability,
-                verdict=s.verdict,
-            )
-            for s in body.signals
-        ],
-        thread=[{"role": t.role, "content": t.content} for t in body.thread],
-    )
-
-    def _persist(answer: str) -> None:
-        """Store the completed Q&A + context snapshot (#190). Best-effort: any
-        failure is logged and swallowed — the answer is already on screen."""
-        try:
-            usage = streamer.usage
-            log.record(
-                username=principal.email,
-                user_id=principal.user_id,
-                question=body.question,
-                answer=answer,
-                route=body.route,
-                selection=body.selection,
-                signal_ids=[s.id for s in body.signals],
-                model=streamer.model,
-                input_tokens=usage.input_tokens if usage else None,
-                output_tokens=usage.output_tokens if usage else None,
-            )
-        except Exception:  # noqa: BLE001 — persistence never breaks the stream
-            _log.exception("Ask Claude: failed to persist Q&A")
-
-    return StreamingResponse(
-        _ask_event_stream(streamer, prompt.system, prompt.messages, on_complete=_persist),
-        media_type="text/event-stream",
-        # Keep the stream live end-to-end: no client/proxy buffering, no caching.
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
 
 
 @app.get("/api/candidates", response_model=CandidatesResponse)
@@ -664,7 +535,7 @@ def log_attempt(
 
     ``direction='inbound'`` records a *reply* (the "Log reply" flow, #106);
     the default ``'outbound'`` is a touch we made. Status-transition rows are
-    auto-logged on ``PUT`` instead; this is the co-founder explicitly recording
+    auto-logged on ``PUT`` instead; this is the user explicitly recording
     an outreach event or a reply."""
     if owners_index.get_owner(display_cluster_id, merges) is None:
         raise HTTPException(status_code=404, detail="owner not found in index")

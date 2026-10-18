@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Index, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Index, Integer, String, Text, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -177,6 +177,12 @@ class Credential(Base):
     username: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     team: Mapped[str] = mapped_column(String(255), nullable=False)
+    # A read-only principal may sign in and read everything its team can, but
+    # every non-GET request it makes is refused (ADR-077). The public demo's
+    # credential is the one intended user.
+    read_only: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
@@ -289,49 +295,6 @@ class ScoringPreset(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     config: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-
-
-class AskLog(Base):
-    """One stored "Ask Claude" Q&A with its context snapshot (PRD #187 /
-    slice 3 / #190). Tenant-scoped.
-
-    Every completed question+answer in the data catalog is written here so a
-    recurring question becomes a to-do list of explanations to fold back into
-    the catalog later. **Storage only** in this slice — no read endpoint, no
-    review UI. The snapshot captures *what was on screen* when the question was
-    asked (``route`` + ``selection`` + the on-screen ``signal_ids``) plus the
-    ``model`` used and token ``usage``, so a future "promote good answers"
-    review can mine it without re-deriving context.
-
-    ``username`` is the asker (the JWT subject); ``user_id`` the resolved
-    tenant user (nullable — kept for symmetry with the rest of the schema).
-    """
-
-    __tablename__ = "ask_log"
-
-    # Newest-first reads (a future review UI) served by an index range scan
-    # rather than a filesort, mirroring ``task`` (PERF-023).
-    __table_args__ = (Index("ix_ask_log_tenant_created", "tenant_id", "created_at", "id"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    # The asker — the JWT subject (= the credential username).
-    username: Mapped[str] = mapped_column(String(320), nullable=False)
-    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    question: Mapped[str] = mapped_column(Text, nullable=False)
-    answer: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    # The context snapshot: which catalog view, the highlighted selection (if
-    # any), and the on-screen signal ids (comma-separated, '' when none).
-    route: Mapped[str] = mapped_column(String(200), nullable=False, default="")
-    selection: Mapped[str | None] = mapped_column(Text, nullable=True)
-    signal_ids: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    # The model used + token usage, for cost review (nullable — usage is
-    # best-effort; a stream that ends before the SDK surfaces a final message
-    # leaves it null).
-    model: Mapped[str] = mapped_column(String(120), nullable=False, default="")
-    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

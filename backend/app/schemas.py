@@ -306,6 +306,15 @@ class MeResponse(BaseModel):
     # The friendly name the user set in Settings (PRD #121); '' falls back to
     # the email at every render site (History/Stats/task assignment).
     display_name: str = ""
+    # True for a read-only principal (ADR-077): the SPA hides write controls.
+    # The backend refuses the writes regardless.
+    read_only: bool
+
+
+class AuthConfig(BaseModel):
+    """Public sign-in page config (ADR-077): whether the demo login is on."""
+
+    demo_mode: bool
 
 
 class MeUpdate(BaseModel):
@@ -537,50 +546,3 @@ class StatsResponse(BaseModel):
     active_days: int
     by_state: dict[str, dict[str, int]] = Field(default_factory=dict)
     by_member: dict[str, int] = Field(default_factory=dict)
-
-
-# ── "Ask Claude" catalog helper (PRD #187 / #188 + grounding #189) ───────────
-class AskSignal(BaseModel):
-    """One on-screen audit signal the question may be about (#189): the five
-    controlled-vocab tags plus the verdict, flattened from the catalog's Signal.
-
-    Every field defaults to "" so a partial or legacy record still validates —
-    grounding is best-effort context, never a reason to 422 a question."""
-
-    id: str = ""
-    confidence: str = ""
-    upstream_origin: str = ""
-    freshness_risk: str = ""
-    derivation_risk: str = ""
-    verifiability: str = ""
-    verdict: str = ""
-
-
-class AskTurn(BaseModel):
-    """One prior conversation turn, echoed back so the stateless backend can keep
-    context across follow-ups (#189). ``role`` is the speaker, ``content`` the
-    raw text of that turn."""
-
-    role: str = "user"
-    content: str = ""
-
-
-class AskRequest(BaseModel):
-    """The body of POST /api/audit/ask.
-
-    Slice 1 (#188) was question-only; slice 2 (#189) adds page grounding — the
-    current route, the highlighted selection, a bounded slice of the visible page
-    text, the on-screen signal records, and the prior thread. Everything except
-    ``question`` is optional, so a bare ``{"question": "..."}`` still works.
-
-    The bounds here are deliberately *generous* outer guards — they reject an
-    abusive payload (422) but are not the functional caps. The real caps
-    (page-text truncation, signal limit, thread clamp) live in the assembler so
-    they're enforced and unit-tested in exactly one place."""
-
-    question: str = Field(min_length=1, max_length=4000)
-    route: str = Field(default="", max_length=200)
-    selection: str | None = Field(default=None, max_length=8000)
-    visible_text: str = Field(default="", max_length=20000)
-    signals: list[AskSignal] = Field(default_factory=list, max_length=200)
-    thread: list[AskTurn] = Field(default_factory=list, max_length=40)

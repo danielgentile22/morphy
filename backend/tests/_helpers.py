@@ -86,9 +86,6 @@ def api(sample: dict) -> Iterator[tuple[TestClient, Engine, None]]:
     # clock-injected one via ``main._login_throttle = ...``).
     _orig_throttle = main._login_throttle
     main._login_throttle.clear()
-    # The "Ask Claude" route shares the same in-process throttle pattern; reset
-    # it too so a rate-limit test can't leak into the next module.
-    main._ask_throttle.clear()
     try:
         with TestClient(main.app) as client:
             # 3-tuple kept for call-site stability; the 3rd slot is an unused

@@ -99,8 +99,8 @@ def test_list_shows_usernames_and_teams_never_hashes(session: Session) -> None:
     store.add(session, "alice", "acme", "pw-a")
     store.add(session, "bob", "globex", "pw-b")
     listing = store.list_users(session)
-    assert listing == [("alice", "acme"), ("bob", "globex")]
-    flat = " ".join(str(x) for pair in listing for x in pair)
+    assert listing == [("alice", "acme", False), ("bob", "globex", False)]
+    flat = " ".join(str(x) for row in listing for x in row)
     assert "pbkdf2" not in flat
     assert "pw-a" not in flat
 

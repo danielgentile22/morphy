@@ -43,6 +43,8 @@ class CredentialEntry:
     username: str
     encoded_hash: str
     team: str
+    # Table rows only (ADR-077); the users.txt format has no such field.
+    read_only: bool = False
 
 
 @dataclass(frozen=True)

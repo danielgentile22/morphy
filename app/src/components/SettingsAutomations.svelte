@@ -5,6 +5,7 @@
   // /api/settings — not the per-user store.
   import { onMount } from 'svelte';
   import { request } from '../lib/leads-api';
+  import { auth } from '../lib/auth-store.svelte';
   import type { components } from '../lib/api-types';
 
   // Generated from the backend's SettingsResponse (PRD #133).
@@ -36,7 +37,7 @@
 
 <section class="set-section" data-testid="settings-automations">
   <h2>Automations</h2>
-  <p class="hint">Team-level automation rules — shared by everyone on your team.</p>
+  <p class="hint">Team-level automation rules, shared by everyone on your team.</p>
 
   <div class="set-group">
     <h3>Auto follow-up</h3>
@@ -46,6 +47,7 @@
           type="checkbox"
           data-testid="auto-followup-enabled"
           checked={settings.auto_followup_enabled}
+          disabled={auth.readOnly}
           onchange={(e) => save({ auto_followup_enabled: e.currentTarget.checked })}
         />
         Schedule a follow-up task when an owner goes quiet
@@ -59,6 +61,8 @@
           min="1"
           data-testid="auto-followup-window"
           value={settings.auto_followup_window_days}
+          disabled={auth.readOnly}
+          title={auth.readOnly ? 'Read-only demo' : undefined}
           onchange={(e) => save({ auto_followup_window_days: Number(e.currentTarget.value) })}
         />
         <span class="set-label" style="min-width:auto">days of no reply</span>

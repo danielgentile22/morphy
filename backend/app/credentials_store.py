@@ -44,7 +44,12 @@ def get(session: Session, username: str) -> CredentialEntry | None:
     row = _row(session, username)
     if row is None:
         return None
-    return CredentialEntry(username=row.username, encoded_hash=row.password_hash, team=row.team)
+    return CredentialEntry(
+        username=row.username,
+        encoded_hash=row.password_hash,
+        team=row.team,
+        read_only=row.read_only,
+    )
 
 
 def authenticate(session: Session, username: str, password: str) -> AuthResult:
@@ -72,14 +77,16 @@ def count(session: Session) -> int:
     return session.scalar(select(func.count()).select_from(Credential)) or 0
 
 
-def list_users(session: Session) -> list[tuple[str, str]]:
-    """``(username, team)`` pairs in registration order — never hashes."""
+def list_users(session: Session) -> list[tuple[str, str, bool]]:
+    """``(username, team, read_only)`` in registration order — never hashes."""
     rows = session.scalars(select(Credential).order_by(Credential.id))
-    return [(r.username, r.team) for r in rows]
+    return [(r.username, r.team, r.read_only) for r in rows]
 
 
 # ── writers (the CLI + self-service password change only) ────────────────────
-def add(session: Session, username: str, team: str, password: str) -> None:
+def add(
+    session: Session, username: str, team: str, password: str, *, read_only: bool = False
+) -> None:
     """Insert a new credential. The new user can sign in immediately."""
     username_n, team_n = _valid_username(username), _valid_team(team)
     if not password:
@@ -88,7 +95,14 @@ def add(session: Session, username: str, team: str, password: str) -> None:
         raise CredentialsError(
             f"user '{username_n}' already exists (use set-password / set-team to change it)"
         )
-    session.add(Credential(username=username_n, password_hash=hash_password(password), team=team_n))
+    session.add(
+        Credential(
+            username=username_n,
+            password_hash=hash_password(password),
+            team=team_n,
+            read_only=read_only,
+        )
+    )
     session.commit()
 
 
@@ -113,6 +127,14 @@ def set_team(session: Session, username: str, team: str) -> None:
     """Move a user to another team (their row keeps its id and password)."""
     row = _require_row(session, username)
     row.team = _valid_team(team)
+    session.commit()
+
+
+def set_read_only(session: Session, username: str, read_only: bool) -> None:
+    """Flag or unflag a credential as read-only (ADR-077). Live on the user's
+    next request, like every other credential change."""
+    row = _require_row(session, username)
+    row.read_only = read_only
     session.commit()
 
 
@@ -182,10 +204,17 @@ def ensure_fail_closed_boot(eng=None, cfg=None) -> None:
                     "<username> <team>`, or migrate a legacy users.txt with "
                     "`python -m app.users import-file <path>`"
                 )
+        if cfg.demo_mode:
+            demo = get(session, cfg.demo_username)
+            if demo is None or not demo.read_only:
+                problems.append(
+                    f"DEMO_MODE is on but '{cfg.demo_username}' is not a read-only "
+                    "credential (create it with `python -m app.demo_seed`)"
+                )
 
     if problems:
         raise RuntimeError(
-            "Auth misconfigured with AUTH_DEV_MODE off: "
+            "Auth misconfigured: "
             + "; ".join(problems)
             + ". Provide these from the host secret store, or set AUTH_DEV_MODE=1 "
             "for the local dev loop."

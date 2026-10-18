@@ -77,6 +77,9 @@
     <p class="hint">Email and team are managed by an administrator.</p>
   </div>
 
+  {#if auth.readOnly}
+    <p class="hint" data-testid="account-read-only">This is a read-only demo account.</p>
+  {:else}
   <div class="set-group">
     <h3>Display name</h3>
     <div class="set-row">
@@ -149,4 +152,5 @@
       {#if pwStatus === 'error'}<span class="set-status err" data-testid="pw-error">{pwError}</span>{/if}
     </div>
   </form>
+  {/if}
 </section>

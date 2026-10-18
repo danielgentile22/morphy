@@ -890,7 +890,6 @@ source = { editable = "." }
 [package.dev-dependencies]
 backend = [
     { name = "alembic" },
-    { name = "anthropic" },
     { name = "fastapi" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyjwt" },
@@ -929,7 +928,6 @@ tui = [
 [package.metadata.requires-dev]
 backend = [
     { name = "alembic", specifier = ">=1.13" },
-    { name = "anthropic", specifier = ">=0.40" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1" },
     { name = "pyjwt", specifier = ">=2.8" },

@@ -5,10 +5,12 @@ The administrator's surface for credentials — never generate, paste, or read
 a hash by hand:
 
     cd backend && python -m app.users add <username> <team>     # hidden password prompt
+    cd backend && python -m app.users add <username> <team> --read-only
     cd backend && python -m app.users remove <username>
     cd backend && python -m app.users list
     cd backend && python -m app.users set-password <username>   # hidden password prompt
     cd backend && python -m app.users set-team <username> <team>
+    cd backend && python -m app.users set-read-only <username> on|off
     cd backend && python -m app.users import-file <path>        # one-shot users.txt migration
 
     The same subcommands as the file era, now writing the ``credential``
@@ -81,6 +83,11 @@ def _main(argv: list[str]) -> int:  # pragma: no cover - thin argparse/getpass s
     p_add = sub.add_parser("add", help="add a user (prompts for a password)")
     p_add.add_argument("username")
     p_add.add_argument("team")
+    p_add.add_argument(
+        "--read-only",
+        action="store_true",
+        help="the user can sign in and read, but every write is refused (ADR-077)",
+    )
 
     p_remove = sub.add_parser("remove", help="remove a user")
     p_remove.add_argument("username")
@@ -93,6 +100,10 @@ def _main(argv: list[str]) -> int:  # pragma: no cover - thin argparse/getpass s
     p_setteam = sub.add_parser("set-team", help="move a user to a different team")
     p_setteam.add_argument("username")
     p_setteam.add_argument("team")
+
+    p_ro = sub.add_parser("set-read-only", help="flag or unflag a user as read-only")
+    p_ro.add_argument("username")
+    p_ro.add_argument("state", choices=["on", "off"])
 
     p_import = sub.add_parser(
         "import-file",
@@ -111,10 +122,17 @@ def _main(argv: list[str]) -> int:  # pragma: no cover - thin argparse/getpass s
     try:
         with SessionLocal() as session:
             if args.command == "add":
-                credentials_store.add(session, args.username, args.team, _prompt_password())
+                credentials_store.add(
+                    session,
+                    args.username,
+                    args.team,
+                    _prompt_password(),
+                    read_only=args.read_only,
+                )
                 print(
                     f"added '{credentials.normalize(args.username)}' "
                     f"to team '{credentials.normalize(args.team)}'"
+                    + (" (read-only)" if args.read_only else "")
                 )
             elif args.command == "remove":
                 credentials_store.remove(session, args.username)
@@ -124,9 +142,11 @@ def _main(argv: list[str]) -> int:  # pragma: no cover - thin argparse/getpass s
                 if not entries:
                     print("no users")
                 else:
-                    width = max(len(u) for u, _ in entries)
-                    for username, team in entries:
-                        print(f"{username:<{width}}  {team}")
+                    width = max(len(u) for u, _, _ in entries)
+                    for username, team, read_only in entries:
+                        print(
+                            f"{username:<{width}}  {team}" + ("  (read-only)" if read_only else "")
+                        )
             elif args.command == "set-password":
                 credentials_store.set_password(session, args.username, _prompt_password())
                 print(f"password updated for '{credentials.normalize(args.username)}'")
@@ -136,6 +156,9 @@ def _main(argv: list[str]) -> int:  # pragma: no cover - thin argparse/getpass s
                     f"'{credentials.normalize(args.username)}' moved "
                     f"to team '{credentials.normalize(args.team)}'"
                 )
+            elif args.command == "set-read-only":
+                credentials_store.set_read_only(session, args.username, args.state == "on")
+                print(f"'{credentials.normalize(args.username)}' read-only: {args.state}")
             elif args.command == "import-file":
                 entries = list(credentials.load(Path(args.path)).values())
                 if not entries:

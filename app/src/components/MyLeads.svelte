@@ -1,6 +1,7 @@
 <script lang="ts">
   import { leads } from '../lib/leads-store.svelte';
   import { scoring } from '../lib/scoring-store.svelte';
+  import { auth } from '../lib/auth-store.svelte';
   import {
     KANBAN_LANES,
     STATUS_LABELS,
@@ -39,6 +40,10 @@
   let overLane = $state<string | null>(null);
 
   function onDragStart(e: DragEvent, o: OwnerSummary): void {
+    if (auth.readOnly) {
+      e.preventDefault();
+      return;
+    }
     draggingId = o.display_cluster_id;
     draggingFrom = o.status;
     if (e.dataTransfer) {
@@ -68,8 +73,9 @@
   }
   async function onDrop(e: DragEvent, lane: LeadStatus): Promise<void> {
     e.preventDefault();
-    const id = e.dataTransfer?.getData('text/plain') || draggingId;
     overLane = null;
+    if (auth.readOnly) return;
+    const id = e.dataTransfer?.getData('text/plain') || draggingId;
     if (id) await leads.moveLead(id, lane); // server is authoritative; reverts on reject
   }
 
@@ -81,8 +87,13 @@
 <div class="myleads" data-testid="my-leads">
   <header class="head">
     <p class="sub">
-      Owners you’ve advanced off “New”. Drag a card between lanes to change its status — the change
-      is auto-logged and persists. New owners live in
+      Owners you’ve advanced off “New”.
+      {#if auth.readOnly}
+        Open a card to see its history.
+      {:else}
+        Drag a card between lanes to change its status. The change is auto-logged and persists.
+      {/if}
+      New owners live in
       <button class="link" onclick={() => (location.hash = SECTION_HASH.explore)}>Explore</button>.
     </p>
   </header>
@@ -126,7 +137,7 @@
                 data-testid="lead-card"
                 data-key={o.display_cluster_id}
                 data-status={o.status}
-                draggable="true"
+                draggable={!auth.readOnly}
                 role="button"
                 tabindex="0"
                 aria-label="Open lead {o.owner_name}"
@@ -272,6 +283,9 @@
   }
   .card:active {
     cursor: grabbing;
+  }
+  .card[draggable='false'] {
+    cursor: pointer;
   }
   .card .cname {
     font-weight: 600;

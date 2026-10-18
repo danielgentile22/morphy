@@ -7,7 +7,14 @@
 // authenticates; the app-load gate (#85) keys on `verified` — the app mounts
 // only after the me-endpoint has accepted the session.
 
-import { login as apiLogin, logout as apiLogout, fetchMe, ApiError } from './leads-api';
+import {
+  login as apiLogin,
+  logout as apiLogout,
+  demoLogin as apiDemoLogin,
+  fetchAuthConfig,
+  fetchMe,
+  ApiError,
+} from './leads-api';
 
 class AuthStore {
   email = $state<string | null>(null);
@@ -21,6 +28,11 @@ class AuthStore {
   // shows a "checking session" state instead of flashing the sign-in form
   // at users who are already signed in.
   restoring = $state<boolean>(true);
+  // A read-only principal (the public demo, ADR-077): write controls hide.
+  // The backend refuses the writes regardless; this only keeps the UI honest.
+  readOnly = $state<boolean>(false);
+  // Whether the sign-in page offers "Explore the demo" (GET /api/auth/config).
+  demoMode = $state<boolean>(false);
 
   /** A *verified* session: the cookie has been accepted by /api/auth/me.
    *  The app (map, nav, panels, data fetches) mounts only behind this. */
@@ -36,6 +48,21 @@ class AuthStore {
     await this.loadMe();
   }
 
+  /** Sign in as the read-only demo account (the backend sets the cookie). */
+  async loginDemo(): Promise<void> {
+    await apiDemoLogin();
+    await this.loadMe();
+  }
+
+  /** Learn whether the demo login is on. A failure leaves it off. */
+  async loadConfig(): Promise<void> {
+    try {
+      this.demoMode = (await fetchAuthConfig()).demo_mode;
+    } catch {
+      this.demoMode = false;
+    }
+  }
+
   /** Validate the session cookie on boot + populate the signed-in username. */
   async loadMe(): Promise<void> {
     try {
@@ -43,6 +70,7 @@ class AuthStore {
       this.email = me.email;
       this.team = me.team ?? null;
       this.displayName = me.display_name ?? null;
+      this.readOnly = me.read_only;
     } catch (e) {
       // No session (or a stale one) surfaces as 401 — the gate shows sign-in.
       if (e instanceof ApiError && e.status === 401) this.clear();
@@ -68,6 +96,7 @@ class AuthStore {
     this.email = null;
     this.team = null;
     this.displayName = null;
+    this.readOnly = false;
   }
 
   /** The name to show for the signed-in user — their display name, or the email

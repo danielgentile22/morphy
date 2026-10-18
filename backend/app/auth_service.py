@@ -32,7 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import credentials_store
-from .credentials import AuthOutcome
+from .credentials import AuthOutcome, CredentialEntry
 from .models import User
 from .tenant_service import TenantService
 
@@ -59,6 +59,9 @@ class Principal:
     tenant_id: int
     user_id: int
     email: str
+    # From the credential row on this request, like the tenant (ADR-077): a
+    # read-only principal's non-GET requests are refused in ``current_principal``.
+    read_only: bool
 
 
 def login(session: Session, *, username: str, password: str) -> Principal:
@@ -68,8 +71,8 @@ def login(session: Session, *, username: str, password: str) -> Principal:
         raise InvalidCredentials("Unknown username")
     if result.outcome is AuthOutcome.WRONG_PASSWORD:
         raise InvalidCredentials("Incorrect password")
-    assert result.username is not None and result.team is not None
-    return _principal_for(session, result.username, result.team)
+    assert result.username is not None
+    return resolve_principal(session, result.username)
 
 
 def is_authorized(session: Session, username: str) -> bool:
@@ -92,20 +95,22 @@ def resolve_principal(session: Session, username: str) -> Principal:
     entry = credentials_store.get(session, username)
     if entry is None:
         raise NotAuthorized("no longer authorized")
-    return _principal_for(session, entry.username, entry.team)
+    return _principal_for(session, entry)
 
 
-def _principal_for(session: Session, username: str, team: str) -> Principal:
+def _principal_for(session: Session, entry: CredentialEntry) -> Principal:
     """Resolve team → tenant (registration-order semantics) + sync the User row."""
     tenant_svc = TenantService(session)
-    tenant = tenant_svc.get_by_name(team)
+    tenant = tenant_svc.get_by_name(entry.team)
     if tenant is None:
         # A team we haven't seen yet — register *all* teams in credential
         # order so id assignment stays registration-ordered (the first team
         # must own tenant 1).
-        tenant = tenant_svc.register_teams(credentials_store.teams_in_order(session))[team]
-    user = AuthService(session).provision_user(username, tenant.id)
-    return Principal(tenant_id=user.tenant_id, user_id=user.id, email=user.email)
+        tenant = tenant_svc.register_teams(credentials_store.teams_in_order(session))[entry.team]
+    user = AuthService(session).provision_user(entry.username, tenant.id)
+    return Principal(
+        tenant_id=user.tenant_id, user_id=user.id, email=user.email, read_only=entry.read_only
+    )
 
 
 def _normalize_email(email: str) -> str:

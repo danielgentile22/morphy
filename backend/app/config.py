@@ -74,21 +74,12 @@ class Settings:
     # state; resets on restart.
     login_throttle_max: int
     login_throttle_window_seconds: float
-    # ── "Ask Claude" catalog helper (PRD #187 / #188) ──────────────────────
-    # The Anthropic API key lives only on the server (never the browser). When
-    # it's None the /api/audit/ask route self-disables with a clean 503 and the
-    # rest of the catalog is unaffected — so the feature is opt-in per deploy
-    # (set the ANTHROPIC_API_KEY Fly secret to enable it).
-    anthropic_api_key: str | None
-    # Model + output cap are env-tunable so moving between Claude models (or
-    # tightening the bill) is a one-line config change, no code edit.
-    ask_model: str
-    ask_max_tokens: int
-    # A light per-user request throttle on the ask route (same sliding-window
-    # pattern as the login throttle) so a single user can't run up a surprising
-    # bill. Per-process state; resets on restart.
-    ask_rate_limit_max: int
-    ask_rate_limit_window_seconds: float
+    # Public read-only demo (ADR-077). Off unless DEMO_MODE is explicitly
+    # truthy. When on, POST /api/auth/demo signs anyone in as
+    # ``demo_username``, and boot refuses unless that credential exists and is
+    # read_only, so the switch can never hand out a writable account.
+    demo_mode: bool
+    demo_username: str
 
     @staticmethod
     def from_env() -> Settings:
@@ -116,13 +107,10 @@ class Settings:
                 o.strip()
                 for o in os.environ.get(
                     "CORS_ORIGINS",
-                    # Map app (5173/4173) and the audit-site (5273/4273) Vite
-                    # dev/preview origins. These also satisfy the same-origin
-                    # CSRF guard, so the audit-site's "Ask Claude" POST works in
-                    # dev (the Vite proxy rewrites Host, so the request's Origin
-                    # is the dev port, not the backend's).
-                    "http://localhost:5173,http://localhost:4173,"
-                    "http://localhost:5273,http://localhost:4273",
+                    # Map app Vite dev/preview origins. These also satisfy the
+                    # same-origin CSRF guard (the Vite proxy rewrites Host, so
+                    # the request's Origin is the dev port, not the backend's).
+                    "http://localhost:5173,http://localhost:4173",
                 ).split(",")
                 if o.strip()
             ),
@@ -139,15 +127,8 @@ class Settings:
             login_throttle_window_seconds=float(
                 os.environ.get("AUTH_LOGIN_THROTTLE_WINDOW_SECONDS", "300")
             ),
-            # Empty/unset → None, so the route reports "not configured" cleanly
-            # rather than handing the SDK an empty key.
-            anthropic_api_key=(os.environ.get("ANTHROPIC_API_KEY") or "").strip() or None,
-            ask_model=os.environ.get("ASK_MODEL", "claude-sonnet-4-6"),
-            ask_max_tokens=int(os.environ.get("ASK_MAX_TOKENS", "1024")),
-            ask_rate_limit_max=int(os.environ.get("ASK_RATE_LIMIT_MAX", "20")),
-            ask_rate_limit_window_seconds=float(
-                os.environ.get("ASK_RATE_LIMIT_WINDOW_SECONDS", "60")
-            ),
+            demo_mode=_env_bool("DEMO_MODE", default=False),
+            demo_username=os.environ.get("DEMO_USERNAME", "demo").strip().lower(),
         )
 
 
