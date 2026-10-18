@@ -11,9 +11,9 @@
   // Satellite only appears when a MapTiler key is configured (VITE_MAPTILER_KEY);
   // without one it would 403, so we hide it rather than offer a broken option.
   const BASEMAPS: { value: BasemapName; label: string }[] = [
-    { value: 'light', label: 'Light (Positron)' },
-    { value: 'voyager', label: 'Voyager' },
-    { value: 'dark', label: 'Dark Matter' },
+    { value: 'light', label: 'Light gray' },
+    { value: 'voyager', label: 'Streets' },
+    { value: 'dark', label: 'Dark gray' },
     ...(maptilerEnabled
       ? [{ value: 'satellite' as BasemapName, label: 'Satellite (MapTiler)' }]
       : []),
@@ -70,7 +70,7 @@
         {/each}
       </select>
     </div>
-    <p class="hint">Dark Matter matches the app; pick Light (Positron) for daylight or field reading.</p>
+    <p class="hint">Dark gray matches the app; pick Light gray for daylight or field reading.</p>
   </div>
 
   <div class="set-group">

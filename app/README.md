@@ -26,8 +26,8 @@ key. Copy `app/.env.example` to `app/.env` (git-ignored) and set
 
 Without a key the app still works. `src/lib/basemap.ts` hides the Satellite
 option in settings and maps any stored `satellite` preference to the keyless
-Carto Dark Matter basemap, so the map never requests MapTiler tiles it would
-be refused. The Carto Positron, Voyager and Dark Matter basemaps never need a
+Esri Dark Gray basemap, so the map never requests MapTiler tiles it would
+be refused. The Esri Light Gray, Streets and Dark Gray basemaps never need a
 key.
 
 For the Docker build, `deploy.sh` reads `VITE_MAPTILER_KEY` from the

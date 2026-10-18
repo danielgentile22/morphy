@@ -165,6 +165,24 @@ belong with the county or state publisher.
   non-commercial informational purposes. The project read it by hand as a reference benchmark
   only. None of its data is in the repo, the pipeline or the demo.
 
+## Basemap tiles
+
+The map loads basemap tiles at runtime from these providers. No tiles are stored in the repo.
+Each map shows the provider's attribution in its corner, as the terms require.
+
+### Esri basemaps
+
+- **Used for:** the keyless Light Gray, Streets and Dark Gray basemaps (the default when no
+  MapTiler key is set).
+- **Terms:** <https://www.esri.com/en-us/legal/terms/full-master-agreement>
+- **Credit shown:** Powered by Esri. Esri, HERE, Garmin, OpenStreetMap contributors.
+
+### MapTiler Satellite Hybrid
+
+- **Used for:** the Satellite basemap, only when a `VITE_MAPTILER_KEY` is configured.
+- **Terms:** <https://www.maptiler.com/copyright/>
+- **Credit shown:** read from MapTiler's tile metadata (MapTiler, OpenStreetMap contributors).
+
 ## Bundled in this repository
 
 ### Census cartographic boundary file

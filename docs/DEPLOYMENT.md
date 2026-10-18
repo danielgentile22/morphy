@@ -108,7 +108,7 @@ does. The app discovers composed states via `composite/index.json`.
 See [app/ARCHITECTURE.md](../app/ARCHITECTURE.md).
 
 The Satellite basemap needs a MapTiler key. Put `VITE_MAPTILER_KEY` in a git-ignored
-`app/.env` (`app/.env.example` documents it). Without a key the app uses the keyless Carto
+`app/.env` (`app/.env.example` documents it). Without a key the app uses the keyless Esri
 basemaps and hides Satellite.
 
 ### 4.4 Run tests

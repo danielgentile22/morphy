@@ -2,11 +2,11 @@
  * Basemap + initial-view helpers (PRD #121) — pure, so they unit-test cleanly
  * (the live MapLibre map is e2e territory).
  *
- * Three keyless Carto raster basemaps, plus an optional MapTiler Satellite
+ * Three keyless Esri raster basemaps, plus an optional MapTiler Satellite
  * Hybrid (imagery + baked labels) gated on a client-side key:
- *   - `light`     → Positron    (`light_all`)
- *   - `voyager`   → Voyager     (`voyager`)
- *   - `dark`      → Dark Matter (`dark_all`)
+ *   - `light`     → Esri Light Gray Canvas (`World_Light_Gray_Base`)
+ *   - `voyager`   → Esri World Street Map  (`World_Street_Map`)
+ *   - `dark`      → Esri Dark Gray Canvas  (`World_Dark_Gray_Base`)
  *   - `satellite` → MapTiler Satellite Hybrid (needs `VITE_MAPTILER_KEY`)
  */
 
@@ -14,34 +14,35 @@ import type { RasterSourceSpecification, StyleSpecification } from 'maplibre-gl'
 
 export type BasemapName = 'light' | 'voyager' | 'dark' | 'satellite';
 
-/** The keyless Carto raster basemaps. */
-type CartoBasemap = 'light' | 'voyager' | 'dark';
+/** The keyless Esri raster basemaps. (Carto's CDN now requires an API key
+ *  and watermarks every tile without one.) */
+type KeylessBasemap = 'light' | 'voyager' | 'dark';
 
-/** Carto tileset slug per basemap choice (the keyless raster CDN). */
-const CARTO_TILESET: Record<CartoBasemap, string> = {
-  light: 'light_all',
-  voyager: 'voyager',
-  dark: 'dark_all',
+/** Esri map service per basemap choice. */
+const ESRI_SERVICE: Record<KeylessBasemap, string> = {
+  light: 'Canvas/World_Light_Gray_Base',
+  voyager: 'World_Street_Map',
+  dark: 'Canvas/World_Dark_Gray_Base',
 };
 
-const CARTO_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' +
-  'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+const ESRI_ATTRIBUTION =
+  'Powered by <a href="https://www.esri.com">Esri</a> &copy; Esri, HERE, Garmin, ' +
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 /** MapTiler key (client-side, referrer-restricted). Absent → Satellite is
- *  hidden in settings and any stored `satellite` pref degrades to Carto Dark,
+ *  hidden in settings and any stored `satellite` pref degrades to Esri Dark Gray,
  *  so the map never 403s on a missing key. */
 const MAPTILER_KEY = (import.meta.env.VITE_MAPTILER_KEY as string | undefined) ?? '';
 export const maptilerEnabled = MAPTILER_KEY.length > 0;
 
-function cartoSource(name: CartoBasemap): RasterSourceSpecification {
+function esriSource(name: KeylessBasemap): RasterSourceSpecification {
   return {
     type: 'raster',
-    tiles: ['a', 'b', 'c'].map(
-      (s) => `https://${s}.basemaps.cartocdn.com/${CARTO_TILESET[name]}/{z}/{x}/{y}.png`,
-    ),
+    tiles: [
+      `https://server.arcgisonline.com/ArcGIS/rest/services/${ESRI_SERVICE[name]}/MapServer/tile/{z}/{y}/{x}`,
+    ],
     tileSize: 256,
-    attribution: CARTO_ATTRIBUTION,
+    attribution: ESRI_ATTRIBUTION,
   };
 }
 
@@ -53,15 +54,15 @@ function maptilerHybridSource(key: string): RasterSourceSpecification {
 }
 
 /** The raster source for a basemap choice. `satellite` needs a MapTiler key;
- *  without one it degrades to Carto Dark rather than failing. Exposed so a
+ *  without one it degrades to Esri Dark Gray rather than failing. Exposed so a
  *  mounted map can rebuild just the `basemap` source on a pref change — keeping
  *  the app's tower/parcel/solar layers untouched, and picking up the new
  *  source's attribution (which `setTiles` alone can't update). */
 export function basemapSource(name: BasemapName): RasterSourceSpecification {
   if (name === 'satellite') {
-    return maptilerEnabled ? maptilerHybridSource(MAPTILER_KEY) : cartoSource('dark');
+    return maptilerEnabled ? maptilerHybridSource(MAPTILER_KEY) : esriSource('dark');
   }
-  return cartoSource(name);
+  return esriSource(name);
 }
 
 /** A MapLibre style for the chosen basemap. */

@@ -14,12 +14,12 @@ function tilesetOf(style: ReturnType<typeof basemapStyle>): string {
   return src.tiles[0];
 }
 
-describe('basemapStyle — keyless Carto raster per basemap choice (PRD #121)', () => {
-  it('maps each basemap choice to its Carto tileset (honoured literally)', () => {
+describe('basemapStyle — keyless Esri raster per basemap choice (PRD #121)', () => {
+  it('maps each basemap choice to its Esri service (honoured literally)', () => {
     // The chrome is dark-only Halo, so the pick is honoured as-is — no theme nudge.
-    expect(tilesetOf(basemapStyle('light'))).toContain('light_all'); // Positron
-    expect(tilesetOf(basemapStyle('voyager'))).toContain('voyager');
-    expect(tilesetOf(basemapStyle('dark'))).toContain('dark_all'); // Dark Matter
+    expect(tilesetOf(basemapStyle('light'))).toContain('World_Light_Gray_Base');
+    expect(tilesetOf(basemapStyle('voyager'))).toContain('World_Street_Map');
+    expect(tilesetOf(basemapStyle('dark'))).toContain('World_Dark_Gray_Base');
   });
 
   it('produces a valid single-layer raster style', () => {
@@ -28,21 +28,21 @@ describe('basemapStyle — keyless Carto raster per basemap choice (PRD #121)', 
     expect(s.layers).toHaveLength(1);
     expect(s.layers[0]).toMatchObject({ type: 'raster', source: 'basemap' });
     // keyless: the CDN host carries no API key
-    expect(tilesetOf(s)).toContain('basemaps.cartocdn.com');
+    expect(tilesetOf(s)).toContain('server.arcgisonline.com');
   });
 });
 
 describe('basemapSource — satellite resolves by MapTiler key presence', () => {
   // `maptilerEnabled` reflects VITE_MAPTILER_KEY at build time, so this asserts
   // the contract in *either* environment: keyed (a dev .env.local) → MapTiler;
-  // keyless (CI) → the Carto Dark fallback that can never 403.
-  it('routes `satellite` to MapTiler when keyed, Carto Dark when not', () => {
+  // keyless (CI) → the Esri Dark Gray fallback that can never 403.
+  it('routes `satellite` to MapTiler when keyed, Esri Dark Gray when not', () => {
     const src = basemapSource('satellite') as { tiles?: string[]; url?: string };
     if (maptilerEnabled) {
       expect(src.url).toContain('api.maptiler.com/maps/hybrid');
     } else {
       expect(src.url).toBeUndefined(); // not the MapTiler TileJSON
-      expect(src.tiles?.[0]).toContain('dark_all'); // safe keyless fallback
+      expect(src.tiles?.[0]).toContain('World_Dark_Gray_Base'); // safe keyless fallback
     }
   });
 });

@@ -305,7 +305,7 @@ tile pipeline, filter engine, file layout) is in
   distress, hosted infrastructure, value, acreage, county, and more;
   owner-name and assessor parcel number (APN) search; full-row detail panel; shareable URL
   deep links.
-- **Basemaps**: keyless Carto raster basemaps by default. The optional MapTiler Satellite
+- **Basemaps**: keyless Esri raster basemaps by default. The optional MapTiler Satellite
   basemap appears only when `VITE_MAPTILER_KEY` is set at build time. The key lives in a
   git-ignored `.env` (`app/.env.example` documents it). Without it, the map falls back to the
   keyless basemaps and never requests MapTiler.

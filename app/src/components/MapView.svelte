@@ -202,7 +202,7 @@
   // Swap the basemap when the pref changes. Rebuilds only the `basemap`
   // source+layer (re-inserted at the bottom), leaving every app layer +
   // feature-state untouched — and unlike a bare `setTiles`, it picks up the new
-  // source's attribution (MapTiler's license needs its own credit; Carto and
+  // source's attribution (MapTiler's license needs its own credit; Esri and
   // MapTiler don't share one).
   let appliedBasemap = untrack(() => userSettings.basemap);
   $effect(() => {

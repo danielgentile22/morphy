@@ -11,7 +11,7 @@ to a hardcoded state, so any state that composes appears with no app changes.
 | Concern | Choice |
 |---|---|
 | Framework | Svelte 5 (runes) + Vite 8 + TypeScript |
-| Map | MapLibre GL JS 5 + keyless raster basemaps (Carto Positron/Voyager/Dark Matter); MapTiler Satellite Hybrid when `VITE_MAPTILER_KEY` is set |
+| Map | MapLibre GL JS 5 + keyless Esri raster basemaps (Light Gray, Streets, Dark Gray); MapTiler Satellite Hybrid when `VITE_MAPTILER_KEY` is set |
 | Parcel base layer | PMTiles vector tiles (tippecanoe-built) |
 | Explore filter / search | One shared `FilterModel` over the slim owners index narrows both Explore lenses, the map and the ranked tower list (sidebar `FilterPanel` plus owner and Antenna Structure Registration (ASR) search) |
 | Tests | Vitest (unit) + Playwright (E2E, Chromium + WebKit) |
@@ -115,8 +115,8 @@ allowlist protects it, not secrecy. Even so, it stays out of git:
 
 `src/lib/basemap.ts` sets `maptilerEnabled` from whether the key is non-empty.
 With no key (CI builds, a fresh clone, a bare Docker build), the Satellite
-option is hidden in settings and `basemapSource('satellite')` returns Carto
-Dark Matter. A stored `satellite` preference, which is also the default in
+option is hidden in settings and `basemapSource('satellite')` returns Esri
+Dark Gray. A stored `satellite` preference, which is also the default in
 `user-settings-store.svelte.ts`, therefore degrades to a keyless basemap, and
 the map never requests MapTiler tiles it would be refused. MapTiler's free
 tier is for non-commercial use only.

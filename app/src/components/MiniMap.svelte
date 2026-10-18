@@ -5,28 +5,15 @@
   import type { StyleSpecification } from 'maplibre-gl';
   import type { FeatureCollection, Point } from 'geojson';
   import type { Holding } from '../lib/leads-api';
+  import { basemapStyle } from '../lib/basemap';
 
   // Same worker-URL guard as MapView (Vite 8 mis-compiles an inlined worker).
   maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
   let { holdings }: { holdings: Holding[] } = $props();
 
-  // Keyless Carto Dark Matter — matches the dark Halo chrome + the main map's
-  // default basemap, no API key.
-  const BASEMAP: StyleSpecification = {
-    version: 8,
-    sources: {
-      basemap: {
-        type: 'raster',
-        tiles: ['a', 'b', 'c'].map(
-          (s) => `https://${s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png`,
-        ),
-        tileSize: 256,
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-      },
-    },
-    layers: [{ id: 'basemap', type: 'raster', source: 'basemap' }],
-  };
+  // Same keyless dark basemap as the main map's default.
+  const BASEMAP: StyleSpecification = basemapStyle('dark');
 
   /** One footprint point per holding that has resolvable geometry. */
   function footprint(hs: Holding[]): FeatureCollection<Point> {

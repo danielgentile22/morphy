@@ -40,8 +40,8 @@ data production (that's `scripts/preprocess/`).
 - **The MapTiler key is optional and never committed.** `VITE_MAPTILER_KEY` comes
   from the git-ignored `app/.env` (documented by `app/.env.example`) in dev, and
   from `deploy.sh` as a Docker build arg. `src/lib/basemap.ts` gates Satellite on
-  `maptilerEnabled`; with no key, Satellite is hidden and degrades to keyless Carto
-  Dark Matter. Keep that fallback, because a fresh clone and CI both build
+  `maptilerEnabled`; with no key, Satellite is hidden and degrades to keyless Esri
+  Dark Gray. Keep that fallback, because a fresh clone and CI both build
   without a key.
 
 - **The read-only demo is enforced by the backend, reflected here** (ADR-077).

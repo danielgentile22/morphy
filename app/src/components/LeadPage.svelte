@@ -3,7 +3,15 @@
   import { filterModel } from '../lib/filter-model.svelte';
   import { auth } from '../lib/auth-store.svelte';
   import { STATUSES, STATUS_LABELS, canTransition, type LeadStatus } from '../lib/lead-status';
-  import { kindLabel, money, distressText, statusVar, statusGlyph, feet } from '../lib/lead-format';
+  import {
+    kindLabel,
+    money,
+    distressText,
+    statusVar,
+    statusGlyph,
+    feet,
+    mailingLine,
+  } from '../lib/lead-format';
   import {
     CHANNELS,
     OUTCOMES,
@@ -239,13 +247,13 @@
                   <div class="hrow">
                     <b>{h.state} · County {h.county_fips || '—'}</b>
                     <span class="readonly">
-                      {money(h.assessed_value)}{#if h.acreage} · {h.acreage} ac{/if}
+                      {money(h.assessed_value)}{#if h.acreage}{` · ${h.acreage.toLocaleString(undefined, { maximumFractionDigits: 1 })} ac`}{/if}
                     </span>
                   </div>
                   {#if h.land_use}<div class="readonly use">{h.land_use}</div>{/if}
                   {#each towersOf(h) as t (t.asr)}
                     <div class="twr">
-                      ▲ Tower ASR {t.asr} · {feet(t.height_m)}{#if t.structure_kind} {t.structure_kind}{/if}{#if t.active === false} (inactive){/if}
+                      ▲ Tower ASR {t.asr} · {feet(t.height_m)}{#if t.structure_kind}{` · ${t.structure_kind.toLowerCase()}`}{/if}{#if t.active === false}{' (inactive)'}{/if}
                     </div>
                     <div class="carriers-wrap">
                       <CarrierList carriers={t.carriers ?? []} compact />
@@ -335,8 +343,7 @@
             <span class="flabel">Mailing (read-only)</span>
             <span class="readonly" data-testid="mailing-address">
               {#if l.mailing_address}
-                {l.mailing_address.addr}{#if l.mailing_address.city}, {l.mailing_address.city}{/if}{#if l.mailing_address.state} {l.mailing_address.state}{/if}
-                {l.mailing_address.zip}
+                {mailingLine(l.mailing_address)}
               {:else}
                 None on file
               {/if}

@@ -19,7 +19,7 @@ const DEFAULTS: UserSettings = {
   theme: 'system',
   colorblind: false,
   // Satellite (MapTiler) is the default — aerial imagery shows the actual tower
-  // site/land out of the box. Degrades to Carto Dark when no MapTiler key is
+  // site/land out of the box. Degrades to Esri Dark Gray when no MapTiler key is
   // built in (so it never 403s); the other basemaps stay selectable.
   basemap: 'satellite',
   view_mode: 'last',

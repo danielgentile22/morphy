@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { statusGlyph, statusVar } from '../../src/lib/lead-format';
+import { mailingLine, statusGlyph, statusVar } from '../../src/lib/lead-format';
 import { STATUSES } from '../../src/lib/lead-status';
 
 describe('statusGlyph — the colorblind non-color cue (PRD #121)', () => {
@@ -21,5 +21,30 @@ describe('statusGlyph — the colorblind non-color cue (PRD #121)', () => {
 describe('statusVar', () => {
   it('maps a status to its CSS custom property', () => {
     expect(statusVar('in_business')).toBe('var(--s-in_business)');
+  });
+});
+
+describe('mailingLine', () => {
+  it('joins the parts of a split address', () => {
+    expect(mailingLine({ addr: '12 MAIN ST', city: 'HELENA', state: 'MT', zip: '59601' })).toBe(
+      '12 MAIN ST, HELENA, MT 59601',
+    );
+  });
+
+  it('does not repeat parts a source already packed into addr', () => {
+    expect(
+      mailingLine({
+        addr: 'PO BOX 1517, BLUEFIELD, WV 24701',
+        city: 'BLUEFIELD',
+        state: 'WV',
+        zip: '24701',
+      }),
+    ).toBe('PO BOX 1517, BLUEFIELD, WV 24701');
+  });
+
+  it('skips missing parts', () => {
+    expect(mailingLine({ addr: '12 MAIN ST', city: null, state: 'AR', zip: '' })).toBe(
+      '12 MAIN ST, AR',
+    );
   });
 });

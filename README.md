@@ -147,7 +147,7 @@ in with that. Vite proxies `/data` to port 8765 and `/api` to port 8000.
 
 **Optional settings.** Copy `.env.example` to `.env` and `app/.env.example` to `app/.env`
 (both git-ignored). The app's file takes a MapTiler key for the satellite basemap. Without
-one the app uses a keyless Carto basemap.
+one the app uses a keyless Esri basemap.
 
 **Tests:**
 
