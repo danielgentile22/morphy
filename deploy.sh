@@ -22,20 +22,20 @@
 # Config via env (defaults are the live production values — a bare
 # `./deploy.sh code` ships to prod; override FLY_APP/R2_REMOTE only for a
 # different environment):
-#   FLY_APP        Fly app name              (morphy-consulting)
+#   FLY_APP        Fly app name              (morphy-demo)
 #   COMPOSITE_SRC  laptop composite dir      (data/processed/composite)
-#   R2_REMOTE      rclone R2 path            (r2:morphy-prod/composite)
+#   R2_REMOTE      rclone R2 path            (r2:morphy-demo/composite)
 #   VOLUME_DEST    composite path on volume  (/data/processed/composite)
 #   APP_URL        base URL for smoke        (https://$FLY_APP.fly.dev)
 #   PYTHON         local python              (python3)
-#   VITE_MAPTILER_KEY  OPTIONAL override of the Satellite basemap key (the
-#                  prod key is the Dockerfile ARG default; set this only to
-#                  build with a different key)
+#   VITE_MAPTILER_KEY  Satellite basemap key, read from the repo-root .env
+#                  (git-ignored) when not already set. Empty builds the SPA
+#                  with the keyless basemap.
 set -euo pipefail
 
-FLY_APP="${FLY_APP:-morphy-consulting}"
+FLY_APP="${FLY_APP:-morphy-demo}"
 COMPOSITE_SRC="${COMPOSITE_SRC:-data/processed/composite}"
-R2_REMOTE="${R2_REMOTE:-r2:morphy-prod/composite}"
+R2_REMOTE="${R2_REMOTE:-r2:morphy-demo/composite}"
 VOLUME_DEST="${VOLUME_DEST:-/data/processed/composite}"
 APP_URL="${APP_URL:-https://${FLY_APP}.fly.dev}"
 PYTHON="${PYTHON:-python3}"
@@ -71,33 +71,29 @@ require_clean_tree() {
   fi
 }
 
-# Snapshot the live puller manifest into the audit artifacts as freshness.json
-# (PRD #178 M8) right before the build. `data/` is git-ignored and absent from
-# the image build context, so this must run on the machine that has the manifest;
-# the output is git-ignored too (never committed), so it leaves the tree clean for
-# the check above while still landing in docs/research/data-audit/ to bake into
-# the image (Dockerfile copies that dir → /srv/audit-data → /audit/data/*).
+# Snapshot the live puller manifest into the served composite as freshness.json
+# right before the sync, so the map app's freshness read-out ships with the data.
 export_freshness() {
   log "export freshness.json from data/manifest.json"
-  "${PYTHON}" "${REPO_ROOT}/scripts/export_freshness.py"
+  "${PYTHON}" "${REPO_ROOT}/scripts/export_freshness.py" --out "${COMPOSITE_SRC}/freshness.json"
+}
+
+# Reads one KEY=value line from the repo-root .env without sourcing it.
+read_env_file() {  # $1=key
+  local env_file="${REPO_ROOT}/.env"
+  [[ -f "${env_file}" ]] || return 0
+  sed -n "s/^${1}=//p" "${env_file}" | tail -n 1 | sed -e 's/^["'\'']//' -e 's/["'\'']$//'
 }
 
 deploy_code() {
   need_fly
   require_clean_tree
-  export_freshness
-  # VITE_MAPTILER_KEY (Satellite basemap, the default) is baked into the SPA at
-  # build. The Dockerfile carries the production key as its ARG default, so a
-  # bare deploy just works — set this env var only to override with a different
-  # key. Pass --build-arg ONLY when set; an empty value would clobber the
-  # Dockerfile default (and an empty array trips bash 3.2 under set -u).
-  if [[ -n "${VITE_MAPTILER_KEY:-}" ]]; then
-    log "fly deploy --app ${FLY_APP} (MapTiler key override from env)"
-    fly deploy --app "${FLY_APP}" --build-arg "VITE_MAPTILER_KEY=${VITE_MAPTILER_KEY}"
-  else
-    log "fly deploy --app ${FLY_APP} (Dockerfile default MapTiler key)"
-    fly deploy --app "${FLY_APP}"
+  local key="${VITE_MAPTILER_KEY:-$(read_env_file VITE_MAPTILER_KEY)}"
+  if [[ -z "${key}" ]]; then
+    log "VITE_MAPTILER_KEY unset; the SPA will use the keyless basemap"
   fi
+  log "fly deploy --app ${FLY_APP}"
+  fly deploy --app "${FLY_APP}" --build-arg "VITE_MAPTILER_KEY=${key}"
 }
 
 # Run one leg through the tested contract. Explicit branches (rather than an
@@ -115,6 +111,8 @@ sync_data() {
   need_fly
   if [[ "${DRY_RUN}" == "1" ]]; then
     log "DRY-RUN (pass --apply or DRY_RUN=0 to write)"
+  else
+    export_freshness
   fi
 
   # Leg 1: laptop -> R2 (local rclone; operator's 'r2' remote).

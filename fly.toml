@@ -5,7 +5,7 @@
 # Operator sets `app` + region at create time; secrets (AUTH_JWT_SECRET, the R2
 # keys, the R2 bucket/endpoint) come from `fly secrets set`, never this file.
 
-app = "morphy-consulting"
+app = "morphy-demo"
 primary_region = "iad"
 
 [build]
@@ -15,6 +15,11 @@ primary_region = "iad"
   # Auth (ADR-063 as amended by ADR-069): fail-closed; credentials live in the
   # DB on the volume (the `credential` table — manage via `python -m app.users`).
   AUTH_DEV_MODE = "0"
+  # Public read-only demo (ADR-077): "Explore the demo" signs visitors in as
+  # DEMO_USERNAME. Boot refuses until that credential exists and is read-only,
+  # so seed it once on the machine: `cd /srv/backend && python -m app.demo_seed`.
+  DEMO_MODE = "1"
+  DEMO_USERNAME = "demo"
   # MUST point at the volume — the default repo path is ephemeral in-container
   # and unwatched by Litestream (PRD #96 pinned gotcha #1).
   DATABASE_URL = "sqlite+pysqlite:////data/lead_state.sqlite3"
@@ -28,18 +33,15 @@ primary_region = "iad"
   # Caddy wiring (same names the integration test sets). Volume at /data, so
   # DATA_WEB_ROOT="/" maps /data/processed/X -> /data/processed/X on disk.
   SITE_ROOT = "/srv/dist"
-  # The data-audit browser (behind the same session gate; see Caddyfile).
-  AUDIT_SITE_ROOT = "/srv/audit-dist"
-  AUDIT_DATA_ROOT = "/srv/audit-data"
   DATA_WEB_ROOT = "/"
   BACKEND_UPSTREAM = "127.0.0.1:8000"
   CADDY_PORT = "8080"
 
 # The volume holds the served composite (/data/processed), the SQLite DB and
 # users.txt (volume root, never web-served). Create with:
-#   fly volume create pilot_data --size 10 --region iad
+#   fly volume create morphy_data --size 10 --region iad
 [[mounts]]
-  source = "pilot_data"
+  source = "morphy_data"
   destination = "/data"
 
 [http_service]

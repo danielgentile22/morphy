@@ -1,6 +1,6 @@
 <script lang="ts">
   // Data freshness read-out (#235) — read-only view of the deploy-time
-  // freshness snapshot, so the co-founder can answer "how current is this
+  // freshness snapshot, so the user can answer "how current is this
   // data?" without asking the operator. A missing snapshot degrades to a
   // quiet placeholder, never an error.
   import { onMount } from 'svelte';
@@ -39,7 +39,7 @@
     </table>
     <p class="foot">
       Snapshot from the last deploy{#if snapshotDate}&nbsp;({snapshotDate}){/if}. Derived layers
-      (owner clustering, scoring, tower–parcel join) rebuild with every deploy.
+      (owner clustering, scoring, tower-parcel join) rebuild with every deploy.
     </p>
   {/if}
 </div>

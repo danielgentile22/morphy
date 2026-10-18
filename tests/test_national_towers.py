@@ -177,7 +177,7 @@ _AR_TOWERS = [
         "owner_city": "BOCA RATON",
         "owner_state": "FL",
         "owner_zip": "33487",
-        "owner_phone": "(561) 995-7670",
+        "owner_phone": "(555) 010-0100",
         "desc": "LATTICE TOWER",
         "carriers": '["VERIZON"]',
     },
@@ -299,7 +299,7 @@ def test_equivalent_to_per_state_union(tmp_path: Path) -> None:
     # v2: the ASR registrant contact block + build date ride the FCC-style
     # row and stay null on the FAA-style one (audit M-b/M-c).
     assert by_asr["080946"]["tower_owner"] == "SBA TOWERS II LLC"
-    assert by_asr["080946"]["tower_owner_phone"] == "(561) 995-7670"
+    assert by_asr["080946"]["tower_owner_phone"] == "(555) 010-0100"
     assert by_asr["080946"]["date_built"] == "1990-06-14"
     assert by_asr["080947"]["tower_owner"] is None
     assert by_asr["080947"]["date_built"] is None

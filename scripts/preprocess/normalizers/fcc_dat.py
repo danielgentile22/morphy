@@ -3,7 +3,7 @@
 The FCC ships ASR and ULS bulk data as pipe-delimited ``.dat`` files
 (no header row, one record type per file, mixed encodings). These
 helpers know the format quirks; callers (currently ``fcc_asr``;
-``fcc_uls`` post-pitch per ADR-013) pass an explicit column list.
+``fcc_uls`` later per ADR-013) pass an explicit column list.
 
 DMS → decimal-degrees conversion also lives here because FCC ASR's
 structure coordinates are split across separate degrees/minutes/

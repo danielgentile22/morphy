@@ -38,7 +38,7 @@
 <div class="history" data-testid="history">
   <header class="head">
     {#if heading}<h2>History</h2>{/if}
-    <span class="sub">Everything done — the full activity log.</span>
+    <span class="sub">Everything done: the full activity log.</span>
   </header>
 
   <div class="filterbar" data-testid="history-filter">

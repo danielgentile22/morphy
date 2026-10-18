@@ -40,7 +40,7 @@ pytestmark = pytest.mark.skipif(
 
 _ROOT_USER = "minioadmin"
 _ROOT_PASSWORD = "minioadmin"
-_BUCKET = "pilot-litestream-drill"
+_BUCKET = "morphy-litestream-drill"
 
 
 def _free_port() -> int:
@@ -164,7 +164,7 @@ def _litestream(
 
 def test_litestream_config_lists_the_configured_db(minio_replica: dict[str, str]) -> None:
     # Cheap guard: the real config parses and its ${VAR}s expand to our DB path.
-    db = "/tmp/pilot-drill.sqlite3"
+    db = "/tmp/morphy-drill.sqlite3"
     proc = _litestream({**minio_replica, "LITESTREAM_DB_PATH": db}, "databases")
     assert proc.returncode == 0, proc.stderr
     assert db in proc.stdout

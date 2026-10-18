@@ -119,7 +119,7 @@ def test_custom_profile_changes_score():
     row = _row(in_oz=True, in_qct=True, distress_tier="distressed")
     default_score, _ = apply_weights(compute_components(row), DEFAULT_PROFILE)
 
-    # Co-founder cranks distress weights up 2×
+    # The user cranks distress weights up 2×
     distress_heavy = ScoringProfile(
         name="distress-first",
         distress_first=0.30,

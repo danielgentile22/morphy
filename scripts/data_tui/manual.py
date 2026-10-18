@@ -89,7 +89,7 @@ class InstallScreen(ModalScreen[list[Path] | None]):
 
 class WalkthroughScreen(ModalScreen[bool]):
     """Step-by-step manual-download guide; dismisses True after a
-    verified install (mirrors the Qt WalkthroughDialog's finalize)."""
+    verified install."""
 
     BINDINGS = [
         ("n", "next", "Next / finish"),
@@ -121,7 +121,7 @@ class WalkthroughScreen(ModalScreen[bool]):
         self.step_index = 0
         self._notice = ""
         self._notice_error = False
-        self.lines: list[str] = []  # plain-text mirror for pilot tests
+        self.lines: list[str] = []  # plain-text mirror for Textual Pilot tests
 
     def compose(self) -> ComposeResult:
         yield Static(id="walk-body")
@@ -205,7 +205,7 @@ class WalkthroughScreen(ModalScreen[bool]):
     def action_close(self) -> None:
         self.dismiss(False)
 
-    # ── finalize (mirrors the Qt dialog) ────────────────────────────────
+    # ── finalize ─────────────────────────────────────────────────────────
 
     def _finalize(self) -> None:
         cur = current_dir(self.source.id)

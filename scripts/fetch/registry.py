@@ -6,7 +6,7 @@ touch source modules directly.
 Sources are split into two blocks:
 
 * **Active** — `_ACTIVE`. These appear in the puller UI, are checked
-  on "Check for updates", and feed the v1-pitch preprocess pipeline.
+  on "Check for updates", and feed the v1 preprocess pipeline.
 
 * **Deferred** — `_DEFERRED`. Imported (so the classes still exist and
   manual reactivation is a one-line move) but NOT shown in the puller
@@ -70,7 +70,7 @@ from .sources.uspvdb import SOURCE as USPVDB
 FCC_ULS_ACTIVE = [s for s in FCC_ULS_ALL if s.id in ("fcc_uls_cellular", "fcc_uls_market")]
 FCC_ULS_DEFERRED = [s for s in FCC_ULS_ALL if s.id not in ("fcc_uls_cellular", "fcc_uls_market")]
 
-# ── active sources (v1 pitch scope) ──────────────────────────────────────
+# ── active sources (v1 scope) ──────────────────────────────────────
 _ACTIVE: list[DataSource] = [
     # Towers
     FCC_ASR,
@@ -92,7 +92,7 @@ _ACTIVE: list[DataSource] = [
     USDA_PP,
 ]
 
-# ── deferred sources (out of v1 pitch scope) ─────────────────────────────
+# ── deferred sources (out of v1 scope) ─────────────────────────────
 # These are imported above so classes stay accessible, but are NOT exposed
 # to the puller or preprocess pipeline. See docs/DECISIONS.md for the
 # rationale behind each deferral. To reactivate, move into _ACTIVE.

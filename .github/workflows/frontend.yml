@@ -1,15 +1,10 @@
 name: frontend
 
-# Gates the Svelte apps per PR (PRD #131): type-check, unit tests, and the
+# Gates the Svelte map app per PR (PRD #131): type-check, unit tests, and the
 # production build, each as its own step so failures attribute clearly.
 # The build step is deliberate — it is the only step that exercises the
 # bundler config (manual chunks, worker imports) that previously failed
 # only at deploy time.
-#
-# The matrix covers both Svelte apps in the repo: the map app (`app/`) and
-# the Data Catalog (`audit-site/`, PRD #178). Both share the same scripts
-# (check / test:unit / vite build), so one job definition gates each; a
-# failure names the dir so it attributes cleanly.
 #
 # Playwright e2e is deliberately NOT part of this gate: the specs need
 # real anchor-state composites (multi-GB, git-ignored) that CI does not
@@ -32,14 +27,9 @@ jobs:
     name: svelte-check + vitest + build
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    strategy:
-      # Both apps run independently — one red dir shouldn't mask the other.
-      fail-fast: false
-      matrix:
-        dir: [app, audit-site]
     defaults:
       run:
-        working-directory: ${{ matrix.dir }}
+        working-directory: app
     steps:
       - uses: actions/checkout@v6
 
@@ -48,7 +38,7 @@ jobs:
           # Node 22 matches the Dockerfile frontend build stage (node:22-slim).
           node-version: "22"
           cache: npm
-          cache-dependency-path: ${{ matrix.dir }}/package-lock.json
+          cache-dependency-path: app/package-lock.json
 
       - name: Install
         run: npm ci

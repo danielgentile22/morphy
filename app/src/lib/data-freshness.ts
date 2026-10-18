@@ -1,13 +1,15 @@
 /**
- * Data-freshness read-out (#235) — co-founder-visible projection of the
+ * Data-freshness read-out (#235) — user-visible projection of the
  * deploy-time `freshness.json` snapshot (scripts/export_freshness.py),
- * served auth-gated at `/audit/data/freshness.json` behind the same
- * session as `/data/processed/*`. Read-only: the app only renders what
- * the last deploy exported — no puller state, no backend tables.
+ * written into the served composite and fetched behind the same session
+ * gate as every other `/data/processed/*` file. Read-only: the app only
+ * renders what the last deploy exported — no puller state, no backend tables.
  *
  * Pure + `now`-injected (repo convention) so rows unit-test without a
  * network or a clock.
  */
+
+import { freshnessUrl } from './data';
 
 /** Subset of the freshness.json contract this read-out needs. */
 export interface FreshnessSource {
@@ -21,7 +23,7 @@ export interface FreshnessDoc {
   sources: FreshnessSource[];
 }
 
-// Co-founder-friendly names, in display order. Keys are the exporter's
+// Human-friendly names, in display order. Keys are the exporter's
 // stable dossier titles (scripts/export_freshness.py AUDIT_SOURCE_MAP).
 const LABELS: Record<string, string> = {
   'fcc-asr': 'Cell towers (FCC ASR)',
@@ -95,7 +97,7 @@ export function freshnessRows(doc: FreshnessDoc, now: Date): FreshnessRow[] {
  *  deploy artifact and legitimately missing in dev). */
 export async function loadFreshness(): Promise<FreshnessDoc | null> {
   try {
-    const res = await fetch('/audit/data/freshness.json', { cache: 'no-store' });
+    const res = await fetch(freshnessUrl(), { cache: 'no-store' });
     if (!res.ok) return null;
     const doc = (await res.json()) as FreshnessDoc;
     return Array.isArray(doc?.sources) ? doc : null;

@@ -1,7 +1,7 @@
-"""Pilot data-fetch package.
+"""morphy data-fetch package.
 
 Headless library that downloads, tracks, and validates every raw dataset
-the pilot project depends on. Consumed by the data TUI (`data_tui`) and
+the project depends on. Consumed by the data TUI (`data_tui`) and
 any future CLI driver.
 
 Public surface:

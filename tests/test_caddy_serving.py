@@ -43,20 +43,13 @@ pytestmark = pytest.mark.skipif(_CADDY is None, reason="caddy binary not install
 _DB_MARKER = b"SQLITE-SECRET-DB-CONTENTS"
 _USERS_MARKER = b"alice:$hash$:acme\n"
 _SPA_MARKER = b"<!doctype html><title>morphy-spa</title>"
-_AUDIT_SPA_MARKER = b"<!doctype html><title>audit-spa</title>"
-_AUDIT_DATA_MARKER = b'{"audit":"index-json-contents"}'
 _TILE_BYTES = bytes(range(256)) * 8  # 2048 deterministic bytes
 
 # The session the stub backend accepts (the real token semantics live in the
 # backend's own test suite; the edge contract only cares about 2xx vs 401).
 _SESSION_TOKEN = "edge-test-session"
-_COOKIE = {"Cookie": f"pilot_session={_SESSION_TOKEN}"}
+_COOKIE = {"Cookie": f"morphy_session={_SESSION_TOKEN}"}
 _BEARER = {"Authorization": f"Bearer {_SESSION_TOKEN}"}
-
-# Released by the SSE pass-through test once it has read the first event — the
-# stub blocks on it before writing the second, so reading frame 1 first *proves*
-# Caddy didn't buffer the whole response (the "Ask Claude" SSE route, PRD #188).
-_SSE_GATE = threading.Event()
 
 
 def _free_port() -> int:
@@ -76,25 +69,10 @@ class _StubBackend(BaseHTTPRequestHandler):
     """
 
     def do_GET(self) -> None:  # noqa: N802 — http.server API
-        if self.path.startswith("/api/sse-probe"):
-            # A two-frame event-stream with a barrier between the frames: write +
-            # flush frame 1, block until the test releases the gate, then write
-            # frame 2. If Caddy streamed it through, the test reads frame 1 before
-            # the gate is set; if it buffered, the read would hang.
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Cache-Control", "no-cache")
-            self.end_headers()
-            self.wfile.write(b'event: delta\ndata: {"text": "one"}\n\n')
-            self.wfile.flush()
-            _SSE_GATE.wait(timeout=10)
-            self.wfile.write(b"event: done\ndata: {}\n\n")
-            self.wfile.flush()
-            return
         if self.path.startswith("/api/auth/check"):
             cookie = self.headers.get("Cookie", "")
             bearer = self.headers.get("Authorization", "")
-            if f"pilot_session={_SESSION_TOKEN}" in cookie or bearer == f"Bearer {_SESSION_TOKEN}":
+            if f"morphy_session={_SESSION_TOKEN}" in cookie or bearer == f"Bearer {_SESSION_TOKEN}":
                 self.send_response(204)
                 self.end_headers()
             else:
@@ -127,17 +105,6 @@ def caddy_base(tmp_path_factory: pytest.TempPathFactory):
     (site / "assets").mkdir()
     (site / "assets" / "index-abc123.js").write_bytes(b"console.log('app')")
 
-    # Audit browser bundle + its baked artifacts (served behind the gate at
-    # /audit/* and /audit/data/*).
-    audit_site = tmp / "audit-dist"
-    audit_site.mkdir()
-    (audit_site / "index.html").write_bytes(_AUDIT_SPA_MARKER)
-    (audit_site / "assets").mkdir()
-    (audit_site / "assets" / "index-aud987.js").write_bytes(b"console.log('audit')")
-    audit_data = tmp / "audit-data"
-    audit_data.mkdir()
-    (audit_data / "index.json").write_bytes(_AUDIT_DATA_MARKER)
-
     # Fixture "volume": served composite under processed/, plus the DB and
     # users.txt at the volume root (outside the web-served subtree).
     volume = tmp / "volume"
@@ -157,8 +124,6 @@ def caddy_base(tmp_path_factory: pytest.TempPathFactory):
         **os.environ,
         "CADDY_PORT": str(caddy_port),
         "SITE_ROOT": str(site),
-        "AUDIT_SITE_ROOT": str(audit_site),
-        "AUDIT_DATA_ROOT": str(audit_data),
         # Root for /data/processed/* maps the URL prefix onto the fixture volume:
         # /data/processed/X -> {DATA_WEB_ROOT}/data/processed/X. We symlink the
         # volume in as "data" so the 1:1 mapping holds against the fixture.
@@ -235,7 +200,7 @@ def test_a_garbage_session_is_refused(caddy_base: str) -> None:
     status, _hdrs, body = _get(
         caddy_base,
         "/data/processed/composite/05/parcels.pmtiles",
-        {"Cookie": "pilot_session=not-the-session"},
+        {"Cookie": "morphy_session=not-the-session"},
     )
     assert status == 401
     assert _TILE_BYTES[0:16] not in body
@@ -313,76 +278,3 @@ def test_users_file_is_never_web_served(caddy_base: str) -> None:
 def test_hsts_header_is_set(caddy_base: str) -> None:
     _status, hdrs, _ = _get(caddy_base, "/api/health")
     assert "max-age=" in hdrs.get("strict-transport-security", "")
-
-
-# ── the data-audit browser, behind the same session gate ─────────────────────
-def test_audit_spa_requires_auth(caddy_base: str) -> None:
-    # The audit exposes internal data semantics — it is never public.
-    status, _hdrs, body = _get(caddy_base, "/audit/")
-    assert status == 401
-    assert _AUDIT_SPA_MARKER not in body
-
-
-def test_audit_spa_served_when_authenticated(caddy_base: str) -> None:
-    status, _hdrs, body = _get(caddy_base, "/audit/", _COOKIE)
-    assert status == 200
-    assert body == _AUDIT_SPA_MARKER
-
-
-def test_audit_deep_route_falls_back_to_audit_spa(caddy_base: str) -> None:
-    # The hash router's history fallback: any /audit/* path resolves to the
-    # audit bundle's index.html (not the main SPA's).
-    status, _hdrs, body = _get(caddy_base, "/audit/some/client/route", _COOKIE)
-    assert status == 200
-    assert body == _AUDIT_SPA_MARKER
-
-
-def test_audit_assets_get_immutable_cache(caddy_base: str) -> None:
-    status, hdrs, _body = _get(caddy_base, "/audit/assets/index-aud987.js", _COOKIE)
-    assert status == 200
-    cc = hdrs.get("cache-control", "")
-    assert "immutable" in cc and "max-age=31536000" in cc
-
-
-def test_audit_data_requires_auth(caddy_base: str) -> None:
-    # index.json carries the audit's findings (internal) — gate it like the
-    # composite, zero bytes to an unauthenticated caller.
-    status, _hdrs, body = _get(caddy_base, "/audit/data/index.json")
-    assert status == 401
-    assert _AUDIT_DATA_MARKER not in body
-
-
-def test_audit_data_served_when_authenticated(caddy_base: str) -> None:
-    status, hdrs, body = _get(caddy_base, "/audit/data/index.json", _COOKIE)
-    assert status == 200
-    assert body == _AUDIT_DATA_MARKER
-    # Internal data semantics — never cached anywhere.
-    assert hdrs.get("cache-control") == "private, no-store"
-
-
-# ── SSE pass-through for the "Ask Claude" route (PRD #187 / #188) ─────────────
-def test_sse_passes_through_reverse_proxy_unbuffered(caddy_base: str) -> None:
-    # The "Ask Claude" route returns Server-Sent Events; the answer must stream
-    # token-by-token, so Caddy's reverse_proxy must forward it unbuffered. The
-    # stub blocks after the first frame until we release the gate — reading
-    # frame 1 *before* setting the gate proves Caddy didn't buffer the response.
-    _SSE_GATE.clear()
-    host, port = caddy_base.split(":")
-    conn = http.client.HTTPConnection(host, int(port), timeout=5)
-    try:
-        conn.request("GET", "/api/sse-probe")
-        resp = conn.getresponse()
-        assert resp.status == 200
-        assert resp.headers.get("content-type", "").startswith("text/event-stream")
-
-        first = b""
-        while b"\n\n" not in first:
-            chunk = resp.read(1)  # times out (→ test failure) if Caddy buffered
-            assert chunk, "stream closed before the first frame arrived"
-            first += chunk
-        assert b"event: delta" in first  # frame 1 arrived while the stub is blocked
-    finally:
-        _SSE_GATE.set()  # release the stub so it (and the module's server) unblocks
-    rest = resp.read()
-    assert b"event: done" in rest
-    conn.close()

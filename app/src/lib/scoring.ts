@@ -61,7 +61,7 @@ export const SCORE_FEATURES: { key: keyof ScoreWeights; label: string }[] = [
   { key: 'active', label: 'Active tower' },
 ];
 
-/** The default preset (ADR-073 / MACRO-5): the co-founder's thesis — target
+/** The default preset (ADR-073 / MACRO-5): the target owner profile is
  *  owners with FEW towers (avoid the giants), LOW value, and MORE carriers on
  *  the tower. Distress is demoted to a minor tiebreaker; the "more portfolio /
  *  higher value" features sit at 0, available for anyone who wants them. */

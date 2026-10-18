@@ -2,8 +2,8 @@
 failure pane, preprocess stage.
 
 The pure freshness/attention matrix is exercised directly; the app itself
-is driven through Textual's pilot (headless) — the repo's first UI tests.
-Pilot tests wrap their async body in ``asyncio.run`` so no async test
+is driven through Textual's Pilot (headless) — the repo's first UI tests.
+Textual Pilot tests wrap their async body in ``asyncio.run`` so no async test
 plugin is needed (PRD #233: Textual is the one new dependency). The
 refresh planner behind the preprocess preselection has its own unit
 suite in ``test_refresh_planner.py``.
@@ -224,7 +224,7 @@ def test_attention_empty_when_all_fresh():
     assert attention_items([s], _manifest({s.id: _fresh_entry()})) == []
 
 
-# ── pilot tests ──────────────────────────────────────────────────────────
+# ── Textual Pilot tests ────────────────────────────────────────────────────
 
 
 def _status_cell(app: DataTuiApp, source_id: str) -> str:
@@ -622,7 +622,7 @@ def _outcome(**kw):
 
 
 def test_completed_pull_preselects_state_in_preprocess_screen(monkeypatch, tmp_path):
-    """Acceptance pilot: pull WV parcels → open preprocess → WV preselected."""
+    """Acceptance: pull WV parcels → open preprocess → WV preselected."""
     from data_tui.preprocess_ui import PreprocessScreen
     from preprocess.manifest import PreprocessManifest
     from textual.widgets import SelectionList

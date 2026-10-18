@@ -126,7 +126,7 @@ def run_preprocess_pipeline(state_fips: list[str], progress_callback):
 class DataTuiApp(App):
     """Sources table grouped by category, freshness badges, pulls, activity log."""
 
-    TITLE = "Pilot Data"
+    TITLE = "morphy data"
     BINDINGS = [
         ("c", "check_updates", "Check"),
         ("p", "pull_now", "Pull"),
@@ -201,7 +201,7 @@ class DataTuiApp(App):
         self._log_filter = "all"
         self._log_visible = False
         self.activity: list[ActivityEvent] = []
-        # Plain-text mirrors asserted on by pilot tests (Static's content
+        # Plain-text mirrors asserted on by Textual Pilot tests (Static's content
         # API differs across Textual majors).
         self.attention_lines: list[str] = []
         self.job_lines: list[str] = []
@@ -502,10 +502,10 @@ class DataTuiApp(App):
         if failed:
             summary = f"✗ pull finished — {pulled} ok, {len(failed)} failed"
             detail = "; ".join(f"{r.source_id}: {r.error}" for r in failed)
-            notify_send("Pilot Data — pull failed", f"{pulled} ok, {len(failed)} failed. {detail}")
+            notify_send("morphy data: pull failed", f"{pulled} ok, {len(failed)} failed. {detail}")
         else:
             summary = f"✓ pull finished — {pulled} pulled"
-            notify_send("Pilot Data — pull complete", f"{pulled} source(s) pulled.")
+            notify_send("morphy data: pull complete", f"{pulled} source(s) pulled.")
         self._job_update(summary)
         self.sub_title = summary
 
@@ -568,11 +568,11 @@ class DataTuiApp(App):
         if failed:
             summary = f"✗ preprocess finished — {n_comp} composed, {len(failed)} failed"
             self._log_activity("preprocess", summary, error=True)
-            notify_send("Pilot Data — preprocess failed", "; ".join(failed))
+            notify_send("morphy data: preprocess failed", "; ".join(failed))
         else:
             summary = f"✓ preprocess finished — {n_norm} normalized, {n_comp} composed"
             self._log_activity("preprocess", summary)
-            notify_send("Pilot Data — preprocess complete", f"{n_comp} state(s) composed.")
+            notify_send("morphy data: preprocess complete", f"{n_comp} state(s) composed.")
         self._job_update(summary)
         self.sub_title = summary
 
@@ -581,7 +581,7 @@ class DataTuiApp(App):
         line = f"✗ preprocess crashed — {ex}"
         self._job_update(line)
         self._log_activity("preprocess", line, error=True)
-        notify_send("Pilot Data — preprocess failed", str(ex))
+        notify_send("morphy data: preprocess failed", str(ex))
 
     # ── verify + deploy (#239) ──────────────────────────────────────────
 

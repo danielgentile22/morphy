@@ -45,7 +45,7 @@
         {#each savedSummary as line (line)}<li>{line}</li>{/each}
       </ul>
     {:else}
-      <p class="hint" data-testid="filter-default-empty">No default saved — Explore opens unfiltered.</p>
+      <p class="hint" data-testid="filter-default-empty">No default saved. Explore opens unfiltered.</p>
     {/if}
 
     <label class="set-check">

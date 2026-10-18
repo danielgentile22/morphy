@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from fetch import PROJECT_ROOT
 
 DEPLOY_SCRIPT = PROJECT_ROOT / "deploy.sh"
-FLY_APP = os.environ.get("FLY_APP", "morphy-consulting")  # deploy.sh's own default
+FLY_APP = os.environ.get("FLY_APP", "morphy-demo")  # deploy.sh's own default
 RESTART_ARGV = ("fly", "apps", "restart", FLY_APP)
 
 LineCallback = Callable[[str, str], None]  # (step name, output line)

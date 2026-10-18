@@ -21,7 +21,7 @@ import zlib
 from collections.abc import Callable
 from pathlib import Path
 
-USER_AGENT = "PilotDataPuller/0.1 (lease-optimization research; contact: 43241327+danielgentile22@users.noreply.github.com)"
+USER_AGENT = "morphy/0.1 (+https://github.com/danielgentile22/morphy)"
 
 # data.fcc.gov's bot filter (observed 2026-07) silently stalls requests that
 # don't advertise a browser-like "gzip, deflate" Accept-Encoding — "gzip"

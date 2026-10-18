@@ -178,7 +178,7 @@ export class AppStore {
     this.parcelSources = computeParcelSources(this.index.states, Object.fromEntries(probeEntries));
     if (this.parcelSources.length === 0) {
       this.notice =
-        'No parcel tiles are reachable — the map shows towers and solar only. ' +
+        'No parcel tiles are reachable. The map shows towers and solar only. ' +
         'Is the data server running?';
     }
   }

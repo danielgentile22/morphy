@@ -1,4 +1,4 @@
-/* Morphy Consulting — design tokens (single source of truth).
+/* morphy — design tokens (single source of truth).
    Mirrors app/src/app.css :root. Light, dark ([data-theme=dark]), and
    colorblind (.cb) all live here; every surface paints through these.
    NOTE: data-encoding map colors (distress tiers, layer hues) live in the

@@ -24,7 +24,7 @@ def add_system_columns(
     source_id: str,
     canonical_type: str,
     *,
-    tenant_id: str = "pilot",
+    tenant_id: str = "morphy",
     valid_from: str | None = None,
 ):
     """Stamp the four system columns + the three time-series ones on every row.

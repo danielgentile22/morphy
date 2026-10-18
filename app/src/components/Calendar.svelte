@@ -122,7 +122,7 @@
             <li>
               {e.kind === 'reply' ? '↩' : e.kind === 'flag' ? '⚑' : '→'}
               <a href={leadHash(e.cluster_id)}>{e.owner_name || e.cluster_id}</a>
-              — {e.channel} {e.summary}
+              · {e.channel} {e.summary}
             </li>
           {/each}
         </ul>

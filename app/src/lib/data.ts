@@ -22,6 +22,10 @@ export function indexUrl(): string {
 export function nationalTowersUrl(): string {
   return `${COMPOSITE_ROOT}/towers.json`;
 }
+/** Deploy-time puller snapshot (scripts/export_freshness.py). */
+export function freshnessUrl(): string {
+  return `${COMPOSITE_ROOT}/freshness.json`;
+}
 /** URL of a file inside a state's composite directory (e.g. towers.geojson). */
 export function compositeAssetUrl(fips: string, relPath: string): string {
   return `${COMPOSITE_ROOT}/${fips}/${relPath}`;
@@ -64,16 +68,16 @@ export async function fetchJson(url: string): Promise<unknown> {
   } catch (e) {
     throw new Error(
       `Could not reach ${url}. Is the data server running ` +
-        `(python scripts/serve.py 8765 at the repo root)? — ${String(e)}`,
+        `(python scripts/serve.py 8765 at the repo root)? ${String(e)}`,
     );
   }
   if (!res.ok) {
-    throw new Error(`${url} — HTTP ${res.status} ${res.statusText}`);
+    throw new Error(`${url}: HTTP ${res.status} ${res.statusText}`);
   }
   try {
     return await res.json();
   } catch {
-    throw new Error(`${url} — response was not valid JSON`);
+    throw new Error(`${url}: response was not valid JSON`);
   }
 }
 
@@ -89,7 +93,7 @@ export async function loadGeoJson(url: string): Promise<FeatureCollection> {
     (json as { type?: unknown }).type !== 'FeatureCollection' ||
     !Array.isArray((json as { features?: unknown }).features)
   ) {
-    throw new Error(`${url} — not a GeoJSON FeatureCollection`);
+    throw new Error(`${url}: not a GeoJSON FeatureCollection`);
   }
   return json as FeatureCollection;
 }

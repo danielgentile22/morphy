@@ -69,7 +69,7 @@ class DeployScreen(ModalScreen[str | None]):
         self.phase = "verify"
         self.overridden = False
         self.result_summary: str | None = None
-        self.lines: list[str] = []  # verify-report mirror for pilot tests
+        self.lines: list[str] = []  # verify-report mirror for Textual Pilot tests
         self.status_line = ""  # current status/keys mirror
         self.output_lines: list[str] = []  # streamed deploy output mirror
 
@@ -196,7 +196,7 @@ class DeployScreen(ModalScreen[str | None]):
                 self._append_output(f"✓ deploy receipt written ({receipt['deployed_at']})")
             self.result_summary = "✓ deploy complete — smoke passed, receipt written"
             self.on_activity(self.result_summary, False)
-            notify_send("Pilot Data — deploy complete", "Smoke passed; receipt written.")
+            notify_send("morphy data: deploy complete", "Smoke passed; receipt written.")
         else:
             failed = results[-1]
             if failed.step == "smoke":
@@ -206,7 +206,7 @@ class DeployScreen(ModalScreen[str | None]):
             self._append_output(banner)
             self.result_summary = banner
             self.on_activity(banner, True)
-            notify_send("Pilot Data — deploy FAILED", banner)
+            notify_send("morphy data: deploy FAILED", banner)
         self._render_status()
 
     def action_close(self) -> None:

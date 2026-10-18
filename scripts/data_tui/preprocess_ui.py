@@ -46,7 +46,7 @@ class PreprocessScreen(ModalScreen[list[str] | None]):
         self.candidates = candidates
         self.preselected = set(preselected)
         self.deploy_warranted = deploy_warranted
-        self.lines: list[str] = []  # plain-text mirror for pilot tests
+        self.lines: list[str] = []  # plain-text mirror for Textual Pilot tests
 
     def compose(self) -> ComposeResult:
         self.lines = ["Preprocess — normalize all sources, then compose the selected states"]

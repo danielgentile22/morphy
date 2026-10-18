@@ -17,7 +17,6 @@ from pathlib import Path
 from export_freshness import (
     AUDIT_SOURCE_MAP,
     DERIVED,
-    EXCLUDED_CARDS,
     FETCHED,
     STATUS_REBUILT,
     AuditSource,
@@ -30,9 +29,6 @@ from fetch.manifest import (
     FRESHNESS_STALE,
     FRESHNESS_UNKNOWN,
 )
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-INDEX_JSON = REPO_ROOT / "docs" / "research" / "data-audit" / "index.json"
 
 NOW = datetime(2026, 6, 20, tzinfo=UTC)
 
@@ -224,24 +220,6 @@ def test_cli_missing_manifest_still_writes(tmp_path: Path):
 
 
 # ── M10 mapping integrity (guards against silent drift) ──────────────────────
-def test_every_index_card_is_mapped_or_explicitly_excluded():
-    """No dossier may be silently dropped from the freshness view — every card in
-    the live index.json must be either mapped (M10) or in EXCLUDED_CARDS."""
-    cards = {c["id"] for c in json.loads(INDEX_JSON.read_text())["cards"]}
-    accounted = set(AUDIT_SOURCE_MAP) | EXCLUDED_CARDS
-    unaccounted = cards - accounted
-    assert not unaccounted, (
-        f"index.json cards not mapped nor excluded: {sorted(unaccounted)} — "
-        "add them to AUDIT_SOURCE_MAP or EXCLUDED_CARDS in export_freshness.py"
-    )
-    # and the map/exclusions don't reference cards that no longer exist
-    assert accounted <= cards, f"mapping references unknown cards: {sorted(accounted - cards)}"
-
-
-def test_mapping_and_exclusions_are_disjoint():
-    assert not (set(AUDIT_SOURCE_MAP) & EXCLUDED_CARDS)
-
-
 def test_fetched_source_ids_exist_in_the_registry():
     """Every manifest source_id in the M10 mapping must still resolve in the
     puller registry — a source rename trips this instead of shipping dead ids."""

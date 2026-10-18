@@ -178,7 +178,7 @@ export async function loadTowerPoints(
  *  no `towers[]` array, so the loader can fall back. Pure — unit-tested. */
 export function parseNationalTowers(json: unknown): TowerRow[] {
   const towers = (json as { towers?: unknown } | null)?.towers;
-  if (!Array.isArray(towers)) throw new Error('towers.json — missing towers[] array');
+  if (!Array.isArray(towers)) throw new Error('towers.json: missing towers[] array');
   const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
   return towers.map((t): TowerRow => {
     const r = (t ?? {}) as Record<string, unknown>;

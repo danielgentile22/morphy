@@ -7,12 +7,10 @@ data
 data.local-bak/
 !data/.gitkeep
 
-# Local environment overrides
-# NB: `*.env` only matches names ENDING in .env; `.env.*` catches .env.share etc.
-.env
-.env.local
+# Local environment overrides (secrets). Only the empty templates are tracked.
+.env*
 *.env
-.env.*
+!.env.example
 
 # ─── Backend credentials (password hashes; never commit) ─────────────
 # The real users file. Only backend/users.txt.example (fake entries) is
@@ -71,21 +69,6 @@ Thumbs.db
 !data/fetch.log         # actually we *do* ignore the whole data/ above; the
                         # negation is intentional for clarity only
 backups/
-
-# ─── User-config persisted by puller ─────────────────────────────────
-# (Section 3 adds ~/.config/pilot/puller_state.json — outside repo, ignored
-# anyway, but documented here)
-
-# ─── Data Catalog freshness snapshot (M8 exporter; PRD #178) ─────────
-# Generated at deploy time from data/manifest.json (which is git-ignored, so
-# this snapshot must be too) and baked into the audit image — never committed,
-# so the catalog's "What needs updating" view always reflects the live puller.
-docs/research/data-audit/freshness.json
-
-# ─── Data-audit scratch handoff note (working doc, not a published finding) ──
-# Lives in the data-audit dir but isn't part of the audit board; kept local so
-# it neither tracks nor bakes into the gated /audit/data/ image (see .dockerignore).
-docs/research/data-audit/HANDOFF.md
 
 # ─── Throwaway UI verification artifacts (slice screenshots, MCP logs) ─
 screenshots/

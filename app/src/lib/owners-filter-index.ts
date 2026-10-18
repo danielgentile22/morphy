@@ -42,10 +42,10 @@ export async function loadOwnersFilterIndex(): Promise<OwnerFilterRecord[]> {
     throw new Error(
       `Could not reach ${OWNERS_FILTER_URL}. Is the data server running ` +
         `(python scripts/serve.py 8765)? Run \`python scripts/preprocess.py --owners-index\` ` +
-        `to build it. — ${String(e)}`,
+        `to build it. ${String(e)}`,
     );
   }
-  if (!res.ok) throw new Error(`${OWNERS_FILTER_URL} — HTTP ${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error(`${OWNERS_FILTER_URL}: HTTP ${res.status} ${res.statusText}`);
   const json = (await res.json()) as { owners?: unknown };
   const owners = Array.isArray(json.owners) ? json.owners : [];
   return owners

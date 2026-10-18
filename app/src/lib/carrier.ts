@@ -61,7 +61,7 @@ export function inactiveLicenseLabel(
 }
 
 /** Display metadata for a confidence tag: the word shown in the badge, the
- *  tone (a CSS class suffix), and the tooltip that tells the co-founder when
+ *  tone (a CSS class suffix), and the tooltip that tells the user when
  *  to second-guess a match. */
 export interface ConfidenceMeta {
   /** The tag word — always present in the badge text so colour is never the

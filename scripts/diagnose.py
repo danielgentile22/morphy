@@ -49,7 +49,7 @@ def _build_system_prompt() -> list[dict]:
     )
     framing = (
         "You are diagnosing why a manually-downloaded data file failed the "
-        "pilot data puller's contents verification. The puller pulls public "
+        "morphy data puller's contents verification. The puller pulls public "
         "datasets (FCC ASR/ULS, HUD, NC OneMap parcels, EIA, ARC, USDA, "
         "etc.) into `data/raw/<source_id>/current/`. When a folder is "
         "wrong, it's usually because the user (a) downloaded the wrong "

@@ -42,7 +42,7 @@ def test_install_copies_files_and_extracts_zip_into_subfolder(raw_root, tmp_path
     assert (copied, extracted, errors) == (1, 2, [])
     cur = raw_root / "src1" / "current"
     assert (cur / "a.csv").read_text() == "x"
-    # Zip lands in a same-named subfolder — the old Qt upload convention.
+    # Zip lands in a same-named subfolder.
     assert (cur / "bundle" / "inner" / "one.txt").read_bytes() == b"1"
     assert (cur / "bundle" / "two.txt").exists()
 

@@ -37,7 +37,7 @@
 
 <section class="set-section" data-testid="settings-display">
   <h2>Map &amp; display</h2>
-  <p class="hint">How the app looks and where the map opens — saved to your account.</p>
+  <p class="hint">How the app looks and where the map opens, saved to your account.</p>
   {#if userSettings.error}
     <p class="set-status err" data-testid="display-error">Couldn't save: {userSettings.error}</p>
   {/if}
@@ -109,10 +109,10 @@
       </button>
       {#if homeStatus === 'saved'}<span class="set-status ok">Home set ✓</span>{/if}
       {#if homeStatus === 'nohome'}<span class="set-status err">Pan/zoom the map first.</span>{/if}
-      {#if homeStatus === 'error'}<span class="set-status err">Couldn't save — try again.</span>{/if}
+      {#if homeStatus === 'error'}<span class="set-status err">Couldn't save. Try again.</span>{/if}
     </div>
     <p class="hint">
-      {s.home_view ? 'A home view is pinned.' : 'No home pinned — the map opens where you left off.'}
+      {s.home_view ? 'A home view is pinned.' : 'No home pinned. The map opens where you left off.'}
     </p>
   </div>
 </section>

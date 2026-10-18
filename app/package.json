@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Catalog-driven multi-state map app for the ground-lease pilot.",
+  "description": "morphy: infrastructure analytics map app",
   "scripts": {
     "dev": "vite",
     "build": "svelte-check --tsconfig ./tsconfig.json && vite build",

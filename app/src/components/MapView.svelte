@@ -694,8 +694,8 @@
     map.flyTo({ center: t.center, zoom: t.zoom, duration: 700 });
   });
 
-  // Frame the map on all anchors (structures-first — survey the whole pilot at
-  // once). There is no per-state framing anymore; the union of anchor bboxes is
+  // Frame the map on all anchors (structures-first — survey every Phase 1 state
+  // at once). There is no per-state framing anymore; the union of anchor bboxes is
   // the only framing.
   $effect(() => {
     const anchors = app.anchorBounds;

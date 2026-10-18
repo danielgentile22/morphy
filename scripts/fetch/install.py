@@ -1,14 +1,14 @@
 """Manual-install engine: place files into current/ + stamp the manifest.
 
-The headless half of the manual/fallback path (PRD #233 slice 3). Any UI
-(Qt puller, data TUI) collects the user's file choices and decisions, then
+The headless half of the manual/fallback path (PRD #233 slice 3). A UI
+(the data TUI) collects the user's file choices and decisions, then
 delegates here:
 
 * ``overwrite_conflicts`` — names that an install would overwrite, so a UI
   can ask before proceeding.
 * ``install_files`` — copy files (or safely extract ZIPs) into
   ``data/raw/<id>/current/``, producing the same layout the fetch pipeline
-  and the old Qt upload produce.
+  produces.
 * ``mark_manual_install`` — stamp the manifest entry as a successful
   manual install and restart the freshness clock.
 """

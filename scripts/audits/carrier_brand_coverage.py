@@ -13,7 +13,7 @@ a table row). Answers the two questions #22 cares about:
           holders (one license per market), so NOT subscriber share
         * by licensee row ON A REGISTERED TOWER (the LO row carries a populated
           asr_number) — the closest free proxy for "carriers actually on towers",
-          which is what the co-founder sees. This is the headline number.
+          which is what the user sees. This is the headline number.
   (2) TAIL — the top unmapped entities under each weighting; the audit's real
       product (what to add next via the ADD-A-CARRIER workflow).
 

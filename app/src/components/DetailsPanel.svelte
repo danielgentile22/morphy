@@ -99,7 +99,7 @@
                  of letting them misrepresent the active order (audit M-g). -->
             {#if !scoring.useDefault}
               <p class="factors-note" data-testid="score-factors-note">
-                Default score profile — a custom ranking is active, so these factors don't drive
+                Default score profile. A custom ranking is active, so these factors don't drive
                 the current order.
               </p>
             {/if}

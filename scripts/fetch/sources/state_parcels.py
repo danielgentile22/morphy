@@ -82,8 +82,7 @@ class MtCadastralParcels(DataSource):
             "mirror — no click-through, no login, no robots.txt published. "
             "The walkthrough is retained as the fallback if the endpoint "
             "rots. Use-side caveats (MT §2-6-1017 on distribution lists) "
-            "are unchanged by automation — see "
-            "docs/research/reports-2026-05-26/state-MT-montana.md. The "
+            "are unchanged by automation. The "
             "cadastral file has normalised owner name, mailing address, "
             "value, acreage, and parcel ID."
         ),

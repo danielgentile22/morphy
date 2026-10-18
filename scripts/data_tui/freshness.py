@@ -1,9 +1,7 @@
 """Badge + attention decision logic — pure functions, no UI imports.
 
-Successor to the retired Qt puller's status/attention modules (#240),
-same semantics without the Qt dependency. Badge vocabulary per PRD #233
-story 3: fresh / due soon / stale / missing / endpoint-dead / manual /
-deferred.
+Badge vocabulary per PRD #233 story 3: fresh / due soon / stale / missing /
+endpoint-dead / manual / deferred.
 """
 
 from __future__ import annotations
@@ -45,7 +43,7 @@ def badge_for(
 ) -> Badge:
     """Resolve the one badge shown in the status column.
 
-    Precedence matches the Qt puller: policy/install state first
+    Precedence: policy/install state first
     (deferred, dead endpoint, manual, missing, new-version stale),
     then cadence freshness.
     """
@@ -112,7 +110,7 @@ def attention_items(
                 s.legal.automation == AutomationPolicy.CREDENTIALED
                 and not s.credentials_available()
             ):
-                continue  # informational, not actionable (matches Qt panel)
+                continue  # informational, not actionable
             reason = (
                 "manual download required"
                 if s.legal.automation == AutomationPolicy.MANUAL_ONLY

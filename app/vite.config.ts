@@ -24,14 +24,6 @@ export default defineConfig({
         target: 'http://localhost:8765',
         changeOrigin: true,
       },
-      // Freshness snapshot (#235): prod serves the baked audit artifacts at
-      // /audit/data/*; in dev the repo-root static server has the same files
-      // under docs/research/data-audit/, so rewrite onto it.
-      '/audit/data': {
-        target: 'http://localhost:8765',
-        changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/audit\/data/, '/docs/research/data-audit'),
-      },
       // Lead write-layer backend (uvicorn backend.app.main:app on :8000).
       '/api': {
         target: 'http://localhost:8000',
@@ -49,14 +41,6 @@ export default defineConfig({
       '/data': {
         target: 'http://localhost:8765',
         changeOrigin: true,
-      },
-      // Freshness snapshot (#235): prod serves the baked audit artifacts at
-      // /audit/data/*; in dev the repo-root static server has the same files
-      // under docs/research/data-audit/, so rewrite onto it.
-      '/audit/data': {
-        target: 'http://localhost:8765',
-        changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/audit\/data/, '/docs/research/data-audit'),
       },
       '/api': {
         target: 'http://localhost:8000',

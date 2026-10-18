@@ -51,7 +51,7 @@ def test_head_sends_waf_passing_headers(capture):
     req = capture["req"]
     assert req.get_header("Accept-encoding") == "gzip, deflate"
     assert req.get_header("Accept") == "*/*"
-    assert "PilotDataPuller" in req.get_header("User-agent")
+    assert "morphy/0.1" in req.get_header("User-agent")
 
 
 def test_fetch_text_gunzips_body(capture):

@@ -161,7 +161,7 @@ export const TOWER_SCHEMA: EntitySchema = {
   },
   sections: [
     {
-      // The pitch-critical block: the v3 tower carries the landowner
+      // The core block: the v3 tower carries the landowner
       // denormalized onto it — no cross-layer join needed.
       title: 'Landowner',
       fields: [

@@ -1,16 +1,13 @@
-"""M8 · Freshness exporter — snapshot the puller manifest into ``freshness.json``.
+"""Freshness exporter: snapshot the puller manifest into ``freshness.json``.
 
-The data feed behind the Data Catalog's **"What needs updating"** view. It
-projects the live puller manifest (``data/manifest.json``, schema v2) through a
-curated **source → audit mapping** (M10) into a small ``freshness.json`` artifact
-written into the audit artifacts dir (``docs/research/data-audit/``). That dir is
-baked into the production image (``Dockerfile`` → ``/srv/audit-data``) and served
-at ``/audit/data/freshness.json`` exactly like ``index.json`` — so the catalog
-fetches it live, behind the same session gate.
+The data feed behind the map app's Data freshness read-out. It projects the live
+puller manifest (``data/manifest.json``, schema v2) through a curated **source
+mapping** (M10) into a small ``freshness.json`` written into the served composite
+(``data/processed/composite/``), so ``deploy.sh data`` ships it with everything
+else and Caddy serves it behind the same session gate as ``/data/processed/*``.
 
-It runs at **deploy time, before the image build**, because ``data/`` is
-git-ignored and absent from the build context (so ``freshness.json`` is itself
-git-ignored — a generated deploy artifact, never committed). See ``deploy.sh``.
+It runs at **deploy time, right before the data sync**, because ``data/`` is
+git-ignored and only exists on the machine that runs the puller.
 
 Honest-by-construction: the "last pulled" truth lives on whatever machine runs
 the puller, so this snapshot is *last-pulled-as-of-deploy*. The client freshness
@@ -35,8 +32,8 @@ or unreadable manifest degrades gracefully to a valid doc with unknown pull stat
       "note": "<plain-English honesty caveat>",
       "sources": [                           # one entry per refreshable audit source
         {
-          "id": "T-01",                      # audit card id — the stable join key
-          "title": "fcc-asr",               # human label (the dossier slug)
+          "id": "T-01",                      # stable source id — the join key
+          "title": "fcc-asr",               # human label (stable slug)
           "kind": "fetched" | "derived",
           "manifest_source_ids": ["fcc_asr"],# puller source(s) behind this entry
           "last_pulled": "<ISO8601>|null",   # oldest input's fetch time, or null
@@ -62,7 +59,7 @@ Per-entry rules:
   oldest ``last_pulled``, earliest ``next_check``, tightest ``cadence_days``, and
   the **worst** input status (``stale`` > ``due_soon`` > ``fresh`` > ``unknown``).
 
-A missing ``freshness.json`` downstream means "not yet generated" — the catalog
+A missing ``freshness.json`` downstream means "not yet generated" — the app
 degrades to a quiet placeholder, never a broken tab.
 """
 
@@ -88,9 +85,7 @@ from fetch.manifest import (
 
 SCHEMA_VERSION = 1
 
-# Default output: the audit artifacts dir, baked into the image + served at
-# /audit/data/freshness.json (computed from the repo root the puller agrees on).
-DEFAULT_OUT = PROJECT_ROOT / "docs" / "research" / "data-audit" / "freshness.json"
+DEFAULT_OUT = PROJECT_ROOT / "data" / "processed" / "composite" / "freshness.json"
 
 # ── audit-source kinds ──────────────────────────────────────────────────────
 FETCHED = "fetched"  # backed by puller manifest source(s) — has a real pull date
@@ -110,7 +105,7 @@ _SEVERITY = {
 
 @dataclass(frozen=True)
 class AuditSource:
-    """One refreshable audit source = one catalog dossier (M10 mapping value)."""
+    """One refreshable source in the freshness read-out (M10 mapping value)."""
 
     title: str
     kind: str  # FETCHED | DERIVED
@@ -118,10 +113,9 @@ class AuditSource:
 
 
 # ── M10 · Source → audit mapping (curated) ──────────────────────────────────
-# Keyed by audit **card id** (the stable join key in index.json; a card's signals
-# carry ``card``). Each refreshable audit source is either FETCHED (projects
-# pull state from one or more puller manifest ``source_id``s) or DERIVED (rebuilt
-# by the preprocess pipeline — "rebuilt, not fetched", no pull date).
+# Keyed by a stable source id (the former audit card id). Each source is either
+# FETCHED (projects pull state from one or more puller manifest ``source_id``s) or
+# DERIVED (rebuilt by the preprocess pipeline — "rebuilt, not fetched", no pull date).
 #
 # The ``source_id`` strings are puller registry ids (scripts/fetch/registry.py).
 # test_export_freshness asserts they all still resolve, so a rename trips CI.
@@ -152,16 +146,6 @@ AUDIT_SOURCE_MAP: dict[str, AuditSource] = {
     "T-11": AuditSource("interestingness-score", DERIVED),
     "T-12": AuditSource("parcel-tower-join", DERIVED),
 }
-
-# Audit cards deliberately *not* in the freshness view — they audit the *process*
-# or other sources, not a refreshable data feed of their own:
-#   T-00 enumeration/completeness · T-21 lead-enrichment-feeds (discovery, no
-#   signals) · T-22 raw-column-sweep (a sweep across existing sources) ·
-#   T-30 external-discovery (data we don't have) · T-90 reconciliation ·
-#   T-91 adversarial-verification.
-# test_export_freshness asserts every index.json card is mapped OR listed here,
-# so a *new* dossier can never be silently dropped from the view.
-EXCLUDED_CARDS: frozenset[str] = frozenset({"T-00", "T-21", "T-22", "T-30", "T-90", "T-91"})
 
 
 # ── projection ──────────────────────────────────────────────────────────────
@@ -300,7 +284,7 @@ def _load_manifest(path: Path) -> tuple[dict, bool]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Snapshot the puller manifest into freshness.json for the Data Catalog."
+        description="Snapshot the puller manifest into freshness.json for the map app."
     )
     parser.add_argument(
         "--manifest",
@@ -312,7 +296,7 @@ def main(argv: list[str] | None = None) -> int:
         "--out",
         type=Path,
         default=DEFAULT_OUT,
-        help="output freshness.json path (default: the audit artifacts dir)",
+        help="output freshness.json path (default: the served composite)",
     )
     args = parser.parse_args(argv)
 

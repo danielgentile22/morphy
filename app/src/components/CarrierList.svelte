@@ -27,7 +27,7 @@
 {#if carriers.length === 0}
   <div class="carriers empty" class:compact data-testid="carrier-list">
     <span class="none">No carrier licensed here</span>
-    <span class="why">No FCC spectrum license overlaps this tower — common; most towers show none.</span>
+    <span class="why">No FCC spectrum license overlaps this tower. That is common: most towers show none.</span>
   </div>
 {:else}
   <ul class="carriers" class:compact data-testid="carrier-list">
@@ -46,7 +46,7 @@
             class="chip"
             data-tone="danger"
             data-license-status={c.license_status}
-            title="This ULS license is {inactiveLicenseLabel(c).toLowerCase()} — not a live authorization"
+            title="This ULS license is {inactiveLicenseLabel(c).toLowerCase()}, not a live authorization"
             aria-label="License {inactiveLicenseLabel(c)}. Not a live authorization."
           >
             {inactiveLicenseLabel(c)}
@@ -69,7 +69,7 @@
        tenant. Shown once per list (skipped in the dense compact holdings). -->
   {#if !compact}
     <p class="disclaimer" data-testid="carrier-disclaimer">
-      Licensed in this area — holds FCC spectrum overlapping this tower, not a confirmed tenant.
+      Licensed in this area: holds FCC spectrum overlapping this tower, not a confirmed tenant.
     </p>
   {/if}
 {/if}

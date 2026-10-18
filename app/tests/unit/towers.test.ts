@@ -56,7 +56,7 @@ describe('rowsToFeatureCollection', () => {
         tower_owner_city: 'BOCA RATON',
         tower_owner_state: 'FL',
         tower_owner_zip: '33487',
-        tower_owner_phone: '(561) 995-7670',
+        tower_owner_phone: '(555) 010-0100',
       }),
       row({ asr: 'faa', date_built: '', tower_owner: '  ' }), // FAA-style blanks
     ]);
@@ -64,7 +64,7 @@ describe('rowsToFeatureCollection', () => {
     expect(p.date_built).toBe('1990-06-14');
     expect(p.tower_owner).toBe('SBA TOWERS II LLC');
     expect(p.tower_owner_street).toBe('8051 CONGRESS AVE');
-    expect(p.tower_owner_phone).toBe('(561) 995-7670');
+    expect(p.tower_owner_phone).toBe('(555) 010-0100');
     const faa = fc.features[1].properties;
     expect(faa.date_built).toBeNull(); // blank string normalized to null
     expect(faa.tower_owner).toBeNull();

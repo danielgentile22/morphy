@@ -2,7 +2,7 @@
 
 Slice A (#22). A ULS spectrum license is held by a *legal entity* whose name
 has hundreds of variants ("New Cingular Wireless PCS, LLC", "AT&T Mobility
-Spectrum, LLC", "Cellco Partnership", "Sprint Spectrum LP"). The co-founder
+Spectrum, LLC", "Cellco Partnership", "Sprint Spectrum LP"). The user
 wants the **parent consumer brand** on a tower — AT&T / Verizon / T-Mobile /
 Dish / … — not the raw entity string. This module is the pure mapping that does
 that bucketing, and *only* that.
