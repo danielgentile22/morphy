@@ -1,4 +1,4 @@
-# ADR-060: West Virginia elevated to a committed Phase-1 anchor
+# ADR-060: West Virginia elevated to a committed Phase 1 anchor
 
 **Status:** Accepted
 **Date:** 2026-05-29
@@ -6,65 +6,58 @@
 
 ## Context
 
-Phase 1 launched with committed anchors AR + MT + FL (NC demoted to a deferred
-Phase-1 stretch in the 2026-05-29 audit). The 2026-05-27 50-state pilot review
-retro-scored West Virginia (FIPS `54`) against the anchor rubric and ranked it
-**#5 of 51 jurisdictions** (OP-weighted composite 6.43) — out-performing every
-original anchor under that formula. WV's standout properties:
+Phase 1 started with committed anchors AR, MT and FL (NC was demoted to a deferred
+Phase 1 stretch in the 2026-05-29 audit). The 2026-05-27 50-state review
+scored West Virginia (Federal Information Processing Standards code `54`) against
+the anchor rubric and ranked it **5th of 51 jurisdictions** (weighted composite
+6.43), ahead of every original anchor under that formula. What stood out:
 
-- **Commercial usability 9/10** — highest in the anchor cohort. WV FOIA §29B-1
-  is silent on commercial reuse (no "no resale" clause); no telemarketing surety
-  bond; no enacted state privacy law.
-- **Free statewide parcels** — SB 588 (2017) mandates a free bulk download of all
-  55 counties via WVGISTC / MapWV. The MapWV terms-of-use were reviewed and are
-  permissive (free public service; copy/distribute without obligation).
-- **100% ARC coverage** — all 55 WV counties are Appalachian, so the ARC distress
-  overlay covers the entire state (unique among US states); 11 distressed
-  counties, 5 never-above-distressed since 1983.
+- **Data reuse terms scored 9/10**, the highest in the anchor cohort. The WV Freedom
+  of Information Act (§29B-1) is silent on reuse of released records (no "no resale"
+  clause), and WV has no enacted state privacy law.
+- **Free statewide parcels.** SB 588 (2017) mandates a free bulk download of all
+  55 counties through the WV GIS Technical Center and MapWV. The MapWV terms of use
+  were reviewed and are permissive (a free public service; copy and distribute
+  without obligation).
+- **Full Appalachian Regional Commission (ARC) coverage.** All 55 WV counties are
+  Appalachian, so the ARC distress overlay covers the whole state (unique among US
+  states): 11 distressed counties, 5 of them never above distressed since 1983.
 
-The code + data were integrated on 2026-05-29 (PR #44): the `wv_parcels` source +
+The code and data were integrated on 2026-05-29: the `wv_parcels` source and
 normalizer adapter, and `composite/54` (1,389,855 parcels joined to the national
-towers + ARC/HUD/USDA distress; 11 joins, 8 views, 0 warnings; live in the map
-app). That work deliberately stopped short of the governance decision — which
-this ADR now makes.
+towers plus the ARC, HUD (Department of Housing and Urban Development) and USDA
+(Department of Agriculture) distress overlays; 11 joins, 8 views, 0 warnings; shown
+in the map app). That work stopped short of the scope decision, which this ADR makes.
 
 ## Decision
 
-**West Virginia (54) is a committed Phase-1 anchor**, alongside AR (05), MT (30),
-and FL (12). The committed anchor set is now **AR + MT + FL + WV** (four states).
-NC (37) remains a deferred Phase-1 stretch.
+**West Virginia (54) is a committed Phase 1 anchor**, alongside AR (05), MT (30)
+and FL (12). The committed anchor set is now **AR, MT, FL and WV** (four states).
+NC (37) remains a deferred Phase 1 stretch.
 
-Scope language follows: every "three committed anchors / 3 anchor states"
-reference becomes four, and WV moves from "candidate" to "anchor" in
-[SCOPE.md §2](../SCOPE.md), [STATUS.md](../STATUS.md), [README.md](../../README.md),
-[CLAUDE.md §7](../../CLAUDE.md), [ROADMAP.md](../ROADMAP.md), and
-[SCOPE.md](../SCOPE.md).
+Scope language follows: every "three committed anchors" reference becomes four, and
+WV moves from "candidate" to "anchor" across the docs. The anchor-state table lives in
+[STATUS.md](../STATUS.md).
 
 ## Consequences
 
-- Slice F's anchor-compose gate now includes WV — already met (`composite/54`
-  built and verified 2026-05-29).
-- Slice A (carriers) and Slice C (asset enrichment) gates ("anchor states") now
+- Slice F's anchor-compose gate now includes WV. It was already met (`composite/54`
+  built and verified on 2026-05-29).
+- The Slice A (carriers) and Slice C (asset enrichment) gates on "anchor states" now
   span four states.
-- The Phase-1 outcome bar (co-founder uses the product as his primary daily
-  triage tool for 4 consecutive weeks) spans AR + MT + FL + WV.
-- **Surface-owner framing.** WV parcels name the *surface* owner; split-estate
-  (severed minerals) is the norm in rural WV. Records are surface-only — do not
-  conflate with mineral ownership.
-- **Outreach compliance is a business-process item, not pipeline code.** WV
-  §46A-6F telemarketer registration (60-day-advance) gates residential cold-call;
-  the §46A-6F B2B carve-out covers cold-call to LLC business numbers; mail is the
-  cleanest channel; the WVSORO political environment warrants outreach-script
-  care. None of this is in the data pipeline's scope.
-- **No code change is required by this ADR** — the source, adapter, and composite
-  already exist (PR #44). This is a scope/governance decision only.
+- **Surface-owner framing.** WV parcels name the *surface* owner. Split estates
+  (severed mineral rights) are the norm in rural WV. Records are surface-only and must
+  not be conflated with mineral ownership.
+- Contact and telemarketing compliance rules in WV are outside the data pipeline's scope.
+- **This ADR requires no code change.** The source, adapter and composite already
+  exist. It is a scope decision only.
 
 ## Alternatives considered
 
-- **Keep WV a candidate (status quo).** Rejected — the data is live and composed,
-  WV out-scores the original anchors on the rubric, and "candidate" understates
-  its standing. The user elected to commit it.
-- **Swap WV in for a weaker anchor (e.g. drop FL).** Rejected — FL remains
-  valuable (largest parcel set, distinct market); the set expands, not swaps.
-- **Wait for the 4-week outcome-bar usage before committing.** Rejected —
-  committing the anchor set is a scope decision, independent of that milestone.
+- **Keep WV a candidate (status quo).** Rejected. The data was composed and shown in
+  the app, WV out-scored the original anchors on the rubric, and "candidate" understated
+  its standing.
+- **Swap WV in for a weaker anchor (for example, drop FL).** Rejected. FL stays useful
+  (largest parcel set, distinct market). The set expands rather than swaps.
+- **Wait for a period of real usage before committing.** Rejected. Committing the anchor
+  set is a scope decision, independent of usage milestones.

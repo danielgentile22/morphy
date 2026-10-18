@@ -13,4 +13,4 @@ Retaining every prior raw download would balloon disk use (~15 GB per snapshot t
 
 ## Consequences
 
-Can't time-travel ("what did parcels look like 6 months ago?"). Acceptable for a pitch cut; revisit if commercial use requires audit trail.
+Can't time-travel ("what did parcels look like 6 months ago?"). Acceptable for a feasibility prototype.

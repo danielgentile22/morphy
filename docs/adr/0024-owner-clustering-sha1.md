@@ -1,6 +1,6 @@
 # ADR-024: Owner clustering = SHA1(normalized name + address)
 
-**Status:** Follow-up locked in [ADR-056](0056-lead-equals-owner-cluster.md) — Slice 4 layers stronger conservative normalization (suffix stripping, name-token sort, trust/estate normalization, USPS address standardization) + a manual merge/split UI before the SHA1 hashing. Phonetic name match explicitly excluded (biases toward false merges).
+**Status:** Follow-up locked in [ADR-056](0056-lead-equals-owner-cluster.md). Slice 4 layered stronger conservative normalization (suffix stripping, name-token sort, trust/estate normalization, United States Postal Service (USPS) address standardization) and a manual merge/split UI before the SHA1 hashing. Phonetic name match explicitly excluded (biases toward false merges).
 **Date:** 2026-05
 
 ## Context
@@ -13,4 +13,4 @@ Detecting "this owner owns 12 parcels" requires canonicalizing names and address
 
 ## Consequences
 
-Cluster IDs are stable across runs given the same inputs. Imperfect (e.g., "Smith Family Trust" vs "Smith Family Living Trust" cluster apart); good-enough for the pitch.
+Cluster IDs are stable across runs given the same inputs. Imperfect (e.g., "Smith Family Trust" vs "Smith Family Living Trust" cluster apart); good enough for Phase 1.

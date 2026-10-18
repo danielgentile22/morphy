@@ -9,7 +9,7 @@ The original Graham-County one-shot was county-specific. When generalizing, coun
 
 ## Decision
 
-The Composer runs per **state** (FIPS). County-level analysis is achieved via Views that filter a state composite by `county_fips`, not via a separate Composer mode.
+The Composer runs per **state**, keyed by its FIPS (Federal Information Processing Standards) code. County-level analysis is achieved via Views that filter a state composite by `county_fips`, not via a separate Composer mode.
 
 ## Consequences
 

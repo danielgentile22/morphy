@@ -9,7 +9,7 @@ Section 4.3 reduced the v1 surface to ~14 sources but the original `scripts/fetc
 
 ## Decision
 
-Registry exposes two lists — `_ACTIVE` (shown to the puller and preprocess) and `_DEFERRED` (imported but invisible upstream). `all_sources()` returns only active; `deferred_sources()` exists for tooling. `get_source()` resolves across both so a reactivated source keeps working with the same ID.
+Registry exposes two lists: `_ACTIVE` (shown to the puller and preprocess) and `_DEFERRED` (imported but invisible upstream). `all_sources()` returns only active; `deferred_sources()` exists for tooling. `get_source()` resolves across both so a reactivated source keeps working with the same ID.
 
 ## Consequences
 

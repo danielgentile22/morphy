@@ -1,37 +1,32 @@
-# PULLER_UX — Design Spec for the Puller Overhaul
+# Puller UX: design spec for the puller overhaul
 
-**Last updated:** 2026-07-03
-**Status:** Historical design reference. The Qt puller this spec
-described was **retired and deleted in #240** (PRD #138 retirement
-clause) after its Textual successor — the data TUI at
-`scripts/data_tui/`, PRD #233 — covered the full lifecycle (pull →
-preprocess → verify → deploy) with tests. The UX principles below
-(walkthroughs, attention panel, freshness surfacing, no hand-placed
-files) carried over into the TUI; the Qt widget specifics did not.
-Current intent-layer node:
+**Status:** Historical design reference. The Qt puller this spec described was retired
+and deleted once its Textual successor, the data TUI at `scripts/data_tui/`, covered the
+full lifecycle (pull → preprocess → verify → deploy) with tests. The UX principles below
+(walkthroughs, attention panel, freshness surfacing, no hand-placed files) carried over
+into the TUI; the Qt widget specifics did not. The current subsystem notes are in
 [`scripts/data_tui/CLAUDE.md`](../scripts/data_tui/CLAUDE.md).
 
-> **Phase 1 product (2026-05-25):** the puller stays a dev-side tool
-> in Phase 1 — the co-founder sees freshness state inside the product
-> (per [DATA_FRESHNESS.md §8](./DATA_FRESHNESS.md)) but does not trigger
-> refreshes himself. Any Phase-2 self-serve in-product refresh would
-> build on the data TUI's headless modules rather than the TUI itself.
+> **Phase 1 product (2026-05-25):** the puller stayed a developer-side tool in Phase 1.
+> The analyst saw freshness state inside the product (per
+> [DATA_FRESHNESS.md §8](./DATA_FRESHNESS.md)) but did not trigger refreshes. A
+> self-serve in-product refresh was planned but never built; it would have used the data
+> TUI's headless modules rather than the TUI itself.
 
-This document is the design spec for the data puller upgrade. The
-puller is the **single tool the user interacts with most often** to
-keep the system healthy; user comment: *"data puller is going to need
-a lot of work in my opinion from a functionality stand point and UI as
-well to make my life easier moving forward."*
+This document is the design spec for the data puller upgrade. The puller was the
+**single tool the developer used most often** to keep the system healthy. The developer's
+own comment: *"data puller is going to need a lot of work in my opinion from a
+functionality stand point and UI as well to make my life easier moving forward."*
 
-This spec described the puller-overhaul work, which has since shipped.
-(The original legacy plan file is no longer in the repo.)
+The puller-overhaul work this spec describes shipped. (The original legacy plan file is
+no longer in the repo.)
 
 ---
 
 ## 1. Goals for the upgrade
 
 1. **Surface freshness clearly.** The user should never wonder
-   "is my data current?" — the answer is visible at a glance per
+   "is my data current?" The answer is visible at a glance per
    source.
 2. **Reduce friction on MANUAL_ONLY sources.** Walk the user
    step-by-step through every manual download, with deep links and
@@ -51,15 +46,15 @@ This spec described the puller-overhaul work, which has since shipped.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  Pilot Data Puller                                              [-][□][×]    │
+│  Morphy Data Puller                                             [-][□][×]    │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  [Check for updates] [Pull all stale] [Pull all missing] [Refresh all stale] │
 │  [Rescan disk] [Verify contents] [Preprocess…] [Cancel current pull]         │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  ⚠ What needs my attention (3 sources)                                       │
-│  • nc_onemap_parcels — endpoint failing; manual walkthrough available  [▶]   │
-│  • hud_oz             — endpoint failing; manual walkthrough available [▶]   │
-│  • eia_860m           — Stale (39 days; cadence 30)                    [↻]   │
+│  • nc_onemap_parcels - endpoint failing; manual walkthrough available  [▶]   │
+│  • hud_oz             - endpoint failing; manual walkthrough available [▶]   │
+│  • eia_860m           - Stale (39 days; cadence 30)                    [↻]   │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  Search: [_____________]    Filter: ☐ Show retired ☐ Show deferred           │
 ├──────────────────────────────────────────────────────────────────────────────┤
@@ -69,14 +64,14 @@ This spec described the puller-overhaul work, which has since shipped.
 │  ▼ FAA                                                                       │
 │    ✓ faa_oeaaa         Fresh (4h)    79 MB   2026-05-19    [Pull now]        │
 │  ▼ Distress                                                                  │
-│    ✗ hud_oz            Endpoint dead    —    never         [Walk me through] │
-│    ✗ hud_qct           Endpoint dead    —    never         [Walk me through] │
+│    ✗ hud_oz            Endpoint dead    -    never         [Walk me through] │
+│    ✗ hud_qct           Endpoint dead    -    never         [Walk me through] │
 │    ✓ arc_distressed    Fresh (200d)   1.6 MB  2026-04-12   [Pull now]        │
 │  ▼ Parcels                                                                   │
 │    ✓ ar_parcels        Fresh (1d)   3.2 GB    2026-05-18   [Pull now]        │
-│    ✗ nc_onemap_parcels Endpoint dead   —      never        [Walk me through] │
-│    ✗ mt_cadastral      Missing         —      never        [Walk me through] │
-│    ✗ ut_parcels        Missing         —      never        [Walk me through] │
+│    ✗ nc_onemap_parcels Endpoint dead   -      never        [Walk me through] │
+│    ✗ mt_cadastral      Missing         -      never        [Walk me through] │
+│    ✗ ut_parcels        Missing         -      never        [Walk me through] │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  Details: nc_onemap_parcels                                                  │
 │  ──────────────────────                                                      │
@@ -109,8 +104,8 @@ This spec described the puller-overhaul work, which has since shipped.
 | **Retired** | ⊘ | Faded | Source mothballed; no action |
 | **Deferred** | … | Faded | Source in registry but not in v1 scope |
 
-Color choices follow the Wong CB-safe palette where possible (same
-basis as the map app).
+Color choices follow the Wong colorblind-safe palette where possible
+(same basis as the map app).
 
 ---
 
@@ -118,8 +113,9 @@ basis as the map app).
 
 Aggregates the top of the window. Surfaces, in priority order:
 
-1. **Endpoint-dead sources with walkthroughs available** (HUD OZ /
-   QCT / NC OneMap / USDA).
+1. **Endpoint-dead sources with walkthroughs available** (HUD
+   Opportunity Zones (OZ), HUD Qualified Census Tracts (QCT), NC OneMap,
+   USDA).
 2. **Stale sources** (past cadence).
 3. **Missing sources** for anchor states (AR, MT, FL, WV counties).
 4. **Sources past `next_recommended_check_at`** but otherwise OK.
@@ -136,8 +132,8 @@ The panel collapses when empty ("All sources current ✓").
 
 ## 4. Walkthrough modal (MANUAL_ONLY sources)
 
-The single biggest UX improvement. Replaces today's static description
-text with a guided flow.
+The single biggest UX improvement. It replaced the old static
+description text with a guided flow.
 
 ### 4.1 Modal anatomy
 
@@ -170,20 +166,20 @@ text with a guided flow.
 
 Each `ManualStep` (`scripts/fetch/walkthroughs.py`):
 
-- `title: str` — short, action-oriented ("Click Graham on the map").
-- `body: str` — Markdown; rendered inline.
-- `deep_link: str | None` — opens in OS browser.
-- `screenshot: Path | None` — optional repo-relative image path (no
-  source ships one today).
+- `title: str`: short, action-oriented ("Click Graham on the map").
+- `body: str`: Markdown, rendered inline.
+- `deep_link: str | None`: opens in the OS browser.
+- `screenshot: Path | None`: optional repo-relative image path (no
+  source ever shipped one).
 
 The enclosing `ManualWalkthrough` carries the source-level fields
 (`expected_files` is **not** a per-step field):
 
-- `landing_page_url: str` — the "just open the page" fallback.
-- `steps: list[ManualStep]` — the ordered steps above.
-- `expected_files: list[str]` — final filenames the user should see;
+- `landing_page_url: str`: the "just open the page" fallback.
+- `steps: list[ManualStep]`: the ordered steps above.
+- `expected_files: list[str]`: final filenames the user should see;
   checked in the post-walkthrough validate step.
-- `notes_on_failure: str | None` — markdown shown when an earlier
+- `notes_on_failure: str | None`: Markdown shown when an earlier
   auto-fetch attempt failed (e.g. how to find an older snapshot).
 
 ### 4.3 Modal closing
@@ -204,11 +200,11 @@ Manual downloads land on the user's Desktop by default. To avoid the
 files in" friction, the puller exposes an **Upload file(s)** button in
 two places:
 
-1. **Details pane** — bottom-right action bar of the source detail
+1. **Details pane.** Bottom-right action bar of the source detail
    panel, between Pull and Open URL. Works for every source (auto or
    manual), useful when an auto-fetch is failing and the user grabbed
    the file by hand.
-2. **Walkthrough modal** — between the per-step deep-link button and
+2. **Walkthrough modal.** Between the per-step deep-link button and
    the navigation row. Lets the user upload mid-walkthrough without
    having to leave the modal.
 
@@ -222,8 +218,8 @@ Both called the same install helper (now the headless
   `safe_extract_zip` helper as the fetch pipeline).
 - Overwrites of existing files are confirmed once at the top of the
   flow.
-- Files are **copied** (not moved) — the original on Desktop is
-  preserved so the user can clean up at their leisure.
+- Files are **copied**, not moved. The original on the Desktop stays
+  so the user can clean up later.
 
 After upload from the details pane, the main window's
 `_detect_manual_installs()` reruns to update the manifest. From the
@@ -236,18 +232,18 @@ whatever was uploaded.
 
 Two top-bar buttons handle the routine workflow:
 
-### 5.1 "Pull all stale" — unattended
+### 5.1 "Pull all stale" (unattended)
 
 Runs through stale auto-policy sources one at a time. Manual sources
 are **skipped** with a notification at the end ("3 manual sources
-remain stale: nc_onemap_parcels, hud_oz, hud_qct — open the puller to
+remain stale: nc_onemap_parcels, hud_oz, hud_qct. Open the puller to
 walk through them").
 
 Background process. Progress bar reflects current source. The user
 can quit the puller; the pulls continue in a child process and the
 manifest is updated atomically.
 
-### 5.2 "Refresh all stale (with manual prompts)" — assisted
+### 5.2 "Refresh all stale (with manual prompts)" (assisted)
 
 Runs through every stale source in registry order:
 
@@ -258,38 +254,36 @@ Runs through every stale source in registry order:
   set + retry or skip.
 
 Cancel button stops after the **current** source finishes (matches
-the prior "Cancel current pull" semantics — never abort mid-fetch
+the prior "Cancel current pull" semantics; never abort mid-fetch,
 since `.partial` to `current/` is atomic).
 
 ---
 
-## 6. Pre-pitch checklist flow
+## 6. Refresh checklist flow
 
-New entry point: **Pre-pitch checklist** menu item.
+New entry point: a **Refresh checklist** menu item.
 
 When clicked:
 
 1. Triggers `Check for updates` (parallel HEAD).
 2. Identifies stale-but-needed sources for active anchor states (read
-   from `docs/SCOPE.md` — or hardcode in registry: AR/MT/FL/WV).
+   from `docs/STATUS.md`, or hardcoded in the registry: AR/MT/FL/WV).
 3. Surfaces a focused checklist:
-   - [ ] AR — fresh
-   - [ ] MT — MISSING — walkthrough
-   - [ ] FL — MISSING — walkthrough (67-county FDOR NAL)
-   - [ ] WV — STALE — walkthrough (MANUAL_ONLY; statewide File GDB)
-   - [ ] HUD OZ — endpoint dead — walkthrough
+   - [ ] AR: fresh
+   - [ ] MT: missing, walkthrough
+   - [ ] FL: missing, walkthrough (67-county Florida Department of
+     Revenue (FDOR) Name-Address-Legal (NAL) files)
+   - [ ] WV: stale, walkthrough (MANUAL_ONLY; statewide File GDB)
+   - [ ] HUD OZ: endpoint dead, walkthrough
 4. After each item completes, the row checks itself.
 5. Bottom button: "Re-run preprocess for affected states" launches
    the preprocess dialog with those states preselected.
-
-This is the muscle memory the user runs before every partner
-walkthrough.
 
 ---
 
 ## 7. Persisted UI state
 
-Stored in `~/.config/pilot/puller_state.json`:
+Stored in `~/.config/morphy/puller_state.json`:
 
 - Last-selected source.
 - Expanded categories in the tree.
@@ -303,7 +297,7 @@ Loaded on launch; saved on close.
 
 ## 8. Activity log improvements
 
-Today's log is monolithic. After the overhaul:
+The old log was monolithic. After the overhaul:
 
 - **Filter dropdown**: All / Errors only / This session.
 - **Per-source filter**: clicking a source in the tree filters the
@@ -314,7 +308,7 @@ Today's log is monolithic. After the overhaul:
 
 ---
 
-## 9. Behind the scenes — data model changes
+## 9. Behind the scenes: data model changes
 
 | Change | Where | Section |
 |---|---|---|
@@ -329,11 +323,12 @@ Today's log is monolithic. After the overhaul:
 
 ## 10. What this design explicitly does **not** include
 
-- Notifications (desktop / email / Slack) — future
-- Multi-user sync — future
-- Web-based puller UI — out of scope; desktop-only
-- Auto-retry on transient failures — future (today: manual retry)
-- Schedule-based auto-pull — explicitly rejected per ADR-005
+- Notifications (desktop, email, Slack). Deferred; the data TUI later
+  added desktop notifications.
+- Multi-user sync. Never built.
+- A web-based puller UI. Out of scope; the puller was desktop-only.
+- Auto-retry on transient failures. Never built; retry stayed manual.
+- Schedule-based auto-pull. Rejected per ADR-005.
 
 ---
 

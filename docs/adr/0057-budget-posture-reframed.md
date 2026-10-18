@@ -6,39 +6,37 @@
 
 ## Context
 
-Two legacy ADRs were written as "permanent" or hard non-goals during the pitch cut:
+Two earlier ADRs were written as permanent stances or hard non-goals during the demo cut:
 
-- **ADR-010** — "Strict free-only data budget." No paid data (Regrid, ATTOM, CoreLogic, paid SaaS) until / unless explicitly unlocked.
-- **ADR-041** — "No LLC unmasking (permanent non-goal)." Resolving the human behind an LLC is sensitive, expensive, and a separate product; this repo never implements it.
+- **ADR-010**, "Strict free-only data budget." No paid data (Regrid, ATTOM, CoreLogic, paid SaaS) unless explicitly unlocked.
+- **ADR-041**, "No LLC unmasking (permanent non-goal)." Resolving the person behind an LLC is sensitive, expensive, and a separate product, so this repo never implements it.
 
-In the 2026-05-25 grill the user explicitly said:
+The product phase (ADR-053) changed both premises. The data strategy became "collect as much as possible, and pay for more data later."
 
-> "the goal here is to get as much data as possible so in the future we will have to look into how to start paying for and accessing more data."
-
-Separately, the co-founder's outreach workflow needs **contact info beyond mailing address**. For LLC-owned parcels (heavily weighted in AR — 222K LLCs), parcel data gives an LLC name + a registered-agent address, not the human officer to call. Without a contact path, Phase 1 produces leads the co-founder can't work.
+Separately, triage needs **contact information beyond a mailing address**. For LLC-owned parcels (heavily weighted in AR, with 222K LLCs), parcel data gives an LLC name and a registered-agent address, not the officer to contact. Without a contact path, Phase 1 produces leads nobody can act on.
 
 ## Decision
 
-**ADR-010 reframes from "permanent stance" to "current-budget posture."**
+**ADR-010 changes from a permanent stance to the current budget posture.**
 
-- Free-only is the *current* posture for Phase 1 — the budget is bounded.
-- Paid-data unlocks are expected post-Phase-1 / Phase-2 — Regrid statewide parcels, Steel-in-the-Air paid tier (granular lease comps), CoStar / ATTOM / mortgage feeds for rooftop (ADR-054), paid skip-trace for contact enrichment.
-- Anchor states + free-data set remain the Phase 1 sourcing strategy.
+- Free-only is the posture for Phase 1, because the budget is bounded.
+- Paid sources were left for after Phase 1: Regrid statewide parcels, the Steel-in-the-Air paid tier (granular lease comparables; its free pages served only as a reference benchmark, since its terms forbid reproducing the data beyond limited attributed quotation), CoStar, ATTOM and mortgage feeds for rooftops (ADR-054), and paid skip-trace (commercial people-search lookup) for contact enrichment.
+- Anchor states plus the free-data set remain the Phase 1 sourcing strategy.
 
-**ADR-041 narrows to "paid skip-trace + shell-piercing only."**
+**ADR-041 narrows to "no paid skip-trace and no shell-piercing."**
 
-- *In scope* for Phase 1 (slice 4 D+E lead-detail panel): **free public-records officer disclosure.** Secretary of State business-entity lookups (free in all 4 anchor states; LLC managers / officers are publicly disclosed *by the entity itself*) + UCC-1 filings get baked into the lead-detail panel as one-click helpers + a snail-mail letter generator.
-- *Still out* of Phase 1: paid skip-trace (Whitepages Pro, Cole Information, IDI, Pipl), aggressive identity-resolution / shell-piercing, anything FCRA-adjacent.
-- The narrowed posture preserves the spirit of ADR-041 (no sensitive paid investigations) without locking out the routine officer-disclosure surface the co-founder actually needs.
+- *In scope* for Phase 1 (the Slice D+E lead-detail panel): **free public-records officer disclosure.** Secretary of State (SoS) business-entity lookups are free in all 4 anchor states, and LLC managers and officers are disclosed publicly *by the entity itself*. These, plus UCC-1 (Uniform Commercial Code financing statement) filing searches, go into the lead-detail panel as one-click helpers, along with a mail-letter generator.
+- *Still out* of Phase 1: paid skip-trace services (Whitepages Pro, Cole Information, IDI, Pipl), aggressive identity resolution or shell-piercing, and anything covered by the Fair Credit Reporting Act (FCRA).
+- The narrowed posture keeps the intent of ADR-041 (no sensitive paid investigations) without blocking the routine officer-disclosure lookups triage needs.
 
 ## Consequences
 
-- Phase 1 contact-data path: surface LLC + mailing + one-click SoS lookup links + UCC-1 search; co-founder does any remaining research per lead. Estimated ~1 week added to Slice 4.
-- Phase 2 / Phase 3 paid-data conversations open up.
+- The Phase 1 contact-data path: show the LLC name and mailing address, one-click SoS lookup links, and UCC-1 search. The analyst does any remaining research per lead.
+- Paid data stays possible in later phases.
 - No change to data already on disk.
-- No change to ADR-040 (parcel-owner data is PII; private repo; access controls before public hosting).
+- No change to ADR-040 (parcel-owner data is PII; access controls come before any hosting).
 
 ## Alternatives considered
 
-- **Keep both ADRs as written:** Phase 1 product is unworkable without contact path beyond mailing; user's "as much data as possible" framing explicitly retires free-only-forever stance. Rejected.
-- **Integrate paid skip-trace in Phase 1:** breaks current budget posture, introduces FCRA-adjacent custody, conflates a feature flag with the ADR's sharp edge. Rejected.
+- **Keep both ADRs as written.** The Phase 1 product cannot work without a contact path beyond the mailing address, and the "collect as much as possible" strategy retires the free-only-forever stance. Rejected.
+- **Integrate paid skip-trace in Phase 1.** Breaks the current budget posture, brings FCRA-adjacent data custody, and blurs a feature flag into the ADR's hard line. Rejected.

@@ -5,12 +5,12 @@
 
 ## Context
 
-MnGeo publishes "Plan Parcels Open" but license metadata reads "No License Provided" — ambiguous commercial-use status.
+MnGeo (Minnesota Geospatial Information Office) publishes "Plan Parcels Open" but its license metadata reads "No License Provided", so commercial-use status is ambiguous.
 
 ## Decision
 
-Defer pending MnGeo confirmation. Don't pull, don't process, don't include in pitch numbers.
+Defer pending MnGeo confirmation. Don't pull, don't process, don't include in any counts.
 
 ## Consequences
 
-Loses a Midwestern data point for now.
+Phase 1 lost a Midwestern data point.

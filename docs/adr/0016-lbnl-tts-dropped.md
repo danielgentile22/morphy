@@ -5,12 +5,12 @@
 
 ## Context
 
-Rooftop / distributed solar data is interesting but USPVDB + EIA 860 already cover our solar narrative for the pitch.
+Lawrence Berkeley National Laboratory (LBNL) rooftop / distributed solar data is interesting, but the U.S. Large-Scale Solar Photovoltaic Database (USPVDB) and Energy Information Administration Form 860 (EIA 860) already cover utility-scale solar.
 
 ## Decision
 
-Drop LBNL from active registry. Raw data stays on disk; can re-add as a deferred source if rooftop solar becomes in-scope post-pitch.
+Drop LBNL from active registry. Raw data stays on disk; can re-add as a deferred source if rooftop solar comes into scope.
 
 ## Consequences
 
-Solar story is utility-scale only for now.
+Solar coverage is utility-scale only.

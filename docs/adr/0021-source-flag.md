@@ -13,4 +13,4 @@ Force-rebuild currently re-normalizes everything; for a single-source fix, this 
 
 ## Consequences
 
-Eliminates the manifest-bypass problem that caused this session's stale manifest.
+Eliminates the manifest-bypass problem that had left the manifest stale.

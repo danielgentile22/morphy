@@ -1,6 +1,6 @@
 # ADR-043: Tests: pytest for backend; Vitest + Playwright deferred to map app v2
 
-**Status:** Realized — the map app ships with Vitest unit + Playwright E2E tests in `app/tests/` (2026-05-21).
+**Status:** Realized. The map app ships with Vitest unit + Playwright E2E tests in `app/tests/` (2026-05-21).
 **Date:** 2026-05-19
 
 ## Context

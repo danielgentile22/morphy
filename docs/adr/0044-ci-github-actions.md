@@ -13,4 +13,4 @@ User confirmed GitHub as the version-control home.
 
 ## Consequences
 
-All pushes must pass lint + tests once Section 6 lands. Branch protection follows.
+All pushes must pass lint and tests.

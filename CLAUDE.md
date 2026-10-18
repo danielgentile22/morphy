@@ -1,36 +1,38 @@
 # CLAUDE.md
 
-Orientation for agent sessions in this repo. Read this, then the subsystem
-`CLAUDE.md` for the area you are touching, then the deep doc it links.
+Orientation for coding-agent sessions in this repo. Read this, then the subsystem
+`CLAUDE.md` for the area you are touching, then the deep doc it links. This repo was built
+with coding agents, and these files are the instructions they worked from.
 
 ## 1. What this project is
 
-Phase 1 of a co-founder-facing product that helps landowners renegotiate
-ground leases for infrastructure on their property, primarily cell towers.
-No single dataset links an asset to its landowner; we construct it by joining
-FCC ASR + state parcels + HUD / ARC / USDA distress overlays, then layer carrier
-identification, lease document storage, LLM extraction, and a triage workflow
-on top. Deployed in production.
+morphy is an archived portfolio project. It was Phase 1 of an analyst tool for finding the
+landowners under cell towers and ranking them as candidates to renegotiate their ground
+leases. No single dataset links a tower to its landowner, so morphy builds that link by
+joining FCC Antenna Structure Registration (ASR) towers to state parcel records and to
+HUD, Appalachian Regional Commission (ARC) and USDA distress overlays. On top of that it adds
+carrier identification, tunable scoring, owner resolution, and a lead triage workflow backed
+by a tenant-scoped API. The business behind it no longer operates. A read-only demo runs at
+https://morphy-demo.fly.dev.
 
-- Business case: [PROJECT_BRIEF.md](PROJECT_BRIEF.md)
-- Scope, goals, outcome bar, slice plan (**F → A → C → D+E → B**): [docs/SCOPE.md](docs/SCOPE.md)
-- What works today and what is next: [docs/STATUS.md](docs/STATUS.md). **Read it before starting a task.**
+- What shipped and where it stopped: [docs/STATUS.md](docs/STATUS.md). **Read it before starting a task.**
 - Product language and glossary: [GLOSSARY.md](GLOSSARY.md)
-- Locked decisions: [docs/DECISIONS.md](docs/DECISIONS.md) (index) + [docs/adr/](docs/adr/)
+- Decisions: [docs/DECISIONS.md](docs/DECISIONS.md) (index) + [docs/adr/](docs/adr/)
 
-Hard non-goals: paid LLC unmasking / skip-trace (ADR-041 as narrowed by ADR-057);
-rooftop installations in Phase 1 (ADR-054); mass email / CRM automation;
-nationwide coverage without a paid parcel source (ADR-012).
+Hard non-goals: LLC unmasking beyond public officer disclosures (ADR-041 as narrowed by
+ADR-057); rooftop installations (ADR-054); mass email or CRM automation; nationwide coverage
+without a paid parcel source (ADR-012).
 
 ## 2. Where things live
 
 ```
 morphy/
-├── PROJECT_BRIEF.md   Business case
-├── GLOSSARY.md         Product language (glossary)
-├── docs/              Deep docs; adr/ (decisions), agents/ (skill config), research/ (data-source licensing)
+├── README.md          Project overview
+├── GLOSSARY.md        Product language (glossary)
+├── docs/              Deep docs; adr/ holds the decision records
 ├── app/               Svelte 5 + MapLibre map app          → app/CLAUDE.md
 ├── backend/           FastAPI + SQLAlchemy write layer     → backend/CLAUDE.md
+├── contracts/         Cross-language contract fixtures
 ├── scripts/fetch/     Headless puller library              → scripts/fetch/CLAUDE.md
 ├── scripts/data_tui/  Textual data TUI, the only puller UI → scripts/data_tui/CLAUDE.md
 ├── scripts/preprocess/ Normalizer → Join → View → Compose  → scripts/preprocess/CLAUDE.md
@@ -50,9 +52,10 @@ Full details in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 ```bash
 uv sync && source .venv/bin/activate           # once
 python -m data_tui                             # pull → preprocess → verify → deploy
-python scripts/preprocess.py [--state 05] [--app-assets] [--tiles] [--rebuild-manifest]
+python scripts/preprocess.py [--state 05] [--app-assets] [--tiles] [--owners-index] [--rebuild-manifest]
 python scripts/verify_raw.py                   # contents check
 python scripts/serve.py 8765                   # data server (repo root)
+AUTH_DEV_MODE=1 uvicorn backend.app.main:app --reload --port 8000   # API, dev/dev login
 cd app && npm run dev                          # map app on :5173
 pytest
 ```
@@ -71,14 +74,16 @@ pytest
 Backend invariants (mechanics in [backend/README.md](backend/README.md), do-not-relax list in [backend/CLAUDE.md](backend/CLAUDE.md)):
 
 - **`tenant_id` on every table; every route filters by it** (ADR-055). `credential` and `tenant` are the deliberate exceptions.
-- **Auth posture is load-bearing** (ADR-062/063/069): credentials live in the `credential` table (managed only via `python -m app.users`) and re-authorize every request, API routes and the edge-gated `/data/processed/*` alike. The JWT is identity-only in the httpOnly `pilot_session` cookie; teams are tenants; `AUTH_DEV_MODE` fails closed. Never reintroduce `APP_USERS`/`users.txt`, localStorage tokens, tenant claims in the JWT, or the `tenant_id=1` stub; never commit the DB or hand-edit hashes.
+- **Auth posture is load-bearing** (ADR-062/063/069): credentials live in the `credential` table (managed only via `python -m app.users`) and re-authorize every request, API routes and the edge-gated `/data/processed/*` alike. The JWT is identity-only in the httpOnly `morphy_session` cookie; teams are tenants; `AUTH_DEV_MODE` fails closed. Never reintroduce `APP_USERS`/`users.txt`, localStorage tokens, tenant claims in the JWT, or the `tenant_id=1` stub; never commit the DB or hand-edit hashes.
+- **Read-only is a credential flag, enforced in one gate** (ADR-077): `current_principal` refuses a `read_only` principal's non-GET/HEAD/OPTIONS request with 403. Never add per-route read-only checks or a read-only claim in the JWT. `DEMO_MODE` (the password-less demo login) fails closed. Boot refuses unless `DEMO_USERNAME` names an existing read-only credential, and `POST /api/auth/demo` re-checks that on every call.
 - **Schema changes ship as Alembic revisions**, never back-fill helpers in `db.py`. The OpenAPI schema is the frontend's type contract: regenerate and commit both artifacts after any model change.
 - **Owner merge/split resolves in one place:** `display_cluster_id = coalesce(override_target, raw_cluster_id)`, never forked per surface or baked into parquet. The owners index is schema-versioned (contract in [scripts/preprocess/CLAUDE.md](scripts/preprocess/CLAUDE.md)).
+- **Secrets stay out of the repo.** Keys go in git-ignored `.env` files (`.env.example` and `app/.env.example` list them). The MapTiler key is optional; without it the app falls back to a keyless basemap.
 
-## 5. Pilot geography
+## 5. Phase 1 geography
 
 State-level scope (ADR-001). Anchors `05` (AR), `12` (FL), `30` (MT), `54` (WV);
-deferred stretch `37` (NC); dropped IN, UT, MN. Per-state status: [docs/SCOPE.md §2](docs/SCOPE.md).
+deferred `37` (NC); dropped IN, UT, MN. Per-state detail: [docs/STATUS.md](docs/STATUS.md).
 
 ## 6. Where to look for what
 
@@ -86,27 +91,19 @@ deferred stretch `37` (NC); dropped IN, UT, MN. Per-state status: [docs/SCOPE.md
 |---|---|
 | Per-source schema / license / policy | [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) |
 | When does each source need a refresh? | [docs/DATA_FRESHNESS.md](docs/DATA_FRESHNESS.md) |
-| Caveats, fragile upstreams, pre-commercial blockers | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) |
+| Caveats, fragile upstreams, licensing constraints | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) |
 | PII / data handling | [docs/SECURITY.md](docs/SECURITY.md) |
-| Phase 2/3 | [docs/ROADMAP.md](docs/ROADMAP.md) |
+| What shipped, what never did | [docs/STATUS.md](docs/STATUS.md) |
 | Deploy / share outputs | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
-| `data/` on the external T9 drive, exfat gotchas | [docs/EXTERNAL_DATA_DRIVE.md](docs/EXTERNAL_DATA_DRIVE.md) |
 | Testing strategy | [docs/TESTING.md](docs/TESTING.md) |
 | Puller UX design | [docs/PULLER_UX.md](docs/PULLER_UX.md) |
 | Map app architecture | [app/ARCHITECTURE.md](app/ARCHITECTURE.md) |
 | What shipped when | [docs/CHANGELOG.md](docs/CHANGELOG.md) |
 | What is on disk, last fetch time, last 200 puller events | `data/manifest.json`, `data/fetch.log` |
 
-## 7. Agent skills
+## 7. Domain docs
 
-GitHub Issues at `danielgentile22/morphy`; default triage labels
-(not yet created on the repo, `triage` creates them on first use); single-context
-domain docs. Details in [docs/agents/](docs/agents/).
-
-## 8. Code-review-graph MCP
-
-This repo has a code knowledge graph (`.mcp.json`, auto-updated by hooks). Prefer
-it over Grep/Glob/Read for exploring code, tracing callers, and judging impact:
-`semantic_search_nodes`, `query_graph`, `get_impact_radius`, `detect_changes`,
-`get_review_context`. The `/explore-codebase`, `/debug-issue`, `/refactor-safely`,
-and `/review-changes` skills wrap the common workflows.
+Single-context repo. Before working in an area, read [GLOSSARY.md](GLOSSARY.md) and the
+ADRs in [docs/adr/](docs/adr/) that touch it. Use the glossary's terms in names, tests and
+docs, and avoid the aliases it lists. If a change contradicts an ADR, say so explicitly and
+record a new ADR rather than overriding it silently.

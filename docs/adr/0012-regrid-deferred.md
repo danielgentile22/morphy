@@ -13,4 +13,4 @@ Stub source stays in registry; not pursued for v1.
 
 ## Consequences
 
-Nationwide coverage waits for budget unlock.
+Nationwide coverage would have needed a paid budget.

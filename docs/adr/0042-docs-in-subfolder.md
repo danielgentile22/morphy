@@ -9,7 +9,7 @@ Root had 7 .md files with ~3500 lines mixing business, technical, plan, and limi
 
 ## Decision
 
-Root keeps only README.md, CLAUDE.md, PROJECT_BRIEF.md. All other docs move to `docs/`. New docs go straight to `docs/`.
+Root keeps only README.md, CLAUDE.md and GLOSSARY.md (plus LICENSE and the AGENTS.md symlink). All other docs move to `docs/`. New docs go straight to `docs/`.
 
 ## Consequences
 

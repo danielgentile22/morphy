@@ -1,16 +1,12 @@
-# DECISIONS — Architecture Decision Records (index)
+# Decisions (index)
 
-**Last updated:** 2026-07-03 (data-audit follow-through). Latest changes: ADR-070–076 added — the seven HITL decisions from the 2026-06 data audit (assessed value, solar dedup, FAA↔ASR, score reweight, carrier rearchitecture, owner identity, owner-type classifier), all Accepted with implementation pending; ADR-073 amends ADR-058's default weights. Earlier this day: ADR-007 (PySide6 pin) retired with the Qt puller (#240); ADR-069 (PRD #130) was the prior newest.
-
-Index of every locked-in design choice in the repo. Per-ADR content lives under [`docs/adr/`](./adr/). New ADRs go straight there ([CLAUDE.md §1](../CLAUDE.md)).
-
-> When in doubt about a design call, open the ADR before reopening the debate. If the entry is here, the decision is locked unless the *context* materially changes.
+This is the index of the project's architecture decision records (ADRs); each one lives as its own file under [`docs/adr/`](./adr/).
 
 ---
 
 ## Active
 
-The currently-binding decisions.
+Decisions still in force when the project was archived.
 
 ### Foundation
 
@@ -51,54 +47,60 @@ The currently-binding decisions.
 
 | # | Title |
 |---|---|
-| [ADR-040](./adr/0040-parcel-owner-pii.md) | Parcel-owner data is PII |
+| [ADR-040](./adr/0040-parcel-owner-pii.md) | Parcel-owner data is personally identifiable information (PII) |
 
 ### Phase 1 product cut (2026-05-25)
 
 | # | Title |
 |---|---|
-| [ADR-053](./adr/0053-product-phase-shift.md) | Product phase shift — pitch demo → co-founder-facing product |
+| [ADR-053](./adr/0053-product-phase-shift.md) | Product phase shift from demo to daily-use product |
 | [ADR-054](./adr/0054-asset-universe-phase-1-2.md) | Phase 1 freestanding / Phase 2 rooftops |
 | [ADR-055](./adr/0055-hosted-private-backend.md) | Hosted-private backend (Slice 4) |
 | [ADR-056](./adr/0056-lead-equals-owner-cluster.md) | Lead = owner-cluster |
 | [ADR-057](./adr/0057-budget-posture-reframed.md) | Budget posture reframed |
 | [ADR-058](./adr/0058-tunable-transparent-scoring.md) | Tunable + transparent scoring |
 | [ADR-059](./adr/0059-llm-lease-extraction.md) | LLM extraction approach for leases |
-| [ADR-060](./adr/0060-wv-committed-anchor.md) | West Virginia elevated to a committed Phase-1 anchor |
-| [ADR-061](./adr/0061-lead-centric-triage-redesign.md) | Lead-centric triage UI redesign — cross-state leads, structures-first map, write-layer pulled forward |
+| [ADR-060](./adr/0060-wv-committed-anchor.md) | West Virginia elevated to a committed Phase 1 anchor |
+| [ADR-061](./adr/0061-lead-centric-triage-redesign.md) | Lead-centric triage UI redesign: cross-state leads, structures-first map, write layer pulled forward |
 | [ADR-062](./adr/0062-username-password-replaces-magic-link.md) | Username/password login replaces magic-link; magic-link machinery removed |
-| [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md) | Phase-1 hosting — Fly.io single always-on machine, SQLite-on-volume, Cloudflare front (~$5–8/mo) |
+| [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md) | Phase 1 hosting on one always-on Fly.io machine, SQLite on a volume, Cloudflare in front (~$5-8/mo) |
 
 ### Phase 1 UI overhaul (2026-06-06)
 
 | # | Title |
 |---|---|
-| [ADR-065](./adr/0065-redesign-three-section-ia.md) | Redesigned app IA — three sections (Dashboard · Explore · Leads) + Dashboard digest-hub |
-| [ADR-066](./adr/0066-inbound-event-reply-seam.md) | Replies are provider-agnostic inbound activity events (manual now, Gmail later) |
+| [ADR-065](./adr/0065-redesign-three-section-ia.md) | Redesigned app information architecture: three sections (Dashboard · Explore · Leads) and a Dashboard digest hub |
+| [ADR-066](./adr/0066-inbound-event-reply-seam.md) | Replies are provider-agnostic inbound activity events (manual entry, Gmail planned but never built) |
 | [ADR-067](./adr/0067-tower-grained-explore.md) | Tower-grained Explore + per-tower scoring; owner stays the unit of work (extends ADR-061) |
-| [ADR-068](./adr/0068-self-service-password-change.md) | Self-service password change is a sanctioned runtime caller of the credentials writer (PRD #121 Settings page; re-homed onto the DB store by ADR-069) |
+| [ADR-068](./adr/0068-self-service-password-change.md) | Self-service password change is a sanctioned runtime caller of the credentials writer (the Settings page; re-homed onto the DB store by ADR-069) |
 
-> ADR-058 (tunable scoring) **amended** the same day — tower-grain + "preset" terminology + tenant-shared storage; the row stays under *Phase 1 product cut*.
+ADR-058 (tunable scoring) was amended the same day to add tower grain, "preset" terminology and tenant-shared storage. Its row stays under *Phase 1 product cut*.
 
 ### Phase 1 hardening (2026-06-12)
 
 | # | Title |
 |---|---|
-| [ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md) | Credentials move to the app DB; httpOnly-cookie sessions; `/data/processed/*` gated at the edge via `forward_auth` (PRD #130 — amends ADR-063's storage; its authority invariants stand) |
+| [ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md) | Credentials move to the app DB; httpOnly-cookie sessions; `/data/processed/*` gated at the edge via `forward_auth` (amends ADR-063's storage; its authority invariants stand) |
 
 ### Data-audit follow-through (2026-07-03)
 
-The seven HITL decisions from the 2026-06 data audit. Accepted; implementation pending (see the linked issues).
+Seven decisions from a 2026-06 data audit, whose working files are not part of this repo. Each ADR's status line records how far its implementation got.
 
 | # | Title |
 |---|---|
-| [ADR-070](./adr/0070-statutory-assessed-value.md) | Surface statutory assessed value alongside market/appraised (M-k, #213) |
-| [ADR-071](./adr/0071-solar-feed-dedup.md) | Solar feed dedup — EIA-860 as the base of record (MACRO-3, #217) |
-| [ADR-072](./adr/0072-faa-asr-corroboration.md) | FAA↔ASR co-location match dedups the towers layer (MACRO-2, #219) |
-| [ADR-073](./adr/0073-interestingness-reweight.md) | Reweight interestingness → small-portfolio / low-value / high-carrier (MACRO-5, #218; amends ADR-058) |
-| [ADR-074](./adr/0074-uls-carrier-rearchitecture.md) | Rearchitect ULS→carrier — all modern spectrum, authorization-not-tenancy semantics (MACRO-1, #220) |
-| [ADR-075](./adr/0075-cross-state-owner-identity.md) | Cross-state owner identity — name+state key + curated multi-state alias table (MACRO-6, #221) |
-| [ADR-076](./adr/0076-owner-type-classifier.md) | Owner-type classifier — expanded regex first, LLM for the ambiguous residual (MACRO-7, #222) |
+| [ADR-070](./adr/0070-statutory-assessed-value.md) | Surface statutory assessed value alongside market/appraised value |
+| [ADR-071](./adr/0071-solar-feed-dedup.md) | Solar feed dedup, with EIA-860 as the base of record |
+| [ADR-072](./adr/0072-faa-asr-corroboration.md) | FAA↔ASR co-location match dedups the towers layer |
+| [ADR-073](./adr/0073-interestingness-reweight.md) | Reweight interestingness → small-portfolio / low-value / high-carrier (amends ADR-058) |
+| [ADR-074](./adr/0074-uls-carrier-rearchitecture.md) | Rearchitect ULS→carrier: all modern spectrum, authorization-not-tenancy semantics |
+| [ADR-075](./adr/0075-cross-state-owner-identity.md) | Cross-state owner identity: name+state key + curated multi-state alias table |
+| [ADR-076](./adr/0076-owner-type-classifier.md) | Owner-type classifier: expanded regex first, LLM for the ambiguous residual |
+
+### Public demo (2026-10-18)
+
+| # | Title |
+|---|---|
+| [ADR-077](./adr/0077-read-only-demo-credential.md) | A read-only demo credential behind DEMO_MODE; Ask Claude retired |
 
 ---
 
@@ -114,24 +116,24 @@ Locked, then shipped.
 
 ---
 
-## Revised / Narrowed / Partially reversed
+## Revised, narrowed or partially reversed
 
-Earlier decisions still partially in force, modified by a later ADR.
+Earlier decisions still partly in force, modified by a later ADR.
 
 | # | Title | Modified by |
 |---|---|---|
-| [ADR-003](./adr/0003-dual-geoparquet-geojson.md) | Dual GeoParquet + GeoJSON output | Narrowed by [ADR-052](./adr/0052-no-geojson-threshold.md) (parquet-only above 250K rows) |
-| [ADR-010](./adr/0010-free-only-budget.md) | Strict free-only data budget | Revised by [ADR-057](./adr/0057-budget-posture-reframed.md) — "permanent" → "current Phase 1 posture" |
-| [ADR-058](./adr/0058-tunable-transparent-scoring.md) | Tunable + transparent interestingness scoring | Default weights + owner rollup reweighted by [ADR-073](./adr/0073-interestingness-reweight.md) (small-portfolio / low-value / high-carrier); the tunable/transparent framework stands |
+| [ADR-003](./adr/0003-dual-geoparquet-geojson.md) | Dual GeoParquet + GeoJSON output | Narrowed by [ADR-052](./adr/0052-no-geojson-threshold.md) (Parquet-only above 250K rows) |
+| [ADR-010](./adr/0010-free-only-budget.md) | Strict free-only data budget | Revised by [ADR-057](./adr/0057-budget-posture-reframed.md) from "permanent" to "the Phase 1 posture" |
 | [ADR-011](./adr/0011-anchor-states.md) | Anchor states AR + NC + MT + UT (+ FL stretch) | UT dropped by [ADR-049](./adr/0049-utah-dropped.md); committed set re-cut to **AR + MT + FL + WV** by [ADR-060](./adr/0060-wv-committed-anchor.md) (WV added, NC demoted to a deferred stretch) |
-| [ADR-013](./adr/0013-fcc-uls-deferred.md) | FCC ULS normalizers deferred | Partially reversed by [ADR-053](./adr/0053-product-phase-shift.md) Slice A — Cellular/PCS/AWS/700 MHz back in |
-| [ADR-014](./adr/0014-billboards-deferred.md) | Billboards deferred | Partially reversed by [ADR-053](./adr/0053-product-phase-shift.md) Slice C — billboards return as parcel enrichment |
+| [ADR-013](./adr/0013-fcc-uls-deferred.md) | FCC ULS normalizers deferred | Partially reversed by [ADR-053](./adr/0053-product-phase-shift.md) Slice A, which brought Cellular/PCS/AWS/700 MHz back in |
+| [ADR-014](./adr/0014-billboards-deferred.md) | Billboards deferred | Partially reversed by [ADR-053](./adr/0053-product-phase-shift.md) Slice C, which brought billboards back as parcel enrichment |
 | [ADR-023](./adr/0023-huge-geojson-threshold.md) | `HUGE_GEOJSON_THRESHOLD = 100,000` | Narrowed by [ADR-052](./adr/0052-no-geojson-threshold.md) (250K hard ceiling above this) |
-| [ADR-024](./adr/0024-owner-clustering-sha1.md) | Owner clustering = SHA1(normalized name + address) | Follow-up locked in [ADR-056](./adr/0056-lead-equals-owner-cluster.md) — conservative normalization layers + manual merge/split UI before SHA1 |
-| [ADR-041](./adr/0041-no-llc-unmasking.md) | No LLC unmasking | Narrowed by [ADR-057](./adr/0057-budget-posture-reframed.md) — free SoS officer disclosure in scope; paid skip-trace stays non-goal |
-| [ADR-055](./adr/0055-hosted-private-backend.md) | Hosted-private backend (Slice 4) | Magic-link auth portion superseded by [ADR-062](./adr/0062-username-password-replaces-magic-link.md) (username/password login); platform + managed-Postgres + S3-service portions narrowed by [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md) (Fly.io + SQLite-on-volume + R2); the backend + `tenant_id` Day-1 decision stands |
-| [ADR-062](./adr/0062-username-password-replaces-magic-link.md) | Username/password login replaces magic-link | Credential store (`APP_USERS` env) + "no server-side revocation" trade-off superseded by [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md); the username/password front door, throttle, and fail-closed posture stand |
-| [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md) | File-based credentials (users.txt + CLI), teams-as-tenants, per-request file authority | **Storage superseded** by [ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md) (credentials in the app DB); the authority model — per-request authority, identity-only JWT, teams-as-tenants, fail-closed posture, CLI-only writes — stands unchanged |
+| [ADR-024](./adr/0024-owner-clustering-sha1.md) | Owner clustering = SHA1(normalized name + address) | Follow-up locked in [ADR-056](./adr/0056-lead-equals-owner-cluster.md): conservative normalization layers + manual merge/split UI before SHA1 |
+| [ADR-041](./adr/0041-no-llc-unmasking.md) | No LLC unmasking | Narrowed by [ADR-057](./adr/0057-budget-posture-reframed.md): free Secretary of State officer disclosure in scope; paid skip-trace stays a non-goal |
+| [ADR-055](./adr/0055-hosted-private-backend.md) | Hosted-private backend (Slice 4) | Magic-link auth portion superseded by [ADR-062](./adr/0062-username-password-replaces-magic-link.md) (username/password login); platform, managed-Postgres and S3-service portions narrowed by [ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md) (Fly.io + SQLite on a volume + R2); the backend and day-one `tenant_id` decision stands |
+| [ADR-058](./adr/0058-tunable-transparent-scoring.md) | Tunable + transparent interestingness scoring | Default weights + owner rollup reweighted by [ADR-073](./adr/0073-interestingness-reweight.md) (small-portfolio / low-value / high-carrier); the tunable/transparent framework stands |
+| [ADR-062](./adr/0062-username-password-replaces-magic-link.md) | Username/password login replaces magic-link | Credential store (`APP_USERS` env) and the "no server-side revocation" trade-off superseded by [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md); the username/password front door, throttle and fail-closed posture stand |
+| [ADR-063](./adr/0063-file-credentials-teams-per-request-authority.md) | File-based credentials (users.txt + CLI), teams-as-tenants, per-request file authority | **Storage superseded** by [ADR-069](./adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md) (credentials in the app DB). The authority model (per-request authority, identity-only JWT, teams-as-tenants, fail-closed posture, CLI-only writes) stands unchanged |
 
 ---
 
@@ -142,16 +144,15 @@ Replaced wholesale by a later ADR.
 | # | Title | Superseded by |
 |---|---|---|
 | [ADR-006](./adr/0006-static-site-no-backend.md) | Static-site, no backend | [ADR-055](./adr/0055-hosted-private-backend.md) for write-layer features (reads stay static) |
-| [ADR-007](./adr/0007-pyside6-pinned.md) | PySide6 pinned at 6.7.3 | Retired 2026-07-03 — the pinned dependency itself left the tree with the Qt puller's deletion (#240, PRD #138 retirement clause); the puller is the Textual data TUI (PRD #233) |
+| [ADR-007](./adr/0007-pyside6-pinned.md) | PySide6 pinned at 6.7.3 | Retired 2026-07-03. The pinned dependency left the tree when the Qt puller was deleted; the puller became the Textual data TUI |
 | [ADR-019](./adr/0019-fl-fgdl-to-fdor-nal.md) | FL FGDL DSL → `fdor_nal` source | [ADR-047](./adr/0047-fdor-nal-67-counties.md) (county scope) |
-| [ADR-031](./adr/0031-map-rehaul-deferred.md) | Map app rehaul deferred to post-pitch | [ADR-030](./adr/0030-map-app-v2-stack.md) (rehaul was executed in-cut) |
+| [ADR-031](./adr/0031-map-rehaul-deferred.md) | Map app rehaul deferred past the first cut | [ADR-030](./adr/0030-map-app-v2-stack.md) (the rehaul happened in the same cut) |
 | [ADR-046](./adr/0046-fl-fdor-nal-10-counties.md) | FL FDOR NAL: 10 representative counties | [ADR-047](./adr/0047-fdor-nal-67-counties.md) (expanded to all 67) |
 
 ---
 
 ## Conventions
 
-- **Numbering** is sparse — gaps (008/009, 025–029, 032–039) are intentional, never reused.
-- **Status lines** at the top of each ADR file authoritatively state whether the decision is still binding. This index is the navigation surface; the ADR file is the truth.
-- **New ADRs** create a new file under `docs/adr/NNNN-slug.md` and add a row here (in the right section).
-- **A decision moves status** by editing the ADR's status line + moving its row in this index. The old prose stays — a "Superseded by ADR-X" header tells future readers what changed.
+- **Numbering** is sparse. The gaps (008/009, 025-029, 032-039) are intentional; numbers were never reused.
+- **Status lines** at the top of each ADR file state whether the decision held. This index is for navigation; the ADR file is the source of truth.
+- **Changed decisions** kept their original prose. A "Superseded by ADR-X" or "Revised by ADR-X" status line records what changed.

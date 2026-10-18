@@ -1,46 +1,40 @@
-# ADR-053: Product phase shift — pitch demo → co-founder-facing product
+# ADR-053: Product phase shift from demo to daily-use product
 
 **Status:** Accepted
 **Date:** 2026-05-25
 
 ## Context
 
-The repo was built and documented as a "v1 pitch-quality demo across 4 anchor states" (PROJECT_BRIEF, SCOPE pre-2026-05-25, GOALS pre-2026-05-25). The audience was an investor / co-founder / strategic partner walked through in 10 minutes. Several feature areas were therefore hard non-goals: lease economics, carrier/tenant data, recorded leases, LLC unmasking, mass outreach, document storage.
+The repo was first built and documented as a read-only demo across 4 anchor states, meant for a 10-minute walkthrough. Several feature areas were therefore hard non-goals: lease economics, carrier and tenant data, recorded leases, LLC unmasking, mass outreach, and document storage.
 
-In a grill session on 2026-05-25 the user explicitly reframed:
-
-> "We're past v1. I need this to be a fully fleshed-out product at this point... I need the software to get to a point where for at least those four states, it works, and you can use this, and you can start looking at the antennas, and you can start ranking them and filtering through them and choosing the ones that he's gonna then follow-up on."
-
-Audience pivoted from "investor walkthrough" to "co-founder daily user." The co-founder shared a detailed product wishlist (carrier IDs, vendor IDs, lease document upload + structured extraction, mass-email + response tracking, comparables, etc.).
+On 2026-05-25 the project was reframed. The tool had to work end to end for the anchor states as the daily triage tool of the product's single analyst user: look at the antennas, rank them, filter them, and pick the ones to follow up on. The analyst's wishlist included carrier IDs, vendor IDs, lease document upload with structured extraction, mass email with response tracking, and lease comparables.
 
 ## Decision
 
-The project transitions from "pitch cut" to **Phase 1 of a co-founder-facing product**. The 2-person team is: user (software) + co-founder (business; primary user of the product).
+The project moves from a demo cut to **Phase 1 of a daily-use product**, with one developer and one analyst as the primary user.
 
-**Phase 1 outcome bar:** the co-founder uses the product as his **primary daily triage tool for 4 consecutive weeks**, picking targets from it without falling back to spreadsheets or asking for custom data pulls. Deal-closing is *not* the gate (depends on his pitching + market); usage is the honest proxy.
+**Phase 1 in-scope features** (flipped from earlier hard non-goals):
+- FCC Universal Licensing System (ULS) carrier identification per tower (reverses ADR-013)
+- Asset enrichment: billboards and solar on the parcel (partly reverses ADR-014)
+- Vendor (tower company) inference
+- Lease document upload with LLM-based structured extraction and confidence (see ADR-059)
+- Triage state, a write layer, and CSV exports (needs a backend, see ADR-055)
+- Free public-records contact enrichment: Secretary of State filings and UCC-1 (Uniform Commercial Code financing statement) records (see ADR-057)
 
-**Phase 1 in-scope features** (flipped from previous hard non-goals):
-- FCC ULS carrier identification per tower (ADR-013 reverses)
-- Asset enrichment (billboards + solar on parcel) (ADR-014 partially reverses)
-- Vendor (tower-co) inference
-- Lease document upload + LLM-based structured extraction with confidence (see ADR-059)
-- Triage state / write layer / CSV exports (requires backend — see ADR-055)
-- Free public-records contact enrichment (Secretary of State, UCC-1) (see ADR-057)
+**Phase 1 anchor states are unchanged:** AR, MT, FL and NC. Not nationwide. ADR-001's state-level scope still holds.
 
-**Phase 1 anchor states unchanged:** AR + MT + FL + NC. Not nationwide. (ADR-001 state-level scope stays correct.)
+**Phase 2** was to be asset-universe expansion to rooftops (ADR-054) plus operational scale: mass email, a paid comparables tier, self-serve refresh, and recorded-lease automation.
 
-**Phase 2** = asset-universe expansion to rooftops (ADR-054) + operational scale (mass email, comparables paid tier, self-serve refresh, recorded-lease automation).
-
-**No fixed timeline.** User: *"I don't care about timelines. Let's set goals and work through them."*
+**No fixed timeline.** Work proceeds by goals, not dates.
 
 ## Consequences
 
-- SCOPE.md, GOALS.md, ROADMAP.md, STATUS.md, CLAUDE.md all rewrite (this ADR drives the rewrites).
-- ADR-006 (static-site) superseded by ADR-055; ADR-010 + ADR-041 revised by ADR-057.
-- Pitch-cut KPIs retire; new product per-slice gates ([SCOPE.md §4](../SCOPE.md)) replace them.
-- Plan-of-work becomes Slices F → A → C → D+E → B in defined order.
+- The scope, status and orientation docs were rewritten around this ADR. The surviving record is [STATUS.md](../STATUS.md).
+- ADR-006 (static site) is superseded by ADR-055. ADR-010 and ADR-041 are revised by ADR-057.
+- The demo-cut success measures retire. Per-slice gates replace them.
+- The plan of work becomes Slices F → A → C → D+E → B, in that order.
 
 ## Alternatives considered
 
-- **Stay with the pitch cut:** rejected by user's explicit reframing.
-- **Skip Phase 1, jump to Phase 2 rooftops:** rejected; rooftops require paid data (CoStar / building tenant mix), break free-only posture without delivering anything sooner.
+- **Stay with the demo cut.** Rejected by the explicit reframing.
+- **Skip Phase 1 and go straight to Phase 2 rooftops.** Rejected. Rooftops need paid data (CoStar, building tenant mix), which breaks the free-data posture without delivering anything sooner.

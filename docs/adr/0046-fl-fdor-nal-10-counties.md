@@ -5,7 +5,7 @@
 
 ## Context
 
-The previously-active `fl_fgdl_parcels` source pulls FGDL DSL (state-domain land — state-owned parcels) which has no private-landowner data. Composing FL with that produced empty `owner_name` columns and was useless for our pitch.
+The previously-active `fl_fgdl_parcels` source pulls FGDL DSL (state-domain land, meaning state-owned parcels) which has no private-landowner data. Composing FL with that produced empty `owner_name` columns and was useless for owner analysis.
 
 ## Decision
 

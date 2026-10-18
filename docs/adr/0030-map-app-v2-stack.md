@@ -1,6 +1,6 @@
 # ADR-030: Map app v2 stack: MapLibre + PMTiles + DuckDB-WASM + Svelte
 
-**Status:** Realized — shipped 2026-05-21. See [../../app/ARCHITECTURE.md](../../app/ARCHITECTURE.md).
+**Status:** Realized. Shipped 2026-05-21. See [../../app/ARCHITECTURE.md](../../app/ARCHITECTURE.md).
 **Date:** 2026-05-19
 
 ## Context
@@ -9,7 +9,7 @@ The current Leaflet app can't handle multi-million-parcel states; filter surface
 
 ## Decision
 
-v2 will be MapLibre GL JS (WebGL rendering), PMTiles (single-file vector tiles, no server), DuckDB-WASM (in-browser SQL over Parquet via HTTP range requests), Svelte + Vite (UI). Tippecanoe generates PMTiles at preprocess time.
+v2 uses MapLibre GL JS (WebGL rendering), PMTiles (single-file vector tiles, no server), DuckDB-WASM (in-browser SQL over Parquet via HTTP range requests), Svelte + Vite (UI). Tippecanoe generates PMTiles at preprocess time.
 
 ## Consequences
 

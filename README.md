@@ -1,180 +1,193 @@
 # morphy
 
-**Cell-tower ground-lease renegotiation analytics.** Joins tower locations to parcel records to economic-distress overlays, then layers carrier identification + lease document storage + LLM-based extraction + triage workflow into a co-founder-facing product. **Phase 1** covers four committed anchor states (AR + MT + FL + WV) with freestanding towers (NC deferred to a Phase-1 stretch candidate); **Phase 2** adds rooftop installations + operational scale.
+Finds the landowner under every cell tower in a state and ranks them for ground-lease
+renegotiation, by joining federal tower registries to county parcel records and economic
+distress data.
 
-> 🔀 **2026-05-25 phase shift:** previously a "v1 pitch-quality demo," this is now Phase 1 of a fleshed-out internal product the business co-founder uses daily for triage — see [docs/adr/0053-product-phase-shift.md](docs/adr/0053-product-phase-shift.md) for the reframe and ADRs 053+ in [docs/adr/](docs/adr/) (indexed by [docs/DECISIONS.md](docs/DECISIONS.md)) for the locked decisions.
+**Status:** Archived. A portfolio project by Daniel Gentile.
 
-> Read [docs/SCOPE.md](docs/SCOPE.md) first for what's being built right now. Read [PROJECT_BRIEF.md](PROJECT_BRIEF.md) for the business case.
+**Live demo:** [morphy-demo.fly.dev](https://morphy-demo.fly.dev). Press "Explore the demo" on
+the sign-in page; it needs no password. The demo is read-only. The backend refuses every write
+with a 403, and the lead board holds six fictional leads seeded for the demo
+([ADR-077](docs/adr/0077-read-only-demo-credential.md)).
 
----
+<!--
+## Screenshots
 
-## Four subsystems
+![Explore view: towers and parcels on the map, filtered by score](docs/images/explore.png)
+![Lead page: owner cluster, towers, carriers and activity log](docs/images/lead.png)
+![Data TUI: source status, pull progress and verify](docs/images/data-tui.png)
+-->
 
-| Subsystem | Path | Purpose |
+## The problem
+
+Cell towers usually sit on land leased from a private owner, often a farmer or a small family
+trust, under a ground lease signed decades ago. Those leases are often worth renegotiating,
+but finding the owners is the hard part. The FCC knows where every registered tower stands.
+Counties know who owns every parcel. No public dataset connects the two.
+
+morphy builds that connection for four states (Arkansas, Montana, Florida and West Virginia).
+It places every FCC Antenna Structure Registration (ASR) tower on its parcel, attaches the
+owner, groups an owner's parcels across counties and states, and layers on distress signals:
+HUD Opportunity Zones and Qualified Census Tracts, Appalachian Regional Commission
+distressed counties, and USDA persistent-poverty counties. An analyst then works the result
+as leads in a map app: filter, rank with tunable scores, open an owner, log contact attempts,
+and merge or split owner clusters by hand.
+
+## Architecture
+
+Four subsystems, each with its own agent orientation file:
+
+| Subsystem | Path | What it does |
 |---|---|---|
-| **Data TUI** | `scripts/data_tui/` | Textual terminal app; pulls raw data into `data/raw/<source_id>/current/`, then preprocess → verify → deploy (PRD #233). |
-| **Preprocess pipeline** | `scripts/preprocess/` | Registry-driven Normalizer + Join + View framework; per-state Composer. |
-| **Map app** | `app/` | Svelte 5 + MapLibre analytical SPA — three-section IA (Dashboard · Explore · Leads), PMTiles parcels + DuckDB-WASM filtering + tunable scoring. See [app/ARCHITECTURE.md](app/ARCHITECTURE.md). |
-| **Backend** | `backend/` | FastAPI + SQLAlchemy lead-triage write-layer — tenant-scoped lead + task state, contact attempts, owner merge/split overrides; username/password auth ([ADR-062](docs/adr/0062-username-password-replaces-magic-link.md)/[063](docs/adr/0063-file-credentials-teams-per-request-authority.md)/[069](docs/adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md)). Deployed in production. S3 lease-doc storage + Claude API extraction still planned. Per [ADR-055](docs/adr/0055-hosted-private-backend.md). See [backend/README.md](backend/README.md). |
+| Data TUI | [`scripts/data_tui/`](scripts/data_tui/CLAUDE.md) | Textual terminal app over the headless fetch library. Pulls raw data, runs preprocess, verifies outputs, and deploys data, all from one screen. |
+| Preprocess pipeline | [`scripts/preprocess/`](scripts/preprocess/CLAUDE.md) | Registry-driven Normalizer → Join → View → Compose framework on DuckDB. Writes per-state composites, PMTiles and the cross-state owners index. |
+| Map app | [`app/`](app/CLAUDE.md) | Svelte 5 + MapLibre single-page app with Dashboard, Explore and Leads sections. |
+| Backend | [`backend/`](backend/CLAUDE.md) | FastAPI + SQLAlchemy write layer for leads, tasks, activity, scoring presets and owner overrides. |
 
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the full system diagram + data flow.
-
----
-
-## Quick start
-
-```bash
-# One-time: install uv (https://docs.astral.sh/uv/getting-started/installation/)
-brew install uv
-
-# One command = the whole working environment: creates .venv on Python 3.11
-# from uv.lock (exact pinned versions, all dependency groups) and installs
-# fetch/preprocess editable so imports work with no path hacks (PRD #132).
-uv sync
-source .venv/bin/activate
+```
+public sources ──► scripts/fetch ──► data/raw ──► scripts/preprocess ──► data/processed
+ (FCC, counties,      (data TUI)                   normalize, join,        composites,
+  HUD, ARC, USDA,                                  view, compose           PMTiles, owners index
+  EIA, FAA)                                                                     │
+                                                                                ▼
+                               backend (FastAPI, SQLite) ◄──── app (Svelte, MapLibre,
+                               leads, tasks, overrides          PMTiles, DuckDB-WASM)
 ```
 
-### 1. Pull raw data
+Deployed, the app, the API and the data files sit behind one Caddy server on a single Fly
+machine, with SQLite replicated to object storage by Litestream. The full system diagram and
+data flow are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Technical highlights
+
+- **Registry-driven pipeline.** Each source is one `DataSource` entry with an automation
+  policy (`ALLOWED`, `TOLERATED`, `MANUAL_ONLY`, `CREDENTIALED`) that records what the
+  publisher's terms permit. 17 sources are active and 12 more are registered but deferred.
+  Normalizers map each source to a canonical schema, Joins link them, and Views define the
+  outputs. Adding a state means adding a parcel adapter, not a new code path
+  ([ADR-002](docs/adr/0002-registry-driven-architecture.md)).
+- **Big-state compose on a laptop.** Florida has 11.4 million parcels. Loading them in one
+  pass peaked near 19.5 GB, past the 16 GB dev machine, so compose runs in chunks on DuckDB
+  ([ADR-051](docs/adr/0051-chunked-compose.md)).
+- **No tile server.** Parcels ship as PMTiles read by HTTP range request, and the browser
+  filters and searches parcel attributes with DuckDB-WASM over parquet. The static file
+  server only has to honor `Range`.
+- **Tenant-scoped API.** Every table carries `tenant_id` and every route filters by it, with
+  isolation tests marked `tenant_isolation`
+  ([ADR-055](docs/adr/0055-hosted-private-backend.md)). Schema changes ship as Alembic
+  revisions, and the committed OpenAPI schema generates the frontend's TypeScript types,
+  checked in CI.
+- **Cookie auth that re-checks every request.** Credentials live in the database with
+  PBKDF2 hashes. The JWT carries identity only, sits in an httpOnly `morphy_session` cookie,
+  and is re-authorized against the credential table on every request. Caddy uses the same
+  check (`forward_auth`) to gate the static data files. With `AUTH_DEV_MODE` unset, the app
+  refuses to start without a real secret and at least one credential
+  ([ADR-069](docs/adr/0069-credentials-in-db-cookie-sessions-gated-data-plane.md)).
+- **A read-only demo enforced in one place.** Read-only is a flag on the credential row.
+  `current_principal`, the dependency every authenticated route already uses, refuses that
+  principal's non-GET requests, and a test enumerates every write route to prove none slips
+  past. `DEMO_MODE` adds a password-less sign-in for that one credential and refuses to boot
+  unless it exists and is read-only
+  ([ADR-077](docs/adr/0077-read-only-demo-credential.md)).
+- **Owner merge and split.** The pipeline clusters owners by normalized name plus state, with
+  an alias table for the national tower companies
+  ([ADR-075](docs/adr/0075-cross-state-owner-identity.md)). Analyst overrides resolve in one
+  expression, `display_cluster_id = coalesce(override_target, raw_cluster_id)`, so no surface
+  can disagree about who an owner is.
+- **Tests.** About 1,100 pytest tests (627 for the pipeline and app-asset scripts, 472 for
+  the backend), about 515 Vitest unit tests and about 40 Playwright end-to-end tests for the
+  map app. GitHub Actions runs lint, tests and an OpenAPI type-drift check
+  ([docs/TESTING.md](docs/TESTING.md)).
+- **Built with coding agents.** The root [CLAUDE.md](CLAUDE.md) and one per subsystem give
+  agents their entry points, contracts and the invariants they most often broke. They are
+  left in place as a record of how the project was built.
+
+## Running it locally
+
+Prerequisites: [uv](https://docs.astral.sh/uv/) (it installs Python 3.11 from `uv.lock`),
+Node.js 22 (the version CI and the Dockerfile use), and `tippecanoe` for parcel tiles (`brew install tippecanoe`). Expect
+several GB of disk for one state's raw data.
+
+```bash
+uv sync && source .venv/bin/activate
+```
+
+**1. Pull one state.** Montana is a good first state because its statewide parcel layer downloads
+automatically.
 
 ```bash
 python -m data_tui
 ```
 
-In the TUI: the launch sweep checks every source; `P` pulls all stale
-auto sources, `w` opens the guided walkthrough for the one manual
-source (AR parcels), `i` installs downloaded files from disk.
-[docs/PULLER_UX.md](docs/PULLER_UX.md) is the design spec.
+The launch sweep checks every source. Select a row and press `p` to pull it. For Montana pull
+`mt_cadastral_parcels`, `fcc_asr` (national towers) and the overlays (`hud_oz`, `hud_qct`,
+`arc_distressed`, `usda_persistent_poverty`). `P` pulls every stale source at once, and `q`
+quits. [docs/PULLER_UX.md](docs/PULLER_UX.md) covers the rest.
 
-### 2. Preprocess
+**2. Build the outputs.**
 
 ```bash
-python scripts/preprocess.py                    # all sources + all states
-python scripts/preprocess.py --state 05         # just Arkansas
-python scripts/preprocess.py --source ar_parcels --force-rebuild
-python scripts/preprocess.py --rebuild-manifest # resync manifest with disk
-python scripts/preprocess.py --list-views       # discoverability
+python scripts/preprocess.py --state 30      # normalize + compose Montana
+python scripts/preprocess.py --app-assets    # index.json, facets, slim parquet
+python scripts/preprocess.py --tiles         # parcels.pmtiles (needs tippecanoe)
+python scripts/preprocess.py --owners-index  # cross-state owner clusters for Leads
 ```
 
-Outputs:
-
-- `data/processed/normalized/<source>/` — canonical-schema Parquet +
-  GeoJSON + `raw.parquet` + `quality_report.json`.
-- `data/processed/composite/<state_fips>/` — joined per-state outputs +
-  views + `catalog.json` + `summary.json`.
-
-### 3. Generate the app's data assets
+**3. Run the stack** (three terminals, from the repo root):
 
 ```bash
-python scripts/preprocess.py --app-assets   # index.json + per-state facets / slim parquet / county boundaries
-python scripts/preprocess.py --tiles        # per-state parcels.pmtiles (needs tippecanoe)
+python scripts/serve.py 8765                                       # data files
+AUTH_DEV_MODE=1 uvicorn backend.app.main:app --reload --port 8000  # API
+cd app && npm install && npm run dev                               # http://localhost:5173
 ```
 
-### 4. Run the map app
+`AUTH_DEV_MODE=1` uses an ephemeral signing secret and a built-in `dev` / `dev` login. Sign
+in with that. Vite proxies `/data` to port 8765 and `/api` to port 8000.
+
+**Optional settings.** Copy `.env.example` to `.env` and `app/.env.example` to `app/.env`
+(both git-ignored). The app's file takes a MapTiler key for the satellite basemap. Without
+one the app uses a keyless Carto basemap.
+
+**Tests:**
 
 ```bash
-python scripts/serve.py 8765                # range-capable data server, from the repo root
-cd app && npm install && npm run dev        # http://localhost:5173  (?state=05 to deep-link)
-```
-
-`npm run build` produces `app/dist/`. The state selector auto-populates
-from `data/processed/composite/`. See [app/ARCHITECTURE.md](app/ARCHITECTURE.md).
-
-### 5. Tests
-
-```bash
-pytest                                      # preprocess pipeline (incl. the app-asset scripts)
+pytest
 ruff check . && ruff format --check .
-uv run pyright                              # type-check the backend (basic mode, backend/ only — PRD #136)
+uv run pyright
 cd app && npm run check && npm run test:unit && npm run test:e2e
 ```
 
----
+## Data sources and attribution
 
-## Where to look
+The MIT license covers the code only. No source data is in this repo: `data/` is git-ignored,
+and the data TUI pulls each dataset from its publisher. The data comes from federal agencies
+(FCC, HUD, USDA, USGS, the Appalachian Regional Commission) and from state parcel publishers in
+Arkansas, Florida, Montana and West Virginia. [NOTICE.md](NOTICE.md) gives each publisher's
+terms and the credits and disclaimers they ask for, including a takedown contact for owner
+names, which come from public records. Per-source schemas, licenses and automation policies
+are in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md), and data handling is in
+[docs/SECURITY.md](docs/SECURITY.md).
 
-**Front door** (start here):
+## Design decisions
 
-- [docs/SCOPE.md](docs/SCOPE.md) — what's in / out of the current cut
-- [docs/STATUS.md](docs/STATUS.md) — what works today
-- [docs/SCOPE.md §4](docs/SCOPE.md) — success criteria + per-slice shipped gates
+Every significant choice is recorded as an architecture decision record in
+[docs/adr/](docs/adr/), indexed in [docs/DECISIONS.md](docs/DECISIONS.md). Good starting
+points: why states were the unit of scope
+([ADR-001](docs/adr/0001-state-level-geographic-scope.md)), why a lead is an owner cluster
+([ADR-056](docs/adr/0056-lead-equals-owner-cluster.md)), why one Fly machine with SQLite
+([ADR-064](docs/adr/0064-phase1-hosting-fly-sqlite.md)), and why carrier matches are labeled
+"licensed in this area" rather than confirmed tenants
+([ADR-074](docs/adr/0074-uls-carrier-rearchitecture.md)).
 
-**Deep dives:**
+## Where it stopped
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the system fits together
-- [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) — per-source schema + license + automation policy
-- [docs/DATA_FRESHNESS.md](docs/DATA_FRESHNESS.md) — when each source needs a refresh
-- [docs/LIMITATIONS.md](docs/LIMITATIONS.md) — caveats and pre-commercial blockers
-- [docs/SECURITY.md](docs/SECURITY.md) — PII / data-handling posture
-- [docs/GLOSSARY.md](docs/GLOSSARY.md) — domain-term reference
+The pipeline, the four state composites, carrier identification, tunable scoring, owner
+resolution, the backend and the triage UI all shipped. Lease document upload with LLM
+extraction ([ADR-059](docs/adr/0059-llm-lease-extraction.md)) and tower-company inference were
+designed but never built. [docs/STATUS.md](docs/STATUS.md) has the full account, and
+[docs/CHANGELOG.md](docs/CHANGELOG.md) has the dated history.
 
-**Where we're going:**
+## License and author
 
-- [docs/ROADMAP.md](docs/ROADMAP.md) — past / present / future
-- [docs/DECISIONS.md](docs/DECISIONS.md) — locked-in design choices
-- [docs/adr/](docs/adr/) — per-ADR architecture decision records
-
-**Working with AI coding agents:**
-
-- [CLAUDE.md](CLAUDE.md) — orientation for Claude Code sessions
-
----
-
-## Anchor states for Phase 1
-
-| State | FIPS | Status |
-|---|---|---|
-| Arkansas | 05 | ✅ Working end-to-end |
-| Montana | 30 | ✅ Working end-to-end |
-| Florida | 12 | ✅ Recomposed 2026-05-29 (all 67 counties) — live in the app; county-score gap closed (`county_scores` layer + tower/solar distress joins now present), consistent with AR/MT. See [STATUS §4.1](docs/STATUS.md) |
-| West Virginia | 54 | ✅ Added 2026-05-29 (PR #44) — `wv_parcels` statewide layer (WVGISTC, SB 588); composed (1,389,855 parcels, all 55 counties) + live in the app. **Committed anchor** (ADR-060, 2026-05-29). See [STATUS §4.4](docs/STATUS.md) |
-| North Carolina | 37 | ⏸️ Deferred / Phase-1 stretch — raw data deleted 2026-05-20; re-fetch + normalize + compose deferred (NC OneMap re-fetch intermittently 504s). Not a committed anchor. |
-
-See [docs/SCOPE.md §2](docs/SCOPE.md) for why these anchors, and [docs/STATUS.md](docs/STATUS.md) for the live state.
-
----
-
-## Repository layout
-
-```
-morphy/
-├── README.md                 (you are here)
-├── GLOSSARY.md                Canonical product language (glossary)
-├── CLAUDE.md                 AI-agent orientation
-├── PROJECT_BRIEF.md          Business case
-├── pyproject.toml            Project + dependency groups (uv; uv.lock pins exact versions)
-├── app/                      Svelte 5 + MapLibre map app
-├── backend/                  FastAPI + SQLAlchemy lead-triage write-layer (auth, teams-as-tenants; SQLite dev / Postgres) — see backend/README.md
-├── scripts/
-│   ├── preprocess.py         CLI wrapper
-│   ├── preprocess/           Normalizer/Join/View framework
-│   ├── fetch/                Headless puller library
-│   ├── data_tui/             Textual data TUI (pull → preprocess → verify → deploy)
-│   ├── verify_raw.py         File-signature contents check
-│   └── diagnose.py           LLM-powered verify diagnosis
-├── data/                     (git-ignored; ~15 GB raw)
-│   ├── raw/<source>/current/
-│   └── processed/{normalized,composite}/
-├── docs/                     All deep-dive documentation
-│   ├── adr/                  Architecture Decision Records (all ADRs; indexed by docs/DECISIONS.md)
-│   ├── agents/               Skill-system configuration
-│   └── research/             Data-source legal/license research
-└── tests/                    Preprocess + app-asset tests (backend tests live under backend/tests/)
-```
-
----
-
-## License + status
-
-This is a **Phase 1 internal product** for a 2-person team (dev + business co-founder); the co-founder is the daily user. Outputs contain parcel-owner names + mailing addresses (PII when combined) — treat per [docs/SECURITY.md](docs/SECURITY.md). The repo itself is private; the backend deploys hosted-private with username/password auth per [ADR-055](docs/adr/0055-hosted-private-backend.md) / [ADR-062](docs/adr/0062-username-password-replaces-magic-link.md).
-
-**Phase 1 slice plan** (untimed, goal-driven):
-
-1. **F** — Committed anchors (AR + MT + FL + WV) composed — **✅ shipped**
-2. **A** — FCC ULS carrier identification (Cellular + PCS + AWS / 700 MHz) — **✅ shipped** (~6–17% coverage)
-3. **C** — Asset enrichment (billboards + solar on parcel) + tunable scoring UI — **✅ scoring UI shipped** (billboards await anchor raw data)
-4. **D + E** — Lease doc upload + LLM extraction + triage state / write layer / CSV exports — backend + triage **shipped**; **lease upload + LLM extraction is the next unbuilt work**
-5. **B** — Vendor (tower-co) inference — not started
-
-Per-slice "shipped" gates in [docs/SCOPE.md §4](docs/SCOPE.md). Overall outcome bar: co-founder uses the product as his primary daily triage tool for 4 consecutive weeks.
-
-See [docs/STATUS.md](docs/STATUS.md) for the live snapshot.
+MIT, see [LICENSE](LICENSE). Built by Daniel Gentile.

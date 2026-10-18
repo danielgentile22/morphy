@@ -1,42 +1,40 @@
-# ADR-059: LLM extraction approach for lease documents (Slice 4)
+# ADR-059: LLM extraction approach for lease documents (Slice D+E)
 
-**Status:** Accepted — **locked design, UNIMPLEMENTED as of 2026-05-29 (Slice 4; no `backend/` code exists yet).**
+**Status:** Accepted, **never built**. The design below was locked, but lease upload and extraction were never implemented before the project was archived. No extraction code, gold set or eval exists in the repo.
 **Date:** 2026-05-25
 **Pairs with:** ADR-053, ADR-055
 
 ## Context
 
-Slice 4 (D + E) introduces lease-document upload with structured field extraction (rent, escalation, expiry, amendment count, parties, …) + per-field confidence. The 85% field-accuracy bar from the session per-slice gates needs an actual extraction pipeline.
+Slice D+E was to add lease-document upload with structured field extraction (rent, escalation, expiry, amendment count, parties, and so on) plus per-field confidence. The per-slice gate set an 85% field-accuracy bar, which needs a real extraction pipeline.
 
-The structured-extraction loop is the project's competitive moat — over time, uploaded leases build a private comparables DB that the public-data pipeline can never match (most recorded Memoranda of Lease redact rent).
+The extraction loop also had a data reason: over time, uploaded leases would build a private comparables database that the public-data pipeline cannot match, because most recorded Memoranda of Lease redact the rent.
 
 ## Decision
 
-**Model strategy:** **Sonnet 4.6 default + Opus 4.7 retry path** for leases the eval flags as low-confidence after the first pass. Haiku is too weak on long legal-document reasoning. Cost: ~$3 / lease Sonnet, ~$15 / lease Opus retry. With prompt caching enabled, per-lease cost drops ~80% on cached portions.
+**Model strategy:** **Sonnet 4.6 by default, with an Opus 4.7 retry** for leases the eval flags as low-confidence after the first pass. Haiku is too weak at long legal-document reasoning. Estimated cost was about $3 per lease on Sonnet and about $15 per lease for an Opus retry. Prompt caching cuts the cost of cached portions by about 80%.
 
-**Confidence strategy:** **Hybrid citation-anchored + self-rated.**
+**Confidence strategy:** **hybrid of citation-anchored and self-rated.**
 
-- Model returns each field as `(value, page_number, verbatim_quote_from_source)`.
-- Verifiable confidence: if `verbatim_quote` appears verbatim in source PDF, confidence is high. Co-founder one-click verifies (*"show me where in the PDF this rent came from"*).
-- Self-rated confidence as fallback for genuinely inferred fields (e.g. *"this is amendment 3 of 5"* computed across pages) where there's no clean citation.
+- The model returns each field as `(value, page_number, verbatim_quote_from_source)`.
+- Verifiable confidence: if `verbatim_quote` appears verbatim in the source PDF, confidence is high. The user can verify in one click ("show me where in the PDF this rent came from").
+- Self-rated confidence is the fallback for inferred fields with no clean citation (for example "this is amendment 3 of 5", computed across pages).
 
-**PDF handling:** **Direct vision extraction.** Claude 4.x reads PDF pages as images natively. Avoids running a separate OCR pipeline (Tesseract / AWS Textract); fewer moving parts; handles scanned legal docs (older recorded leases especially) better than OCR + text routing.
+**PDF handling:** **direct vision extraction.** Claude 4.x reads PDF pages as images natively. This avoids a separate OCR pipeline (Tesseract or AWS Textract), has fewer moving parts, and handles scanned legal documents (older recorded leases especially) better than OCR followed by text routing.
 
-**Eval harness:** **20-lease hand-labelled gold-set** built first. Field-level precision / recall / exact-match per field. **Gating CI check** — PR blocks if any field's accuracy drops below 85%. Manual-override label for cases where the schema is intentionally changed and the gold-set needs re-labelling.
-
-**At build time:** use the `claude-api` skill (handles prompt caching, Tool use schema, Sonnet/Opus selection).
+**Eval harness:** a **20-lease hand-labelled gold set**, built first. Field-level precision, recall and exact match per field. A **gating CI check** blocks a PR if any field's accuracy drops below 85%. A manual-override label covers intentional schema changes that need the gold set re-labelled.
 
 ## Consequences
 
-- Per-lease cost is small (~$3 nominal, less with caching) — well within Phase 1 budget.
-- Citation-anchored output gives the co-founder a verification path; he doesn't trust the model blindly.
-- The 20-lease gold-set is real ongoing work (~8–10 hrs to build, ~2 hrs per eval re-run). The only way to know if extraction quality is real.
-- Schema design (which fields, what types, what's required) gets defined inside Slice 4 — not constrained by this ADR.
-- Per-uploaded-lease rent data augments the `lease_comp` table (see session summary §Comparables).
+- Per-lease cost is small (about $3 nominal, less with caching), well within the Phase 1 budget.
+- Citation-anchored output gives the user a verification path instead of blind trust in the model.
+- The 20-lease gold set is real ongoing work (about 8-10 hours to build, about 2 hours per eval re-run). It is the only way to know whether extraction quality is real.
+- Schema design (which fields, what types, what is required) was left to the Slice D+E build, not fixed by this ADR.
+- Rent data from each uploaded lease would feed the `lease_comp` table.
 
 ## Alternatives considered
 
-- **Single-model (Sonnet only):** some leases are subtle enough to warrant Opus retry; cost overhead small (~10% of cases). Rejected.
-- **Self-rated confidence only:** LLMs systematically overrate own confidence. Rejected.
-- **Multi-pass consistency (3× temp 0.3, agreement = confidence):** too expensive (3× latency + cost) without proportional accuracy gain over citation-anchored. Rejected.
-- **Pre-OCR pipeline:** more infra to maintain; Claude vision handles scanned docs better than Tesseract anyway. Rejected.
+- **Single model (Sonnet only).** Some leases are subtle enough to need an Opus retry, and the overhead is small (about 10% of cases). Rejected.
+- **Self-rated confidence only.** LLMs systematically overrate their own confidence. Rejected.
+- **Multi-pass consistency (3 runs at temperature 0.3, agreement as confidence).** Triples latency and cost without a matching accuracy gain over citation anchoring. Rejected.
+- **Pre-OCR pipeline.** More infrastructure to maintain, and Claude vision handles scanned documents better than Tesseract. Rejected.

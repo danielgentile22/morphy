@@ -13,4 +13,4 @@ The preprocess manifest can drift from disk reality when work is interrupted or 
 
 ## Consequences
 
-Cheap recovery path; should be in user's muscle memory after any non-trivial work session.
+Cheap recovery path, worth running after any non-trivial work session.

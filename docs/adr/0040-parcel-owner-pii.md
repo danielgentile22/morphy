@@ -5,7 +5,7 @@
 
 ## Context
 
-Parcel data carries owner names + mailing addresses, which together meet most PII definitions even when individually public-record.
+Parcel data carries owner names + mailing addresses, which together meet most definitions of personally identifiable information (PII) even when individually public-record.
 
 ## Decision
 
@@ -15,4 +15,4 @@ Parcel data carries owner names + mailing addresses, which together meet most PI
 
 ## Consequences
 
-GitHub repo is private by default. Demo screenshots that show real owner names may need redaction depending on audience.
+Real owner data stays out of the repo because `data/` is git-ignored. Demo screenshots that show real owner names may need redaction depending on audience.

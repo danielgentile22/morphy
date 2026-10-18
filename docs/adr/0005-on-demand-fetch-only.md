@@ -13,4 +13,4 @@ All raw pulls are manually triggered via the puller UI. No cron, no in-app sched
 
 ## Consequences
 
-The puller must surface staleness clearly (Section 3 freshness model) so the user doesn't forget. Cadence-aware notification is a future task.
+The puller must surface staleness clearly (see [DATA_FRESHNESS.md](../DATA_FRESHNESS.md)) so the user doesn't forget. Cadence-aware notification was never built.

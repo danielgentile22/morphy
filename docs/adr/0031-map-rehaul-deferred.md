@@ -1,6 +1,6 @@
-# ADR-031: Map app rehaul deferred to post-pitch
+# ADR-031: Map app rehaul deferred past the first cut
 
-**Status:** Superseded — the rehaul was executed within this cut as Section 8 (2026-05-21), not deferred to post-pitch. See [ADR-030](0030-map-app-v2-stack.md).
+**Status:** Superseded. The rehaul happened within this cut as Section 8 (2026-05-21) instead of being deferred. See [ADR-030](0030-map-app-v2-stack.md).
 **Date:** 2026-05-19
 
 ## Context
@@ -9,8 +9,8 @@ Audit found bigger gaps (broken endpoints, missing normalizers, no tests, doc dr
 
 ## Decision
 
-v1 Leaflet app gets minimal patches only during this cut (Section 8 of the work plan). Full rebuild starts after the pitch lands.
+v1 Leaflet app gets minimal patches only during this cut (Section 8 of the work plan). Full rebuild waits until after the first cut.
 
 ## Consequences
 
-Pitch demos use the current map. Map performance caveats live in LIMITATIONS.md.
+Demos use the current map. Map performance caveats live in LIMITATIONS.md.

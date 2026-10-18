@@ -2,11 +2,10 @@
 
 ## Summary
 
-<!-- 1–3 sentences. What and why. -->
+<!-- 1-3 sentences. What and why. -->
 
-## Scope
+## Decisions
 
-- [ ] Change is in scope per `docs/SCOPE.md` for the current cut
 - [ ] If this touches a locked decision in `docs/DECISIONS.md`, the PR
       either adds a new ADR or amends an existing one
 
@@ -19,8 +18,6 @@
 
 ## Docs
 
-- [ ] `docs/STATUS.md` updated if the state of an anchor source /
-      anchor state changed
 - [ ] Affected docs (e.g. DATA_SOURCES.md, LIMITATIONS.md) reflect the change
 
 ## Risk + reversibility
@@ -36,4 +33,4 @@ How risky is this change? What's the rollback path?
 
 - [ ] No `data/` or composite outputs committed
 - [ ] No secrets / API keys / credentials in the diff
-- [ ] If this changes how owner-PII is stored or surfaced, `docs/SECURITY.md` updated
+- [ ] If this changes how owner personally identifiable information (PII) is stored or surfaced, `docs/SECURITY.md` updated

@@ -7,7 +7,7 @@
 
 ## Context
 
-Original FDOR scope was 10 representative counties (~60% of FL population) to keep manual-download effort bounded. After confirming the PAR shapefiles are PIN+NAL joined and downloads are direct (no queueing or click-through per county beyond the one-time portal terms acceptance), the marginal effort to pull all 67 is low while the pitch narrative gets stronger ("all of Florida" vs "representative counties").
+The original Florida Department of Revenue (FDOR) Name-Address-Legal (NAL) scope was 10 representative counties (~60% of FL population) to keep manual-download effort bounded. The PAR (parcel) shapefiles turned out to already join the PIN (parcel identification number) and NAL records. Downloads are direct, with no queueing or click-through per county beyond the one-time portal terms acceptance. So the marginal effort to pull all 67 is low, and "all of Florida" is a clearer claim than "representative counties".
 
 ## Decision
 
@@ -15,4 +15,4 @@ Original FDOR scope was 10 representative counties (~60% of FL population) to ke
 
 ## Consequences
 
-FL raw footprint grows from ~500 MB to ~2-3 GB (still well within budget — disk, not API). Preprocess time for FL scales ~6.7x; this stress-tests the Section 5.2 vectorization work. Strengthens the pitch by removing "10 counties, why those?" as an objection vector. No change to the canonical schema, normalizer, or the FGDL deferral.
+FL raw footprint grows from ~500 MB to ~2-3 GB (still well within budget, since the cost is disk, not API calls). Preprocess time for FL scales ~6.7x; this stress-tests the Section 5.2 vectorization work. Full coverage also removes "why those 10 counties?" as a question. No change to the canonical schema, normalizer, or the FGDL deferral.
