@@ -11,13 +11,13 @@ the sign-in page; it needs no password. The demo is read-only. The backend refus
 with a 403, and the lead board holds six fictional leads seeded for the demo
 ([ADR-077](docs/adr/0077-read-only-demo-credential.md)).
 
-<!--
 ## Screenshots
 
-![Explore view: towers and parcels on the map, filtered by score](docs/images/explore.png)
-![Lead page: owner cluster, towers, carriers and activity log](docs/images/lead.png)
-![Data TUI: source status, pull progress and verify](docs/images/data-tui.png)
--->
+![Explore view: towers clustered across the four Phase 1 states on a satellite basemap, with filters for state, structure type, distress and owner kind](docs/images/explore.jpg)
+
+![Leads board: six demo leads across the triage statuses](docs/images/leads.jpg)
+
+![Lead page: an owner's score, holdings mini-map, parcels and towers, status and contact fields](docs/images/lead.jpg)
 
 ## The problem
 
