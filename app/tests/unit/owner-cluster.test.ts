@@ -8,16 +8,15 @@ import {
 // Fixtures captured from the Python source of truth
 // (scripts/preprocess/cluster.normalize_owner_name +
 //  scripts/preprocess/owners_index.display_cluster_id). Regenerate with:
-//   python3 -c "import sys; sys.path.insert(0,'scripts'); \
+//   python3 -c "import sys, hashlib; sys.path.insert(0,'scripts'); \
 //     from preprocess.cluster import normalize_owner_name as n; \
-//     from preprocess.owners_index import display_cluster_id as d; \
-//     print(n('NAME'), d(n('NAME')))"
+//     print(n('NAME'), hashlib.sha1(n('NAME').encode()).hexdigest()[:12])"
 // A mismatch here means the TS port has drifted from the backend's Lead key.
 const PARITY: { name: string; norm: string; id: string }[] = [
-  { name: 'MITCHELL VICKI', norm: 'MITCHELL VICKI', id: '209af3ad593f' },
-  { name: 'BRYAN ANDREW L', norm: 'ANDREW BRYAN L', id: '05b465e0922b' },
-  { name: 'MOFFATT JOSHUA H & RANDI', norm: 'H JOSHUA MOFFATT RANDI', id: '08281074ad79' },
-  { name: 'HTC  PROPERTIES  LLC', norm: 'HTC PROPERTIES', id: '133a1b2800ed' },
+  { name: 'DOE JANE', norm: 'DOE JANE', id: 'aae5ec80ac52' },
+  { name: 'ROE RICHARD L', norm: 'L RICHARD ROE', id: '7ad1e06a3da1' },
+  { name: 'PUBLIC JOHN Q & MARY', norm: 'JOHN MARY PUBLIC Q', id: 'c5740db40ddf' },
+  { name: 'ACME  PROPERTIES  LLC', norm: 'ACME PROPERTIES', id: 'aa3b870d3fbd' },
   { name: 'WEYERHAEUSER COMPANY', norm: 'COMPANY WEYERHAEUSER', id: '049873f46305' },
   { name: 'AMERICAN TOWERS LLC', norm: 'AMERICAN TOWERS', id: '21cbe4dd35d5' },
   { name: 'SMITH FAMILY TRUST', norm: 'SMITH', id: 'bc70be7f3804' },

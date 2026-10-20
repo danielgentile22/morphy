@@ -163,7 +163,7 @@ _AR_TOWERS = [
     {
         "_source_row_id": "080946",
         "asr_number": "080946",
-        "parcel_owner": "MITCHELL VICKI",
+        "parcel_owner": "DOE JANE",
         "height_m": 79.248,
         "state": "AR",
         "is_active": True,
@@ -280,7 +280,7 @@ def test_equivalent_to_per_state_union(tmp_path: Path) -> None:
 
     # Not vacuous: the named towers + their derived field values are present.
     by_asr = {t["asr"]: t for t in towers}
-    assert by_asr["080946"]["owner"] == "MITCHELL VICKI"
+    assert by_asr["080946"]["owner"] == "DOE JANE"
     assert by_asr["080946"]["state"] == "AR"
     assert by_asr["080946"]["lat"] == 33.0 and by_asr["080946"]["lon"] == -91.3
     assert by_asr["080947"]["owner"] is None  # null landowner preserved
@@ -292,7 +292,7 @@ def test_equivalent_to_per_state_union(tmp_path: Path) -> None:
     assert by_asr["123456"]["owner"] == "FAA HOST FARMS LLC"
 
     # Baked cid == the canonical name+state recipe; un-clusterable owner → ''.
-    assert by_asr["080946"]["cid"] == _cid("MITCHELL VICKI", "05")
+    assert by_asr["080946"]["cid"] == _cid("DOE JANE", "05")
     assert by_asr["080946"]["cid"] != ""
     assert by_asr["080947"]["cid"] == ""  # null landowner → no Lead key
 

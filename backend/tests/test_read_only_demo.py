@@ -235,9 +235,12 @@ def _index(tmp_path, owners: list[dict]) -> OwnersIndexService:
 
 
 def test_seed_is_idempotent(engine, tmp_path) -> None:
-    owners = [_owner(f"c{i:02d}", "llc" if i % 2 else "corporate", 1 - i / 100) for i in range(10)]
-    owners.append(_owner("person", "individual", 2.0))  # outranks all, never seeded
-    owners.append(_owner("no-towers", "llc", 3.0, towers=0))
+    owners = [_owner(f"c{i:02d}", "gov", 1 - i / 100) for i in range(10)]
+    # Each outranks every government owner and is never seeded.
+    owners.append(_owner("person", "individual", 2.0))
+    owners.append(_owner("business", "llc", 2.0))
+    owners.append(_owner("company", "corporation", 2.0))
+    owners.append(_owner("no-towers", "gov", 3.0, towers=0))
     index = _index(tmp_path, owners)
 
     with Session(bind=engine, future=True) as s:
@@ -259,7 +262,7 @@ def test_seed_is_idempotent(engine, tmp_path) -> None:
 
     by_id = {lead.display_cluster_id: lead.status for lead in leads}
     assert len(by_id) == len(STORYLINES)
-    assert "person" not in by_id and "no-towers" not in by_id
+    assert not {"person", "business", "company", "no-towers"} & by_id.keys()
     assert sorted(by_id.values()) == sorted(story.path[-1] for story in STORYLINES)
     assert len(tasks) == sum(1 for story in STORYLINES if story.task)
     assert all("Demo entry, fictional." in lead.notes for lead in leads)

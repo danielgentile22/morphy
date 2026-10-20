@@ -43,8 +43,8 @@ const AR_FILE = {
   towers: [
     {
       asr: '080946',
-      owner: 'MITCHELL VICKI',
-      cid: ownerNameToClusterId('MITCHELL VICKI'),
+      owner: 'DOE JANE',
+      cid: ownerNameToClusterId('DOE JANE'),
       height_m: 79.248,
       state: 'AR',
       active: true,
@@ -64,14 +64,14 @@ describe('parseNationalTowers', () => {
     const rows = parseNationalTowers({
       schema_version: 1,
       towers: [
-        { asr: '080946', owner: 'MITCHELL VICKI', cid: 'baked0000001', height_m: 79.248, state: 'AR', active: true, lat: 33, lon: -91.3 },
+        { asr: '080946', owner: 'DOE JANE', cid: 'baked0000001', height_m: 79.248, state: 'AR', active: true, lat: 33, lon: -91.3 },
         { asr: '080947', state: 'AR', lat: 34, lon: -92 }, // no owner / cid / height / active
       ],
     });
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual({
       asr: '080946',
-      owner: 'MITCHELL VICKI',
+      owner: 'DOE JANE',
       cid: 'baked0000001', // baked Lead key passed through
       height_m: 79.248,
       state: 'AR',
@@ -98,7 +98,7 @@ describe('parseNationalTowers', () => {
       schema_version: 2,
       towers: [
         {
-          asr: '080946', owner: 'MITCHELL VICKI', state: 'AR', lat: 33, lon: -91.3,
+          asr: '080946', owner: 'DOE JANE', state: 'AR', lat: 33, lon: -91.3,
           date_built: '1990-06-14', tower_owner: 'SBA TOWERS II LLC',
           tower_owner_street: '8051 CONGRESS AVE', tower_owner_city: 'BOCA RATON',
           tower_owner_state: 'FL', tower_owner_zip: '33487', tower_owner_phone: '(555) 010-0100',
@@ -127,9 +127,9 @@ describe('loadNationalTowers', () => {
     expect(fc.features).toHaveLength(1);
     const f = fc.features[0];
     expect(f.geometry).toEqual({ type: 'Point', coordinates: [-91.3, 33.0] });
-    expect(f.properties.owner).toBe('MITCHELL VICKI');
+    expect(f.properties.owner).toBe('DOE JANE');
     // cid is derived client-side from the owner name (single source of truth).
-    expect(f.properties.cid).toBe(ownerNameToClusterId('MITCHELL VICKI'));
+    expect(f.properties.cid).toBe(ownerNameToClusterId('DOE JANE'));
     expect(duckLoadTowerPoints).not.toHaveBeenCalled();
   });
 
@@ -141,8 +141,8 @@ describe('loadNationalTowers', () => {
       json: () => ({
         schema_version: 1,
         towers: [
-          { asr: 'a', owner: 'MITCHELL VICKI', cid: 'sentinelcid0', state: 'AR', lat: 33, lon: -91 },
-          { asr: 'b', owner: 'MITCHELL VICKI', state: 'AR', lat: 34, lon: -92 }, // no cid
+          { asr: 'a', owner: 'DOE JANE', cid: 'sentinelcid0', state: 'AR', lat: 33, lon: -91 },
+          { asr: 'b', owner: 'DOE JANE', state: 'AR', lat: 34, lon: -92 }, // no cid
         ],
       }),
     });
@@ -150,7 +150,7 @@ describe('loadNationalTowers', () => {
     const fc = await loadNationalTowers(['05']);
     const byAsr = Object.fromEntries(fc.features.map((f) => [f.properties.asr, f.properties.cid]));
     expect(byAsr.a).toBe('sentinelcid0'); // baked value preferred
-    expect(byAsr.b).toBe(ownerNameToClusterId('MITCHELL VICKI')); // recomputed
+    expect(byAsr.b).toBe(ownerNameToClusterId('DOE JANE')); // recomputed
     expect(duckLoadTowerPoints).not.toHaveBeenCalled();
   });
 

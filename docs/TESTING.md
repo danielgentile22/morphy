@@ -91,7 +91,7 @@ Counts at archive time, from `uv run pytest --collect-only -q` (pytest counts
 each parametrized case separately): **1,099 tests** in the full run, of which
 627 come from the 57 `test_*.py` files under `tests/` and 472 from
 `backend/tests/` (43 top-level files plus 3 under `isolation/`, see §11). The
-map app's separate suite under `app/tests/` adds 515 Vitest unit tests (from
+map app's separate suite under `app/tests/` adds 518 Vitest unit tests (from
 `npx vitest list`) plus the Playwright E2E specs.
 
 One quirk: collecting `pytest tests` on its own fails on three files

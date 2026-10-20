@@ -13,7 +13,7 @@ import {
   type Props,
 } from '../../src/lib/schema';
 
-// Sample props mirroring real AR composite features (see inspect.py output).
+// Sample props shaped like AR composite features, with synthetic owners.
 const AR_TOWER: Props = {
   asr_number: '080946',
   city: 'EUDORA',
@@ -30,8 +30,8 @@ const AR_TOWER: Props = {
   distress_tier: '',
   distress_overlays: ['qct'],
   owner_name: '',
-  parcel_owner: 'MITCHELL VICKI',
-  parcel_id_full: '017-010-04119-000',
+  parcel_owner: 'DOE JANE',
+  parcel_id_full: '999-999-99999-000',
   parcel_acreage: 10.0,
   parcel_value: 5950.0,
   parcel_use_code: 'AI',
@@ -42,9 +42,9 @@ const AR_TOWER: Props = {
 };
 
 const AR_PARCEL: Props = {
-  parcel_id: '0001-05431-0000',
-  parcel_id_full: '123-0001-05431-0000',
-  owner_name: 'BURCH, LAN CO TRUSTEE OF BURCH FAMILY FARM TRUST &',
+  parcel_id: '0009-99999-0000',
+  parcel_id_full: '123-0009-99999-0000',
+  owner_name: 'DOE, JANE TRUSTEE OF DOE FAMILY FARM TRUST &',
   owner_name_2: '',
   owner_kind: 'trust',
   mailing_addr: '123 FARM RD',
@@ -140,7 +140,7 @@ describe('TOWER_SCHEMA against a real AR tower', () => {
   });
 
   it('shows the denormalised landowner — the pitch-critical fields', () => {
-    expect(renderField(TOWER_SCHEMA, 'Owner', AR_TOWER)).toBe('MITCHELL VICKI');
+    expect(renderField(TOWER_SCHEMA, 'Owner', AR_TOWER)).toBe('DOE JANE');
     expect(renderField(TOWER_SCHEMA, 'Parcel value', AR_TOWER)).toBe('$5,950');
     expect(renderField(TOWER_SCHEMA, 'Parcel acreage', AR_TOWER)).toBe('10.00 ac');
   });
@@ -167,7 +167,7 @@ describe('TOWER_SCHEMA against a real AR tower', () => {
 
 describe('PARCEL_SCHEMA against a real AR parcel', () => {
   it('titles by parcel id', () => {
-    expect(PARCEL_SCHEMA.title(AR_PARCEL)).toBe('Parcel 0001-05431-0000');
+    expect(PARCEL_SCHEMA.title(AR_PARCEL)).toBe('Parcel 0009-99999-0000');
   });
 
   it('tags the distress tier and hosted infrastructure', () => {
@@ -179,7 +179,7 @@ describe('PARCEL_SCHEMA against a real AR parcel', () => {
   });
 
   it('shows owner, valuation and score — the pitch-critical fields', () => {
-    expect(renderField(PARCEL_SCHEMA, 'Owner', AR_PARCEL)).toContain('BURCH');
+    expect(renderField(PARCEL_SCHEMA, 'Owner', AR_PARCEL)).toContain('DOE FAMILY FARM TRUST');
     expect(renderField(PARCEL_SCHEMA, 'Owner type', AR_PARCEL)).toBe('Trust');
     expect(renderField(PARCEL_SCHEMA, 'Market / appraised value', AR_PARCEL)).toBe('$299,935');
     expect(renderField(PARCEL_SCHEMA, 'Score', AR_PARCEL)).toBe('0.90');

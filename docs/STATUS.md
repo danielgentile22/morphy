@@ -80,8 +80,8 @@ lead-centric UI were later pulled forward ahead of A and C
 - **The public read-only demo.** [morphy-demo.fly.dev](https://morphy-demo.fly.dev) runs with
   `DEMO_MODE` on. "Explore the demo" signs a visitor in, with no password, as a read-only
   credential whose writes the backend refuses with 403. Its board holds six fictional leads
-  seeded over business-entity owners
-  ([ADR-077](./adr/0077-read-only-demo-credential.md)). The same change removed the unused
+  seeded over government owners
+  ([ADR-077](./adr/0077-read-only-demo-credential.md), [ADR-078](./adr/0078-demo-leads-over-government-owners.md)). The same change removed the unused
   in-catalog LLM helper and its log table.
 - **Hosting.** One always-on Fly machine running Caddy, the API and Litestream, with SQLite on
   a volume replicated to Cloudflare R2 ([ADR-064](./adr/0064-phase1-hosting-fly-sqlite.md)).

@@ -57,7 +57,7 @@ example `05` for Arkansas.
 ## 2. Subsystem 1: the data puller (`scripts/data_tui/`, `scripts/fetch/`)
 
 A Textual terminal app that replaced the retired PySide6 desktop puller. It fetches the
-registered data sources into `data/raw/<source_id>/current/`. There are 16 active sources, plus
+registered data sources into `data/raw/<source_id>/current/`. There are 17 active sources, plus
 deferred ones split out via the `_ACTIVE` / `_DEFERRED` registry blocks (ADR-045). From the same
 screen it then drives preprocess, composite verify, and the confirm-gated data deploy.
 

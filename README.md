@@ -1,15 +1,18 @@
 # morphy
 
-Finds the landowner under every cell tower in a state and ranks them for ground-lease
-renegotiation, by joining federal tower registries to county parcel records and economic
+Finds the landowner under every FCC-registered cell tower in a state and ranks them for
+ground-lease renegotiation, by joining federal tower registries to county parcel records and economic
 distress data.
 
-**Status:** Archived. A portfolio project by Daniel Gentile.
+**Status:** Archived. Built for a ground-lease business that has since closed, and kept as a
+portfolio project by Daniel Gentile.
 
 **Live demo:** [morphy-demo.fly.dev](https://morphy-demo.fly.dev). Press "Explore the demo" on
 the sign-in page; it needs no password. The demo is read-only. The backend refuses every write
-with a 403, and the lead board holds six fictional leads seeded for the demo
-([ADR-077](docs/adr/0077-read-only-demo-credential.md)).
+with a 403. The lead board holds six demo leads with made-up triage histories, all on
+government landowners such as the USDA Forest Service, so no private owner appears to have
+been contacted ([ADR-077](docs/adr/0077-read-only-demo-credential.md),
+[ADR-078](docs/adr/0078-demo-leads-over-government-owners.md)).
 
 ## Screenshots
 
@@ -26,8 +29,8 @@ trust, under a ground lease signed decades ago. Those leases are often worth ren
 but finding the owners is the hard part. The FCC knows where every registered tower stands.
 Counties know who owns every parcel. No public dataset connects the two.
 
-morphy builds that connection for four states (Arkansas, Montana, Florida and West Virginia).
-It places every FCC Antenna Structure Registration (ASR) tower on its parcel, attaches the
+morphy builds that connection for four states (Arkansas, Montana, Florida and West Virginia):
+about 15.9 million parcels and 16,000 towers. It places every FCC Antenna Structure Registration (ASR) tower on its parcel, attaches the
 owner, groups an owner's parcels across counties and states, and layers on distress signals:
 HUD Opportunity Zones and Qualified Census Tracts, Appalachian Regional Commission
 distressed counties, and USDA persistent-poverty counties. An analyst then works the result
@@ -95,9 +98,15 @@ data flow are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
   ([ADR-075](docs/adr/0075-cross-state-owner-identity.md)). Analyst overrides resolve in one
   expression, `display_cluster_id = coalesce(override_target, raw_cluster_id)`, so no surface
   can disagree about who an owner is.
+- **Carrier matches labeled for what they are.** FCC spectrum licenses are matched to towers
+  and shown as "licensed in this area", not as confirmed tenants. The plan targeted carriers
+  on 70% of towers; measured coverage was 6-17% per state, because most towers have no
+  per-site license in the source. The app treats an empty carrier list as the normal case
+  instead of padding it with guesses ([ADR-074](docs/adr/0074-uls-carrier-rearchitecture.md)).
 - **Tests.** About 1,100 pytest tests (627 for the pipeline and app-asset scripts, 472 for
-  the backend), about 515 Vitest unit tests and about 40 Playwright end-to-end tests for the
-  map app. GitHub Actions runs lint, tests and an OpenAPI type-drift check
+  the backend), about 520 Vitest unit tests and about 40 Playwright end-to-end tests for the
+  map app. GitHub Actions runs lint, type checks, the pytest and Vitest suites, and an
+  OpenAPI type-drift check; the Playwright suite runs locally
   ([docs/TESTING.md](docs/TESTING.md)).
 - **Built with coding agents.** The root [CLAUDE.md](CLAUDE.md) and one per subsystem give
   agents their entry points, contracts and the invariants they most often broke. They are
@@ -106,8 +115,8 @@ data flow are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Running it locally
 
 Prerequisites: [uv](https://docs.astral.sh/uv/) (it installs Python 3.11 from `uv.lock`),
-Node.js 22 (the version CI and the Dockerfile use), and `tippecanoe` for parcel tiles (`brew install tippecanoe`). Expect
-several GB of disk for one state's raw data.
+Node.js 22 (the version CI and the Dockerfile use), and `tippecanoe` for parcel tiles
+(`brew install tippecanoe`). Expect several GB of disk for one state's raw data.
 
 ```bash
 uv sync && source .venv/bin/activate
@@ -162,7 +171,8 @@ cd app && npm run check && npm run test:unit && npm run test:e2e
 
 The MIT license covers the code only. No source data is in this repo: `data/` is git-ignored,
 and the data TUI pulls each dataset from its publisher. The data comes from federal agencies
-(FCC, HUD, USDA, USGS, the Appalachian Regional Commission) and from state parcel publishers in
+(FCC, FAA, HUD, USDA, USGS, the Energy Information Administration and the Appalachian
+Regional Commission) and from state parcel publishers in
 Arkansas, Florida, Montana and West Virginia. [NOTICE.md](NOTICE.md) gives each publisher's
 terms and the credits and disclaimers they ask for, including a takedown contact for owner
 names, which come from public records. Per-source schemas, licenses and automation policies
@@ -176,9 +186,8 @@ Every significant choice is recorded as an architecture decision record in
 points: why states were the unit of scope
 ([ADR-001](docs/adr/0001-state-level-geographic-scope.md)), why a lead is an owner cluster
 ([ADR-056](docs/adr/0056-lead-equals-owner-cluster.md)), why one Fly machine with SQLite
-([ADR-064](docs/adr/0064-phase1-hosting-fly-sqlite.md)), and why carrier matches are labeled
-"licensed in this area" rather than confirmed tenants
-([ADR-074](docs/adr/0074-uls-carrier-rearchitecture.md)).
+([ADR-064](docs/adr/0064-phase1-hosting-fly-sqlite.md)), and why the demo's leads sit on
+government owners ([ADR-078](docs/adr/0078-demo-leads-over-government-owners.md)).
 
 ## Where it stopped
 

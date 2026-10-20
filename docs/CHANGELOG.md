@@ -9,6 +9,9 @@ For why each decision was made, see the ADRs ([DECISIONS.md](./DECISIONS.md)).
 
 ## Archive (2026-10)
 
+- **2026-10-20: demo leads on government owners (ADR-078).** The demo seed now picks only
+  government owners, so no private person or business shows a made-up outreach status. Test
+  fixtures that used real parcel owners' names now use synthetic ones.
 - **2026-10-18: public read-only demo (ADR-077).** The `credential` table gained a
   `read_only` flag, enforced in one place. `current_principal` refuses a read-only
   principal's writes with 403. `DEMO_MODE` adds a password-less "Explore the demo" sign-in

@@ -13,7 +13,7 @@ import { ownerNameToClusterId } from '../../src/lib/owner-cluster';
 function row(over: Partial<TowerRow> = {}): TowerRow {
   return {
     asr: '080946',
-    owner: 'MITCHELL VICKI',
+    owner: 'DOE JANE',
     height_m: 79.248,
     state: 'AR',
     active: true,
@@ -32,8 +32,8 @@ describe('rowsToFeatureCollection', () => {
     expect(f.geometry).toEqual({ type: 'Point', coordinates: [-91.3, 33.0] });
     expect(f.properties).toEqual({
       asr: '080946',
-      owner: 'MITCHELL VICKI',
-      cid: ownerNameToClusterId('MITCHELL VICKI'),
+      owner: 'DOE JANE',
+      cid: ownerNameToClusterId('DOE JANE'),
       height_m: 79.248,
       state: 'AR',
       active: true,
@@ -72,7 +72,7 @@ describe('rowsToFeatureCollection', () => {
 
   it('bakes the owner cluster id onto each tower for filter joins', () => {
     const fc = rowsToFeatureCollection([row(), row({ owner: '' })]);
-    expect(fc.features[0].properties.cid).toBe('209af3ad593f'); // MITCHELL VICKI
+    expect(fc.features[0].properties.cid).toBe('aae5ec80ac52'); // DOE JANE
     expect(fc.features[1].properties.cid).toBe(''); // un-clusterable owner
   });
 
@@ -99,9 +99,9 @@ describe('rowsToFeatureCollection', () => {
 
 describe('filterTowers', () => {
   const fc = rowsToFeatureCollection([
-    row({ asr: 'a', owner: 'MITCHELL VICKI' }),
+    row({ asr: 'a', owner: 'DOE JANE' }),
     row({ asr: 'b', owner: 'WEYERHAEUSER COMPANY' }),
-    row({ asr: 'c', owner: 'MITCHELL VICKI' }),
+    row({ asr: 'c', owner: 'DOE JANE' }),
   ]);
 
   it('returns the collection unchanged when no filter is active (null)', () => {
@@ -109,7 +109,7 @@ describe('filterTowers', () => {
   });
 
   it('keeps only towers whose owner cluster id is in the set', () => {
-    const keep = new Set([ownerNameToClusterId('MITCHELL VICKI')]);
+    const keep = new Set([ownerNameToClusterId('DOE JANE')]);
     const out = filterTowers(fc, keep);
     expect(out.features.map((f) => f.properties.asr)).toEqual(['a', 'c']);
   });
@@ -130,7 +130,7 @@ describe('filterTowers', () => {
   });
 
   it('applies archive narrowing alongside the owner-cluster set', () => {
-    const keep = new Set([ownerNameToClusterId('MITCHELL VICKI')]); // a + c
+    const keep = new Set([ownerNameToClusterId('DOE JANE')]); // a + c
     const out = filterTowers(fc, keep, { asrs: new Set(['c']), show: false });
     expect(out.features.map((f) => f.properties.asr)).toEqual(['a']); // c archived out
   });
@@ -167,8 +167,8 @@ describe('towerOwnerLabel', () => {
 describe('towerHoverHtml', () => {
   const props: TowerProps = {
     asr: '080946',
-    owner: 'MITCHELL VICKI',
-    cid: '209af3ad593f',
+    owner: 'DOE JANE',
+    cid: 'aae5ec80ac52',
     height_m: 79.248,
     state: 'AR',
     active: true,
@@ -182,7 +182,7 @@ describe('towerHoverHtml', () => {
   };
   it('previews owner, ASR, height (ft) and state', () => {
     const html = towerHoverHtml(props);
-    expect(html).toContain('MITCHELL VICKI');
+    expect(html).toContain('DOE JANE');
     expect(html).toContain('ASR 080946');
     expect(html).toContain('260 ft');
     expect(html).toContain('AR');

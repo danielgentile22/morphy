@@ -5,7 +5,7 @@
 Creates the demo team and its read-only credential (``DEMO_USERNAME``,
 default ``demo``) with a random password printed once and stored nowhere
 else, then puts a handful of fictional leads on the demo board over real
-business owners from the owners index, so the board and lead pages have
+government owners from the owners index, so the board and lead pages have
 something to show. Safe to re-run: an existing credential is re-flagged
 read-only (its password is untouched), and a board that already has leads
 is left alone. A missing owners index skips the leads, not the credential.
@@ -31,9 +31,9 @@ from .task_store import TaskStore
 
 DEMO_TEAM = "demo"
 
-# Business-entity owners only: a fictional outreach story told against a
-# private person's name could read as real contact with that person.
-_SEEDABLE_KINDS = frozenset({"llc", "corporate"})
+# Government owners only (ADR-078): a fictional outreach story told against a
+# person or a private business could read as real contact with them.
+_SEEDABLE_KINDS = frozenset({"gov"})
 
 
 @dataclass(frozen=True)
@@ -121,7 +121,7 @@ class SeedResult:
 
 
 def pick_owners(index: OwnersIndexService, n: int) -> list[str]:
-    """The top-scoring business owners that hold at least one tower."""
+    """The top-scoring government owners that hold at least one tower."""
     owners, _ = index.effective(None)
     picked = [
         o["display_cluster_id"]

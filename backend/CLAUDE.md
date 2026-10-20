@@ -21,7 +21,7 @@ the schema, or the owners-index read path.
 - `app/demo_seed.py`: idempotent seed for the public read-only demo
   (`python -m app.demo_seed`, [ADR-077](../docs/adr/0077-read-only-demo-credential.md)).
   Creates the demo team and read-only credential and puts fictional leads on its
-  board over business-entity owners only.
+  board over government owners only (ADR-078).
 
 ## Contracts and invariants (do not relax: ADR-062/063/069/077)
 - **`tenant_id` on every table; every route filters by it.** No `tenant_id=1` stub.

@@ -1,8 +1,7 @@
 # ─── Data (PII; never commit) ────────────────────────────────────────
 # All raw + processed data is git-ignored. data/ may contain parcel-owner
 # names + mailing addresses (PII when combined). See docs/SECURITY.md.
-# `data` is a real dir, OR a symlink to an external drive (Samsung T9).
-# Reprocess/deploy need the drive mounted; plain code work does not.
+# `data` is a real dir or a symlink to an external drive.
 data
 data.local-bak/
 !data/.gitkeep
@@ -13,8 +12,8 @@ data.local-bak/
 !.env.example
 
 # ─── Backend credentials (password hashes; never commit) ─────────────
-# The real users file. Only backend/users.txt.example (fake entries) is
-# committed. Guarded by backend/tests/test_commit_guard.py.
+# A legacy users file, the input to `python -m app.users import-file`. Only
+# backend/users.txt.example (fake entries) is committed. Guarded by backend/tests/test_commit_guard.py.
 backend/users.txt
 
 # ─── Python ──────────────────────────────────────────────────────────
@@ -35,9 +34,9 @@ htmlcov/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-# .python-version is COMMITTED (uv pins the interpreter from it — PRD #132)
+# .python-version is committed: uv pins the interpreter from it.
 
-# ─── Node (for future map app v2) ────────────────────────────────────
+# ─── Node (map app) ────────────────────────────────────────────────
 node_modules/
 .npm/
 .vite/
@@ -60,7 +59,6 @@ Thumbs.db
 .claude/cache/
 .claude/settings.local.json
 .claude/*.lock
-# NOTE: .claude/plans/ may contain working plan docs — uncomment to ignore.
 
 # ─── Backups + temp ──────────────────────────────────────────────────
 *.bak
@@ -73,7 +71,7 @@ backups/
 # ─── Throwaway UI verification artifacts (slice screenshots, MCP logs) ─
 screenshots/
 .playwright-mcp/
-# Added by code-review-graph
+# Local code-review-graph index
 .code-review-graph/
 # Local MCP server wiring (machine-specific absolute paths — not portable)
 .mcp.json

@@ -118,7 +118,8 @@ What a visitor can see and do:
   owner names and addresses as a list. The static data files are only served to a signed-in
   session.
 - **Seeded synthetic triage data only.** The demo board holds six fictional leads seeded by
-  `python -m app.demo_seed` over business-entity owners, never individuals. Every note says it is
+  `python -m app.demo_seed` over government owners, never individuals or private businesses
+  ([ADR-078](./adr/0078-demo-leads-over-government-owners.md)). Every note says it is
   fictional and every contact field is blank. No real outreach history is on the demo.
 - **Writes are refused.** `current_principal` answers every non-GET/HEAD/OPTIONS request from a
   read-only principal with 403, including the password change. A test enumerates every write

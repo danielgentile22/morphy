@@ -1,6 +1,6 @@
 # ADR-077: A read-only demo credential behind DEMO_MODE; Ask Claude retired
 
-**Status:** Accepted. Implemented in the public demo deployment (`morphy-demo`).
+**Status:** Accepted. Implemented in the public demo deployment (`morphy-demo`). Decision 5 amended by [ADR-078](0078-demo-leads-over-government-owners.md) (seed government owners only).
 **Date:** 2026-10-18
 **Amends:** [ADR-069](0069-credentials-in-db-cookie-sessions-gated-data-plane.md) (adds a column to the `credential` table and a second way to start a session; its authority invariants stand unchanged).
 **Pairs with:** [ADR-062](0062-username-password-replaces-magic-link.md), [ADR-063](0063-file-credentials-teams-per-request-authority.md), [ADR-068](0068-self-service-password-change.md).

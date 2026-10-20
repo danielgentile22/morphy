@@ -101,6 +101,7 @@ Seven decisions from a 2026-06 data audit, whose working files are not part of t
 | # | Title |
 |---|---|
 | [ADR-077](./adr/0077-read-only-demo-credential.md) | A read-only demo credential behind DEMO_MODE; Ask Claude retired |
+| [ADR-078](./adr/0078-demo-leads-over-government-owners.md) | Demo leads sit on government owners only |
 
 ---
 

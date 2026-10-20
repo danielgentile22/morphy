@@ -296,7 +296,8 @@ login throttle does not, because there is no password to guess.
 **Seeding.** `python -m app.demo_seed` (from `backend/`) creates the demo team
 and its read-only credential with a random password printed once and stored
 nowhere, then puts six fictional storylines on the demo board over top-scoring
-business-entity owners (never individuals). Every note says it is a fictional
+government owners, never individuals or private businesses
+([ADR-078](../docs/adr/0078-demo-leads-over-government-owners.md)). Every note says it is a fictional
 demo entry and contact fields stay blank. It is idempotent: an existing
 credential is re-flagged read-only with its password untouched, a board that
 already has leads is left alone, and a missing owners index skips the leads
