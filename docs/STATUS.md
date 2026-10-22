@@ -28,7 +28,7 @@ because parcel data is published per state or per county with no free national s
 | Montana | 30 | Composed | 920,111 parcels across all 56 counties. |
 | Florida | 12 | Composed | 11,425,608 parcels (Florida Department of Revenue tax roll for all 67 counties, plus state-owned land), built with chunked compose ([ADR-051](./adr/0051-chunked-compose.md)). |
 | West Virginia | 54 | Composed | 1,389,855 parcels across all 55 counties from the statewide geodatabase ([ADR-060](./adr/0060-wv-committed-anchor.md)). |
-| North Carolina | 37 | Deferred | The original test state. Raw data was deleted and the re-fetch was never scheduled, because the NC OneMap service returned intermittent HTTP 504s at deep pagination offsets ([ADR-048](./adr/0048-nc-onemap-mapserver-pagination.md)). |
+| North Carolina | 37 | Deferred | The original test state. Raw data was deleted, and the one re-fetch attempt stopped partway, because the NC OneMap service returned intermittent HTTP 504s at deep pagination offsets ([ADR-048](./adr/0048-nc-onemap-mapserver-pagination.md)). |
 | Indiana, Utah | 18, 49 | Dropped | Their free parcel layers carry no owner names ([ADR-017](./adr/0017-indiana-dropped.md), [ADR-049](./adr/0049-utah-dropped.md)). |
 | Minnesota | 27 | Dropped | License terms were ambiguous ([ADR-018](./adr/0018-minnesota-deferred.md)). |
 
