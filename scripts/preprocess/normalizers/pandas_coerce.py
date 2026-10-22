@@ -54,6 +54,23 @@ def safe_str(x) -> str:
     return s
 
 
+def safe_zip(x) -> str:
+    """``safe_str`` for a ZIP code column that may have been read as float.
+
+    A float read turns 33612 into "33612.0" and 07001 into "7001.0", and
+    some publishers write 0 for "no zip". Anything else is kept as published.
+    """
+    s = safe_str(x)
+    if s.endswith(".0") and s[:-2].isdigit():
+        s = s[:-2]
+    if s.isdigit():
+        if not s.strip("0"):
+            return ""
+        if len(s) in (3, 4):
+            return s.zfill(5)
+    return s
+
+
 def safe_get(row, key) -> str:
     """Like ``row.get(key)`` but always returns a clean stripped string."""
     try:

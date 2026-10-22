@@ -496,6 +496,40 @@ def test_mailing_addr_is_full_skips_structured_append():
     assert out2["mailing_addr"].iloc[0] == "1 MAIN ST, WELCH, WV 24801, WELCH, WV, 24801"
 
 
+def test_float_zip_is_cleaned_in_the_column_and_the_address_line():
+    """FL FDOR's OWN_ZIPCD loads as float; neither the zip nor the joined
+    mailing line should carry "33612.0"."""
+    field_map = {
+        "owner_name": ["O"],
+        "mailing_addr": ["ADDR"],
+        "mailing_city": ["CITY"],
+        "mailing_state": ["ST"],
+        "mailing_zip": ["ZIP"],
+        "situs_zip": ["PZIP"],
+        "county_fips": ["CF"],
+    }
+    g = _gdf(
+        [
+            {
+                "O": "X",
+                "ADDR": "1 MAIN ST",
+                "CITY": "TAMPA",
+                "ST": "FL",
+                "ZIP": 33612.0,
+                "PZIP": 7001.0,
+                "CF": "12057",
+                "geometry": _square(),
+            }
+        ]
+    )
+    out = map_layer_to_canonical(
+        g, ParcelAdapter(source_id="t", state_fips="12", field_map=field_map)
+    )
+    assert out["mailing_zip"].iloc[0] == "33612"
+    assert out["mailing_addr"].iloc[0] == "1 MAIN ST, TAMPA, FL, 33612"
+    assert out["situs_zip"].iloc[0] == "07001"
+
+
 # ── owner-kind inference runs through the canonical mapping ──────────────
 
 

@@ -11,7 +11,7 @@ import math
 
 import pandas as pd
 import pytest
-from preprocess.normalizers.pandas_coerce import safe_get, safe_str, to_float, to_int
+from preprocess.normalizers.pandas_coerce import safe_get, safe_str, safe_zip, to_float, to_int
 
 # ── safe_str ─────────────────────────────────────────────────────────────
 
@@ -33,6 +33,29 @@ from preprocess.normalizers.pandas_coerce import safe_get, safe_str, to_float, t
 )
 def test_safe_str_handles_every_null_variant(raw, expected):
     assert safe_str(raw) == expected
+
+
+# ── safe_zip ─────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("33612", "33612"),
+        (33612.0, "33612"),  # FL FDOR OWN_ZIPCD reads as float
+        ("33612.0", "33612"),
+        (7001.0, "07001"),  # the float dropped the leading zero
+        ("59101-1234", "59101-1234"),
+        (0, ""),  # AR AdrZip5 uses 0 for "no zip"
+        ("000", ""),
+        (None, ""),
+        (math.nan, ""),
+        ("1339500", "1339500"),  # not a zip, but kept as published
+        ("V6B 1A1", "V6B 1A1"),
+    ],
+)
+def test_safe_zip_undoes_float_reads(raw, expected):
+    assert safe_zip(raw) == expected
 
 
 # ── safe_get ─────────────────────────────────────────────────────────────

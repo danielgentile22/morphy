@@ -53,7 +53,7 @@ from ..cluster import infer_owner_kind, normalize_address, normalize_owner_name
 from ..geom import add_polygon_derivatives
 from ..io import write_geoparquet, write_raw_parquet
 from .fips import canon_county_fips, state_fips_from_county_fips
-from .pandas_coerce import safe_str
+from .pandas_coerce import safe_str, safe_zip
 
 if TYPE_CHECKING:
     pass
@@ -177,6 +177,14 @@ def _str_series(df: pd.DataFrame, candidates: list[str]) -> pd.Series:
     if col is None:
         return pd.Series("", index=df.index, dtype="object")
     return df[col].map(safe_str)
+
+
+def _zip_series(df: pd.DataFrame, candidates: list[str]) -> pd.Series:
+    """``_str_series`` for a ZIP code column (see ``safe_zip``)."""
+    col = _resolve_col(df, candidates)
+    if col is None:
+        return pd.Series("", index=df.index, dtype="object")
+    return df[col].map(safe_zip)
 
 
 def _num_series(df: pd.DataFrame, candidates: list[str]) -> pd.Series:
@@ -375,7 +383,7 @@ def map_layer_to_canonical(
                 _str_series(g, fm.get("mailing_addr", [])),
                 _str_series(g, fm.get("mailing_city", [])),
                 _str_series(g, fm.get("mailing_state", [])),
-                _str_series(g, fm.get("mailing_zip", [])),
+                _zip_series(g, fm.get("mailing_zip", [])),
             ]
         )
     parcel_id_full = _str_series(g, fm.get("parcel_id_full", []))
@@ -403,7 +411,7 @@ def map_layer_to_canonical(
     out["mailing_addr_norm"] = _map_unique(mailing_addr, normalize_address)
     out["mailing_city"] = _str_series(g, fm.get("mailing_city", []))
     out["mailing_state"] = _str_series(g, fm.get("mailing_state", []))
-    out["mailing_zip"] = _str_series(g, fm.get("mailing_zip", []))
+    out["mailing_zip"] = _zip_series(g, fm.get("mailing_zip", []))
     out["situs_addr"] = _str_series(g, fm.get("situs_addr", []))
     out["situs_city"] = _str_series(g, fm.get("situs_city", []))
     # E9: populate situs state/zip from the raw where the adapter's field_map
@@ -411,7 +419,7 @@ def map_layer_to_canonical(
     # address off at the city). States whose raw has no such column stay blank;
     # MT parses its combined CityStateZ in a post_map (E12).
     out["situs_state"] = _str_series(g, fm.get("situs_state", []))
-    out["situs_zip"] = _str_series(g, fm.get("situs_zip", []))
+    out["situs_zip"] = _zip_series(g, fm.get("situs_zip", []))
     out["acreage"] = _num_series(g, fm.get("acreage", []))
     out["land_value"] = _num_series(g, fm.get("land_value", []))
     out["improvement_value"] = _num_series(g, fm.get("improvement_value", []))
