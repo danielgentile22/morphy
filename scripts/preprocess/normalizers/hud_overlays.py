@@ -32,7 +32,7 @@ log = logging.getLogger("preprocess.hud_overlays")
 def _find_geojson(raw_dir: Path) -> Path | None:
     if not raw_dir.exists():
         return None
-    candidates = list(raw_dir.rglob("*.geojson")) + list(raw_dir.rglob("*.json"))
+    candidates = list(raw_dir.rglob("[!.]*.geojson")) + list(raw_dir.rglob("[!.]*.json"))
     return candidates[0] if candidates else None
 
 

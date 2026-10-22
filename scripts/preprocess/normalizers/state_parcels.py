@@ -314,7 +314,7 @@ def _iter_raw_layers(raw_dir: Path):
     before concatenating would need ~50 GB peak for FL's 67-county / ~28 GB
     FDOR set; this generator keeps peak memory bounded to a single county.
     """
-    for shp in sorted(raw_dir.rglob("*.shp")):
+    for shp in sorted(raw_dir.rglob("[!.]*.shp")):
         # Some FDOR county exports ship a *directory* named `<county>.shp`
         # (e.g. leon_2025par.shp); rglob matches it but it's not a shapefile.
         if not shp.is_file():
@@ -331,17 +331,17 @@ def _iter_raw_layers(raw_dir: Path):
         g = _to_4326(g)
         if g is not None:
             yield shp.stem, g
-    for gpkg in sorted(raw_dir.rglob("*.gpkg")):
+    for gpkg in sorted(raw_dir.rglob("[!.]*.gpkg")):
         for lname, g in _iter_multi_layer(gpkg):
             g = _to_4326(g)
             if g is not None:
                 yield f"{gpkg.stem}_{lname}", g
-    for gdb in sorted(p for p in raw_dir.rglob("*.gdb") if p.is_dir()):
+    for gdb in sorted(p for p in raw_dir.rglob("[!.]*.gdb") if p.is_dir()):
         for lname, g in _iter_multi_layer(gdb):
             g = _to_4326(g)
             if g is not None:
                 yield f"{gdb.stem}_{lname}", g
-    for gj in sorted(raw_dir.rglob("*.geojson")):
+    for gj in sorted(raw_dir.rglob("[!.]*.geojson")):
         try:
             g = gpd.read_file(gj, on_invalid="fix")
         except Exception as e:
@@ -477,8 +477,8 @@ def _read_attribute_table(raw_dir: Path, join: AttributeJoin) -> pd.DataFrame | 
         log.warning("  attribute join needs pyogrio, unavailable: %s", e)
         return None
     want = list(dict.fromkeys([join.right_key, *join.columns]))
-    containers = [p for p in sorted(raw_dir.rglob("*.gdb")) if p.is_dir()]
-    containers += sorted(raw_dir.rglob("*.gpkg"))
+    containers = [p for p in sorted(raw_dir.rglob("[!.]*.gdb")) if p.is_dir()]
+    containers += sorted(raw_dir.rglob("[!.]*.gpkg"))
     for container in containers:
         try:
             names = {str(li[0]) for li in pyogrio.list_layers(container)}
@@ -547,7 +547,7 @@ def normalize_state_parcels(
     raw_dir_out = out_dir / "raw"
     for d in (parcels_dir, raw_dir_out):
         if d.exists():
-            for old in d.glob("*.parquet"):
+            for old in d.glob("[!.]*.parquet"):
                 old.unlink()
         d.mkdir(parents=True, exist_ok=True)
 
@@ -669,7 +669,7 @@ def normalize_state_parcels(
         raw_rows=raw_row_total,
         canonical_rows=canon_row_total,
         bytes=raw_bytes + canon_bytes,
-        output_files=output_files + sorted(raw_dir_out.glob("*.parquet")) + [qr_path],
+        output_files=output_files + sorted(raw_dir_out.glob("[!.]*.parquet")) + [qr_path],
         canonical_types_written=["parcel"],
         quality_report=qr,
     )

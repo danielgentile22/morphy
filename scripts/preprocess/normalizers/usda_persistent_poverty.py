@@ -115,5 +115,5 @@ class UsdaPersistentPovertyNormalizer(Normalizer):
     def _find_csv(raw_dir: Path) -> Path | None:
         if not raw_dir.exists():
             return None
-        cand = sorted(raw_dir.rglob("*.csv"))
+        cand = sorted(raw_dir.rglob("[!.]*.csv"))
         return cand[0] if cand else None

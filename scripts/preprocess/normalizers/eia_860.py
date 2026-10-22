@@ -53,8 +53,8 @@ class Eia860Normalizer(Normalizer):
     canonical_types = ["solar_facility"]
 
     def normalize(self, raw_dir: Path, out_dir: Path) -> NormalizeResult:
-        plant_xlsx = self._find_first(raw_dir, "*Plant*.xlsx")
-        solar_xlsx = self._find_first(raw_dir, "*Solar*.xlsx")
+        plant_xlsx = self._find_first(raw_dir, "[!.]*Plant*.xlsx")
+        solar_xlsx = self._find_first(raw_dir, "[!.]*Solar*.xlsx")
         if plant_xlsx is None:
             raise FileNotFoundError(f"eia_860: no Plant_*.xlsx under {raw_dir}")
 

@@ -176,7 +176,7 @@ class Normalizer(ABC):
         """Default: source is available if raw_dir is non-empty."""
         if not raw_dir.exists():
             return False
-        return any(p.is_file() for p in raw_dir.rglob("*"))
+        return any(p.is_file() for p in raw_dir.rglob("[!.]*"))
 
     def load_state_data(self, state_fips: str) -> dict[str, Any]:
         """Read this source's normalized output, filtered to one state.
@@ -207,7 +207,7 @@ class Normalizer(ABC):
             basename = OUTPUT_BASENAMES.get(ct, ct)
             subdir = src_dir / basename
             if subdir.is_dir():
-                paths = sorted(subdir.glob("*.parquet"))
+                paths = sorted(subdir.glob("[!.]*.parquet"))
             else:
                 single = src_dir / f"{basename}.parquet"
                 paths = [single] if single.exists() else []

@@ -24,7 +24,7 @@
 # different environment):
 #   FLY_APP        Fly app name              (morphy-demo)
 #   COMPOSITE_SRC  laptop composite dir      (data/processed/composite)
-#   R2_REMOTE      rclone R2 path            (r2:morphy-demo/composite)
+#   R2_REMOTE      rclone R2 path            (r2:morphy-prod/composite)
 #   VOLUME_DEST    composite path on volume  (/data/processed/composite)
 #   APP_URL        base URL for smoke        (https://$FLY_APP.fly.dev)
 #   PYTHON         local python              (python3)
@@ -35,7 +35,7 @@ set -euo pipefail
 
 FLY_APP="${FLY_APP:-morphy-demo}"
 COMPOSITE_SRC="${COMPOSITE_SRC:-data/processed/composite}"
-R2_REMOTE="${R2_REMOTE:-r2:morphy-demo/composite}"
+R2_REMOTE="${R2_REMOTE:-r2:morphy-prod/composite}"
 VOLUME_DEST="${VOLUME_DEST:-/data/processed/composite}"
 APP_URL="${APP_URL:-https://${FLY_APP}.fly.dev}"
 PYTHON="${PYTHON:-python3}"

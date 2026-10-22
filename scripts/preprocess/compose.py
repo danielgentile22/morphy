@@ -326,7 +326,7 @@ def compose(cfg: ComposeConfig) -> ComposeResult:
     # Clean any pre-existing shards from a previous run so the new ones
     # don't accidentally co-exist with stale ones.
     if parcels_shard_dir.exists():
-        for old in parcels_shard_dir.glob("*.parquet"):
+        for old in parcels_shard_dir.glob("[!.]*.parquet"):
             old.unlink()
     parcels_shard_dir.mkdir(parents=True, exist_ok=True)
     # Remove a legacy single-file parcels.parquet from a non-chunked run
@@ -834,6 +834,6 @@ def _load_state_data(ctx: ComposeContext) -> list[str]:
         from . import NORMALIZED_ROOT
 
         src_dir = NORMALIZED_ROOT / n.source_id / OUTPUT_BASENAMES.get("parcel", "parcel")
-        if src_dir.is_dir() and any(src_dir.glob("*.parquet")):
+        if src_dir.is_dir() and any(src_dir.glob("[!.]*.parquet")):
             sources_used.append(n.source_id)
     return sources_used

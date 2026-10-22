@@ -105,5 +105,5 @@ class Eia860MNormalizer(Normalizer):
     def _find_xlsx(raw_dir: Path) -> Path | None:
         if not raw_dir.exists():
             return None
-        cand = sorted(raw_dir.rglob("*.xlsx"))
+        cand = sorted(raw_dir.rglob("[!.]*.xlsx"))
         return cand[0] if cand else None

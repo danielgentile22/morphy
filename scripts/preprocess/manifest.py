@@ -330,7 +330,7 @@ class PreprocessManifest:
             p = Path(out_dir)
             if not p.exists():
                 return False
-            if not any(p.rglob("*.parquet")):
+            if not any(p.rglob("[!.]*.parquet")):
                 return False
         except Exception:
             return False
@@ -404,14 +404,14 @@ def rebuild_from_disk() -> PreprocessManifest:
             if not src_dir.is_dir():
                 continue
             # Legacy single-file sources: <basename>.parquet at the root.
-            parquets = [p for p in sorted(src_dir.glob("*.parquet")) if p.name != "raw.parquet"]
+            parquets = [p for p in sorted(src_dir.glob("[!.]*.parquet")) if p.name != "raw.parquet"]
             canonical_types = [p.stem for p in parquets]
             # Multi-file datasets: a <basename>/ subdir of per-county
             # parquets (the parcel normalizer). Exclude the raw/ archive.
             for sub in sorted(d for d in src_dir.iterdir() if d.is_dir()):
                 if sub.name == "raw":
                     continue
-                sub_parquets = sorted(sub.glob("*.parquet"))
+                sub_parquets = sorted(sub.glob("[!.]*.parquet"))
                 if sub_parquets:
                     parquets += sub_parquets
                     canonical_types.append(sub.name)

@@ -23,6 +23,10 @@ from pathlib import Path
 # contract excludes the *directory*, never the ``parcels.*`` files.
 EXCLUDE_DIRNAMES = ("parcels",)
 
+# macOS writes a "._<name>" AppleDouble sidecar beside every file on an exFAT
+# drive (the external data drive). They are metadata, never served.
+SIDECAR_PREFIX = "._"
+
 
 def _is_excluded(rel: Path) -> bool:
     """True if ``rel`` lives under an excluded directory (matches the dir name
@@ -37,7 +41,7 @@ def iter_sync_files(src: Path) -> Iterator[Path]:
         if not path.is_file():
             continue
         rel = path.relative_to(src)
-        if _is_excluded(rel):
+        if _is_excluded(rel) or rel.name.startswith(SIDECAR_PREFIX):
             continue
         yield rel
 
@@ -47,7 +51,7 @@ def rclone_filters() -> list[str]:
     :func:`iter_sync_files`. The trailing ``/**`` matches only paths *inside* a
     directory of that exact name, so ``parcels.pmtiles`` (a sibling file) is
     never caught — only the ``parcels/`` directory's contents are."""
-    return [f"- **/{name}/**" for name in EXCLUDE_DIRNAMES]
+    return [f"- **/{name}/**" for name in EXCLUDE_DIRNAMES] + [f"- {SIDECAR_PREFIX}*"]
 
 
 @dataclass(frozen=True)

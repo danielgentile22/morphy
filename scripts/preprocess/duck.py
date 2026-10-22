@@ -53,7 +53,7 @@ def _spatial_extension_path() -> str | None:
     except ImportError:
         return None
     pkg = Path(duckdb_extension_spatial.__file__).parent
-    hits = sorted((pkg / "extensions").rglob("*.duckdb_extension"))
+    hits = sorted((pkg / "extensions").rglob("[!.]*.duckdb_extension"))
     return str(hits[0]) if hits else None
 
 
@@ -131,7 +131,7 @@ def parcel_shards(*, normalized_root: Path | None = None) -> list[ParcelShard]:
         src_dir = root / n.source_id / parcel_basename
         if not src_dir.is_dir():
             continue
-        for shard_path in sorted(src_dir.glob("*.parquet")):
+        for shard_path in sorted(src_dir.glob("[!.]*.parquet")):
             try:
                 columns = tuple(pq.read_schema(shard_path).names)
             except Exception as e:  # noqa: BLE001 — one bad shard mustn't abort

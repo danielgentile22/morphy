@@ -67,7 +67,7 @@ class UspvdbNormalizer(Normalizer):
     canonical_types = ["solar_facility"]
 
     def normalize(self, raw_dir: Path, out_dir: Path) -> NormalizeResult:
-        shp = self._find_first(raw_dir, "*.shp")
+        shp = self._find_first(raw_dir, "[!.]*.shp")
         if shp is None:
             raise FileNotFoundError(f"uspvdb: no .shp under {raw_dir}")
         gdf = gpd.read_file(shp)

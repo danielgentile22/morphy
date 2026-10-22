@@ -310,7 +310,7 @@ def _infer_states_covered(out_dir: Path) -> list[str]:
     try:
         import pandas as pd  # noqa: WPS433
 
-        for p in out_dir.glob("*.parquet"):
+        for p in out_dir.glob("[!.]*.parquet"):
             if p.name == "raw.parquet":
                 continue
             try:

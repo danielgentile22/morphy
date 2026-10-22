@@ -82,7 +82,7 @@ def iter_state_parcel_shards(
         src_dir = root / n.source_id / parcel_basename
         if not src_dir.is_dir():
             continue
-        for shard_path in sorted(src_dir.glob("*.parquet")):
+        for shard_path in sorted(src_dir.glob("[!.]*.parquet")):
             try:
                 gdf = gpd.read_parquet(shard_path)
             except Exception as e:  # noqa: BLE001 — one bad shard mustn't abort the iter

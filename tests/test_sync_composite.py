@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from sync_composite import iter_sync_files, sync
+from sync_composite import iter_sync_files, rclone_filters, sync
 
 _SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "sync_composite.py"
 
@@ -62,6 +62,17 @@ def test_parcels_compose_inputs_excluded_but_pmtiles_kept(tmp_path: Path) -> Non
     assert Path("05/parcels.pmtiles") in synced
     # ...while the per-county compose-inputs directory is dropped wholesale.
     assert Path("05/parcels/05001.geojson") not in synced
+
+
+def test_exfat_sidecars_never_synced(tmp_path: Path) -> None:
+    src = _make_composite(tmp_path / "composite")
+    (src / "05" / "._facets.json").write_text("appledouble")
+
+    synced = set(iter_sync_files(src))
+
+    assert Path("05/facets.json") in synced
+    assert Path("05/._facets.json") not in synced
+    assert "- ._*" in rclone_filters()
 
 
 def _files_under(root: Path) -> set[Path]:

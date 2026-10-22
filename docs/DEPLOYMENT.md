@@ -304,7 +304,7 @@ FLY_APP="$APP" ./deploy.sh smoke   # SPA 200, unauth /data→401 (gated), /api l
 The hosted app is one Docker image (SPA + FastAPI + Caddy + Litestream + rclone) on
 one Fly machine. **Updating it** means rebuilding that image or refreshing the
 data on its volume. `deploy.sh` defaults to `FLY_APP=morphy-demo` and
-`R2_REMOTE=r2:morphy-demo/composite`. Override them only to target a different environment.
+`R2_REMOTE=r2:morphy-prod/composite`. Override them only to target a different environment.
 
 **Update the code, the common case (any frontend or backend change):**
 

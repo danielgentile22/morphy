@@ -53,4 +53,4 @@ class CountySummarySQLAggregator:
         from ..compose_helpers import county_summary_rollup
 
         shard_dir = COMPOSITE_ROOT / ctx.state_fips / OUTPUT_BASENAMES.get("parcel", "parcel")
-        return county_summary_rollup(sorted(shard_dir.glob("*.parquet")))
+        return county_summary_rollup(sorted(shard_dir.glob("[!.]*.parquet")))

@@ -33,7 +33,9 @@ log = logging.getLogger("preprocess.billboards")
 
 def _read_any_table(raw_dir: Path) -> tuple[pd.DataFrame, Path]:
     cand = (
-        list(raw_dir.rglob("*.xlsx")) + list(raw_dir.rglob("*.xls")) + list(raw_dir.rglob("*.csv"))
+        list(raw_dir.rglob("[!.]*.xlsx"))
+        + list(raw_dir.rglob("[!.]*.xls"))
+        + list(raw_dir.rglob("[!.]*.csv"))
     )
     if not cand:
         raise FileNotFoundError(f"no .xlsx / .xls / .csv under {raw_dir}")
